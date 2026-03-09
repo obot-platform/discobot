@@ -12,6 +12,8 @@
 			"!server/static/models-dev-api.json",
 			"!agent-go/providers/modelsdev/models-dev-api.json",
 			"!server/workspaces",
+			"!ui",
+			"!ui",
 			"!.claude/skills",
 			"!.cursor/skills",
 			"!.opencode"

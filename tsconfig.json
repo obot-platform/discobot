@@ -20,5 +20,5 @@
 		"types": ["vite/client"]
 	},
 	"include": ["src", "**/*.ts", "**/*.tsx", "lib", "components", "app"],
-	"exclude": ["node_modules", "server/workspaces", "dist", "out"]
+	"exclude": ["node_modules", "server/workspaces", "dist", "out", "ui"]
 }

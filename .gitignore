@@ -5,6 +5,7 @@
 
 # dependencies
 /node_modules
+/ui/node_modules
 
 # next.js
 /.next/
@@ -14,6 +15,8 @@
 # production
 /build
 /dist
+/ui/build
+/ui/.svelte-kit
 
 # debug
 npm-debug.log*

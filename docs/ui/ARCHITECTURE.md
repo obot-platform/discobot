@@ -2,6 +2,19 @@
 
 This document describes the architecture of the Discobot frontend, a React application built with Vite and React Router 7 that provides an IDE-like chat interface for AI coding agents.
 
+## In-progress Svelte redesign
+
+The repository now also contains an **isolated Svelte 5 redesign workspace** under `ui/`.
+
+- `ui/` is currently a standalone SvelteKit SPA scaffold for the upcoming UI rewrite.
+- `/` is now the redesign home/shell wireframe, while `/gallery` is the component exploration route.
+- The Svelte shell layout is decomposed into product components under `ui/src/lib/components/ide/`.
+- The existing root React app remains the active production frontend and the one wired to `src-tauri/`.
+- Use `pnpm ui:dev`, `pnpm ui:dev:backend`, `pnpm ui:build`, and `pnpm ui:typecheck` when working on the redesign workspace.
+- `.discobot/services/ui-svelte.sh` exposes the redesign as a Discobot preview service on port `3100` while starting the backend and agent watcher alongside it.
+
+Until the migration is complete, treat `ui/` as a parallel frontend track rather than part of the current React runtime.
+
 ## Overview
 
 The UI is a single-page application built with React 19 and React Router. It renders an IDE-style interface with resizable panels for workspace navigation, chat/terminal, and file diffs.

@@ -8,6 +8,7 @@ export default [
 			"dist/**",
 			"out/**",
 			"node_modules/**",
+			"ui/**",
 			"server/**",
 			"proxy/**",
 			"agent/**",
