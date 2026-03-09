@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Discobot Svelte redesign workspace"
+		/>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<script>
+			try {
+				const storedTheme = localStorage.getItem("theme");
+				const theme =
+					storedTheme === "light" || storedTheme === "dark"
+						? storedTheme
+						: window.matchMedia("(prefers-color-scheme: dark)").matches
+							? "dark"
+							: "light";
+
+				document.documentElement.classList.toggle("dark", theme === "dark");
+			} catch (_error) {
+				document.documentElement.classList.add("dark");
+			}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

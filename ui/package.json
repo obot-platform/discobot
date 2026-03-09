@@ -1,0 +1,42 @@
+{
+	"name": "@discobot/ui-redesign",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --port 3100 --strictPort",
+		"build": "vite build",
+		"preview": "vite preview --port 3100 --strictPort",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+	},
+	"dependencies": {
+		"class-variance-authority": "latest",
+		"clsx": "latest",
+		"lucide-svelte": "latest",
+		"svelte": "latest",
+		"tailwind-merge": "latest",
+		"zod": "latest"
+	},
+	"devDependencies": {
+		"@internationalized/date": "^3.12.0",
+		"@lucide/svelte": "^0.561.0",
+		"@sveltejs/adapter-static": "latest",
+		"@sveltejs/kit": "latest",
+		"@sveltejs/vite-plugin-svelte": "latest",
+		"@tailwindcss/vite": "latest",
+		"@tanstack/table-core": "^8.21.3",
+		"bits-ui": "^2.14.4",
+		"embla-carousel-svelte": "^8.6.0",
+		"formsnap": "^2.0.1",
+		"layerchart": "2.0.0-next.43",
+		"mode-watcher": "^1.1.0",
+		"paneforge": "^1.0.2",
+		"svelte-check": "latest",
+		"svelte-sonner": "^1.0.7",
+		"sveltekit-superforms": "^2.30.0",
+		"tailwind-variants": "^3.2.2",
+		"typescript": "latest",
+		"vaul-svelte": "1.0.0-next.7",
+		"vite": "latest"
+	}
+}

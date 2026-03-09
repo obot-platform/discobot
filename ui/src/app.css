@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+html,
+body {
+	overscroll-behavior: none;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+}
+
+:root {
+	--page-gradient: linear-gradient(180deg, #f7f8fa 0%, #eef1f5 100%);
+	--background: #f7f8fa;
+	--foreground: #1f2328;
+	--card: #ffffff;
+	--card-foreground: #1f2328;
+	--popover: #ffffff;
+	--popover-foreground: #1f2328;
+	--primary: #4f6bed;
+	--primary-foreground: #ffffff;
+	--secondary: #eef1f4;
+	--secondary-foreground: #1f2328;
+	--muted: #eef1f4;
+	--muted-foreground: #667085;
+	--accent: #e9edf3;
+	--accent-foreground: #1f2328;
+	--destructive: oklch(0.55 0.2 25);
+	--destructive-foreground: oklch(1 0 0);
+	--border: #d8dde6;
+	--input: #d8dde6;
+	--ring: #4f6bed;
+	--radius: 0.75rem;
+	--sidebar: #f0f3f6;
+	--sidebar-foreground: #1f2328;
+	--sidebar-primary: #4f6bed;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: #e9edf3;
+	--sidebar-accent-foreground: #1f2328;
+	--sidebar-border: #d8dde6;
+	--sidebar-ring: #4f6bed;
+	--tree-hover: #e9edf3;
+	--tree-selected: rgb(79 107 237 / 0.12);
+	--turn-border: #d8dde6;
+	--terminal-bg: #1f232b;
+	--terminal-fg: #c7d6cd;
+	--diff-add: rgb(47 125 50 / 0.14);
+	--diff-remove: rgb(214 85 40 / 0.14);
+	--diff-add-line: #2f7d32;
+	--diff-remove-line: #d65528;
+}
+
+.dark {
+	--page-gradient: linear-gradient(180deg, #1f232b 0%, #191c23 100%);
+	--background: #1f232b;
+	--foreground: #f5f7fb;
+	--card: #252a34;
+	--card-foreground: #f5f7fb;
+	--popover: #252a34;
+	--popover-foreground: #f5f7fb;
+	--primary: #4f6bed;
+	--primary-foreground: #ffffff;
+	--secondary: #2a303b;
+	--secondary-foreground: #f5f7fb;
+	--muted: #2a303b;
+	--muted-foreground: #9ba7ba;
+	--accent: #313846;
+	--accent-foreground: #f5f7fb;
+	--destructive: oklch(0.55 0.2 25);
+	--destructive-foreground: oklch(0.93 0 0);
+	--border: #343b48;
+	--input: #343b48;
+	--ring: #4f6bed;
+	--sidebar: #242933;
+	--sidebar-foreground: #f5f7fb;
+	--sidebar-primary: #4f6bed;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: #313846;
+	--sidebar-accent-foreground: #aeb8c7;
+	--sidebar-border: #343b48;
+	--sidebar-ring: #4f6bed;
+	--tree-hover: #313846;
+	--tree-selected: rgb(79 107 237 / 0.18);
+	--turn-border: #343b48;
+	--terminal-bg: #1a1d24;
+	--terminal-fg: #b8cbbf;
+	--diff-add: rgb(47 125 50 / 0.2);
+	--diff-remove: rgb(214 85 40 / 0.18);
+	--diff-add-line: #59a861;
+	--diff-remove-line: #e06b5d;
+}
+
+@theme inline {
+	--font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+	--font-mono:
+		"JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+	--color-tree-hover: var(--tree-hover);
+	--color-tree-selected: var(--tree-selected);
+	--color-turn-border: var(--turn-border);
+	--color-terminal-bg: var(--terminal-bg);
+	--color-terminal-fg: var(--terminal-fg);
+	--color-diff-add: var(--diff-add);
+	--color-diff-remove: var(--diff-remove);
+	--color-diff-add-line: var(--diff-add-line);
+	--color-diff-remove-line: var(--diff-remove-line);
+}
+
+@layer base {
+	* {
+		border-color: var(--border);
+	}
+
+	body {
+		background: var(--page-gradient);
+		background-attachment: fixed;
+		color: var(--foreground);
+		font-family: var(--font-sans);
+	}
+
+	button,
+	a {
+		color: inherit;
+	}
+}
