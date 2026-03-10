@@ -137,6 +137,40 @@ func TestBash_CwdPersistsAcrossCalls(t *testing.T) {
 	}
 }
 
+func TestBash_HeredocCommandOutput(t *testing.T) {
+	skipOnWindows(t)
+	e := New(t.TempDir(), t.TempDir(), t.Name())
+
+	out, ok := runBash(t, e, map[string]any{"command": "cat <<'EOF'\nfoo\nEOF"})
+	if !ok {
+		t.Fatalf("unexpected error: %s", out)
+	}
+	if !strings.Contains(out, "foo") {
+		t.Errorf("expected heredoc output in result, got: %s", out)
+	}
+}
+
+func TestBash_HeredocThenCwdPersistsAcrossCalls(t *testing.T) {
+	skipOnWindows(t)
+	e := New(t.TempDir(), t.TempDir(), t.Name())
+
+	out, ok := runBash(t, e, map[string]any{"command": "cat <<'EOF'\nhello\nEOF\ncd /tmp"})
+	if !ok {
+		t.Fatalf("unexpected error: %s", out)
+	}
+	if !strings.Contains(out, "hello") {
+		t.Errorf("expected heredoc output in result, got: %s", out)
+	}
+
+	out, ok = runBash(t, e, map[string]any{"command": "pwd"})
+	if !ok {
+		t.Fatalf("unexpected error: %s", out)
+	}
+	if !strings.Contains(out, "/tmp") {
+		t.Errorf("expected cwd '/tmp' after heredoc + cd, got: %s", out)
+	}
+}
+
 // TestBash_LogFileCreatedForeground verifies the log file is written to the expected path.
 func TestBash_LogFileCreatedForeground(t *testing.T) {
 	skipOnWindows(t)

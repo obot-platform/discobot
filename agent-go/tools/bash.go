@@ -77,7 +77,7 @@ func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext,
 
 	// Wrap command to capture the new working directory after execution.
 	const sentinel = "__DISCOBOT_PWD_SENTINEL__"
-	wrapped := fmt.Sprintf("%s; __exit=$?; echo '%s'; pwd; exit $__exit", command, sentinel)
+	wrapped := fmt.Sprintf("%s\n__exit=$?\nprintf '%%s\\n' '%s'\npwd\nexit $__exit", command, sentinel)
 
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", wrapped)
 	cmd.Dir = cwd
