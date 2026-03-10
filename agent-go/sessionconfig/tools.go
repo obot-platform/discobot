@@ -17,9 +17,9 @@ func BuiltinTools(modelName string) []providers.ToolDefinition {
 	currentMonth := now.Format("January")
 	currentYear := now.Year()
 
-	coAuthor := "Discobot <noreply@discobot.ai>"
+	coAuthor := "Discobot <discobot@users.noreply.github.com>"
 	if modelName != "" {
-		coAuthor = fmt.Sprintf("Discobot (%s) <noreply@discobot.ai>", modelName)
+		coAuthor = fmt.Sprintf("Discobot (%s) <discobot@users.noreply.github.com>", modelName)
 	}
 
 	return []providers.ToolDefinition{
