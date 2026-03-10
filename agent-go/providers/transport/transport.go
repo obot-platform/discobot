@@ -80,12 +80,27 @@ func WithRetryObserver(ctx context.Context, observer RetryObserver) context.Cont
 // --- Client constructor ---
 
 // NewClient returns an *http.Client that uses the logging+retry Transport.
-// Pass this instead of &http.Client{Timeout: t} in every provider.
+//
+// timeout is applied by the base http.Transport while waiting for response
+// headers, rather than via http.Client.Timeout. This keeps long-lived response
+// bodies (such as SSE streams) from being cancelled mid-read while still
+// allowing pre-response timeouts to be retried by the Transport.
 func NewClient(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout:   timeout,
-		Transport: &Transport{},
+		Transport: &Transport{Base: newBaseTransport(timeout)},
 	}
+}
+
+func newBaseTransport(timeout time.Duration) http.RoundTripper {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+	tr := base.Clone()
+	if timeout > 0 {
+		tr.ResponseHeaderTimeout = timeout
+	}
+	return tr
 }
 
 // --- Transport ---

@@ -156,8 +156,8 @@ func TestConvertMessages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(items) != 2 {
-			t.Fatalf("expected 2 items (message + function_call), got %d", len(items))
+		if len(items) != 3 {
+			t.Fatalf("expected 3 items (message + function_call + synthetic output), got %d", len(items))
 		}
 		// First: typed message.
 		var msgItem map[string]any
@@ -183,6 +183,19 @@ func TestConvertMessages(t *testing.T) {
 		if fcItem["arguments"] != `{"location":"Paris"}` {
 			t.Errorf("unexpected arguments: %q", fcItem["arguments"])
 		}
+
+		// Third: synthetic function_call_output for unresolved call.
+		var outItem map[string]any
+		json.Unmarshal(items[2], &outItem)
+		if outItem["type"] != "function_call_output" {
+			t.Errorf("expected type 'function_call_output', got %q", outItem["type"])
+		}
+		if outItem["call_id"] != "call_123" {
+			t.Errorf("expected call_id 'call_123', got %q", outItem["call_id"])
+		}
+		if outItem["output"] != missingToolOutputText {
+			t.Errorf("expected output %q, got %q", missingToolOutputText, outItem["output"])
+		}
 	})
 
 	t.Run("assistant message with only tool calls omits message item", func(t *testing.T) {
@@ -199,13 +212,59 @@ func TestConvertMessages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(items) != 1 {
-			t.Fatalf("expected 1 item (function_call only), got %d", len(items))
+		if len(items) != 2 {
+			t.Fatalf("expected 2 items (function_call + synthetic output), got %d", len(items))
 		}
 		var item map[string]any
 		json.Unmarshal(items[0], &item)
 		if item["type"] != "function_call" {
 			t.Errorf("expected type 'function_call', got %q", item["type"])
+		}
+		var outItem map[string]any
+		json.Unmarshal(items[1], &outItem)
+		if outItem["type"] != "function_call_output" {
+			t.Errorf("expected type 'function_call_output', got %q", outItem["type"])
+		}
+		if outItem["call_id"] != "call_1" {
+			t.Errorf("expected call_id 'call_1', got %q", outItem["call_id"])
+		}
+		if outItem["output"] != missingToolOutputText {
+			t.Errorf("expected output %q, got %q", missingToolOutputText, outItem["output"])
+		}
+	})
+
+	t.Run("assistant message with provider-executed inline tool result", func(t *testing.T) {
+		msgs := []message.Message{
+			{Role: "assistant", Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "call_inline", ToolName: "code_interpreter", Input: `{"code":"1+1"}`},
+				message.ToolResultPart{ToolCallID: "call_inline", ToolName: "code_interpreter", Output: message.TextOutput{Value: "2"}},
+				message.TextPart{Text: "Done."},
+			}},
+		}
+		items, err := convertMessages(msgs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 3 {
+			t.Fatalf("expected 3 items (message + function_call + function_call_output), got %d", len(items))
+		}
+
+		var fc map[string]any
+		json.Unmarshal(items[1], &fc)
+		if fc["type"] != "function_call" {
+			t.Errorf("expected type 'function_call', got %q", fc["type"])
+		}
+
+		var out map[string]any
+		json.Unmarshal(items[2], &out)
+		if out["type"] != "function_call_output" {
+			t.Errorf("expected type 'function_call_output', got %q", out["type"])
+		}
+		if out["call_id"] != "call_inline" {
+			t.Errorf("expected call_id 'call_inline', got %q", out["call_id"])
+		}
+		if out["output"] != "2" {
+			t.Errorf("expected output '2', got %q", out["output"])
 		}
 	})
 
@@ -329,8 +388,8 @@ func TestConvertMessages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(items) != 2 {
-			t.Fatalf("expected 2 items (reasoning + function_call), got %d", len(items))
+		if len(items) != 3 {
+			t.Fatalf("expected 3 items (reasoning + function_call + synthetic output), got %d", len(items))
 		}
 
 		var rsItem map[string]any
@@ -346,6 +405,12 @@ func TestConvertMessages(t *testing.T) {
 		json.Unmarshal(items[1], &fcItem)
 		if fcItem["type"] != "function_call" {
 			t.Errorf("expected second item to be function_call, got %q", fcItem["type"])
+		}
+
+		var outItem map[string]any
+		json.Unmarshal(items[2], &outItem)
+		if outItem["type"] != "function_call_output" {
+			t.Errorf("expected third item to be function_call_output, got %q", outItem["type"])
 		}
 	})
 
@@ -750,6 +815,9 @@ func TestComplete(t *testing.T) {
 			}
 			if body["store"] != false {
 				t.Errorf("expected store false, got %v", body["store"])
+			}
+			if body["truncation"] != "disabled" {
+				t.Errorf("expected truncation disabled, got %v", body["truncation"])
 			}
 
 			w.Header().Set("Content-Type", "text/event-stream")

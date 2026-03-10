@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	providerID     = "openai"
-	defaultBaseURL = "https://api.openai.com/v1"
+	providerID            = "openai"
+	defaultBaseURL        = "https://api.openai.com/v1"
+	missingToolOutputText = "interrupted by transient system failure"
 )
 
 func init() {
@@ -63,10 +64,11 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 		}
 
 		body := map[string]any{
-			"model":  req.Model.ModelID,
-			"input":  inputItems,
-			"stream": true,
-			"store":  false,
+			"model":      req.Model.ModelID,
+			"input":      inputItems,
+			"stream":     true,
+			"store":      false,
+			"truncation": "disabled",
 		}
 		if tools := convertTools(req.Tools); len(tools) > 0 {
 			body["tools"] = tools
@@ -239,7 +241,64 @@ func convertMessages(msgs []message.Message) ([]json.RawMessage, error) {
 		}
 		items = append(items, converted...)
 	}
-	return items, nil
+	return ensureFunctionCallOutputs(items), nil
+}
+
+// ensureFunctionCallOutputs appends synthetic function_call_output items for
+// any function_call items that are still unresolved at the end of the input.
+//
+// OpenAI Responses rejects requests when a function_call has no matching
+// function_call_output. This guard keeps crashed/interrupted histories usable by
+// synthesizing a deterministic error output for unresolved calls.
+func ensureFunctionCallOutputs(items []json.RawMessage) []json.RawMessage {
+	type itemHeader struct {
+		Type   string `json:"type"`
+		CallID string `json:"call_id"`
+	}
+
+	pendingOrder := make([]string, 0)
+	pending := make(map[string]struct{})
+
+	for _, item := range items {
+		var header itemHeader
+		if err := json.Unmarshal(item, &header); err != nil {
+			continue
+		}
+		switch header.Type {
+		case "function_call":
+			if header.CallID == "" {
+				continue
+			}
+			if _, exists := pending[header.CallID]; !exists {
+				pendingOrder = append(pendingOrder, header.CallID)
+			}
+			pending[header.CallID] = struct{}{}
+		case "function_call_output":
+			delete(pending, header.CallID)
+		}
+	}
+
+	if len(pending) == 0 {
+		return items
+	}
+
+	result := make([]json.RawMessage, 0, len(items)+len(pending))
+	result = append(result, items...)
+	for _, callID := range pendingOrder {
+		if _, ok := pending[callID]; !ok {
+			continue
+		}
+		data, err := json.Marshal(map[string]any{
+			"type":    "function_call_output",
+			"call_id": callID,
+			"output":  missingToolOutputText,
+		})
+		if err != nil {
+			continue
+		}
+		result = append(result, data)
+	}
+	return result
 }
 
 func convertMessage(msg message.Message) ([]json.RawMessage, error) {
@@ -293,12 +352,13 @@ func convertUserMessage(msg message.Message) ([]json.RawMessage, error) {
 }
 
 // convertAssistantMessage splits an assistant message into reasoning items,
-// a typed "message" item (for text), and separate "function_call" items
-// (for tool calls). Items are ordered: reasoning → message → function_calls,
-// matching the output order from the Responses API.
+// a typed "message" item (for text), and separate tool items
+// (function_call/function_call_output). Items are ordered:
+// reasoning → message → function_calls → function_call_outputs.
 func convertAssistantMessage(msg message.Message) ([]json.RawMessage, error) {
 	var reasoningItems []json.RawMessage
 	var functionCallItems []json.RawMessage
+	var functionCallOutputItems []json.RawMessage
 	var textParts []map[string]any
 	var messageItemID string // ID of the parent message output item
 
@@ -333,10 +393,20 @@ func convertAssistantMessage(msg message.Message) ([]json.RawMessage, error) {
 				return nil, fmt.Errorf("marshal function_call: %w", err)
 			}
 			functionCallItems = append(functionCallItems, data)
+		case message.ToolResultPart:
+			data, err := json.Marshal(map[string]any{
+				"type":    "function_call_output",
+				"call_id": p.ToolCallID,
+				"output":  toolResultToString(p.Output),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("marshal function_call_output: %w", err)
+			}
+			functionCallOutputItems = append(functionCallOutputItems, data)
 		}
 	}
 
-	// Order: reasoning → text message → function calls.
+	// Order: reasoning → text message → function calls → function call outputs.
 	var items []json.RawMessage
 	items = append(items, reasoningItems...)
 	if len(textParts) > 0 {
@@ -355,6 +425,7 @@ func convertAssistantMessage(msg message.Message) ([]json.RawMessage, error) {
 		items = append(items, data)
 	}
 	items = append(items, functionCallItems...)
+	items = append(items, functionCallOutputItems...)
 
 	return items, nil
 }
