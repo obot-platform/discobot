@@ -22,16 +22,22 @@
 		api: undefined,
 		scrollPrev,
 		scrollNext,
-		orientation,
+		orientation: "horizontal",
 		canScrollNext: false,
 		canScrollPrev: false,
 		handleKeyDown,
-		options: opts,
-		plugins,
+		options: {},
+		plugins: [],
 		onInit,
 		scrollSnaps: [],
 		selectedIndex: 0,
 		scrollTo,
+	});
+
+	$effect(() => {
+		carouselState.orientation = orientation;
+		carouselState.options = opts;
+		carouselState.plugins = plugins;
 	});
 
 	setEmblaContext(carouselState);

@@ -1,3 +1,6 @@
+export * from "./components/ai";
+export * from "./context/app-context.svelte";
+export * from "./context/session-context.svelte";
 export * from "./environment";
 export * from "./stores/app-shell.svelte";
 export * from "./theme";

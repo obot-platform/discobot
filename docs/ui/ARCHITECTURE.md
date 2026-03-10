@@ -8,7 +8,13 @@ The repository now also contains an **isolated Svelte 5 redesign workspace** und
 
 - `ui/` is currently a standalone SvelteKit SPA scaffold for the upcoming UI rewrite.
 - `/` is now the redesign home/shell wireframe, while `/gallery` is the component exploration route.
-- The Svelte shell layout is decomposed into product components under `ui/src/lib/components/ide/`.
+- The Svelte shell now uses layered context state (`AppContext` → `SessionContext`) where AppContext owns user-accessible sessions and SessionContext owns active sandbox + thread-aware panel/chat state.
+- The shell chrome (header + toolbar + sidebar) now uses a shared Discobot brand component and shadcn Svelte controls for consistent sizing/interaction styles.
+- The redesign conversation pane now renders session-scoped conversation fixtures (`SessionData.conversation`) instead of hardcoded transcript text, so thread/session state changes are reflected in the timeline.
+- Markdown-rich AI message and reasoning rendering in the Svelte redesign uses a focused React-island wrapper around `streamdown` for parity while the rest of the surface remains Svelte-native.
+- Streamdown link safety in that island uses Tauri-aware URL opening behavior (`@tauri-apps/plugin-opener` in desktop mode, browser-safe fallback otherwise).
+- The Svelte AI component barrel now includes parity ports for `agent`, `code-block`, `inline-citation`, `sandbox`, `file-tree`, `prompt-input`, `speech-input`, `audio-player`, `canvas`, `edge`, `image-attachment`, and `link-safety-modal`.
+- `AskUserQuestion` tool rendering now includes an interactive wizard flow in Svelte with step navigation, multi-select/other answers, and question fetch/submit endpoints when session context is available.
 - The existing root React app remains the active production frontend and the one wired to `src-tauri/`.
 - Use `pnpm ui:dev`, `pnpm ui:dev:backend`, `pnpm ui:build`, and `pnpm ui:typecheck` when working on the redesign workspace.
 - `.discobot/services/ui-svelte.sh` exposes the redesign as a Discobot preview service on port `3100` while starting the backend and agent watcher alongside it.

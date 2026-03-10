@@ -1,0 +1,812 @@
+// API Types - shared between client and server
+
+import type {
+	CommitStatus as CommitStatusConstants,
+	SessionStatus as SessionStatusConstants,
+	WorkspaceStatus as WorkspaceStatusConstants,
+} from "./api-constants";
+
+/** User preference key-value pair */
+export interface UserPreference {
+	key: string;
+	value: string;
+	updatedAt?: string;
+}
+
+/** File status in diff */
+export type FileStatus = "added" | "modified" | "deleted" | "renamed";
+
+/** Theme color scheme for customization */
+export type ThemeColorScheme =
+	| "default"
+	| "nord"
+	| "tokyo-night"
+	| "solarized"
+	| "dracula"
+	| "alucard"
+	| "catppuccin-mocha"
+	| "catppuccin-macchiato"
+	| "catppuccin-frappe"
+	| "catppuccin-latte";
+
+export interface FileNode {
+	id: string;
+	name: string;
+	type: "file" | "folder";
+	children?: FileNode[];
+	content?: string;
+	originalContent?: string;
+	changed?: boolean;
+	/** File status: added, modified, deleted, or renamed */
+	status?: FileStatus;
+}
+
+// Session status values representing the lifecycle of a session
+export type SessionStatus =
+	(typeof SessionStatusConstants)[keyof typeof SessionStatusConstants];
+
+// Commit status values representing the commit state of a session (orthogonal to session status)
+export type CommitStatus =
+	(typeof CommitStatusConstants)[keyof typeof CommitStatusConstants];
+
+// Commit operation values representing which operation owns the commit state
+export type CommitOperation = "commit" | "rebase";
+
+export interface Session {
+	id: string;
+	name: string;
+	/** Optional display name for the session (if not set, name is used) */
+	displayName?: string;
+	description: string;
+	timestamp: string;
+	status: SessionStatus;
+	/** Commit status (orthogonal to session status) */
+	commitStatus?: CommitStatus;
+	/** Active operation using commit status fields */
+	commitOperation?: CommitOperation;
+	/** Error message if commit status is "failed" */
+	commitError?: string;
+	/** Workspace commit SHA when commit started (expected parent) */
+	baseCommit?: string;
+	/** Final commit SHA after patches applied to workspace */
+	appliedCommit?: string;
+	/** Error message if status is "error" */
+	errorMessage?: string;
+	files: FileNode[];
+	workspaceId?: string;
+	agentId?: string;
+	model?: string;
+	reasoning?: string;
+	/** Permission mode: "plan" for planning mode, or empty/undefined for default (build mode) */
+	mode?: string;
+	/** IDs of the active env sets for this session (in order; later sets override earlier on key conflicts) */
+	activeEnvSetIds?: string[];
+}
+
+// Workspace status values representing the lifecycle of a workspace
+export type WorkspaceStatus =
+	(typeof WorkspaceStatusConstants)[keyof typeof WorkspaceStatusConstants];
+
+export interface ProviderStatus {
+	available: boolean;
+	state: "ready" | "downloading" | "failed" | "not_available";
+	message?: string;
+	details?: unknown;
+}
+
+export interface ProvidersResponse {
+	providers: Record<string, ProviderStatus>;
+	default: string;
+}
+
+export interface Workspace {
+	id: string;
+	path: string;
+	/** Optional display name for the workspace (if not set, path is used) */
+	displayName?: string;
+	sourceType: "local" | "git";
+	/** Sandbox provider (empty string = use platform default) */
+	provider?: string;
+	status: WorkspaceStatus;
+	/** Error message if status is "error" */
+	errorMessage?: string;
+	/** Current commit SHA (if git workspace) */
+	commit?: string;
+	/** Working directory path on disk (if initialized) */
+	workDir?: string;
+}
+
+export interface Agent {
+	id: string;
+	agentType: string; // references SupportedAgentType.id
+	isDefault?: boolean;
+}
+
+export interface Badge {
+	label: string;
+	className: string;
+}
+
+export type ProviderCategory = "llm" | "vcs";
+
+export interface AuthProvider {
+	id: string;
+	name: string;
+	description?: string;
+	icons?: Icon[];
+	env?: string[]; // Environment variable names for API keys
+	category: ProviderCategory;
+}
+
+export interface SupportedAgentType {
+	id: string;
+	name: string;
+	description: string;
+	icons?: Icon[];
+	badges?: Badge[];
+	/** Whether this agent should be highlighted/featured in the UI */
+	highlighted?: boolean;
+	modes?: AgentMode[];
+	models?: AgentModel[];
+	/** Auth provider IDs this agent supports. Use ["*"] for all providers */
+	supportedAuthProviders?: string[];
+	/** Auth providers to highlight/feature when selecting this agent */
+	highlightedAuthProviders?: string[];
+	/** Whether this agent can work without authentication */
+	allowNoAuth?: boolean;
+}
+
+export interface AgentMode {
+	id: string;
+	name: string;
+	description?: string;
+}
+
+export interface AgentModel {
+	id: string;
+	name: string;
+	provider?: string;
+	description?: string;
+	/** Whether this model supports extended thinking/reasoning */
+	reasoning?: boolean;
+}
+
+export interface ModelsResponse {
+	models: AgentModel[];
+}
+
+// ChatMessage is re-exported from AI SDK for convenience
+// The actual type is UIMessage from 'ai' package
+export type { UIMessage as ChatMessage } from "ai";
+
+export interface Suggestion {
+	value: string;
+	type: "path" | "repo";
+	valid: boolean; // true if directory contains .git, false otherwise
+}
+
+// API Request/Response types
+export interface CreateWorkspaceRequest {
+	path: string;
+	displayName?: string;
+	sourceType: "local" | "git";
+	provider?: string;
+}
+
+export interface CreateSessionRequest {
+	name: string;
+	agentId: string;
+	/** Initial message to start the chat session with */
+	initialMessage?: string;
+}
+
+export interface UpdateSessionRequest {
+	name?: string;
+	displayName?: string | null;
+	status?: SessionStatus;
+}
+
+export interface CreateAgentRequest {
+	agentType: string;
+}
+
+export interface TerminalExecuteRequest {
+	command: string;
+	sessionId?: string;
+}
+
+export interface TerminalExecuteResponse {
+	output: string;
+	exitCode: number;
+}
+
+export interface TerminalMessage {
+	type: "input" | "output" | "resize";
+	data?: string;
+	cols?: number;
+	rows?: number;
+}
+
+export interface Icon {
+	/**
+	 * A standard URI pointing to an icon resource. May be an HTTP/HTTPS URL or a
+	 * `data:` URI with Base64-encoded image data.
+	 */
+	src: string;
+	/**
+	 * Optional MIME type override if the source MIME type is missing or generic.
+	 */
+	mimeType?: string;
+	/**
+	 * Optional array of strings that specify sizes at which the icon can be used.
+	 * Each string should be in WxH format (e.g., "48x48", "96x96") or "any" for scalable formats like SVG.
+	 */
+	sizes?: string[];
+	/**
+	 * Optional specifier for the theme this icon is designed for.
+	 */
+	theme?: "light" | "dark";
+	/**
+	 * If true, invert colors for dark mode (for black-on-white icons).
+	 */
+	invertDark?: boolean;
+}
+
+export interface Icons {
+	/**
+	 * Optional set of sized icons that the client can display in a user interface.
+	 */
+	icons?: Icon[];
+}
+
+export type CredentialAuthType = "api_key" | "oauth";
+
+export interface OAuthData {
+	access?: string;
+	refresh?: string;
+	expires?: number;
+}
+
+export interface Credential {
+	id: string;
+	name: string;
+	provider: string;
+	authType: CredentialAuthType;
+	/** API key for api_key auth type (stored server-side, not returned to client) */
+	apiKey?: string;
+	/** OAuth tokens for oauth auth type (stored server-side, not returned to client) */
+	oauthData?: OAuthData;
+	/** Whether the credential is configured */
+	isConfigured: boolean;
+	/** When the credential was last updated */
+	updatedAt?: string;
+}
+
+/** Client-safe credential (no secrets) */
+export interface CredentialInfo {
+	id: string;
+	name: string;
+	provider: string;
+	authType: CredentialAuthType;
+	isConfigured: boolean;
+	expiresAt?: string; // For OAuth credentials
+	updatedAt?: string;
+}
+
+export interface CreateCredentialRequest {
+	provider: string;
+	authType: CredentialAuthType;
+	apiKey?: string;
+	oauthData?: OAuthData;
+}
+
+export interface OAuthExchangeRequest {
+	code: string;
+	verifier: string;
+}
+
+export interface OAuthExchangeResponse {
+	success: boolean;
+	error?: string;
+}
+
+export interface OAuthAuthorizeResponse {
+	url: string;
+	verifier: string;
+}
+
+export interface OAuthRefreshResponse {
+	success: boolean;
+	expiresAt?: string;
+	expiresIn?: number;
+}
+
+// ============================================================================
+// Env Set Types
+// ============================================================================
+
+/** Env set metadata (no secrets) — returned by list endpoint */
+export interface EnvSetInfo {
+	id: string;
+	projectId: string;
+	name: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** Env set with decrypted env vars — returned by get/create/update endpoints */
+export interface EnvSetWithVars extends EnvSetInfo {
+	envVars: Record<string, string>;
+}
+
+// GitHub Copilot OAuth types
+export interface GitHubCopilotDeviceCodeRequest {
+	deploymentType?: "github.com" | "enterprise";
+	enterpriseUrl?: string;
+}
+
+export interface GitHubCopilotDeviceCodeResponse {
+	verificationUri: string;
+	userCode: string;
+	deviceCode: string;
+	interval: number;
+	expiresIn: number;
+	domain: string;
+}
+
+export interface GitHubCopilotPollRequest {
+	deviceCode: string;
+	domain: string;
+}
+
+export interface GitHubCopilotPollResponse {
+	status: "pending" | "success" | "error";
+	error?: string;
+}
+
+// GitHub OAuth types (git operations: repo scope, device flow)
+export interface GitHubDeviceCodeRequest {
+	enterpriseUrl?: string;
+}
+
+export interface GitHubDeviceCodeResponse {
+	verificationUri: string;
+	userCode: string;
+	deviceCode: string;
+	interval: number;
+	expiresIn: number;
+	domain: string;
+}
+
+export interface GitHubPollRequest {
+	deviceCode: string;
+	domain: string;
+}
+
+export interface GitHubPollResponse {
+	status: "pending" | "success" | "error";
+	error?: string;
+}
+
+// Codex (ChatGPT) OAuth types
+export interface CodexAuthorizeResponse {
+	url: string;
+	verifier: string;
+	state: string;
+}
+
+export interface CodexExchangeRequest {
+	code: string;
+	verifier: string;
+}
+
+export interface CodexExchangeResponse {
+	success: boolean;
+	error?: string;
+	accountId?: string;
+}
+
+// System Status types
+export type StatusMessageLevel = "warn" | "error";
+
+export interface StatusMessage {
+	id: string;
+	level: StatusMessageLevel;
+	title: string;
+	message: string;
+}
+
+export interface ServerConfig {
+	ssh_port: number;
+}
+
+export interface SystemStatusResponse {
+	ok: boolean;
+	messages: StatusMessage[];
+	startupTasks?: StartupTask[];
+}
+
+// Startup Task types
+export type StartupTaskState =
+	| "pending"
+	| "in_progress"
+	| "completed"
+	| "failed";
+
+export interface StartupTask {
+	id: string;
+	name: string;
+	state: StartupTaskState;
+	/** Progress percentage (0-100) */
+	progress?: number;
+	/** Current operation description */
+	currentOperation?: string;
+	/** Bytes downloaded (for download tasks) */
+	bytesDownloaded?: number;
+	/** Total bytes (for download tasks) */
+	totalBytes?: number;
+	/** Error message if state is "failed" */
+	error?: string;
+	/** When the task started */
+	startedAt?: string;
+	/** When the task completed or failed */
+	completedAt?: string;
+}
+
+/** Runtime information for debug/support */
+export interface RuntimeInfo {
+	os: string;
+	arch: string;
+	go_version: string;
+	num_cpu: number;
+	num_goroutine: number;
+}
+
+/** Disk usage information */
+export interface DiskUsageInfo {
+	total_bytes: number;
+	used_bytes: number;
+	available_bytes: number;
+	used_percent: number;
+}
+
+/** Size information for a sparse data disk file */
+export interface DataDiskFileInfo {
+	path: string;
+	apparent_bytes: number;
+	actual_bytes: number;
+}
+
+/** VZ-specific configuration and disk usage */
+export interface VZInfo {
+	image_ref: string;
+	data_dir: string;
+	cpu_count: number;
+	memory_mb: number;
+	data_disk_gb: number;
+	disk_usage?: DiskUsageInfo;
+	data_disks?: DataDiskFileInfo[];
+	kernel_path?: string;
+	initrd_path?: string;
+	base_disk_path?: string;
+}
+
+/** Configuration information for debug/support (sanitized, no secrets) */
+export interface ConfigInfo {
+	port: number;
+	database_driver: string;
+	auth_enabled: boolean;
+	workspace_dir: string;
+	sandbox_image: string;
+	tauri_mode: boolean;
+	ssh_enabled: boolean;
+	ssh_port: number;
+	dispatcher_enabled: boolean;
+	available_providers: string[];
+	vz?: VZInfo;
+}
+
+/** Support information response with diagnostic data */
+export interface SupportInfoResponse {
+	version: string;
+	runtime: RuntimeInfo;
+	config: ConfigInfo;
+	server_log: string;
+	log_path: string;
+	log_exists: boolean;
+	system_info: SystemStatusResponse;
+}
+
+/** Response from cancelling a chat completion */
+export interface CancelChatResponse {
+	success: boolean;
+	completionId: string;
+	status: "cancelled";
+}
+
+// ============================================================================
+// Session File System Types
+// ============================================================================
+
+/** File entry in a directory listing */
+export interface SessionFileEntry {
+	name: string;
+	type: "file" | "directory";
+	size?: number;
+}
+
+/** Response from listing session files */
+export interface ListSessionFilesResponse {
+	path: string;
+	entries: SessionFileEntry[];
+}
+
+/** Single result from a fuzzy file search */
+export interface SearchFileEntry {
+	path: string;
+	type: "file" | "directory";
+	score: number;
+}
+
+/** Response from searching session workspace files */
+export interface SearchSessionFilesResponse {
+	query: string;
+	results: SearchFileEntry[];
+}
+
+/** Response from reading a session file */
+export interface ReadSessionFileResponse {
+	path: string;
+	content: string;
+	encoding: "utf8" | "base64";
+	size: number;
+}
+
+/** Request to write a session file */
+export interface WriteSessionFileRequest {
+	path: string;
+	content: string;
+	encoding?: "utf8" | "base64";
+	/** Original content for optimistic locking - if provided, server validates before write */
+	originalContent?: string;
+}
+
+/** Response from writing a session file */
+export interface WriteSessionFileResponse {
+	path: string;
+	size: number;
+}
+
+/** Request to delete a session file or directory */
+export interface DeleteSessionFileRequest {
+	path: string;
+}
+
+/** Response from deleting a session file or directory */
+export interface DeleteSessionFileResponse {
+	path: string;
+	type: "file" | "directory";
+}
+
+/** Request to rename/move a session file or directory */
+export interface RenameSessionFileRequest {
+	oldPath: string;
+	newPath: string;
+}
+
+/** Response from renaming a session file or directory */
+export interface RenameSessionFileResponse {
+	oldPath: string;
+	newPath: string;
+}
+
+/** Error response when file content has changed (optimistic locking conflict) */
+export interface WriteSessionFileConflictError {
+	error: "conflict";
+	message: string;
+	/** Current content on the server */
+	currentContent: string;
+}
+
+/** Single file diff entry */
+export interface SessionFileDiffEntry {
+	path: string;
+	status: "added" | "modified" | "deleted" | "renamed";
+	oldPath?: string;
+	additions: number;
+	deletions: number;
+	binary: boolean;
+	patch?: string;
+}
+
+/** Diff statistics */
+export interface SessionDiffStats {
+	filesChanged: number;
+	additions: number;
+	deletions: number;
+}
+
+/** Full diff response */
+export interface SessionDiffResponse {
+	files: SessionFileDiffEntry[];
+	stats: SessionDiffStats;
+}
+
+/** File entry with status for diff response */
+export interface SessionDiffFileEntry {
+	path: string;
+	status: FileStatus;
+	oldPath?: string; // For renamed files
+}
+
+/** Files-only diff response (with status) */
+export interface SessionDiffFilesResponse {
+	files: SessionDiffFileEntry[];
+	stats: SessionDiffStats;
+}
+
+/** Single file diff response */
+export interface SessionSingleFileDiffResponse {
+	path: string;
+	status: "added" | "modified" | "deleted" | "renamed" | "unchanged";
+	oldPath?: string;
+	additions: number;
+	deletions: number;
+	binary: boolean;
+	patch: string;
+}
+
+// ============================================================================
+// Service Types
+// ============================================================================
+
+/** Service status representing the lifecycle of a service */
+export type ServiceStatus = "running" | "stopped" | "starting" | "stopping";
+
+/** Service represents a user-defined service in the sandbox */
+export interface Service {
+	/** Filename in .discobot/services/ */
+	id: string;
+	/** Display name (from config or id) */
+	name: string;
+	/** Description from config */
+	description?: string;
+	/** HTTP port if http service */
+	http?: number;
+	/** HTTPS port if https service */
+	https?: number;
+	/** Absolute path to service file */
+	path: string;
+	/** Default URL path for web preview (e.g., "/app") */
+	urlPath?: string;
+	/** Current status */
+	status: ServiceStatus;
+	/**
+	 * Whether this is a passive service (external HTTP endpoint).
+	 * Passive services are not started/stopped - they just declare an HTTP port.
+	 */
+	passive?: boolean;
+	/** Process ID if running */
+	pid?: number;
+	/** ISO timestamp when started */
+	startedAt?: string;
+	/** Exit code if stopped after running */
+	exitCode?: number;
+}
+
+/** Response from listing services */
+export interface ListServicesResponse {
+	services: Service[];
+}
+
+/** Response from starting a service */
+export interface StartServiceResponse {
+	status: "starting";
+	serviceId: string;
+}
+
+/** Response from stopping a service */
+export interface StopServiceResponse {
+	status: "stopped";
+	serviceId: string;
+}
+
+/** Service output event from SSE stream */
+export interface ServiceOutputEvent {
+	type: "stdout" | "stderr" | "exit" | "error";
+	data?: string;
+	exitCode?: number;
+	error?: string;
+	timestamp: string;
+}
+
+// ============================================================================
+// AskUserQuestion Types
+// ============================================================================
+
+/** A single choice option for a clarifying question */
+export interface AskUserQuestionOption {
+	label: string;
+	description: string;
+}
+
+/** A single clarifying question from Claude */
+export interface AskUserQuestion {
+	question: string;
+	header: string;
+	options: AskUserQuestionOption[];
+	multiSelect: boolean;
+	notes?: string;
+}
+
+/** A pending AskUserQuestion waiting for user answers */
+export interface PendingQuestion {
+	toolUseID: string;
+	questions: AskUserQuestion[];
+}
+
+/** Response from GET /chat/{sessionId}/question?toolUseID=xxx */
+export interface PendingQuestionResponse {
+	status: "pending" | "answered" | "expired";
+	question: PendingQuestion | null;
+}
+
+/** Request body for POST /chat/{sessionId}/answer */
+export interface AnswerQuestionRequest {
+	toolUseID: string;
+	answers: Record<string, string>;
+}
+
+/** Response from POST /chat/{sessionId}/answer */
+export interface AnswerQuestionResponse {
+	success: boolean;
+}
+
+// ============================================================================
+// Hook Types
+// ============================================================================
+
+/** Status of a single hook's runs */
+export interface HookRunStatus {
+	hookId: string;
+	hookName: string;
+	type: "session" | "file" | "pre-commit";
+	lastRunAt: string;
+	lastResult: "success" | "failure" | "running" | "pending";
+	lastExitCode: number;
+	outputPath: string;
+	runCount: number;
+	failCount: number;
+	consecutiveFailures: number;
+}
+
+/** Hook evaluation status for a session */
+export interface HooksStatusResponse {
+	hooks: Record<string, HookRunStatus>;
+	pendingHooks: string[];
+	lastEvaluatedAt: string;
+}
+
+/** Hook output log response */
+export interface HookOutputResponse {
+	output: string;
+}
+
+/** Hook rerun response */
+export interface HookRerunResponse {
+	success: boolean;
+	exitCode: number;
+}
+
+// ============================================================================
+// UI Types
+// ============================================================================
+
+/** Active view type in the session view - includes chat, terminal, services, file paths, and consolidated diff */
+export type ActiveView =
+	| "chat"
+	| "terminal"
+	| "desktop"
+	| "consolidated-diff"
+	| `service:${string}`
+	| `file:${string}`;

@@ -1,0 +1,234 @@
+<script lang="ts">
+	import CheckCircleIcon from "@lucide/svelte/icons/check-circle";
+	import ClockIcon from "@lucide/svelte/icons/clock";
+	import Loader2Icon from "@lucide/svelte/icons/loader-2";
+	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
+	import XCircleIcon from "@lucide/svelte/icons/x-circle";
+	import { Button } from "$lib/components/ui/button";
+	import * as Dialog from "$lib/components/ui/dialog";
+	import type { HooksStatus } from "$lib/shell-types";
+
+	type Props = {
+		expanded: boolean;
+		hooksStatus: HooksStatus;
+		outputById: Record<string, string>;
+		onRerunHook: (hookId: string) => void;
+	};
+
+	let { expanded, hooksStatus, outputById, onRerunHook }: Props = $props();
+
+	let hookDialogOpen = $state(false);
+	let selectedHookId = $state<string | null>(null);
+
+	function pendingHookSet() {
+		return new Set(hooksStatus.pendingHookIds);
+	}
+
+	function isHookPending(hookId: string) {
+		return pendingHookSet().has(hookId);
+	}
+
+	function hookPassedCount() {
+		return hooksStatus.hooks.filter(
+			(hook) => hook.lastResult === "success" && !isHookPending(hook.hookId),
+		).length;
+	}
+
+	function hookStatusTone(hook: HooksStatus["hooks"][number]) {
+		if (hook.lastResult === "running") {
+			return "text-blue-500";
+		}
+		if (isHookPending(hook.hookId)) {
+			return "text-muted-foreground";
+		}
+		if (hook.lastResult === "success") {
+			return "text-green-500";
+		}
+		if (hook.lastResult === "failure") {
+			return "text-red-500";
+		}
+		return "text-muted-foreground";
+	}
+
+	function hookStatusLabel(hook: HooksStatus["hooks"][number]) {
+		if (hook.lastResult === "running") {
+			return "Running";
+		}
+		if (isHookPending(hook.hookId)) {
+			return "Pending";
+		}
+		if (hook.lastResult === "success") {
+			return "Passed";
+		}
+		if (hook.lastResult === "failure") {
+			return "Failed";
+		}
+		return "Pending";
+	}
+
+	function canRerunHook(hook: HooksStatus["hooks"][number]) {
+		return (
+			(hook.lastResult === "failure" || isHookPending(hook.hookId)) &&
+			hook.lastResult !== "running"
+		);
+	}
+
+	function openHookDialog(hookId: string) {
+		selectedHookId = hookId;
+		hookDialogOpen = true;
+	}
+
+	const selectedHookData = $derived.by(() => {
+		if (!selectedHookId) {
+			return null;
+		}
+		return hooksStatus.hooks.find((hook) => hook.hookId === selectedHookId) ?? null;
+	});
+
+	function selectedHookOutput() {
+		if (!selectedHookId) {
+			return "";
+		}
+		return outputById[selectedHookId] ?? "No output available";
+	}
+
+	function formatRelativeTime(isoString?: string) {
+		if (!isoString) {
+			return "never";
+		}
+		const date = new Date(isoString);
+		const diffMs = Date.now() - date.getTime();
+		const diffSec = Math.floor(diffMs / 1000);
+		if (diffSec < 5) {
+			return "just now";
+		}
+		if (diffSec < 60) {
+			return `${diffSec}s ago`;
+		}
+		const diffMin = Math.floor(diffSec / 60);
+		if (diffMin < 60) {
+			return `${diffMin}m ago`;
+		}
+		const diffHour = Math.floor(diffMin / 60);
+		if (diffHour < 24) {
+			return `${diffHour}h ago`;
+		}
+		return date.toLocaleDateString();
+	}
+
+	$effect(() => {
+		if (!hookDialogOpen) {
+			selectedHookId = null;
+		}
+	});
+</script>
+
+{#if expanded && hooksStatus.hooks.length > 0}
+	<div class="mb-2 rounded-lg border border-border bg-background shadow-sm">
+		<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+			Hooks ({hookPassedCount()} passed)
+		</div>
+		<div class="max-h-48 overflow-auto p-1">
+			{#each hooksStatus.hooks as hook (hook.hookId)}
+				<div
+					class={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${hook.lastResult === "running" ? "bg-blue-500/10" : "hover:bg-muted/50"}`}
+					role="button"
+					tabindex={0}
+					onclick={() => openHookDialog(hook.hookId)}
+					onkeydown={(event) => {
+						if (event.key === "Enter" || event.key === " ") {
+							event.preventDefault();
+							openHookDialog(hook.hookId);
+						}
+					}}
+				>
+					{#if hook.lastResult === "running"}
+						<Loader2Icon class={`size-3 animate-spin ${hookStatusTone(hook)}`} />
+					{:else if isHookPending(hook.hookId)}
+						<ClockIcon class={`size-3 ${hookStatusTone(hook)}`} />
+					{:else if hook.lastResult === "failure"}
+						<XCircleIcon class={`size-3 ${hookStatusTone(hook)}`} />
+					{:else}
+						<CheckCircleIcon class={`size-3 ${hookStatusTone(hook)}`} />
+					{/if}
+					<div class="min-w-0 flex-1">
+						<div class="truncate text-foreground">{hook.hookName}</div>
+						<div class="truncate text-[11px] text-muted-foreground">
+							{hook.type} · {hookStatusLabel(hook)} · runs {hook.runCount}
+						</div>
+					</div>
+					{#if canRerunHook(hook)}
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							class="ms-auto"
+							onclick={(event) => {
+								event.stopPropagation();
+								onRerunHook(hook.hookId);
+							}}
+							title="Rerun hook"
+						>
+							<RotateCcwIcon class="size-3" />
+						</Button>
+					{/if}
+				</div>
+			{/each}
+		</div>
+	</div>
+{/if}
+
+<Dialog.Root bind:open={hookDialogOpen}>
+	{#if selectedHookData}
+		{@const hook = selectedHookData}
+		<Dialog.Content class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+			<Dialog.Header>
+				<Dialog.Title class="flex items-center gap-2">
+					{#if hook.lastResult === "running"}
+						<Loader2Icon class="size-4 animate-spin text-blue-500" />
+					{:else if isHookPending(hook.hookId)}
+						<ClockIcon class="size-4 text-muted-foreground" />
+					{:else if hook.lastResult === "failure"}
+						<XCircleIcon class="size-4 text-red-500" />
+					{:else}
+						<CheckCircleIcon class="size-4 text-green-500" />
+					{/if}
+					{hook.hookName}
+				</Dialog.Title>
+				<Dialog.Description>
+					{hook.type} hook · last run {formatRelativeTime(hook.lastRunAt)}
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="flex items-center gap-4 text-sm">
+				<span class="text-muted-foreground">Status: {hookStatusLabel(hook)}</span>
+				<span class="text-muted-foreground">Runs: {hook.runCount}</span>
+				{#if typeof hook.lastExitCode === "number"}
+					<span class="text-muted-foreground">Exit code: {hook.lastExitCode}</span>
+				{/if}
+				{#if hook.failCount > 0}
+					<span class="text-red-500/80">Failures: {hook.failCount}</span>
+				{/if}
+				{#if canRerunHook(hook)}
+					<Button
+						variant="outline"
+						size="xs"
+						class="ms-auto"
+						onclick={() => onRerunHook(hook.hookId)}
+					>
+						<RotateCcwIcon class="size-3" />
+						Rerun
+					</Button>
+				{/if}
+			</div>
+
+			<div class="mt-2 flex-1 min-h-0 overflow-hidden rounded-md border border-border bg-muted/30">
+				<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+					{hook.command ? `Command: ${hook.command}` : "Output"}
+				</div>
+				<div class="max-h-[50vh] overflow-auto">
+					<pre class="p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">{selectedHookOutput()}</pre>
+				</div>
+			</div>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>

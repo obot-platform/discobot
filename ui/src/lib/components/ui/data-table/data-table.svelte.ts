@@ -87,7 +87,6 @@ type Intersection<T extends readonly unknown[]> = (T extends [infer H, ...infer 
  *
  * Proxy-based to avoid known WebKit recursion issue.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function mergeObjects<Sources extends readonly MaybeThunk<any>[]>(
 	...sources: Sources
 ): Intersection<{ [K in keyof Sources]: Sources[K] }> {
@@ -133,7 +132,6 @@ export function mergeObjects<Sources extends readonly MaybeThunk<any>[]>(
 			return {
 				configurable: true,
 				enumerable: true,
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				value: (src as any)[key],
 				writable: true,
 			};
