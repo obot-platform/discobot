@@ -196,6 +196,43 @@ func forceCompact(
 	return performCompaction(ctx, provider, store, threadID, cfg, historyEntries, baseMessages, budget)
 }
 
+// ForceCompactThread forces compaction immediately for the specified thread leaf.
+// Returns true when compaction ran, or false when there is no real conversation
+// content to compact yet.
+func ForceCompactThread(
+	ctx context.Context,
+	provider providers.Provider,
+	store *Store,
+	threadID string,
+	leafID string,
+	cfg *TurnConfig,
+) (bool, error) {
+	if leafID == "" {
+		return false, nil
+	}
+
+	historyEntries, err := store.BuildHistoryWithIDs(threadID, leafID)
+	if err != nil {
+		return false, fmt.Errorf("build history: %w", err)
+	}
+
+	realMsgCount := 0
+	for _, e := range historyEntries {
+		if e.Message.Role != "system" && !isSystemReminder(e.Message) {
+			realMsgCount++
+		}
+	}
+	if realMsgCount == 0 {
+		return false, nil
+	}
+
+	if _, err := forceCompact(ctx, provider, store, threadID, cfg, historyEntries); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 // performCompaction summarizes a conversation and returns compacted history.
 //
 // baseMessages, when non-nil, is used as the input to summarisation instead of

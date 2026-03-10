@@ -9,7 +9,31 @@ import (
 	"testing"
 
 	"github.com/obot-platform/discobot/agent-go/internal/config"
+	"github.com/obot-platform/discobot/agent-go/thread"
 )
+
+func TestSelectInitialThreadID_ForceNewThread(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	cfg := &config.Config{SessionID: "explicit-session"}
+
+	threadID := selectInitialThreadID(store, cfg, true)
+	if threadID == cfg.SessionID {
+		t.Fatalf("expected force-new to ignore explicit session id, got %q", threadID)
+	}
+	if !strings.HasPrefix(threadID, "thread-") {
+		t.Fatalf("expected generated thread ID with prefix thread-, got %q", threadID)
+	}
+}
+
+func TestSelectInitialThreadID_UsesExplicitSessionIDByDefault(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	cfg := &config.Config{SessionID: "explicit-session"}
+
+	threadID := selectInitialThreadID(store, cfg, false)
+	if threadID != cfg.SessionID {
+		t.Fatalf("expected explicit session id %q, got %q", cfg.SessionID, threadID)
+	}
+}
 
 func TestAgentSlashCommands_LoadsSkillsAndCommands(t *testing.T) {
 	root := t.TempDir()
@@ -179,5 +203,29 @@ func TestNormalizePastedChunks_DropsAllInvalidChunks(t *testing.T) {
 	normalized := normalizePastedChunks(chunks, 4)
 	if len(normalized) != 0 {
 		t.Fatalf("expected no valid chunks, got %d", len(normalized))
+	}
+}
+
+func TestHistoryView_UsesMostRecentFirstOrder(t *testing.T) {
+	h := &cmdHistory{entries: []string{"first", "second", "third"}}
+	v := historyView{h: h}
+
+	if v.Len() != 3 {
+		t.Fatalf("expected len=3, got %d", v.Len())
+	}
+	if got := v.At(0); got != "third" {
+		t.Fatalf("expected most recent entry, got %q", got)
+	}
+	if got := v.At(2); got != "first" {
+		t.Fatalf("expected oldest entry at tail index, got %q", got)
+	}
+}
+
+func TestHistoryView_AddIsNoop(t *testing.T) {
+	h := &cmdHistory{entries: []string{"one"}}
+	v := historyView{h: h}
+	v.Add("two")
+	if len(h.entries) != 1 {
+		t.Fatalf("expected Add to be no-op, got %d entries", len(h.entries))
 	}
 }

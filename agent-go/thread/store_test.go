@@ -430,6 +430,38 @@ func TestDeleteTurnState_NoFile(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadConfig(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	cfg := Config{
+		Model:        "anthropic/claude-sonnet-4-6",
+		CWD:          "/tmp/project",
+		PlanMode:     true,
+		ActiveLeafID: "msg-active",
+	}
+
+	if err := store.SaveConfig("thread1", cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := store.LoadConfig("thread1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Model != cfg.Model {
+		t.Errorf("expected model=%q, got %q", cfg.Model, loaded.Model)
+	}
+	if loaded.CWD != cfg.CWD {
+		t.Errorf("expected cwd=%q, got %q", cfg.CWD, loaded.CWD)
+	}
+	if loaded.PlanMode != cfg.PlanMode {
+		t.Errorf("expected planMode=%v, got %v", cfg.PlanMode, loaded.PlanMode)
+	}
+	if loaded.ActiveLeafID != cfg.ActiveLeafID {
+		t.Errorf("expected activeLeafId=%q, got %q", cfg.ActiveLeafID, loaded.ActiveLeafID)
+	}
+}
+
 // --- Step Result Tests ---
 
 func TestSaveAndLoadStepResult(t *testing.T) {

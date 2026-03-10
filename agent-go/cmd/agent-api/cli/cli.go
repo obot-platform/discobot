@@ -106,6 +106,7 @@ type Flags struct {
 	model     *string
 	reasoning *bool
 	plan      *bool
+	newThread *bool
 	maxTurns  *int
 	subagent  *string
 }
@@ -114,10 +115,15 @@ type Flags struct {
 // returns a Flags whose fields are populated after flag.Parse() is called.
 // Must be called before flag.Parse().
 func AddFlags() *Flags {
+	newThread := new(bool)
+	flag.BoolVar(newThread, "new-thread", false, "Start a new thread on launch instead of resuming")
+	flag.BoolVar(newThread, "n", false, "Alias for --new-thread")
+
 	return &Flags{
 		model:     flag.String("model", "", "Model to use, e.g. anthropic/claude-opus-4-6 (overrides MODEL env var)"),
 		reasoning: flag.Bool("reasoning", true, "Enable extended thinking / reasoning (default on; use --reasoning=false to disable)"),
 		plan:      flag.Bool("plan", false, "Start in plan mode"),
+		newThread: newThread,
 		maxTurns:  flag.Int("max-turns", 0, "Maximum LLM calls per turn (0 = unlimited)"),
 		subagent:  flag.String("subagent", "", "Subagent config name from .claude/agents/*.md"),
 	}
@@ -131,8 +137,8 @@ func AddFlags() *Flags {
 // needed in terminal mode.
 func Run(cfg *config.Config, flags *Flags) {
 	// Enable bracketed paste mode for the session.
-	// readLine parses ESC[200~ ... ESC[201~ blocks and captures pasted content
-	// while printing a concise summary ([pasted x lines/y bytes]).
+	// The line readers use this to handle pasted blocks safely (including
+	// multiline content) and provide compact paste summaries.
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		fmt.Fprint(os.Stderr, "\033[?2004h")
 		defer fmt.Fprint(os.Stderr, "\033[?2004l") // restore on exit
@@ -240,7 +246,7 @@ func Run(cfg *config.Config, flags *Flags) {
 	}
 
 	// ── Startup recovery ──────────────────────────────────────────────────────
-	threadID := selectInitialThreadID(store, cfg)
+	threadID := selectInitialThreadID(store, cfg, *flags.newThread)
 
 	// Load persisted command history from .discobot/history (sibling of ThreadsDir).
 	hist := loadCmdHistory(filepath.Join(filepath.Dir(cfg.ThreadsDir), "history"))
@@ -300,7 +306,7 @@ func Run(cfg *config.Config, flags *Flags) {
 
 	for {
 		prompt := formatPrompt(model, planMode)
-		line, err := readLine(prompt, hist)
+		line, err := readLineWithOptions(prompt, hist, commandCompletionOptions(a, cfg.AgentCwd))
 		if err == io.EOF || err == errInterrupt {
 			break // Ctrl+D or Ctrl+C at idle prompt → exit
 		}
@@ -560,9 +566,9 @@ func handleSlashCommand(ctx context.Context, line string, a *agentimpl.DefaultAg
 // cliBuiltinCommands are slash commands handled directly by the CLI, not by the agent.
 var cliBuiltinCommands = []string{"resume", "clear", "plan", "models", "history", "multiline"}
 
-// availableCommandsList returns a sorted, slash-prefixed, comma-separated list
-// of all commands available to the user (CLI built-ins + agent commands).
-func availableCommandsList(a *agentimpl.DefaultAgent, cwd string) string {
+// availableCommands returns a sorted list of slash-prefixed command names
+// available to the user (CLI built-ins + agent commands).
+func availableCommands(a *agentimpl.DefaultAgent, cwd string) []string {
 	seen := make(map[string]struct{})
 	var names []string
 
@@ -590,7 +596,21 @@ func availableCommandsList(a *agentimpl.DefaultAgent, cwd string) string {
 	}
 
 	sort.Strings(names)
-	return strings.Join(names, ", ")
+	return names
+}
+
+// availableCommandsList returns a sorted, slash-prefixed, comma-separated list
+// of all commands available to the user (CLI built-ins + agent commands).
+func availableCommandsList(a *agentimpl.DefaultAgent, cwd string) string {
+	return strings.Join(availableCommands(a, cwd), ", ")
+}
+
+func commandCompletionOptions(a *agentimpl.DefaultAgent, cwd string) *readLineOptions {
+	cmds := availableCommands(a, cwd)
+	if len(cmds) == 0 {
+		return nil
+	}
+	return &readLineOptions{slashCommands: cmds}
 }
 
 func isAgentSlashCommand(a *agentimpl.DefaultAgent, cwd, cmd string) bool {
@@ -790,7 +810,11 @@ func startupCommandHints(store *thread.Store, cfg *config.Config, threadID strin
 	return showResume, showHistory
 }
 
-func selectInitialThreadID(store *thread.Store, cfg *config.Config) string {
+func selectInitialThreadID(store *thread.Store, cfg *config.Config, forceNew bool) string {
+	if forceNew {
+		return "thread-" + agent.GenerateID()
+	}
+
 	// Respect explicit SESSION_ID so advanced workflows remain deterministic.
 	if cfg.SessionID != "" && cfg.SessionID != "default" {
 		return cfg.SessionID

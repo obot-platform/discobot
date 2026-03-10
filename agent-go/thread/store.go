@@ -511,6 +511,8 @@ type Config struct {
 	CWD string `json:"cwd,omitempty"`
 	// PlanMode tracks whether this thread is currently in plan mode.
 	PlanMode bool `json:"planMode,omitempty"`
+	// ActiveLeafID tracks the currently selected branch head for this thread.
+	ActiveLeafID string `json:"activeLeafId,omitempty"`
 }
 
 // threadConfigPath returns the path to the thread config file.
@@ -545,10 +547,11 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	}
 	// Use a raw struct for migration: old format had separate providerId + bare model.
 	var raw struct {
-		Model      string `json:"model"`
-		ProviderID string `json:"providerId"`
-		CWD        string `json:"cwd"`
-		PlanMode   bool   `json:"planMode"`
+		Model        string `json:"model"`
+		ProviderID   string `json:"providerId"`
+		CWD          string `json:"cwd"`
+		PlanMode     bool   `json:"planMode"`
+		ActiveLeafID string `json:"activeLeafId"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Config{}, fmt.Errorf("unmarshal thread config: %w", err)
@@ -558,7 +561,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	if model != "" && !strings.Contains(model, "/") && raw.ProviderID != "" {
 		model = raw.ProviderID + "/" + model
 	}
-	return Config{Model: model, CWD: raw.CWD, PlanMode: raw.PlanMode}, nil
+	return Config{Model: model, CWD: raw.CWD, PlanMode: raw.PlanMode, ActiveLeafID: raw.ActiveLeafID}, nil
 }
 
 // FindLeaf returns the leaf message ID for a thread — the message that is not

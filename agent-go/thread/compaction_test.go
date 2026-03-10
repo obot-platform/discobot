@@ -1356,3 +1356,86 @@ func TestRunTurn_EmergencyCompaction(t *testing.T) {
 		t.Error("expected emergency compaction record to be saved")
 	}
 }
+
+func TestForceCompactThread_CompactsImmediately(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-force-compact"
+
+	msgs := []StoredMessage{
+		{ID: "sys", Message: message.Message{Role: "system", Parts: []message.Part{message.TextPart{Text: "system"}}}},
+		{ID: "msg1", ParentID: "sys", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello"}}}},
+		{ID: "msg2", ParentID: "msg1", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "world"}}}},
+	}
+	for _, sm := range msgs {
+		if err := store.SaveMessage(threadID, sm); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	prov := &compactionMockProvider{
+		responses: [][]message.ProviderMessageChunk{
+			{
+				message.StreamStartChunk{},
+				message.TextStartChunk{ID: "s1"},
+				message.TextDeltaChunk{ID: "s1", Delta: "Forced summary."},
+				message.TextEndChunk{ID: "s1"},
+				message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+			},
+		},
+	}
+
+	compacted, err := ForceCompactThread(context.Background(), prov, store, threadID, "msg2", &TurnConfig{ProviderID: "mock", Model: "test-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !compacted {
+		t.Fatal("expected compaction to run")
+	}
+	if prov.callIndex != 1 {
+		t.Fatalf("expected 1 summary call, got %d", prov.callIndex)
+	}
+
+	record, err := store.LoadCompaction(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record == nil {
+		t.Fatal("expected compaction record")
+	}
+	if record.SummaryText != "Forced summary." {
+		t.Fatalf("expected summary to be persisted, got %q", record.SummaryText)
+	}
+}
+
+func TestForceCompactThread_NoConversationContent(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-empty"
+
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:      "sys",
+		Message: message.Message{Role: "system", Parts: []message.Part{message.TextPart{Text: "system"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	prov := &compactionMockProvider{}
+
+	compacted, err := ForceCompactThread(context.Background(), prov, store, threadID, "sys", &TurnConfig{ProviderID: "mock", Model: "test-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compacted {
+		t.Fatal("expected no compaction when there is no real conversation content")
+	}
+	if prov.callIndex != 0 {
+		t.Fatalf("expected no summary calls, got %d", prov.callIndex)
+	}
+
+	record, err := store.LoadCompaction(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record != nil {
+		t.Fatal("expected no compaction record")
+	}
+}

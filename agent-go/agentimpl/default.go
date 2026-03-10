@@ -114,7 +114,8 @@ func (a *DefaultAgent) Close() {
 //
 // If the user message is exactly "/clear", the thread is marked to start a fresh
 // branch on the next Prompt call and a confirmation is streamed back without
-// contacting the LLM.
+// contacting the LLM. If the user message is exactly "/compact", compaction is
+// forced immediately without running a normal LLM turn.
 func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	// Handle /clear internally: mark the thread for a fresh start next turn
 	// and return a confirmation without making any LLM call.
@@ -123,6 +124,10 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		return func(yield func(message.MessageChunk, error) bool) {
 			yield(message.TextDeltaChunk{Delta: "Thread cleared. Next message starts a fresh conversation (history preserved on disk)."}, nil)
 		}
+	}
+
+	if isCompactCommand(req.UserParts) {
+		return a.handleCompactCommand(ctx, threadID, req)
 	}
 
 	threadCfg, threadCfgErr := a.store.LoadConfig(threadID)
@@ -265,7 +270,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		if req.LeafID == "" && systemPrompt != "" {
 			var leaf string
 			if !startFresh {
-				leaf, _ = a.store.FindLeaf(threadID)
+				leaf, _ = a.resolveCurrentLeaf(threadID)
 			}
 			if leaf != "" {
 				// Thread already has messages — continue from the current leaf.
@@ -361,7 +366,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		// continue from where the conversation left off rather than starting fresh.
 		// Skip this when startFresh is set — the caller explicitly wants a new branch.
 		if req.LeafID == "" && !startFresh {
-			if leaf, err := a.store.FindLeaf(threadID); err == nil {
+			if leaf, err := a.resolveCurrentLeaf(threadID); err == nil {
 				req.LeafID = leaf
 			}
 		}
@@ -426,6 +431,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 					return
 				}
 			}
+			a.persistActiveLeaf(threadID)
 			return
 		}
 
@@ -470,9 +476,10 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			cwd = threadCfg.CWD
 		}
 		_ = a.store.SaveConfig(threadID, thread.Config{
-			Model:    cfg.ProviderID + "/" + cfg.Model,
-			CWD:      cwd,
-			PlanMode: planMode,
+			Model:        cfg.ProviderID + "/" + cfg.Model,
+			CWD:          cwd,
+			PlanMode:     planMode,
+			ActiveLeafID: req.LeafID,
 		})
 
 		// Start new turn.
@@ -481,6 +488,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 				return
 			}
 		}
+		a.persistActiveLeaf(threadID)
 	}
 }
 
@@ -591,6 +599,55 @@ func errorIter(err error) iter.Seq2[message.MessageChunk, error] {
 	}
 }
 
+func (a *DefaultAgent) handleCompactCommand(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	leafID, err := a.resolveCurrentLeaf(threadID)
+	if err != nil {
+		return errorIter(fmt.Errorf("resolve current leaf: %w", err))
+	}
+	if leafID == "" {
+		return func(yield func(message.MessageChunk, error) bool) {
+			yield(message.TextDeltaChunk{Delta: "Nothing to compact yet."}, nil)
+		}
+	}
+
+	threadCfg, err := a.store.LoadConfig(threadID)
+	if err != nil {
+		return errorIter(fmt.Errorf("load thread config: %w", err))
+	}
+
+	model := req.Model
+	if model == "" && threadCfg.Model != "" {
+		model = threadCfg.Model
+	}
+
+	ref, err := a.registry.ResolveModel(model, providers.ModelTaskChat)
+	if err != nil {
+		return errorIter(fmt.Errorf("resolve model for /compact: %w", err))
+	}
+
+	provider, err := a.registry.Get(ref.ProviderID)
+	if err != nil {
+		return errorIter(fmt.Errorf("resolve provider for /compact: %w", err))
+	}
+
+	turnCfg := &thread.TurnConfig{ProviderID: ref.ProviderID, Model: ref.ModelID}
+
+	return func(yield func(message.MessageChunk, error) bool) {
+		compacted, compactErr := thread.ForceCompactThread(ctx, provider, a.store, threadID, leafID, turnCfg)
+		if compactErr != nil {
+			yield(nil, fmt.Errorf("force compaction: %w", compactErr))
+			return
+		}
+
+		if compacted {
+			yield(message.TextDeltaChunk{Delta: "Conversation compacted."}, nil)
+			return
+		}
+
+		yield(message.TextDeltaChunk{Delta: "Nothing to compact yet."}, nil)
+	}
+}
+
 // Cancel cancels the active prompt for a thread.
 func (a *DefaultAgent) Cancel(threadID string) bool {
 	a.mu.Lock()
@@ -607,9 +664,9 @@ func (a *DefaultAgent) Cancel(threadID string) bool {
 func (a *DefaultAgent) Messages(threadID, leafID string) ([]json.RawMessage, error) {
 	if leafID == "" {
 		var err error
-		leafID, err = a.store.FindLeaf(threadID)
+		leafID, err = a.resolveCurrentLeaf(threadID)
 		if err != nil {
-			return nil, fmt.Errorf("find leaf: %w", err)
+			return nil, fmt.Errorf("resolve current leaf: %w", err)
 		}
 		if leafID == "" {
 			return nil, nil
@@ -634,9 +691,9 @@ func (a *DefaultAgent) FinalResponse(threadID string) (string, error) {
 		return "", nil
 	}
 
-	leafID, err := a.store.FindLeaf(threadID)
+	leafID, err := a.resolveCurrentLeaf(threadID)
 	if err != nil {
-		return "", fmt.Errorf("find leaf: %w", err)
+		return "", fmt.Errorf("resolve current leaf: %w", err)
 	}
 	if leafID == "" {
 		return "", nil
@@ -662,6 +719,46 @@ func (a *DefaultAgent) FinalResponse(threadID string) (string, error) {
 	return "", nil
 }
 
+func (a *DefaultAgent) resolveCurrentLeaf(threadID string) (string, error) {
+	state, err := a.store.LoadTurnState(threadID)
+	if err != nil {
+		return "", fmt.Errorf("load turn state: %w", err)
+	}
+	if state != nil && state.LeafMsgID != "" {
+		return state.LeafMsgID, nil
+	}
+
+	cfg, err := a.store.LoadConfig(threadID)
+	if err != nil {
+		return "", fmt.Errorf("load thread config: %w", err)
+	}
+	if cfg.ActiveLeafID != "" {
+		return cfg.ActiveLeafID, nil
+	}
+
+	leafID, err := a.store.FindLeaf(threadID)
+	if err != nil {
+		return "", fmt.Errorf("find leaf: %w", err)
+	}
+	return leafID, nil
+}
+
+func (a *DefaultAgent) persistActiveLeaf(threadID string) {
+	leafID, err := a.store.FindLeaf(threadID)
+	if err != nil || leafID == "" {
+		return
+	}
+	cfg, err := a.store.LoadConfig(threadID)
+	if err != nil {
+		return
+	}
+	if cfg.ActiveLeafID == leafID {
+		return
+	}
+	cfg.ActiveLeafID = leafID
+	_ = a.store.SaveConfig(threadID, cfg)
+}
+
 // ListModels returns available models from all registered providers.
 // Model IDs are prefixed with "providerId/".
 func (a *DefaultAgent) ListModels(ctx context.Context) ([]providers.ModelInfo, error) {
@@ -672,6 +769,7 @@ func (a *DefaultAgent) ListModels(ctx context.Context) ([]providers.ModelInfo, e
 // of any user-defined skills or legacy commands.
 var builtinCommands = []agent.Command{
 	{Name: "clear", Description: "Clear the current thread and start a fresh conversation (history is preserved on disk).", Kind: agent.CommandKindBuiltin},
+	{Name: "compact", Description: "Force conversation compaction immediately.", Kind: agent.CommandKindBuiltin},
 }
 
 // ListCommands returns all slash commands available to the user: user-defined
@@ -827,6 +925,15 @@ func isClearCommand(parts []message.Part) bool {
 	}
 	tp, ok := parts[0].(message.TextPart)
 	return ok && strings.TrimSpace(tp.Text) == "/clear"
+}
+
+// isCompactCommand reports whether the user parts contain exactly the /compact command.
+func isCompactCommand(parts []message.Part) bool {
+	if len(parts) != 1 {
+		return false
+	}
+	tp, ok := parts[0].(message.TextPart)
+	return ok && strings.TrimSpace(tp.Text) == "/compact"
 }
 
 // filterTools applies allowed/disallowed lists to a tool set.
