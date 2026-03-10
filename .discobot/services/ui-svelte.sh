@@ -1,7 +1,7 @@
 #!/bin/bash
 #---
 # name: Discobot Svelte UI
-# description: SvelteKit UI development server with Go backend
+# description: SvelteKit UI development server only
 # http: 3100
 # path: /
 #---
@@ -23,4 +23,4 @@ if ! grep -q "^SANDBOX_IMAGE=" "$ENV_FILE" 2>/dev/null; then
     printf '%s\n' "SANDBOX_IMAGE=ghcr.io/obot-platform/discobot:nonexistent" >> "$ENV_FILE"
 fi
 
-pnpm install && exec pnpm ui:dev:backend
+pnpm install && exec pnpm ui:dev
