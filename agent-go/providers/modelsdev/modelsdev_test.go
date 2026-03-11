@@ -29,6 +29,29 @@ func TestLookup(t *testing.T) {
 		}
 	})
 
+	t.Run("image modality support", func(t *testing.T) {
+		m := Lookup("openai", "gpt-4o")
+		if m == nil {
+			t.Fatal("expected gpt-4o to be found")
+		}
+		if !m.SupportsInputModality("image") {
+			t.Error("expected gpt-4o to support image input modality")
+		}
+		if m.SupportsInputModality("pdf") {
+			t.Log("gpt-4o supports pdf input in current models metadata")
+		}
+	})
+
+	t.Run("pdf modality support", func(t *testing.T) {
+		m := Lookup("anthropic", "claude-3-7-sonnet-20250219")
+		if m == nil {
+			t.Fatal("expected claude-3-7-sonnet-20250219 to be found")
+		}
+		if !m.SupportsInputModality("pdf") {
+			t.Error("expected claude-3-7-sonnet-20250219 to support pdf input modality")
+		}
+	})
+
 	t.Run("unknown model", func(t *testing.T) {
 		m := Lookup("openai", "nonexistent-model")
 		if m != nil {

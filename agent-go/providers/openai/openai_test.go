@@ -429,6 +429,67 @@ func TestConvertMessages(t *testing.T) {
 			t.Fatalf("expected 2 items, got %d", len(items))
 		}
 	})
+
+	t.Run("custom tool call uses custom_tool_call format", func(t *testing.T) {
+		msgs := []message.Message{
+			{Role: "assistant", Parts: []message.Part{
+				message.ToolCallPart{
+					ToolCallID: "call_custom_1",
+					ToolName:   "apply_patch",
+					Input:      "*** Begin Patch\n*** End Patch",
+				},
+			}},
+		}
+		items, err := convertMessagesWithCustomTools(msgs, map[string]struct{}{"apply_patch": {}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 2 {
+			t.Fatalf("expected 2 items (custom call + synthetic custom output), got %d", len(items))
+		}
+
+		var callItem map[string]any
+		json.Unmarshal(items[0], &callItem)
+		if callItem["type"] != "custom_tool_call" {
+			t.Fatalf("expected type custom_tool_call, got %v", callItem["type"])
+		}
+		if callItem["name"] != "apply_patch" {
+			t.Fatalf("expected name apply_patch, got %v", callItem["name"])
+		}
+		if callItem["input"] != "*** Begin Patch\n*** End Patch" {
+			t.Fatalf("unexpected custom input: %v", callItem["input"])
+		}
+
+		var outItem map[string]any
+		json.Unmarshal(items[1], &outItem)
+		if outItem["type"] != "custom_tool_call_output" {
+			t.Fatalf("expected type custom_tool_call_output, got %v", outItem["type"])
+		}
+	})
+
+	t.Run("custom tool result maps to custom_tool_call_output", func(t *testing.T) {
+		msgs := []message.Message{
+			{Role: "tool", Parts: []message.Part{
+				message.ToolResultPart{
+					ToolCallID: "call_custom_2",
+					ToolName:   "apply_patch",
+					Output:     message.TextOutput{Value: "ok"},
+				},
+			}},
+		}
+		items, err := convertMessagesWithCustomTools(msgs, map[string]struct{}{"apply_patch": {}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+		var item map[string]any
+		json.Unmarshal(items[0], &item)
+		if item["type"] != "custom_tool_call_output" {
+			t.Fatalf("expected custom_tool_call_output, got %v", item["type"])
+		}
+	})
 }
 
 func TestConvertTools(t *testing.T) {
@@ -466,6 +527,35 @@ func TestConvertTools(t *testing.T) {
 		}
 	})
 
+	t.Run("maps custom tool format", func(t *testing.T) {
+		tools := []providers.ToolDefinition{
+			{
+				Type:        "custom",
+				Name:        "apply_patch",
+				Description: "Raw patch tool",
+				Format: &providers.ToolFormat{
+					Type:       "grammar",
+					Syntax:     "lark",
+					Definition: "start: /[\\s\\S]+/",
+				},
+			},
+		}
+		result := convertTools(tools)
+		if got := result[0]["type"]; got != "custom" {
+			t.Fatalf("expected custom tool type, got %v", got)
+		}
+		if got := result[0]["name"]; got != "apply_patch" {
+			t.Fatalf("expected custom tool name, got %v", got)
+		}
+		format, ok := result[0]["format"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected custom format map, got %T", result[0]["format"])
+		}
+		if format["type"] != "grammar" || format["syntax"] != "lark" {
+			t.Fatalf("unexpected custom format: %#v", format)
+		}
+	})
+
 	t.Run("nil tools returns nil", func(t *testing.T) {
 		result := convertTools(nil)
 		if result != nil {
@@ -492,6 +582,13 @@ func TestToolResultToString(t *testing.T) {
 				message.ContentTextItem{Text: "line2"},
 			},
 		}, "line1\nline2"},
+		{"content output with media placeholders", message.ContentOutput{
+			Value: []message.ToolResultContentItem{
+				message.ContentTextItem{Text: "summary"},
+				message.ContentImageDataItem{Data: "aGVsbG8=", MediaType: "image/png"},
+				message.ContentFileDataItem{Data: "cGRm", MediaType: "application/pdf", Filename: "sample.pdf"},
+			},
+		}, "summary\n[image data omitted (image/png)]\n[file data omitted (application/pdf, filename=sample.pdf)]"},
 		{"nil output", nil, ""},
 	}
 	for _, tt := range tests {
@@ -502,6 +599,72 @@ func TestToolResultToString(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestToolResultToOpenAIOutput(t *testing.T) {
+	t.Run("non-content output remains string", func(t *testing.T) {
+		result := toolResultToOpenAIOutput(message.TextOutput{Value: "hello"})
+		text, ok := result.(string)
+		if !ok {
+			t.Fatalf("expected string output, got %T", result)
+		}
+		if text != "hello" {
+			t.Errorf("expected hello, got %q", text)
+		}
+	})
+
+	t.Run("text-only content output remains string", func(t *testing.T) {
+		result := toolResultToOpenAIOutput(message.ContentOutput{
+			Value: []message.ToolResultContentItem{
+				message.ContentTextItem{Text: "line1"},
+				message.ContentTextItem{Text: "line2"},
+			},
+		})
+		text, ok := result.(string)
+		if !ok {
+			t.Fatalf("expected string output, got %T", result)
+		}
+		if text != "line1\nline2" {
+			t.Errorf("expected joined text, got %q", text)
+		}
+	})
+
+	t.Run("mixed content output becomes content item array", func(t *testing.T) {
+		result := toolResultToOpenAIOutput(message.ContentOutput{
+			Value: []message.ToolResultContentItem{
+				message.ContentTextItem{Text: "summary"},
+				message.ContentImageDataItem{Data: "aGVsbG8=", MediaType: "image/png"},
+			},
+		})
+
+		items, ok := result.([]any)
+		if !ok {
+			t.Fatalf("expected []any output, got %T", result)
+		}
+		if len(items) != 2 {
+			t.Fatalf("expected 2 content items, got %d", len(items))
+		}
+
+		first, ok := items[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected map for first item, got %T", items[0])
+		}
+		if first["type"] != "input_text" {
+			t.Errorf("expected first type input_text, got %v", first["type"])
+		}
+
+		second, ok := items[1].(map[string]any)
+		if !ok {
+			t.Fatalf("expected map for second item, got %T", items[1])
+		}
+		if second["type"] != "input_image" {
+			t.Errorf("expected second type input_image, got %v", second["type"])
+		}
+		imageURL, _ := second["image_url"].(string)
+		if imageURL != "data:image/png;base64,aGVsbG8=" {
+			t.Errorf("unexpected image_url: %q", imageURL)
+		}
+	})
 }
 
 func TestParseSSEStream(t *testing.T) {
@@ -638,6 +801,38 @@ func TestParseSSEStream(t *testing.T) {
 		te := chunks[5].(message.ToolInputEndChunk)
 		if te.ToolCallID != "call_abc123" {
 			t.Errorf("expected end ToolCallID 'call_abc123', got %q", te.ToolCallID)
+		}
+	})
+
+	t.Run("custom tool call from output_item.done", func(t *testing.T) {
+		sse := buildSSE(
+			"response.created", `{"response":{"id":"resp_custom","model":"gpt-5"}}`,
+			"response.output_item.done", `{"item":{"id":"ct_1","type":"custom_tool_call","call_id":"call_patch_1","name":"apply_patch","input":"*** Begin Patch\n*** End Patch"}}`,
+			"response.completed", `{"response":{"status":"completed","output":[{"type":"custom_tool_call"}],"usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":0},"output_tokens":3,"output_tokens_details":{"reasoning_tokens":0}}}}`,
+		)
+
+		chunks := collectChunks(t, sse)
+		assertChunkTypes(t, chunks,
+			"stream-start",
+			"response-metadata",
+			"tool-call",
+			"finish",
+		)
+
+		call := chunks[2].(message.ToolCallChunk)
+		if call.ToolCallID != "call_patch_1" {
+			t.Fatalf("expected tool call id call_patch_1, got %q", call.ToolCallID)
+		}
+		if call.ToolName != "apply_patch" {
+			t.Fatalf("expected tool name apply_patch, got %q", call.ToolName)
+		}
+		if call.Input != "*** Begin Patch\n*** End Patch" {
+			t.Fatalf("unexpected custom tool input: %q", call.Input)
+		}
+
+		finish := chunks[3].(message.FinishChunk)
+		if finish.FinishReason.Unified != "tool-calls" {
+			t.Fatalf("expected finish reason tool-calls, got %q", finish.FinishReason.Unified)
 		}
 	})
 
@@ -916,6 +1111,61 @@ func TestComplete(t *testing.T) {
 			Temperature: &temp,
 		}
 
+		for _, err := range p.Complete(context.Background(), req) {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	t.Run("sends custom tools", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+
+			tools := body["tools"].([]any)
+			if len(tools) != 1 {
+				t.Fatalf("expected 1 tool, got %d", len(tools))
+			}
+			tool := tools[0].(map[string]any)
+			if tool["type"] != "custom" {
+				t.Fatalf("expected custom tool type, got %v", tool["type"])
+			}
+			if tool["name"] != "apply_patch" {
+				t.Fatalf("expected tool name apply_patch, got %v", tool["name"])
+			}
+			format, ok := tool["format"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected format object, got %T", tool["format"])
+			}
+			if format["type"] != "grammar" || format["syntax"] != "lark" {
+				t.Fatalf("unexpected custom format: %#v", format)
+			}
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, buildSSE(
+				"response.created", `{"response":{"id":"resp_custom","model":"gpt-5"}}`,
+				"response.completed", `{"response":{"status":"completed","output":[],"usage":{"input_tokens":1,"input_tokens_details":{"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0}}}}`,
+			))
+		}))
+		defer server.Close()
+
+		p := &Provider{apiKey: "k", baseURL: server.URL, client: server.Client()}
+		req := providers.CompleteRequest{
+			Model: providers.ModelRef{ProviderID: "openai", ModelID: "gpt-5"},
+			Messages: []message.Message{
+				{Role: "user", Parts: []message.Part{message.TextPart{Text: "x"}}},
+			},
+			Tools: []providers.ToolDefinition{{
+				Type: "custom",
+				Name: "apply_patch",
+				Format: &providers.ToolFormat{
+					Type:       "grammar",
+					Syntax:     "lark",
+					Definition: "start: /[\\s\\S]+/",
+				},
+			}},
+		}
 		for _, err := range p.Complete(context.Background(), req) {
 			if err != nil {
 				t.Fatal(err)
@@ -1228,6 +1478,7 @@ func assertChunkTypes(t *testing.T, chunks []message.ProviderMessageChunk, expec
 		"tool-input-start":  "message.ToolInputStartChunk",
 		"tool-input-delta":  "message.ToolInputDeltaChunk",
 		"tool-input-end":    "message.ToolInputEndChunk",
+		"tool-call":         "message.ToolCallChunk",
 		"reasoning-start":   "message.ReasoningStartChunk",
 		"reasoning-delta":   "message.ReasoningDeltaChunk",
 		"reasoning-end":     "message.ReasoningEndChunk",

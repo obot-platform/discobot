@@ -228,6 +228,8 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		return errorIter(fmt.Errorf("invalid model: %w", err))
 	}
 	providerID, modelID := ref.ProviderID, ref.ModelID
+	toolCtx.ProviderID = providerID
+	toolCtx.ModelID = modelID
 
 	// Resolve a human-readable model name for use in system reminders and
 	// commit co-author attribution. Falls back to the bare model ID.

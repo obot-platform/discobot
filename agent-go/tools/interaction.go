@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
@@ -94,7 +93,7 @@ func (e *Executor) executeEnterPlanMode(toolCtx *thread.ToolContext, call messag
 	if toolCtx != nil {
 		toolCtx.PlanMode = true
 	}
-	planFile := filepath.Join(e.dataDir, "plan", contextThreadID(toolCtx, e.defaultThreadID)+".md")
+	planFile := e.newPlanFilePath(toolCtx)
 	result := fmt.Sprintf(`Plan mode activated. Plan file: %s
 
 IMPORTANT: Do NOT output any text to the user right now. Make your next action a tool call (Glob, Grep, Read, etc.) to begin exploring the codebase. Do not narrate or announce your plans.
@@ -137,7 +136,7 @@ func (e *Executor) executeExitPlanMode(toolCtx *thread.ToolContext, call message
 	_ = json.Unmarshal([]byte(call.Input), &input) // optional fields
 
 	// Read the plan file — it must exist and have non-empty content.
-	planFile := filepath.Join(e.dataDir, "plan", contextThreadID(toolCtx, e.defaultThreadID)+".md")
+	planFile := e.resolveActivePlanFile(toolCtx)
 	planContent, err := os.ReadFile(planFile)
 	if err != nil || len(strings.TrimSpace(string(planContent))) == 0 {
 		return errResult(call, fmt.Sprintf(
@@ -200,7 +199,7 @@ func (e *Executor) resolveExitPlanMode(toolCtx *thread.ToolContext, call message
 		}
 	}
 
-	planFile := filepath.Join(e.dataDir, "plan", contextThreadID(toolCtx, e.defaultThreadID)+".md")
+	planFile := e.resolveActivePlanFile(toolCtx)
 
 	var result string
 	if approved {

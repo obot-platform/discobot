@@ -474,6 +474,60 @@ func TestToolResultToString(t *testing.T) {
 	}
 }
 
+func TestToolResultToAnthropicContent(t *testing.T) {
+	t.Run("plain text output returns string", func(t *testing.T) {
+		result := toolResultToAnthropicContent(message.TextOutput{Value: "hello"})
+		text, ok := result.(string)
+		if !ok {
+			t.Fatalf("expected string, got %T", result)
+		}
+		if text != "hello" {
+			t.Errorf("expected hello, got %q", text)
+		}
+	})
+
+	t.Run("content output with image and pdf returns blocks", func(t *testing.T) {
+		result := toolResultToAnthropicContent(message.ContentOutput{
+			Value: []message.ToolResultContentItem{
+				message.ContentTextItem{Text: "summary"},
+				message.ContentImageDataItem{Data: "aGVsbG8=", MediaType: "image/png"},
+				message.ContentFileDataItem{Data: "cGRm", MediaType: "application/pdf", Filename: "sample.pdf"},
+			},
+		})
+
+		blocks, ok := result.([]any)
+		if !ok {
+			t.Fatalf("expected []any, got %T", result)
+		}
+		if len(blocks) != 3 {
+			t.Fatalf("expected 3 blocks, got %d", len(blocks))
+		}
+
+		textBlock := blocks[0].(map[string]any)
+		if textBlock["type"] != "text" {
+			t.Errorf("expected first block type text, got %v", textBlock["type"])
+		}
+
+		imageBlock := blocks[1].(map[string]any)
+		if imageBlock["type"] != "image" {
+			t.Errorf("expected second block type image, got %v", imageBlock["type"])
+		}
+		source := imageBlock["source"].(map[string]any)
+		if source["media_type"] != "image/png" {
+			t.Errorf("expected image media_type image/png, got %v", source["media_type"])
+		}
+
+		docBlock := blocks[2].(map[string]any)
+		if docBlock["type"] != "document" {
+			t.Errorf("expected third block type document, got %v", docBlock["type"])
+		}
+		docSource := docBlock["source"].(map[string]any)
+		if docSource["media_type"] != "application/pdf" {
+			t.Errorf("expected document media_type application/pdf, got %v", docSource["media_type"])
+		}
+	})
+}
+
 func TestParseSSEStream(t *testing.T) {
 	t.Run("text response", func(t *testing.T) {
 		sse := buildSSE(

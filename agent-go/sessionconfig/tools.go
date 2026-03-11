@@ -8,6 +8,26 @@ import (
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
+const applyPatchLarkGrammar = `start: begin_patch hunk+ end_patch
+begin_patch: "*** Begin Patch" LF
+end_patch: "*** End Patch" LF?
+
+hunk: add_hunk | delete_hunk | update_hunk
+add_hunk: "*** Add File: " filename LF add_line+
+delete_hunk: "*** Delete File: " filename LF
+update_hunk: "*** Update File: " filename LF change_move? change?
+
+filename: /(.+)/
+add_line: "+" /(.*)/ LF -> line
+
+change_move: "*** Move to: " filename LF
+change: (change_context | change_line)+ eof_line?
+change_context: ("@@" | "@@ " /(.+)/) LF
+change_line: ("+" | "-" | " ") /(.*)/ LF
+eof_line: "*** End of File" LF
+
+%import common.LF`
+
 // BuiltinTools returns the tool definitions for all built-in tools.
 // Descriptions follow Claude Code conventions for behavioral compatibility.
 // Actual execution is handled by the ToolExecutor (separate implementation).
@@ -189,8 +209,8 @@ Usage:
 - You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
 - Any lines longer than 2000 characters will be truncated
 - Results are returned using cat -n format, with line numbers starting at 1
-- This tool allows the agent to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as the agent is a multimodal LLM.
-- This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.
+- This tool can be used to read images (eg PNG, JPG, etc). When the current model supports image input, Read returns both text context and image data so the model can inspect the image visually.
+- This tool can read PDF files (.pdf). When the current model supports PDF input, Read may return PDF file data for multimodal inspection. For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
 - This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.
 - You can call multiple tools in a single response. It is always better to speculatively read multiple potentially useful files in parallel.
@@ -283,6 +303,7 @@ Usage:
 			}),
 		},
 		{
+			Type: "custom",
 			Name: "apply_patch",
 			Description: `Use the apply_patch tool to edit files.
 Your patch language is a stripped-down, file-oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high-level envelope:
@@ -349,6 +370,11 @@ It is important to remember:
 				},
 				"required": []string{"input"},
 			}),
+			Format: &providers.ToolFormat{
+				Type:       "grammar",
+				Syntax:     "lark",
+				Definition: applyPatchLarkGrammar,
+			},
 		},
 		{
 			Name:        "NotebookEdit",

@@ -439,8 +439,27 @@ func toolResultToString(output message.ToolResultOutput) string {
 	case message.ContentOutput:
 		var parts []string
 		for _, item := range v.Value {
-			if textItem, ok := item.(message.ContentTextItem); ok {
-				parts = append(parts, textItem.Text)
+			switch contentItem := item.(type) {
+			case message.ContentTextItem:
+				if contentItem.Text != "" {
+					parts = append(parts, contentItem.Text)
+				}
+			case message.ContentImageDataItem:
+				mediaType := contentItem.MediaType
+				if mediaType == "" {
+					mediaType = "image/*"
+				}
+				parts = append(parts, fmt.Sprintf("[image data omitted (%s)]", mediaType))
+			case message.ContentFileDataItem:
+				mediaType := contentItem.MediaType
+				if mediaType == "" {
+					mediaType = "application/octet-stream"
+				}
+				if contentItem.Filename != "" {
+					parts = append(parts, fmt.Sprintf("[file data omitted (%s, filename=%s)]", mediaType, contentItem.Filename))
+				} else {
+					parts = append(parts, fmt.Sprintf("[file data omitted (%s)]", mediaType))
+				}
 			}
 		}
 		return strings.Join(parts, "\n")

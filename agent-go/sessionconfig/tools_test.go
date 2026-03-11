@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
 func TestBuiltinTools_AllDefined(t *testing.T) {
@@ -126,6 +128,35 @@ func TestBuiltinTools_ApplyPatchSchema(t *testing.T) {
 	required := schema["required"].([]any)
 	if len(required) != 1 || required[0] != "input" {
 		t.Errorf("apply_patch required = %v, want [input]", required)
+	}
+}
+
+func TestBuiltinTools_ApplyPatchCustomFormat(t *testing.T) {
+	tools := BuiltinTools("")
+	var applyPatch *providers.ToolDefinition
+	for i := range tools {
+		if tools[i].Name == "apply_patch" {
+			applyPatch = &tools[i]
+			break
+		}
+	}
+	if applyPatch == nil {
+		t.Fatal("apply_patch tool not found")
+	}
+	if applyPatch.Type != "custom" {
+		t.Fatalf("apply_patch type = %q, want custom", applyPatch.Type)
+	}
+	if applyPatch.Format == nil {
+		t.Fatal("apply_patch format is nil")
+	}
+	if applyPatch.Format.Type != "grammar" {
+		t.Fatalf("apply_patch format.type = %q, want grammar", applyPatch.Format.Type)
+	}
+	if applyPatch.Format.Syntax != "lark" {
+		t.Fatalf("apply_patch format.syntax = %q, want lark", applyPatch.Format.Syntax)
+	}
+	if strings.TrimSpace(applyPatch.Format.Definition) == "" {
+		t.Fatal("apply_patch format.definition is empty")
 	}
 }
 

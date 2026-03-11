@@ -57,7 +57,7 @@ func (p *Provider) ID() string { return providerID }
 
 func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
 	return func(yield func(message.ProviderMessageChunk, error) bool) {
-		inputItems, err := convertMessages(req.Messages)
+		inputItems, err := convertMessagesWithCustomTools(req.Messages, customToolNames(req.Tools))
 		if err != nil {
 			yield(nil, fmt.Errorf("openai: convert messages: %w", err))
 			return
@@ -131,7 +131,7 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 }
 
 func (p *Provider) CountTokens(ctx context.Context, req providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	inputItems, err := convertMessages(req.Messages)
+	inputItems, err := convertMessagesWithCustomTools(req.Messages, customToolNames(req.Tools))
 	if err != nil {
 		return providers.CountTokensResponse{}, fmt.Errorf("openai: convert messages: %w", err)
 	}
@@ -231,33 +231,52 @@ func (p *Provider) ListModels(ctx context.Context) ([]providers.ModelInfo, error
 
 // convertMessages converts internal messages to OpenAI Responses API input items.
 // The Responses API input array contains role-based messages (user, developer)
-// and typed items (function_call, function_call_output, message).
+// and typed items (function_call, custom_tool_call, *_output, message).
 func convertMessages(msgs []message.Message) ([]json.RawMessage, error) {
+	return convertMessagesWithCustomTools(msgs, nil)
+}
+
+func convertMessagesWithCustomTools(msgs []message.Message, customToolNames map[string]struct{}) ([]json.RawMessage, error) {
 	var items []json.RawMessage
 	for _, msg := range msgs {
-		converted, err := convertMessage(msg)
+		converted, err := convertMessage(msg, customToolNames)
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, converted...)
 	}
-	return ensureFunctionCallOutputs(items), nil
+	return ensureToolCallOutputs(items), nil
 }
 
-// ensureFunctionCallOutputs appends synthetic function_call_output items for
-// any function_call items that are still unresolved at the end of the input.
-//
-// OpenAI Responses rejects requests when a function_call has no matching
-// function_call_output. This guard keeps crashed/interrupted histories usable by
-// synthesizing a deterministic error output for unresolved calls.
-func ensureFunctionCallOutputs(items []json.RawMessage) []json.RawMessage {
+func convertMessage(msg message.Message, customToolNames map[string]struct{}) ([]json.RawMessage, error) {
+	switch msg.Role {
+	case "system":
+		return convertSystemMessage(msg)
+	case "user":
+		return convertUserMessage(msg)
+	case "assistant":
+		return convertAssistantMessage(msg, customToolNames)
+	case "tool":
+		return convertToolMessage(msg, customToolNames)
+	default:
+		return nil, fmt.Errorf("unknown message role: %q", msg.Role)
+	}
+}
+
+// ensureToolCallOutputs appends synthetic *_tool_call_output items for any
+// unresolved function/custom tool calls in the reconstructed input history.
+func ensureToolCallOutputs(items []json.RawMessage) []json.RawMessage {
 	type itemHeader struct {
 		Type   string `json:"type"`
 		CallID string `json:"call_id"`
 	}
 
-	pendingOrder := make([]string, 0)
-	pending := make(map[string]struct{})
+	type pendingCall struct {
+		callID string
+	}
+
+	pendingOrder := make([]pendingCall, 0)
+	pending := make(map[string]string)
 
 	for _, item := range items {
 		var header itemHeader
@@ -270,10 +289,18 @@ func ensureFunctionCallOutputs(items []json.RawMessage) []json.RawMessage {
 				continue
 			}
 			if _, exists := pending[header.CallID]; !exists {
-				pendingOrder = append(pendingOrder, header.CallID)
+				pendingOrder = append(pendingOrder, pendingCall{callID: header.CallID})
 			}
-			pending[header.CallID] = struct{}{}
-		case "function_call_output":
+			pending[header.CallID] = "function_call_output"
+		case "custom_tool_call":
+			if header.CallID == "" {
+				continue
+			}
+			if _, exists := pending[header.CallID]; !exists {
+				pendingOrder = append(pendingOrder, pendingCall{callID: header.CallID})
+			}
+			pending[header.CallID] = "custom_tool_call_output"
+		case "function_call_output", "custom_tool_call_output":
 			delete(pending, header.CallID)
 		}
 	}
@@ -284,13 +311,14 @@ func ensureFunctionCallOutputs(items []json.RawMessage) []json.RawMessage {
 
 	result := make([]json.RawMessage, 0, len(items)+len(pending))
 	result = append(result, items...)
-	for _, callID := range pendingOrder {
-		if _, ok := pending[callID]; !ok {
+	for _, call := range pendingOrder {
+		outputType, ok := pending[call.callID]
+		if !ok {
 			continue
 		}
 		data, err := json.Marshal(map[string]any{
-			"type":    "function_call_output",
-			"call_id": callID,
+			"type":    outputType,
+			"call_id": call.callID,
 			"output":  missingToolOutputText,
 		})
 		if err != nil {
@@ -301,19 +329,54 @@ func ensureFunctionCallOutputs(items []json.RawMessage) []json.RawMessage {
 	return result
 }
 
-func convertMessage(msg message.Message) ([]json.RawMessage, error) {
-	switch msg.Role {
-	case "system":
-		return convertSystemMessage(msg)
-	case "user":
-		return convertUserMessage(msg)
-	case "assistant":
-		return convertAssistantMessage(msg)
-	case "tool":
-		return convertToolMessage(msg)
-	default:
-		return nil, fmt.Errorf("unknown message role: %q", msg.Role)
+func customToolNames(tools []providers.ToolDefinition) map[string]struct{} {
+	if len(tools) == 0 {
+		return nil
 	}
+	names := make(map[string]struct{})
+	for _, t := range tools {
+		if t.Type != "custom" || t.Name == "" {
+			continue
+		}
+		names[t.Name] = struct{}{}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return names
+}
+
+func isCustomTool(name string, customToolNames map[string]struct{}) bool {
+	if name == "" || len(customToolNames) == 0 {
+		return false
+	}
+	_, ok := customToolNames[name]
+	return ok
+}
+
+func customToolInput(input string) string {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return ""
+	}
+	var wrapped struct {
+		Input string `json:"input"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &wrapped); err == nil && strings.TrimSpace(wrapped.Input) != "" {
+		return wrapped.Input
+	}
+	var plain string
+	if err := json.Unmarshal([]byte(trimmed), &plain); err == nil {
+		return plain
+	}
+	return input
+}
+
+func toolOutputType(toolName string, customToolNames map[string]struct{}) string {
+	if isCustomTool(toolName, customToolNames) {
+		return "custom_tool_call_output"
+	}
+	return "function_call_output"
 }
 
 // convertSystemMessage maps system → developer role (OpenAI convention).
@@ -353,12 +416,12 @@ func convertUserMessage(msg message.Message) ([]json.RawMessage, error) {
 
 // convertAssistantMessage splits an assistant message into reasoning items,
 // a typed "message" item (for text), and separate tool items
-// (function_call/function_call_output). Items are ordered:
-// reasoning → message → function_calls → function_call_outputs.
-func convertAssistantMessage(msg message.Message) ([]json.RawMessage, error) {
+// (function_call/custom_tool_call and *_tool_call_output). Items are ordered:
+// reasoning → message → tool calls → tool call outputs.
+func convertAssistantMessage(msg message.Message, customToolNames map[string]struct{}) ([]json.RawMessage, error) {
 	var reasoningItems []json.RawMessage
-	var functionCallItems []json.RawMessage
-	var functionCallOutputItems []json.RawMessage
+	var toolCallItems []json.RawMessage
+	var toolCallOutputItems []json.RawMessage
 	var textParts []map[string]any
 	var messageItemID string // ID of the parent message output item
 
@@ -383,30 +446,39 @@ func convertAssistantMessage(msg message.Message) ([]json.RawMessage, error) {
 				messageItemID = p.ID
 			}
 		case message.ToolCallPart:
-			data, err := json.Marshal(map[string]any{
-				"type":      "function_call",
-				"call_id":   p.ToolCallID,
-				"name":      p.ToolName,
-				"arguments": p.Input,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("marshal function_call: %w", err)
-			}
-			functionCallItems = append(functionCallItems, data)
-		case message.ToolResultPart:
-			data, err := json.Marshal(map[string]any{
-				"type":    "function_call_output",
+			callType := "function_call"
+			payload := map[string]any{
+				"type":    callType,
 				"call_id": p.ToolCallID,
-				"output":  toolResultToString(p.Output),
+				"name":    p.ToolName,
+			}
+			if isCustomTool(p.ToolName, customToolNames) {
+				callType = "custom_tool_call"
+				payload["type"] = callType
+				payload["input"] = customToolInput(p.Input)
+			} else {
+				payload["arguments"] = p.Input
+			}
+			data, err := json.Marshal(payload)
+			if err != nil {
+				return nil, fmt.Errorf("marshal %s: %w", callType, err)
+			}
+			toolCallItems = append(toolCallItems, data)
+		case message.ToolResultPart:
+			outputType := toolOutputType(p.ToolName, customToolNames)
+			data, err := json.Marshal(map[string]any{
+				"type":    outputType,
+				"call_id": p.ToolCallID,
+				"output":  toolResultToOpenAIOutput(p.Output),
 			})
 			if err != nil {
-				return nil, fmt.Errorf("marshal function_call_output: %w", err)
+				return nil, fmt.Errorf("marshal %s: %w", outputType, err)
 			}
-			functionCallOutputItems = append(functionCallOutputItems, data)
+			toolCallOutputItems = append(toolCallOutputItems, data)
 		}
 	}
 
-	// Order: reasoning → text message → function calls → function call outputs.
+	// Order: reasoning → text message → tool calls → tool call outputs.
 	var items []json.RawMessage
 	items = append(items, reasoningItems...)
 	if len(textParts) > 0 {
@@ -424,8 +496,8 @@ func convertAssistantMessage(msg message.Message) ([]json.RawMessage, error) {
 		}
 		items = append(items, data)
 	}
-	items = append(items, functionCallItems...)
-	items = append(items, functionCallOutputItems...)
+	items = append(items, toolCallItems...)
+	items = append(items, toolCallOutputItems...)
 
 	return items, nil
 }
@@ -475,21 +547,22 @@ func convertReasoningPart(p message.ReasoningPart) (json.RawMessage, error) {
 	return data, nil
 }
 
-// convertToolMessage maps each ToolResultPart to a "function_call_output" item.
-func convertToolMessage(msg message.Message) ([]json.RawMessage, error) {
+// convertToolMessage maps each ToolResultPart to a *_tool_call_output item.
+func convertToolMessage(msg message.Message, customToolNames map[string]struct{}) ([]json.RawMessage, error) {
 	var items []json.RawMessage
 	for _, part := range msg.Parts {
 		tr, ok := part.(message.ToolResultPart)
 		if !ok {
 			continue
 		}
+		outputType := toolOutputType(tr.ToolName, customToolNames)
 		data, err := json.Marshal(map[string]any{
-			"type":    "function_call_output",
+			"type":    outputType,
 			"call_id": tr.ToolCallID,
-			"output":  toolResultToString(tr.Output),
+			"output":  toolResultToOpenAIOutput(tr.Output),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("marshal function_call_output: %w", err)
+			return nil, fmt.Errorf("marshal %s: %w", outputType, err)
 		}
 		items = append(items, data)
 	}
@@ -564,8 +637,27 @@ func toolResultToString(output message.ToolResultOutput) string {
 	case message.ContentOutput:
 		var parts []string
 		for _, item := range v.Value {
-			if textItem, ok := item.(message.ContentTextItem); ok {
-				parts = append(parts, textItem.Text)
+			switch contentItem := item.(type) {
+			case message.ContentTextItem:
+				if contentItem.Text != "" {
+					parts = append(parts, contentItem.Text)
+				}
+			case message.ContentImageDataItem:
+				mediaType := contentItem.MediaType
+				if mediaType == "" {
+					mediaType = "image/*"
+				}
+				parts = append(parts, fmt.Sprintf("[image data omitted (%s)]", mediaType))
+			case message.ContentFileDataItem:
+				mediaType := contentItem.MediaType
+				if mediaType == "" {
+					mediaType = "application/octet-stream"
+				}
+				if contentItem.Filename != "" {
+					parts = append(parts, fmt.Sprintf("[file data omitted (%s, filename=%s)]", mediaType, contentItem.Filename))
+				} else {
+					parts = append(parts, fmt.Sprintf("[file data omitted (%s)]", mediaType))
+				}
 			}
 		}
 		return strings.Join(parts, "\n")
@@ -574,17 +666,111 @@ func toolResultToString(output message.ToolResultOutput) string {
 	}
 }
 
+func toolResultToOpenAIOutput(output message.ToolResultOutput) any {
+	contentOutput, ok := output.(message.ContentOutput)
+	if !ok {
+		return toolResultToString(output)
+	}
+
+	items, hasNonText := contentOutputToOpenAIItems(contentOutput)
+	if len(items) == 0 {
+		return toolResultToString(output)
+	}
+	if !hasNonText {
+		return toolResultToString(output)
+	}
+	return items
+}
+
+func contentOutputToOpenAIItems(contentOutput message.ContentOutput) ([]any, bool) {
+	items := make([]any, 0, len(contentOutput.Value))
+	hasNonText := false
+
+	for _, item := range contentOutput.Value {
+		switch contentItem := item.(type) {
+		case message.ContentTextItem:
+			if contentItem.Text == "" {
+				continue
+			}
+			items = append(items, map[string]any{
+				"type": "input_text",
+				"text": contentItem.Text,
+			})
+		case message.ContentImageDataItem:
+			if strings.TrimSpace(contentItem.Data) == "" {
+				continue
+			}
+			hasNonText = true
+			mediaType := contentItem.MediaType
+			if mediaType == "" {
+				mediaType = "image/jpeg"
+			}
+			items = append(items, map[string]any{
+				"type":      "input_image",
+				"image_url": "data:" + mediaType + ";base64," + contentItem.Data,
+			})
+		case message.ContentImageURLItem:
+			if strings.TrimSpace(contentItem.URL) == "" {
+				continue
+			}
+			hasNonText = true
+			items = append(items, map[string]any{
+				"type":      "input_image",
+				"image_url": contentItem.URL,
+			})
+		case message.ContentFileDataItem:
+			hasNonText = true
+			mediaType := contentItem.MediaType
+			if strings.HasPrefix(mediaType, "image/") && strings.TrimSpace(contentItem.Data) != "" {
+				items = append(items, map[string]any{
+					"type":      "input_image",
+					"image_url": "data:" + mediaType + ";base64," + contentItem.Data,
+				})
+				continue
+			}
+			if mediaType == "" {
+				mediaType = "application/octet-stream"
+			}
+			placeholder := fmt.Sprintf("[file data omitted (%s)]", mediaType)
+			if contentItem.Filename != "" {
+				placeholder = fmt.Sprintf("[file data omitted (%s, filename=%s)]", mediaType, contentItem.Filename)
+			}
+			items = append(items, map[string]any{
+				"type": "input_text",
+				"text": placeholder,
+			})
+		}
+	}
+
+	return items, hasNonText
+}
+
 // --- Tool conversion ---
 
-// convertTools maps our ToolDefinition to Responses API function tools.
-// In the Responses API, tool fields (name, description, parameters) are
-// at the top level — NOT nested under a "function" key.
+// convertTools maps our ToolDefinition to Responses API function/custom tools.
 func convertTools(tools []providers.ToolDefinition) []map[string]any {
 	if len(tools) == 0 {
 		return nil
 	}
 	result := make([]map[string]any, len(tools))
 	for i, t := range tools {
+		if t.Type == "custom" && t.Format != nil {
+			tool := map[string]any{
+				"type": "custom",
+				"name": t.Name,
+				"format": map[string]any{
+					"type":       t.Format.Type,
+					"syntax":     t.Format.Syntax,
+					"definition": t.Format.Definition,
+				},
+			}
+			if t.Description != "" {
+				tool["description"] = t.Description
+			}
+			result[i] = tool
+			continue
+		}
+
 		tool := map[string]any{
 			"type":       "function",
 			"name":       t.Name,
@@ -728,10 +914,7 @@ func (s *streamState) handleOutputItemAdded(data []byte, yield func(message.Prov
 }
 
 // handleOutputItemDone emits ReasoningEndChunk when a reasoning output item
-// completes. The full reasoning item (including encrypted_content and summary)
-// is preserved in ProviderMetadata so it can be sent back in multi-turn
-// conversations. Other item types (message, function_call) are ignored since
-// their content is finalized by more specific done events.
+// completes and ToolCallChunk for completed custom tool calls.
 func handleOutputItemDone(data []byte, yield func(message.ProviderMessageChunk, error) bool) bool {
 	var event struct {
 		Item json.RawMessage `json:"item"`
@@ -746,7 +929,8 @@ func handleOutputItemDone(data []byte, yield func(message.ProviderMessageChunk, 
 	if err := json.Unmarshal(event.Item, &itemHeader); err != nil {
 		return yield(nil, fmt.Errorf("openai: parse output_item.done item: %w", err))
 	}
-	if itemHeader.Type == "reasoning" {
+	switch itemHeader.Type {
+	case "reasoning":
 		// Wrap the reasoning item under "openai" for the Vercel AI SDK v6
 		// nested providerMetadata format: {"openai": {...}}.
 		wrapped, wrapErr := json.Marshal(map[string]json.RawMessage{
@@ -759,8 +943,23 @@ func handleOutputItemDone(data []byte, yield func(message.ProviderMessageChunk, 
 			ID:               itemHeader.ID,
 			ProviderMetadata: wrapped,
 		}, nil)
+	case "custom_tool_call":
+		var item struct {
+			CallID string `json:"call_id"`
+			Name   string `json:"name"`
+			Input  string `json:"input"`
+		}
+		if err := json.Unmarshal(event.Item, &item); err != nil {
+			return yield(nil, fmt.Errorf("openai: parse custom_tool_call item: %w", err))
+		}
+		return yield(message.ToolCallChunk{
+			ToolCallID: item.CallID,
+			ToolName:   item.Name,
+			Input:      item.Input,
+		}, nil)
+	default:
+		return true
 	}
-	return true
 }
 
 func handleContentPartAdded(data []byte, yield func(message.ProviderMessageChunk, error) bool) bool {
@@ -861,7 +1060,7 @@ func handleResponseCompleted(data []byte, yield func(message.ProviderMessageChun
 
 	hasToolCalls := false
 	for _, item := range event.Response.Output {
-		if item.Type == "function_call" {
+		if item.Type == "function_call" || item.Type == "custom_tool_call" {
 			hasToolCalls = true
 			break
 		}

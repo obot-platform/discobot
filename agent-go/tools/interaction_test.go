@@ -13,7 +13,8 @@ import (
 )
 
 func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
-	e := New(t.TempDir(), t.TempDir(), "thread-1")
+	dataDir := t.TempDir()
+	e := New(t.TempDir(), dataDir, "thread-1")
 	toolCtx := &thread.ToolContext{ThreadID: "thread-1"}
 
 	result, err := e.Execute(context.Background(), toolCtx, message.ToolCallPart{
@@ -30,16 +31,37 @@ func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	if !toolCtx.PlanMode {
 		t.Fatal("expected PlanMode=true after EnterPlanMode")
 	}
+
+	textOut, ok := result.Result.Output.(message.TextOutput)
+	if !ok {
+		t.Fatalf("expected TextOutput result, got %T", result.Result.Output)
+	}
+	prefix := "Plan mode activated. Plan file: "
+	if !strings.HasPrefix(textOut.Value, prefix) {
+		t.Fatalf("expected plan file prefix in output, got %q", textOut.Value)
+	}
+	firstLine := strings.SplitN(textOut.Value, "\n", 2)[0]
+	planFile := strings.TrimPrefix(firstLine, prefix)
+	if filepath.Ext(planFile) != ".md" {
+		t.Fatalf("expected markdown plan file, got %q", planFile)
+	}
+	expectedPrefix := filepath.Join(dataDir, "plans", "thread-1") + string(filepath.Separator)
+	if !strings.HasPrefix(planFile, expectedPrefix) {
+		t.Fatalf("expected plan file under %q, got %q", expectedPrefix, planFile)
+	}
+	if strings.Contains(filepath.Base(planFile), " ") {
+		t.Fatalf("expected LLM-friendly filename with no spaces, got %q", filepath.Base(planFile))
+	}
 }
 
 func TestExecuteExitPlanMode_AutoApprovesWhenPromptRequestNotPlan(t *testing.T) {
 	dataDir := t.TempDir()
 	threadID := "thread-1"
-	planDir := filepath.Join(dataDir, "plan")
+	planDir := filepath.Join(dataDir, "plans", threadID)
 	if err := os.MkdirAll(planDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(planDir, threadID+".md"), []byte("## Auto plan\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(planDir, "auto-plan.md"), []byte("## Auto plan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -80,11 +102,11 @@ func TestExecuteExitPlanMode_AutoApprovesWhenPromptRequestNotPlan(t *testing.T) 
 func TestExecuteExitPlanMode_RequiresApprovalWhenPromptRequestPlan(t *testing.T) {
 	dataDir := t.TempDir()
 	threadID := "thread-1"
-	planDir := filepath.Join(dataDir, "plan")
+	planDir := filepath.Join(dataDir, "plans", threadID)
 	if err := os.MkdirAll(planDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(planDir, threadID+".md"), []byte("## Manual plan\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(planDir, "manual-plan.md"), []byte("## Manual plan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,15 +58,12 @@ type patchAffectedPaths struct {
 }
 
 func (e *Executor) executeApplyPatch(call message.ToolCallPart) (thread.ToolExecuteResult, error) {
-	var input applyPatchInput
-	if err := unmarshalInput(call, &input); err != nil {
+	patchText, err := parseApplyPatchInput(call.Input)
+	if err != nil {
 		return errResult(call, err.Error()), nil
 	}
-	if strings.TrimSpace(input.Input) == "" {
-		return errResult(call, "input is required"), nil
-	}
 
-	ops, err := parseApplyPatch(input.Input)
+	ops, err := parseApplyPatch(patchText)
 	if err != nil {
 		return errResult(call, err.Error()), nil
 	}
@@ -100,6 +98,31 @@ func (e *Executor) executeApplyPatch(call message.ToolCallPart) (thread.ToolExec
 	return textResult(call, strings.TrimSuffix(b.String(), "\n")), nil
 }
 
+func parseApplyPatchInput(rawInput string) (string, error) {
+	trimmed := strings.TrimSpace(rawInput)
+	if trimmed == "" {
+		return "", fmt.Errorf("input is required")
+	}
+
+	var structured applyPatchInput
+	if err := json.Unmarshal([]byte(trimmed), &structured); err == nil {
+		if strings.TrimSpace(structured.Input) == "" {
+			return "", fmt.Errorf("input is required")
+		}
+		return structured.Input, nil
+	}
+
+	var textInput string
+	if err := json.Unmarshal([]byte(trimmed), &textInput); err == nil {
+		if strings.TrimSpace(textInput) == "" {
+			return "", fmt.Errorf("input is required")
+		}
+		return textInput, nil
+	}
+
+	return trimmed, nil
+}
+
 func (e *Executor) applyPatchOperations(ops []patchOperation) (*patchAffectedPaths, error) {
 	affected := &patchAffectedPaths{}
 
@@ -108,9 +131,7 @@ func (e *Executor) applyPatchOperations(ops []patchOperation) (*patchAffectedPat
 
 		switch op.kind {
 		case patchAddFile:
-			if _, err := os.Stat(srcPath); err == nil {
-				return nil, fmt.Errorf("cannot add file that already exists: %s", op.path)
-			} else if !os.IsNotExist(err) {
+			if err := e.checkWriteAllowed(srcPath, op.path); err != nil {
 				return nil, err
 			}
 			if err := os.MkdirAll(filepath.Dir(srcPath), 0o755); err != nil {
@@ -192,13 +213,9 @@ func (e *Executor) removeFileRecord(absPath string) {
 }
 
 func parseApplyPatch(patch string) ([]patchOperation, error) {
-	patch = normalizePatchNewlines(patch)
-	lines := strings.Split(strings.TrimSpace(patch), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != beginPatchMarker {
-		return nil, fmt.Errorf("the first line of the patch must be '%s'", beginPatchMarker)
-	}
-	if strings.TrimSpace(lines[len(lines)-1]) != endPatchMarker {
-		return nil, fmt.Errorf("the last line of the patch must be '%s'", endPatchMarker)
+	lines, err := parseApplyPatchLines(patch)
+	if err != nil {
+		return nil, err
 	}
 
 	body := lines[1 : len(lines)-1]
@@ -217,6 +234,39 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 	}
 
 	return ops, nil
+}
+
+func parseApplyPatchLines(patch string) ([]string, error) {
+	patch = normalizePatchNewlines(patch)
+	lines := strings.Split(strings.TrimSpace(patch), "\n")
+
+	err := validatePatchBoundaries(lines)
+	if err == nil {
+		return lines, nil
+	}
+	if len(lines) >= 4 {
+		first := strings.TrimSpace(lines[0])
+		last := strings.TrimSpace(lines[len(lines)-1])
+		if (first == "<<EOF" || first == "<<'EOF'" || first == "<<\"EOF\"") && strings.HasSuffix(last, "EOF") {
+			inner := lines[1 : len(lines)-1]
+			innerErr := validatePatchBoundaries(inner)
+			if innerErr == nil {
+				return inner, nil
+			}
+			return nil, innerErr
+		}
+	}
+	return nil, err
+}
+
+func validatePatchBoundaries(lines []string) error {
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != beginPatchMarker {
+		return fmt.Errorf("the first line of the patch must be '%s'", beginPatchMarker)
+	}
+	if strings.TrimSpace(lines[len(lines)-1]) != endPatchMarker {
+		return fmt.Errorf("the last line of the patch must be '%s'", endPatchMarker)
+	}
+	return nil
 }
 
 func parsePatchOperation(lines []string) (patchOperation, int, error) {
@@ -598,9 +648,6 @@ func normalizePatchNewlines(s string) string {
 func ensureRelativePatchPath(path string) error {
 	if path == "" {
 		return fmt.Errorf("path is required")
-	}
-	if filepath.IsAbs(path) {
-		return fmt.Errorf("file references can only be relative, NEVER ABSOLUTE: %s", path)
 	}
 	return nil
 }

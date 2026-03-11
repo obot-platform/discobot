@@ -65,11 +65,20 @@ func (c Config) BaseURL() string {
 	return c["base_url"]
 }
 
+// ToolFormat describes a custom tool input format.
+type ToolFormat struct {
+	Type       string `json:"type"`
+	Syntax     string `json:"syntax"`
+	Definition string `json:"definition"`
+}
+
 // ToolDefinition describes a tool available to the model.
 type ToolDefinition struct {
+	Type        string          `json:"type,omitempty"`
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema"` // JSON Schema
+	InputSchema json.RawMessage `json:"inputSchema,omitempty"` // JSON Schema
+	Format      *ToolFormat     `json:"format,omitempty"`
 }
 
 // CompleteRequest is the input to Provider.Complete.

@@ -512,6 +512,13 @@ func TestToolResultToString(t *testing.T) {
 				message.ContentTextItem{Text: "line2"},
 			},
 		}, "line1\nline2"},
+		{"content output with media placeholders", message.ContentOutput{
+			Value: []message.ToolResultContentItem{
+				message.ContentTextItem{Text: "summary"},
+				message.ContentImageDataItem{Data: "aGVsbG8=", MediaType: "image/png"},
+				message.ContentFileDataItem{Data: "cGRm", MediaType: "application/pdf", Filename: "sample.pdf"},
+			},
+		}, "summary\n[image data omitted (image/png)]\n[file data omitted (application/pdf, filename=sample.pdf)]"},
 		{"nil output", nil, ""},
 	}
 	for _, tt := range tests {

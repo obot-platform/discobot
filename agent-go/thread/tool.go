@@ -32,7 +32,10 @@ type ToolExecuteResult struct {
 type ToolContext struct {
 	ThreadID              string
 	PlanMode              bool
+	PlanFilePath          string
 	PromptRequestPlanMode bool
+	ProviderID            string
+	ModelID               string
 	Agent                 agent.Agent
 	ModeChange            *string // set by a tool that changes the mode; consumed by the turn loop
 }

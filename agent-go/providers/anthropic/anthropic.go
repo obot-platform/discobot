@@ -522,7 +522,7 @@ func convertToolMessage(msg message.Message) (map[string]any, error) {
 		content = append(content, map[string]any{
 			"type":        "tool_result",
 			"tool_use_id": tr.ToolCallID,
-			"content":     toolResultToString(tr.Output),
+			"content":     toolResultToAnthropicContent(tr.Output),
 		})
 	}
 	if len(content) == 0 {
@@ -532,6 +532,60 @@ func convertToolMessage(msg message.Message) (map[string]any, error) {
 		"role":    "user",
 		"content": content,
 	}, nil
+}
+
+func toolResultToAnthropicContent(output message.ToolResultOutput) any {
+	contentOutput, ok := output.(message.ContentOutput)
+	if !ok {
+		return toolResultToString(output)
+	}
+
+	blocks := make([]any, 0, len(contentOutput.Value))
+	for _, item := range contentOutput.Value {
+		switch v := item.(type) {
+		case message.ContentTextItem:
+			blocks = append(blocks, map[string]any{
+				"type": "text",
+				"text": v.Text,
+			})
+		case message.ContentImageDataItem:
+			if strings.TrimSpace(v.Data) == "" {
+				continue
+			}
+			mediaType := v.MediaType
+			if mediaType == "" {
+				mediaType = "image/jpeg"
+			}
+			blocks = append(blocks, map[string]any{
+				"type": "image",
+				"source": map[string]any{
+					"type":       "base64",
+					"media_type": mediaType,
+					"data":       v.Data,
+				},
+			})
+		case message.ContentFileDataItem:
+			if strings.TrimSpace(v.Data) == "" {
+				continue
+			}
+			if v.MediaType == "application/pdf" {
+				blocks = append(blocks, map[string]any{
+					"type": "document",
+					"source": map[string]any{
+						"type":       "base64",
+						"media_type": "application/pdf",
+						"data":       v.Data,
+					},
+				})
+			}
+		}
+	}
+
+	if len(blocks) == 0 {
+		return toolResultToString(output)
+	}
+
+	return blocks
 }
 
 func extractText(parts []message.Part) string {

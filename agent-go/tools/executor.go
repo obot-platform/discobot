@@ -4,6 +4,8 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -198,6 +200,129 @@ func isPlanMode(toolCtx *thread.ToolContext) bool {
 	return toolCtx != nil && toolCtx.PlanMode
 }
 
+var planNameAdjectives = []string{
+	"clear",
+	"focused",
+	"steady",
+	"calm",
+	"bright",
+	"swift",
+	"bold",
+	"practical",
+}
+
+var planNameNouns = []string{
+	"outline",
+	"roadmap",
+	"strategy",
+	"approach",
+	"design",
+	"milestone",
+	"workflow",
+	"steps",
+}
+
+func (e *Executor) threadPlansDir(toolCtx *thread.ToolContext) string {
+	return filepath.Join(e.dataDir, "plans", contextThreadID(toolCtx, e.defaultThreadID))
+}
+
+func (e *Executor) legacyPlanFilePath(toolCtx *thread.ToolContext) string {
+	return filepath.Join(e.dataDir, "plan", contextThreadID(toolCtx, e.defaultThreadID)+".md")
+}
+
+func randomWord(words []string, fallback string) string {
+	if len(words) == 0 {
+		return fallback
+	}
+	b := make([]byte, 1)
+	if _, err := rand.Read(b); err != nil {
+		return words[int(time.Now().UTC().UnixNano()%int64(len(words)))]
+	}
+	return words[int(b[0])%len(words)]
+}
+
+func randomHex(byteLen int) string {
+	if byteLen <= 0 {
+		byteLen = 2
+	}
+	b := make([]byte, byteLen)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%x", time.Now().UTC().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+func llmFriendlyPlanFileName() string {
+	timestamp := time.Now().UTC().Format("20060102-150405")
+	adjective := randomWord(planNameAdjectives, "steady")
+	noun := randomWord(planNameNouns, "outline")
+	return fmt.Sprintf("%s-%s-%s-%s.md", timestamp, adjective, noun, randomHex(2))
+}
+
+func (e *Executor) newPlanFilePath(toolCtx *thread.ToolContext) string {
+	dir := e.threadPlansDir(toolCtx)
+	for range 10 {
+		candidate := filepath.Join(dir, llmFriendlyPlanFileName())
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			if toolCtx != nil {
+				toolCtx.PlanFilePath = candidate
+			}
+			return candidate
+		}
+	}
+	fallback := filepath.Join(dir, fmt.Sprintf("%d-%s.md", time.Now().UTC().UnixNano(), randomHex(2)))
+	if toolCtx != nil {
+		toolCtx.PlanFilePath = fallback
+	}
+	return fallback
+}
+
+func (e *Executor) latestThreadPlanFile(toolCtx *thread.ToolContext) string {
+	dir := e.threadPlansDir(toolCtx)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	var latestPath string
+	var latestModTime time.Time
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		candidate := filepath.Join(dir, entry.Name())
+		if latestPath == "" || info.ModTime().After(latestModTime) {
+			latestPath = candidate
+			latestModTime = info.ModTime()
+		}
+	}
+	return latestPath
+}
+
+func (e *Executor) resolveActivePlanFile(toolCtx *thread.ToolContext) string {
+	if toolCtx != nil && toolCtx.PlanFilePath != "" {
+		return toolCtx.PlanFilePath
+	}
+	if latest := e.latestThreadPlanFile(toolCtx); latest != "" {
+		if toolCtx != nil {
+			toolCtx.PlanFilePath = latest
+		}
+		return latest
+	}
+	legacy := e.legacyPlanFilePath(toolCtx)
+	if _, err := os.Stat(legacy); err == nil {
+		if toolCtx != nil {
+			toolCtx.PlanFilePath = legacy
+		}
+		return legacy
+	}
+	return e.newPlanFilePath(toolCtx)
+}
+
 // Execute dispatches to the appropriate tool handler and enforces output size limits.
 func (e *Executor) Execute(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart) (thread.ToolExecuteResult, error) {
 	result, err := e.dispatch(ctx, toolCtx, call)
@@ -213,7 +338,7 @@ func (e *Executor) dispatch(ctx context.Context, toolCtx *thread.ToolContext, ca
 		if call.ToolName == "EnterPlanMode" {
 			return errResult(call, "EnterPlanMode is not available — you are already in plan mode"), nil
 		}
-		planFile := filepath.Join(e.dataDir, "plan", contextThreadID(toolCtx, e.defaultThreadID)+".md")
+		planFile := e.resolveActivePlanFile(toolCtx)
 		return errResult(call, fmt.Sprintf("%s is not available in plan mode — use the Write or Edit tool to write your complete plan to %s (Write and Edit are allowed for the plan file), then call ExitPlanMode", call.ToolName, planFile)), nil
 	}
 
@@ -221,7 +346,7 @@ func (e *Executor) dispatch(ctx context.Context, toolCtx *thread.ToolContext, ca
 	case "Bash":
 		return e.executeBash(ctx, toolCtx, call)
 	case "Read":
-		return e.executeRead(call)
+		return e.executeRead(toolCtx, call)
 	case "Write":
 		return e.executeWrite(call)
 	case "Edit":
@@ -370,7 +495,7 @@ func (e *Executor) isPlanFileCall(toolCtx *thread.ToolContext, call message.Tool
 	if call.ToolName != "Write" && call.ToolName != "Edit" {
 		return false
 	}
-	planFile := filepath.Join(e.dataDir, "plan", contextThreadID(toolCtx, e.defaultThreadID)+".md")
+	planFile := e.resolveActivePlanFile(toolCtx)
 
 	var input struct {
 		FilePath string `json:"file_path"`

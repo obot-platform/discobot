@@ -10,6 +10,7 @@ import (
 	"embed"
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 )
 
@@ -18,12 +19,14 @@ var fs embed.FS
 
 // ModelInfo contains the metadata for a single model from models.dev.
 type ModelInfo struct {
-	ID              string
-	Name            string
-	Family          string
-	Reasoning       bool
-	ContextWindow   int
-	MaxOutputTokens int
+	ID               string
+	Name             string
+	Family           string
+	Reasoning        bool
+	ContextWindow    int
+	MaxOutputTokens  int
+	InputModalities  []string
+	OutputModalities []string
 }
 
 type modelsDevData map[string]providerEntry
@@ -38,11 +41,17 @@ type providerEntry struct {
 }
 
 type modelMetadata struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Family    string     `json:"family"`
-	Reasoning bool       `json:"reasoning"`
-	Limit     modelLimit `json:"limit"`
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Family     string          `json:"family"`
+	Reasoning  bool            `json:"reasoning"`
+	Limit      modelLimit      `json:"limit"`
+	Modalities modelModalities `json:"modalities"`
+}
+
+type modelModalities struct {
+	Input  []string `json:"input"`
+	Output []string `json:"output"`
 }
 
 type modelLimit struct {
@@ -138,12 +147,14 @@ func Lookup(providerID, modelID string) *ModelInfo {
 		return nil
 	}
 	return &ModelInfo{
-		ID:              m.ID,
-		Name:            m.Name,
-		Family:          m.Family,
-		Reasoning:       m.Reasoning,
-		ContextWindow:   m.Limit.Context,
-		MaxOutputTokens: m.Limit.Output,
+		ID:               m.ID,
+		Name:             m.Name,
+		Family:           m.Family,
+		Reasoning:        m.Reasoning,
+		ContextWindow:    m.Limit.Context,
+		MaxOutputTokens:  m.Limit.Output,
+		InputModalities:  append([]string(nil), m.Modalities.Input...),
+		OutputModalities: append([]string(nil), m.Modalities.Output...),
 	}
 }
 
@@ -161,13 +172,33 @@ func AllForProvider(providerID string) []ModelInfo {
 	models := make([]ModelInfo, 0, len(provider.Models))
 	for _, m := range provider.Models {
 		models = append(models, ModelInfo{
-			ID:              m.ID,
-			Name:            m.Name,
-			Family:          m.Family,
-			Reasoning:       m.Reasoning,
-			ContextWindow:   m.Limit.Context,
-			MaxOutputTokens: m.Limit.Output,
+			ID:               m.ID,
+			Name:             m.Name,
+			Family:           m.Family,
+			Reasoning:        m.Reasoning,
+			ContextWindow:    m.Limit.Context,
+			MaxOutputTokens:  m.Limit.Output,
+			InputModalities:  append([]string(nil), m.Modalities.Input...),
+			OutputModalities: append([]string(nil), m.Modalities.Output...),
 		})
 	}
 	return models
+}
+
+// SupportsInputModality reports whether the model accepts the specified input
+// modality (for example: "image" or "pdf").
+func (m *ModelInfo) SupportsInputModality(modality string) bool {
+	if m == nil {
+		return false
+	}
+	modality = strings.TrimSpace(strings.ToLower(modality))
+	if modality == "" {
+		return false
+	}
+	for _, candidate := range m.InputModalities {
+		if strings.EqualFold(candidate, modality) {
+			return true
+		}
+	}
+	return false
 }
