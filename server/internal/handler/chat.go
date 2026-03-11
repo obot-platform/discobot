@@ -29,7 +29,8 @@ type ChatRequest struct {
 	Trigger string `json:"trigger,omitempty"`
 	// MessageID is the ID of the message to regenerate (for regenerate-message trigger)
 	MessageID string `json:"messageId,omitempty"`
-	// WorkspaceID is required for new sessions
+	// WorkspaceID is optional for new sessions.
+	// If omitted, the server creates a local workspace under Discobot's data directory.
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	// AgentID is required for new sessions
 	AgentID string `json:"agentId,omitempty"`
@@ -95,16 +96,22 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Session doesn't exist - create it
-		if req.WorkspaceID == "" || req.AgentID == "" {
-			h.Error(w, http.StatusBadRequest, "workspaceId and agentId are required for new sessions")
+		if req.AgentID == "" {
+			h.Error(w, http.StatusBadRequest, "agentId is required for new sessions")
+			return
+		}
+
+		workspaceID, err := h.resolveWorkspaceIDForNewSession(ctx, projectID, req.WorkspaceID)
+		if err != nil {
+			h.Error(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		// NewSession validates that workspace and agent belong to project
-		_, err := h.chatService.NewSession(ctx, service.NewSessionRequest{
+		_, err = h.chatService.NewSession(ctx, service.NewSessionRequest{
 			SessionID:   sessionID,
 			ProjectID:   projectID,
-			WorkspaceID: req.WorkspaceID,
+			WorkspaceID: workspaceID,
 			AgentID:     req.AgentID,
 			Model:       req.Model,
 			Reasoning:   req.Reasoning,

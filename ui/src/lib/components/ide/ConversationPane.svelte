@@ -4,8 +4,6 @@
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import CheckCircleIcon from "@lucide/svelte/icons/check-circle";
 	import CornerDownLeftIcon from "@lucide/svelte/icons/corner-down-left";
-	import FolderIcon from "@lucide/svelte/icons/folder";
-	import GithubIcon from "@lucide/svelte/icons/github";
 	import HammerIcon from "@lucide/svelte/icons/hammer";
 	import Loader2Icon from "@lucide/svelte/icons/loader-2";
 	import MapIcon from "@lucide/svelte/icons/map";
@@ -14,16 +12,14 @@
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import XIcon from "@lucide/svelte/icons/x";
 	import ZapIcon from "@lucide/svelte/icons/zap";
-	import GitCommitIcon from "@lucide/svelte/icons/git-commit";
-	import GitBranchIcon from "@lucide/svelte/icons/git-branch";
 	import { onDestroy } from "svelte";
-	import { api } from "$lib/api-client";
-	import type { AgentModel, Workspace } from "$lib/api-types";
+	import type { AgentModel, WorkspaceValidationResult } from "$lib/api-types";
 	import { Button } from "$lib/components/ui/button";
 	import ConversationEnvSetsControl from "$lib/components/ide/ConversationEnvSetsControl.svelte";
 	import ConversationFileMentionDropdown from "$lib/components/ide/ConversationFileMentionDropdown.svelte";
 	import ConversationHooksPanel from "$lib/components/ide/ConversationHooksPanel.svelte";
 	import ConversationQueuePanel from "$lib/components/ide/ConversationQueuePanel.svelte";
+	import ConversationWorkspaceSelector from "$lib/components/ide/ConversationWorkspaceSelector.svelte";
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -38,8 +34,6 @@
 		InputGroupButton,
 		InputGroupTextarea,
 	} from "$lib/components/ui/input-group";
-	import { Input } from "$lib/components/ui/input";
-	import { NativeSelect } from "$lib/components/ui/native-select";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { useThreadContext } from "$lib/context/thread-context.svelte";
@@ -69,6 +63,23 @@
 		displayName: string;
 		model: AgentModel;
 		reasoning: boolean;
+	};
+	type WorkspaceSelectorState = {
+		selectedWorkspaceOption: string;
+		selectedWorkspaceBranch: string;
+		requiresSourceInput: boolean;
+		workspaceSourceInput: string;
+		workspaceSourceType: "local" | "git";
+		workspaceValidation: WorkspaceValidationResult | null;
+		workspaceSourceIsValid: boolean;
+		workspaceValidationMessage: string | null;
+		validatingWorkspaceSource: boolean;
+		creatingSessionSetup: boolean;
+		setupMessage: string | null;
+	};
+	type WorkspaceSelectorHandle = {
+		ensureSessionReady: () => Promise<boolean>;
+		resetForNewSession: () => void;
 	};
 
 	const modeOptions: ModeOption[] = [
@@ -106,81 +117,22 @@
 	let selectedMode = $state<ComposerMode>("build");
 	let selectedModelId = $state<string | null>(null);
 	let selectorSessionId = $state<string | null>(null);
-	let selectedWorkspaceOption = $state("new-workspace");
-	let selectedWorkspaceBranch = $state("");
-	let workspaceSourceInput = $state("");
-	let showWorkspaceSourceInput = $state(false);
-	let creatingSessionSetup = $state(false);
-	let availableWorkspaces = $state<Workspace[]>([]);
-	let loadingWorkspaces = $state(false);
-	let loadedWorkspaces = $state(false);
-	let sessionSetupMessage = $state<string | null>(null);
+	let workspaceSelectorRef = $state<WorkspaceSelectorHandle | null>(null);
+	let workspaceSelectorState = $state<WorkspaceSelectorState>({
+		selectedWorkspaceOption: "new-workspace",
+		selectedWorkspaceBranch: "",
+		requiresSourceInput: false,
+		workspaceSourceInput: "",
+		workspaceSourceType: "local",
+		workspaceValidation: null,
+		workspaceSourceIsValid: true,
+		workspaceValidationMessage: null,
+		validatingWorkspaceSource: false,
+		creatingSessionSetup: false,
+		setupMessage: null,
+	});
 	let optimisticConversation = $state<SessionConversationMessage[]>([]);
 	let optimisticMessageCounter = $state(0);
-
-	function shortenHomePath(path: string): string {
-		const homeMatch = path.match(/^(\/home\/[^/]+|\/Users\/[^/]+)(\/.*)?$/);
-		if (homeMatch) {
-			const rest = homeMatch[2] || "";
-			return `~${rest}`;
-		}
-		return path;
-	}
-
-	function getWorkspaceOptionLabel(workspace: Workspace): string {
-		return workspace.displayName || shortenHomePath(workspace.path);
-	}
-
-	function normalizeGitPath(value: string): string {
-		if (/^[^/\s]+\/[^/\s]+$/.test(value)) {
-			return `https://github.com/${value}`;
-		}
-		return value;
-	}
-
-	function buildNewWorkspacePath(): string {
-		return `~/workspace-${Date.now()}`;
-	}
-
-	function isGithubWorkspace(workspace: Workspace): boolean {
-		if (workspace.sourceType !== "git") {
-			return false;
-		}
-
-		const value = `${workspace.path} ${workspace.displayName || ""}`.toLowerCase();
-		return value.includes("github.com") || value.includes("github");
-	}
-
-	const requiresSourceInput = $derived.by(
-		() => selectedWorkspaceOption === "local-directory" || selectedWorkspaceOption === "git-repo",
-	);
-	const selectedExistingWorkspace = $derived.by(() => {
-		if (!selectedWorkspaceOption.startsWith("existing:")) {
-			return null;
-		}
-
-		const selectedWorkspaceId = selectedWorkspaceOption.slice("existing:".length);
-		return availableWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
-	});
-	const existingWorkspaceIsGithub = $derived.by(
-		() => selectedExistingWorkspace !== null && isGithubWorkspace(selectedExistingWorkspace),
-	);
-	const showBranchSelector = $derived.by(() => selectedWorkspaceOption !== "new-workspace");
-	const availableWorkspaceBranches = $derived.by(() => {
-		if (selectedWorkspaceOption === "local-directory") {
-			return ["main", "discobot-session", "feature/local-workspace"];
-		}
-
-		if (selectedWorkspaceOption === "git-repo") {
-			return ["main", "develop", "release"];
-		}
-
-		if (selectedExistingWorkspace?.sourceType === "git") {
-			return ["main", "develop", "feature/workspace-sync"];
-		}
-
-		return ["main", "discobot-session", "feature/workspace-setup"];
-	});
 	const conversationMessages = $derived.by(() =>
 		thread.conversation.length > 0 ? thread.conversation : optimisticConversation,
 	);
@@ -318,15 +270,11 @@
 		selectedModelId = app.defaultModel || null;
 
 		if (currentSessionId === "new-session") {
-			sessionSetupMessage = null;
-			selectedWorkspaceBranch = "";
-			if (!loadingWorkspaces) {
-				void loadWorkspaces();
-			}
+			workspaceSelectorRef?.resetForNewSession();
+			void app.refreshWorkspaces();
+			void app.refreshModels();
 			return;
 		}
-
-		sessionSetupMessage = null;
 	});
 
 	$effect(() => {
@@ -334,136 +282,6 @@
 			optimisticConversation = [];
 		}
 	});
-
-	$effect(() => {
-		if (!showBranchSelector) {
-			selectedWorkspaceBranch = "";
-			return;
-		}
-
-		if (
-			selectedWorkspaceBranch.length > 0 &&
-			!availableWorkspaceBranches.includes(selectedWorkspaceBranch)
-		) {
-			selectedWorkspaceBranch = "";
-		}
-	});
-
-	async function loadWorkspaces() {
-		if (loadingWorkspaces) {
-			return;
-		}
-
-		loadingWorkspaces = true;
-		const initialLoad = !loadedWorkspaces;
-		try {
-			const { workspaces } = await api.getWorkspaces();
-			availableWorkspaces = workspaces;
-			sessionSetupMessage = null;
-			const preferredWorkspace = workspaces.find((workspace) => workspace.status === "ready") ?? workspaces[0];
-
-			if (selectedWorkspaceOption.startsWith("existing:")) {
-				const selectedWorkspaceId = selectedWorkspaceOption.slice("existing:".length);
-				if (!workspaces.some((workspace) => workspace.id === selectedWorkspaceId)) {
-					selectedWorkspaceOption = preferredWorkspace
-						? `existing:${preferredWorkspace.id}`
-						: "new-workspace";
-				}
-			} else if (initialLoad && preferredWorkspace) {
-				selectedWorkspaceOption = `existing:${preferredWorkspace.id}`;
-			}
-		} catch (error) {
-			sessionSetupMessage = error instanceof Error
-				? `Failed to load workspaces: ${error.message}`
-				: "Failed to load workspaces.";
-		} finally {
-			loadingWorkspaces = false;
-			loadedWorkspaces = true;
-		}
-	}
-
-	async function ensureSessionFromSelection(): Promise<boolean> {
-		if (session.current) {
-			return true;
-		}
-		if (creatingSessionSetup) {
-			return false;
-		}
-
-		creatingSessionSetup = true;
-		try {
-			let workspaceId: string | null = null;
-
-			if (selectedWorkspaceOption.startsWith("existing:")) {
-				workspaceId = selectedWorkspaceOption.slice("existing:".length);
-				if (!availableWorkspaces.some((workspace) => workspace.id === workspaceId)) {
-					sessionSetupMessage = "Select an existing workspace.";
-					return false;
-				}
-			} else if (selectedWorkspaceOption === "new-workspace") {
-				const workspace = await api.createWorkspace({
-					path: buildNewWorkspacePath(),
-					sourceType: "local",
-				});
-				workspaceId = workspace.id;
-				selectedWorkspaceOption = `existing:${workspace.id}`;
-				selectedWorkspaceBranch = "";
-				showWorkspaceSourceInput = false;
-			} else if (selectedWorkspaceOption === "local-directory") {
-				const path = workspaceSourceInput.trim();
-				if (path.length === 0) {
-					sessionSetupMessage = "Enter a local directory path.";
-					return false;
-				}
-
-				const workspace = await api.createWorkspace({
-					path,
-					sourceType: "local",
-				});
-				workspaceId = workspace.id;
-				selectedWorkspaceOption = `existing:${workspace.id}`;
-				selectedWorkspaceBranch = "";
-				showWorkspaceSourceInput = false;
-			} else if (selectedWorkspaceOption === "git-repo") {
-				const rawPath = workspaceSourceInput.trim();
-				if (rawPath.length === 0) {
-					sessionSetupMessage = "Enter a GitHub repository.";
-					return false;
-				}
-
-				const workspace = await api.createWorkspace({
-					path: normalizeGitPath(rawPath),
-					sourceType: "git",
-				});
-				workspaceId = workspace.id;
-				selectedWorkspaceOption = `existing:${workspace.id}`;
-				selectedWorkspaceBranch = "";
-				showWorkspaceSourceInput = false;
-			}
-
-			if (!workspaceId) {
-				sessionSetupMessage = "Unable to determine workspace for this session.";
-				return false;
-			}
-
-			const sessionId = await app.createSessionForWorkspace(workspaceId);
-			if (!sessionId) {
-				sessionSetupMessage = app.errorMessage || "Failed to create session.";
-				return false;
-			}
-
-			await loadWorkspaces();
-			sessionSetupMessage = null;
-			return true;
-		} catch (error) {
-			sessionSetupMessage = error instanceof Error
-				? `Failed to set up session: ${error.message}`
-				: "Failed to set up session.";
-			return false;
-		} finally {
-			creatingSessionSetup = false;
-		}
-	}
 
 	function planEntries() {
 		return thread.planEntries;
@@ -584,14 +402,17 @@
 		}
 
 		if (!session.current) {
-			const ready = await ensureSessionFromSelection();
+			const ready = await (workspaceSelectorRef?.ensureSessionReady() ?? Promise.resolve(false));
 			if (!ready) {
 				return;
 			}
 		}
 
 		if (inputEmpty() && attachmentFiles.length === 0) {
-			session.threads.create();
+			if (!session.current) {
+				return;
+			}
+			await app.createSessionForWorkspace(session.current.workspaceId);
 			return;
 		}
 
@@ -612,22 +433,6 @@
 		fileMentionDropdownRef?.closeDropdown();
 		clearAttachments();
 		runSubmitCycle();
-	}
-
-	function handleSessionSourceKeydown(event: KeyboardEvent) {
-		if (event.key === "Escape") {
-			event.preventDefault();
-			selectedWorkspaceOption = "new-workspace";
-			selectedWorkspaceBranch = "";
-			workspaceSourceInput = "";
-			showWorkspaceSourceInput = false;
-			return;
-		}
-
-		if (event.key === "Enter") {
-			event.preventDefault();
-			fileMentionTextareaRef?.focus();
-		}
 	}
 
 	function handleFileInputChange(event: Event) {
@@ -743,11 +548,35 @@
 
 			{#if !session.current}
 				<p class="mb-2 px-1 text-sm font-medium text-muted-foreground">Start a new session</p>
-				{#if loadingWorkspaces}
+				{#if app.workspacesStatus === "loading"}
 					<p class="mb-2 px-1 text-xs text-muted-foreground">Loading workspaces...</p>
 				{/if}
-				{#if sessionSetupMessage}
-					<p class="mb-2 px-1 text-xs text-destructive">{sessionSetupMessage}</p>
+				{#if workspaceSelectorState.setupMessage}
+					<p class="mb-2 truncate px-1 text-xs text-destructive" title={workspaceSelectorState.setupMessage}>
+						{workspaceSelectorState.setupMessage}
+					</p>
+				{/if}
+				{#if workspaceSelectorState.workspaceValidationMessage}
+					<p
+						class={`mb-2 truncate px-1 text-xs ${workspaceSelectorState.workspaceSourceIsValid ? "text-muted-foreground" : "text-destructive"}`}
+						title={workspaceSelectorState.workspaceValidationMessage}
+					>
+						{workspaceSelectorState.workspaceValidationMessage}
+					</p>
+				{/if}
+				{#if workspaceSelectorState.workspaceValidation?.authMessage}
+					<p class="mb-2 px-1 text-xs text-muted-foreground">
+						{workspaceSelectorState.workspaceValidation.authMessage}
+					</p>
+					{#if workspaceSelectorState.workspaceValidation.authRequired && workspaceSelectorState.workspaceValidation.authProvider === "github-git"}
+						<button
+							type="button"
+							class="mb-2 px-1 text-xs text-primary underline underline-offset-2 hover:text-primary/80"
+							onclick={app.openGitHubCredentialFlow}
+						>
+							Connect GitHub credential
+						</button>
+					{/if}
 				{/if}
 			{/if}
 
@@ -765,7 +594,7 @@
 						void submitComposer();
 					}}
 				>
-					<InputGroup class="overflow-hidden rounded-t-md rounded-b-none md:rounded-md">
+					<InputGroup class="rounded-t-md rounded-b-none md:rounded-md">
 					{#if attachmentFiles.length > 0}
 						<InputGroupAddon
 							align="block-start"
@@ -878,18 +707,16 @@
 										variant="ghost"
 										class="h-6 max-w-[160px] gap-1.5 px-2 text-xs"
 										title={
-											selectedModelVariant
-												? `Model: ${selectedModelVariant.displayName}`
-												: "Model: Default model"
+											selectedModelVariant ? `Model: ${selectedModelVariant.displayName}` : "Model"
 										}
 									>
-										<span class="truncate">
-											{#if selectedModelVariant}
+										{#if selectedModelVariant}
+											<span class="truncate">
 												{selectedModelVariant.displayName.replace(/\s*\(thinking\)\s*/i, "")}
-											{:else}
-												Default model
-											{/if}
-										</span>
+											</span>
+										{:else}
+											<BrainIcon class="size-3.5 shrink-0" />
+										{/if}
 										{#if selectedModelVariant?.reasoning}
 											<BrainIcon class="size-3.5 shrink-0" />
 										{/if}
@@ -979,124 +806,24 @@
 							{/if}
 
 							{#if !session.current}
-								<div class="flex items-center gap-1.5">
-									{#if selectedWorkspaceOption === "local-directory"}
-										<FolderIcon class="size-4 text-muted-foreground" />
-									{:else if selectedWorkspaceOption === "git-repo"}
-										<GithubIcon class="size-4 text-muted-foreground" />
-									{:else if selectedWorkspaceOption.startsWith("existing:")}
-										{#if selectedExistingWorkspace?.sourceType === "local"}
-											<FolderIcon class="size-4 text-muted-foreground" />
-										{:else if existingWorkspaceIsGithub}
-											<GithubIcon class="size-4 text-muted-foreground" />
-										{:else}
-											<GitCommitIcon class="size-4 text-muted-foreground" />
-										{/if}
-									{:else}
-										<FolderIcon class="size-4 text-muted-foreground" />
-									{/if}
-
-									{#if showWorkspaceSourceInput && requiresSourceInput}
-										<Input
-											id="session-setup-source-inline"
-											class="h-8 w-[240px] text-xs"
-											value={workspaceSourceInput}
-											placeholder={
-												selectedWorkspaceOption === "local-directory"
-													? "~/projects/my-app"
-													: "https://github.com/org/repo or org/repo"
-											}
-											oninput={(event) => {
-												workspaceSourceInput = (event.currentTarget as HTMLInputElement).value;
-											}}
-											onkeydown={handleSessionSourceKeydown}
-										/>
-									{:else}
-										<NativeSelect
-											id="session-setup-workspace-inline"
-											class="h-8 w-[240px] text-xs"
-											value={selectedWorkspaceOption}
-											disabled={loadingWorkspaces}
-											onchange={(event) => {
-												const nextOption = (event.currentTarget as HTMLSelectElement).value;
-												selectedWorkspaceOption = nextOption;
-												selectedWorkspaceBranch = "";
-												if (nextOption === "local-directory" || nextOption === "git-repo") {
-													showWorkspaceSourceInput = true;
-													return;
-												}
-												showWorkspaceSourceInput = false;
-												workspaceSourceInput = "";
-											}}
-										>
-											{#if availableWorkspaces.length > 0}
-												<optgroup label="Existing workspaces">
-													{#each availableWorkspaces as workspace (workspace.id)}
-														<option value={`existing:${workspace.id}`}>
-															{getWorkspaceOptionLabel(workspace)}
-														</option>
-													{/each}
-												</optgroup>
-											{/if}
-											<optgroup label="Create new">
-												<option value="new-workspace">New Workspace</option>
-												<option value="local-directory">Local Directory</option>
-												<option value="git-repo">GitHub Repo</option>
-											</optgroup>
-										</NativeSelect>
-									{/if}
-								</div>
-
-								{#if showBranchSelector}
-									<DropdownMenu>
-										<DropdownMenuTrigger class="tauri-no-drag">
-											<InputGroupButton
-												type="button"
-												size="icon-sm"
-												variant="ghost"
-												aria-label="Select branch"
-												title={selectedWorkspaceBranch || "No branch selected"}
-											>
-												<GitBranchIcon
-													class={`size-4 ${selectedWorkspaceBranch ? "text-foreground" : "text-muted-foreground"}`}
-												/>
-											</InputGroupButton>
-										</DropdownMenuTrigger>
-										<DropdownMenuContent align="end" class="w-56">
-											<DropdownMenuItem
-												onclick={() => {
-													selectedWorkspaceBranch = "";
-												}}
-												class="justify-between"
-											>
-												<span>No branch</span>
-												{#if selectedWorkspaceBranch === ""}
-													<CheckIcon class="size-3.5 text-primary" />
-												{/if}
-											</DropdownMenuItem>
-											<DropdownMenuSeparator />
-											{#each availableWorkspaceBranches as branch (branch)}
-												<DropdownMenuItem
-													onclick={() => {
-														selectedWorkspaceBranch = branch;
-													}}
-													class="justify-between"
-												>
-													<span class="truncate">{branch}</span>
-													{#if selectedWorkspaceBranch === branch}
-														<CheckIcon class="size-3.5 text-primary" />
-													{/if}
-												</DropdownMenuItem>
-											{/each}
-										</DropdownMenuContent>
-									</DropdownMenu>
-								{/if}
+								<ConversationWorkspaceSelector
+									bind:this={workspaceSelectorRef}
+									onStateChange={(state) => {
+										workspaceSelectorState = state;
+									}}
+								/>
 							{/if}
 
 							<InputGroupButton
 								type={isGenerating() ? "button" : "submit"}
 								variant="default"
 								size="icon-sm"
+								disabled={
+									workspaceSelectorState.creatingSessionSetup ||
+									(!session.current &&
+										workspaceSelectorState.requiresSourceInput &&
+										!workspaceSelectorState.workspaceSourceIsValid)
+								}
 								onclick={(event) => {
 									event.preventDefault();
 									void submitComposer();
@@ -1107,7 +834,7 @@
 								onmouseleave={() => {
 									submitHovered = false;
 								}}
-								aria-label={showPlusIcon() ? "New thread" : isGenerating() ? "Stop" : "Submit"}
+								aria-label={showPlusIcon() ? "New session" : isGenerating() ? "Stop" : "Submit"}
 							>
 								{#if showPlusIcon()}
 									<PlusIcon class="size-4" />

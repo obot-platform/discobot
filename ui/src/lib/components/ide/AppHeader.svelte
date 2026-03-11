@@ -2,13 +2,25 @@
 	import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
 	import CircleIcon from "@lucide/svelte/icons/circle";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+	import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
 	import Loader2Icon from "@lucide/svelte/icons/loader-2";
 	import MoonIcon from "@lucide/svelte/icons/moon";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import SunIcon from "@lucide/svelte/icons/sun";
 	import DiscobotBrand from "$lib/components/ide/DiscobotBrand.svelte";
 	import SettingsDialog from "$lib/components/ide/SettingsDialog.svelte";
+	import {
+		AlertDialog,
+		AlertDialogAction,
+		AlertDialogCancel,
+		AlertDialogContent,
+		AlertDialogDescription,
+		AlertDialogFooter,
+		AlertDialogHeader,
+		AlertDialogTitle,
+	} from "$lib/components/ui/alert-dialog";
 	import { Button } from "$lib/components/ui/button";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -17,12 +29,20 @@
 		DropdownMenuSeparator,
 		DropdownMenuTrigger,
 	} from "$lib/components/ui/dropdown-menu";
+	import { Input } from "$lib/components/ui/input";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import type { SessionRuntimeStatus } from "$lib/shell-types";
 
 	const app = useAppContext();
 	const session = useSessionContext();
+	let renameDialogOpen = $state(false);
+	let renameSessionId = $state<string | null>(null);
+	let renameDraft = $state("");
+	let renamingSession = $state(false);
+	let deleteDialogOpen = $state(false);
+	let deleteSessionId = $state<string | null>(null);
+	let deletingSession = $state(false);
 
 	function normalizedStatus(status: SessionRuntimeStatus): string {
 		return status.toLowerCase();
@@ -74,12 +94,87 @@
 		return app.sessions.filter((sessionItem) => !sessionItem.isRecent);
 	}
 
+	function sessionById(sessionId: string) {
+		return app.sessions.find((sessionItem) => sessionItem.id === sessionId) ?? null;
+	}
+
 	function handleSelectSession(sessionId: string) {
 		app.selectSession(sessionId);
 	}
 
 	function handleStartNewSession() {
 		app.startNewSession();
+	}
+
+	function openRenameDialog(sessionId: string) {
+		const sessionItem = sessionById(sessionId);
+		if (!sessionItem) {
+			return;
+		}
+		renameSessionId = sessionId;
+		renameDraft = sessionItem.name;
+		renameDialogOpen = true;
+	}
+
+	function closeRenameDialog() {
+		renameDialogOpen = false;
+		renameSessionId = null;
+		renameDraft = "";
+		renamingSession = false;
+	}
+
+	async function handleRenameSession() {
+		if (!renameSessionId || renamingSession) {
+			return;
+		}
+
+		renamingSession = true;
+		const renamed = await app.renameSession(renameSessionId, renameDraft);
+		renamingSession = false;
+		if (renamed) {
+			closeRenameDialog();
+		}
+	}
+
+	function handleRenameInputKeydown(event: KeyboardEvent) {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			void handleRenameSession();
+		}
+	}
+
+	function openDeleteDialog(sessionId: string) {
+		if (!sessionById(sessionId)) {
+			return;
+		}
+		deleteSessionId = sessionId;
+		deleteDialogOpen = true;
+	}
+
+	function closeDeleteDialog() {
+		deleteDialogOpen = false;
+		deleteSessionId = null;
+		deletingSession = false;
+	}
+
+	async function handleDeleteSession() {
+		if (!deleteSessionId || deletingSession) {
+			return;
+		}
+
+		deletingSession = true;
+		const deleted = await app.deleteSession(deleteSessionId);
+		deletingSession = false;
+		if (deleted) {
+			closeDeleteDialog();
+		}
+	}
+
+	function deleteDialogSessionName() {
+		if (!deleteSessionId) {
+			return "this session";
+		}
+		return sessionById(deleteSessionId)?.name ?? "this session";
 	}
 
 	function showMacSpacer(): boolean {
@@ -122,25 +217,50 @@
 					</DropdownMenuItem>
 				{:else}
 					{#each app.recentSessions as sessionItem}
-						<DropdownMenuItem
-							onclick={() => handleSelectSession(sessionItem.id)}
-							class={`justify-between gap-3 ${app.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
-						>
-							<span class="truncate">{sessionItem.name}</span>
-							<span
-								class={`inline-flex items-center ${statusTone(sessionItem.status)}`}
-								title={statusLabel(sessionItem.status)}
-								aria-label={statusLabel(sessionItem.status)}
+						<DropdownMenu>
+							<DropdownMenuItem
+								onclick={() => handleSelectSession(sessionItem.id)}
+								class={`group h-8 justify-between gap-3 ${app.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
 							>
-								{#if isSpinningStatus(sessionItem.status)}
-									<Loader2Icon class="size-3.5 animate-spin" />
-								{:else if normalizedStatus(sessionItem.status) === "ready"}
-									<CircleCheckIcon class="size-3.5" />
-								{:else}
-									<CircleIcon class="size-2.5 fill-current" />
-								{/if}
-							</span>
-						</DropdownMenuItem>
+								<span class="truncate">{sessionItem.name}</span>
+								<span class="relative inline-flex size-4 items-center justify-center">
+									<span
+										class={`inline-flex items-center transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0 ${statusTone(sessionItem.status)}`}
+										title={statusLabel(sessionItem.status)}
+										aria-label={statusLabel(sessionItem.status)}
+									>
+										{#if isSpinningStatus(sessionItem.status)}
+											<Loader2Icon class="size-3.5 animate-spin" />
+										{:else if normalizedStatus(sessionItem.status) === "ready"}
+											<CircleCheckIcon class="size-3.5" />
+										{:else}
+											<CircleIcon class="size-2.5 fill-current" />
+										{/if}
+									</span>
+									<DropdownMenuTrigger class="tauri-no-drag absolute inset-0">
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											class="size-4 p-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+											aria-label={`Session actions for ${sessionItem.name}`}
+											onclick={(event) => {
+												event.stopPropagation();
+											}}
+										>
+											<EllipsisIcon class="size-3.5" />
+										</Button>
+									</DropdownMenuTrigger>
+								</span>
+							</DropdownMenuItem>
+							<DropdownMenuContent align="end" class="w-36">
+								<DropdownMenuItem onclick={() => openRenameDialog(sessionItem.id)}>
+									Rename
+								</DropdownMenuItem>
+								<DropdownMenuItem variant="destructive" onclick={() => openDeleteDialog(sessionItem.id)}>
+									Delete
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
 					{/each}
 				{/if}
 				<DropdownMenuSeparator />
@@ -148,25 +268,50 @@
 					All sessions
 				</DropdownMenuLabel>
 				{#each nonRecentSessions() as sessionItem}
-					<DropdownMenuItem
-						onclick={() => handleSelectSession(sessionItem.id)}
-						class={`justify-between gap-3 ${app.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
-					>
-						<span class="truncate">{sessionItem.name}</span>
-						<span
-							class={`inline-flex items-center ${statusTone(sessionItem.status)}`}
-							title={statusLabel(sessionItem.status)}
-							aria-label={statusLabel(sessionItem.status)}
+					<DropdownMenu>
+						<DropdownMenuItem
+							onclick={() => handleSelectSession(sessionItem.id)}
+							class={`group h-8 justify-between gap-3 ${app.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
 						>
-							{#if isSpinningStatus(sessionItem.status)}
-								<Loader2Icon class="size-3.5 animate-spin" />
-							{:else if normalizedStatus(sessionItem.status) === "ready"}
-								<CircleCheckIcon class="size-3.5" />
-							{:else}
-								<CircleIcon class="size-2.5 fill-current" />
-							{/if}
-						</span>
-					</DropdownMenuItem>
+							<span class="truncate">{sessionItem.name}</span>
+							<span class="relative inline-flex size-4 items-center justify-center">
+								<span
+									class={`inline-flex items-center transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0 ${statusTone(sessionItem.status)}`}
+									title={statusLabel(sessionItem.status)}
+									aria-label={statusLabel(sessionItem.status)}
+								>
+									{#if isSpinningStatus(sessionItem.status)}
+										<Loader2Icon class="size-3.5 animate-spin" />
+									{:else if normalizedStatus(sessionItem.status) === "ready"}
+										<CircleCheckIcon class="size-3.5" />
+									{:else}
+										<CircleIcon class="size-2.5 fill-current" />
+									{/if}
+								</span>
+								<DropdownMenuTrigger class="tauri-no-drag absolute inset-0">
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										class="size-4 p-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+										aria-label={`Session actions for ${sessionItem.name}`}
+										onclick={(event) => {
+											event.stopPropagation();
+										}}
+									>
+										<EllipsisIcon class="size-3.5" />
+									</Button>
+								</DropdownMenuTrigger>
+							</span>
+						</DropdownMenuItem>
+						<DropdownMenuContent align="end" class="w-36">
+							<DropdownMenuItem onclick={() => openRenameDialog(sessionItem.id)}>
+								Rename
+							</DropdownMenuItem>
+							<DropdownMenuItem variant="destructive" onclick={() => openDeleteDialog(sessionItem.id)}>
+								Delete
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
 				{/each}
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -251,4 +396,61 @@
 	</div>
 
 	<SettingsDialog />
+
+	<Dialog.Root bind:open={renameDialogOpen}>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>Rename session</Dialog.Title>
+				<Dialog.Description>Choose a new name for this session.</Dialog.Description>
+			</Dialog.Header>
+			<Input
+				value={renameDraft}
+				oninput={(event) => {
+					renameDraft = (event.currentTarget as HTMLInputElement).value;
+				}}
+				onkeydown={handleRenameInputKeydown}
+				maxlength={120}
+				placeholder="Session name"
+			/>
+			<Dialog.Footer>
+				<Button variant="ghost" size="sm" onclick={closeRenameDialog} disabled={renamingSession}>
+					Cancel
+				</Button>
+				<Button
+					variant="default"
+					size="sm"
+					onclick={() => {
+						void handleRenameSession();
+					}}
+					disabled={renamingSession || renameDraft.trim().length === 0}
+				>
+					Save
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<AlertDialog bind:open={deleteDialogOpen}>
+		<AlertDialogContent>
+			<AlertDialogHeader>
+				<AlertDialogTitle>Delete session?</AlertDialogTitle>
+				<AlertDialogDescription>
+					Delete "{deleteDialogSessionName()}"? This action cannot be undone.
+				</AlertDialogDescription>
+			</AlertDialogHeader>
+			<AlertDialogFooter>
+				<AlertDialogCancel onclick={closeDeleteDialog} disabled={deletingSession}>
+					Cancel
+				</AlertDialogCancel>
+				<AlertDialogAction
+					onclick={() => {
+						void handleDeleteSession();
+					}}
+					disabled={deletingSession}
+				>
+					Delete
+				</AlertDialogAction>
+			</AlertDialogFooter>
+		</AlertDialogContent>
+	</AlertDialog>
 </header>

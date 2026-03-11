@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/obot-platform/discobot/server/internal/config"
+	"github.com/obot-platform/discobot/server/internal/jobs"
 	"github.com/obot-platform/discobot/server/internal/middleware"
 	"github.com/obot-platform/discobot/server/internal/model"
 	"github.com/obot-platform/discobot/server/internal/sandbox"
@@ -78,19 +79,24 @@ func newChatTestHandler(t *testing.T, s *store.Store, provider *mocksandbox.Prov
 
 	cfg := &config.Config{
 		SandboxIdleTimeout: 30 * time.Minute,
+		WorkspaceDir:       t.TempDir(),
 	}
 
-	sandboxSvc := service.NewSandboxService(s, provider, cfg, nil, nil, nil, nil)
-	sessionSvc := service.NewSessionService(s, nil, provider, sandboxSvc, nil, nil)
+	jobQueue := jobs.NewQueue(s, cfg)
+	workspaceSvc := service.NewWorkspaceService(s, nil, nil)
+	sandboxSvc := service.NewSandboxService(s, provider, cfg, nil, nil, jobQueue, nil)
+	sessionSvc := service.NewSessionService(s, nil, provider, sandboxSvc, nil, jobQueue)
 	sandboxSvc.SetSessionInitializer(sessionSvc)
-	chatSvc := service.NewChatService(s, sessionSvc, nil, nil, sandboxSvc, nil)
+	chatSvc := service.NewChatService(s, sessionSvc, jobQueue, nil, sandboxSvc, nil)
 
 	return &Handler{
-		store:          s,
-		cfg:            cfg,
-		chatService:    chatSvc,
-		sessionService: sessionSvc,
-		sandboxService: sandboxSvc,
+		store:            s,
+		cfg:              cfg,
+		chatService:      chatSvc,
+		sessionService:   sessionSvc,
+		sandboxService:   sandboxSvc,
+		workspaceService: workspaceSvc,
+		jobQueue:         jobQueue,
 	}
 }
 

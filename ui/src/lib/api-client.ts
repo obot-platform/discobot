@@ -30,6 +30,7 @@ import type {
 	DeleteSessionFileResponse,
 	EnvSetInfo,
 	EnvSetWithVars,
+	ValidateWorkspaceRequest,
 	GitHubCopilotDeviceCodeRequest,
 	GitHubCopilotDeviceCodeResponse,
 	GitHubCopilotPollRequest,
@@ -69,6 +70,7 @@ import type {
 	TerminalExecuteResponse,
 	UpdateSessionRequest,
 	UserPreference,
+	WorkspaceValidationResult,
 	Workspace,
 	WriteSessionFileRequest,
 	WriteSessionFileResponse,
@@ -166,6 +168,15 @@ class ApiClient {
 		});
 	}
 
+	async validateWorkspace(
+		data: ValidateWorkspaceRequest,
+	): Promise<WorkspaceValidationResult> {
+		return this.fetch<WorkspaceValidationResult>("/workspaces/validate", {
+			method: "POST",
+			body: JSON.stringify(data),
+		});
+	}
+
 	async updateWorkspace(
 		id: string,
 		data: { path?: string; displayName?: string | null },
@@ -194,7 +205,7 @@ class ApiClient {
 
 	async createSession(data: {
 		id: string;
-		workspaceId: string;
+		workspaceId?: string;
 		agentId: string;
 		model?: string;
 		reasoning?: string;
@@ -470,6 +481,10 @@ class ApiClient {
 			method: "POST",
 			body: JSON.stringify({ agentId: id }),
 		});
+	}
+
+	async getProjectModels(): Promise<ModelsResponse> {
+		return this.fetch<ModelsResponse>("/models");
 	}
 
 	async getAgentModels(agentId: string): Promise<ModelsResponse> {

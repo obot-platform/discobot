@@ -15,9 +15,10 @@ import (
 
 // Suggestion represents an autocomplete suggestion
 type Suggestion struct {
-	Value string `json:"value"`
-	Type  string `json:"type"`
-	Valid bool   `json:"valid"` // true if directory contains .git, false otherwise
+	Value          string `json:"value"`
+	Type           string `json:"type"`
+	Valid          bool   `json:"valid"`
+	Classification string `json:"classification,omitempty"`
 }
 
 // GetSuggestions returns autocomplete suggestions for directory paths.
@@ -117,11 +118,19 @@ func getDirectorySuggestions(query string) []Suggestion {
 
 		fullPath := filepath.Join(searchDir, entry.Name())
 
-		// Check if directory contains .git subdirectory
-		gitPath := filepath.Join(fullPath, ".git")
-		hasGit := false
-		if gitInfo, err := os.Stat(gitPath); err == nil && gitInfo.IsDir() {
-			hasGit = true
+		classification := "invalid"
+		valid := false
+		if nestedEntries, err := os.ReadDir(fullPath); err == nil {
+			if len(nestedEntries) == 0 {
+				classification = "empty"
+				valid = true
+			} else {
+				gitPath := filepath.Join(fullPath, ".git")
+				if _, err := os.Stat(gitPath); err == nil {
+					classification = "existing_git"
+					valid = true
+				}
+			}
 		}
 
 		// Convert back to ~ format if it's under home directory
@@ -132,9 +141,10 @@ func getDirectorySuggestions(query string) []Suggestion {
 		}
 
 		suggestions = append(suggestions, Suggestion{
-			Value: displayPath,
-			Type:  "path",
-			Valid: hasGit,
+			Value:          displayPath,
+			Type:           "path",
+			Valid:          valid,
+			Classification: classification,
 		})
 	}
 

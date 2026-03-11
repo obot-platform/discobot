@@ -140,6 +140,85 @@ func TestCreateWorkspace_DefaultSourceType(t *testing.T) {
 	}
 }
 
+func TestValidateWorkspace_LocalPath(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("test@example.com")
+	project := ts.CreateTestProject(user, "Test Project")
+	client := ts.AuthenticatedClient(user)
+
+	repoPath := createWorkspaceTestGitRepo(t)
+
+	resp := client.Post("/api/projects/"+project.ID+"/workspaces/validate", map[string]string{
+		"path":       repoPath,
+		"sourceType": "local",
+	})
+	defer resp.Body.Close()
+
+	AssertStatus(t, resp, http.StatusOK)
+
+	var result struct {
+		Path           string `json:"path"`
+		SourceType     string `json:"sourceType"`
+		Valid          bool   `json:"valid"`
+		Classification string `json:"classification"`
+	}
+	ParseJSON(t, resp, &result)
+
+	if result.Path != repoPath {
+		t.Errorf("Expected path %q, got %q", repoPath, result.Path)
+	}
+	if result.SourceType != "local" {
+		t.Errorf("Expected sourceType local, got %q", result.SourceType)
+	}
+	if !result.Valid {
+		t.Error("Expected local git repo path to be valid")
+	}
+	if result.Classification != "existing_git" {
+		t.Errorf("Expected classification existing_git, got %q", result.Classification)
+	}
+}
+
+func TestValidateWorkspace_GitRemote(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("test@example.com")
+	project := ts.CreateTestProject(user, "Test Project")
+	client := ts.AuthenticatedClient(user)
+
+	repoPath := createWorkspaceTestGitRepo(t)
+	remoteURL := "file://" + repoPath
+
+	resp := client.Post("/api/projects/"+project.ID+"/workspaces/validate", map[string]string{
+		"path":       remoteURL,
+		"sourceType": "git",
+	})
+	defer resp.Body.Close()
+
+	AssertStatus(t, resp, http.StatusOK)
+
+	var result struct {
+		Path           string `json:"path"`
+		SourceType     string `json:"sourceType"`
+		Valid          bool   `json:"valid"`
+		Classification string `json:"classification"`
+	}
+	ParseJSON(t, resp, &result)
+
+	if result.Path != remoteURL {
+		t.Errorf("Expected path %q, got %q", remoteURL, result.Path)
+	}
+	if result.SourceType != "git" {
+		t.Errorf("Expected sourceType git, got %q", result.SourceType)
+	}
+	if !result.Valid {
+		t.Error("Expected local file:// remote to be cloneable")
+	}
+	if result.Classification != "cloneable" {
+		t.Errorf("Expected classification cloneable, got %q", result.Classification)
+	}
+}
+
 func TestGetWorkspace(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
