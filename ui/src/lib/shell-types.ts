@@ -118,7 +118,6 @@ export type SessionDetail = {
 	references: SessionReferences;
 	diffSummary: SessionDiffSummary;
 	services: ServiceItem[];
-	suggestedPrompts: string[];
 	conversation: SessionConversationMessage[];
 };
 
@@ -152,5 +151,4 @@ export type SessionData = {
 	editorFiles: string[];
 	fileContents: Record<string, string>;
 	services: ServiceItem[];
-	suggestedPrompts: string[];
 };

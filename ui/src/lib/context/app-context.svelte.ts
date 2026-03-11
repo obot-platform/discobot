@@ -1,9 +1,11 @@
 import { getContext, hasContext, setContext } from "svelte";
 
+import { api } from "$lib/api-client";
 import type {
 	AgentModel,
 	AuthProvider,
 	CredentialInfo,
+	Session,
 	SupportInfoResponse,
 	ThemeColorScheme,
 } from "$lib/api-types";
@@ -32,6 +34,7 @@ const PREFERRED_IDE_STORAGE_KEY = "preferred.ide";
 const CHAT_WIDTH_MODE_STORAGE_KEY = "chat.width.mode";
 const DEFAULT_MODEL_STORAGE_KEY = "chat.default.model";
 const IGNORED_UPDATE_VERSION_STORAGE_KEY = "update.ignored.version";
+const RECENT_SESSIONS_LIMIT = 4;
 
 export type ChatWidthMode = "full" | "constrained";
 
@@ -171,6 +174,8 @@ class AppContextState {
 	private readonly supportInfoSnapshot: SupportInfoResponse;
 	private readonly updateVersion = "0.0.0-dev+1";
 	private updateCheckInFlight = false;
+	private workspaceId: string | null = null;
+	private agentId: string | null = null;
 
 	constructor(bootstrap: AppContextBootstrap) {
 		this.ideOptions = bootstrap.ideOptions;
@@ -205,6 +210,79 @@ class AppContextState {
 		await new Promise((resolve) => window.setTimeout(resolve, ms));
 	};
 
+	private formatErrorMessage(error: unknown, fallback: string): string {
+		return error instanceof Error ? error.message : fallback;
+	}
+
+	private toSessionSummaries = (sessions: Session[]): SessionSummary[] => {
+		const sortedSessions = [...sessions].sort((a, b) => {
+			const left = new Date(a.timestamp).getTime();
+			const right = new Date(b.timestamp).getTime();
+			if (Number.isNaN(left) || Number.isNaN(right)) {
+				return 0;
+			}
+			return right - left;
+		});
+
+		const recentIds = new Set(
+			sortedSessions.slice(0, RECENT_SESSIONS_LIMIT).map((session) => session.id),
+		);
+
+		return sortedSessions.map((session) => ({
+			id: session.id,
+			name: session.displayName || session.name,
+			status: session.status,
+			isRecent: recentIds.has(session.id),
+		}));
+	};
+
+	private resolveWorkspaceId = async (): Promise<string | null> => {
+		if (this.workspaceId) {
+			return this.workspaceId;
+		}
+
+		const { workspaces } = await api.getWorkspaces();
+		const workspace =
+			workspaces.find((candidate) => candidate.status === "ready") || workspaces[0];
+		if (!workspace) {
+			return null;
+		}
+
+		this.workspaceId = workspace.id;
+		return workspace.id;
+	};
+
+	private resolveAgentId = async (): Promise<string | null> => {
+		if (this.agentId) {
+			return this.agentId;
+		}
+
+		const { agents } = await api.getAgents();
+		const agent = agents.find((candidate) => candidate.isDefault) || agents[0];
+		if (!agent) {
+			return null;
+		}
+
+		this.agentId = agent.id;
+		return agent.id;
+	};
+
+	refreshSessions = async () => {
+		try {
+			const workspaceId = await this.resolveWorkspaceId();
+			if (!workspaceId) {
+				this.setSessions([]);
+				return;
+			}
+
+			const { sessions } = await api.getSessions(workspaceId);
+			this.setSessions(this.toSessionSummaries(sessions));
+			this.errorMessage = undefined;
+		} catch (error) {
+			this.errorMessage = this.formatErrorMessage(error, "Failed to load sessions");
+		}
+	};
+
 	initialize = () => {
 		try {
 			this.status = "loading";
@@ -218,6 +296,7 @@ class AppContextState {
 			this.defaultModel = readDefaultModel();
 			this.ignoredUpdateVersion = readIgnoredUpdateVersion();
 			this.status = "ready";
+			void this.refreshSessions();
 
 			if (typeof window !== "undefined") {
 				const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -278,6 +357,36 @@ class AppContextState {
 	selectSession = (sessionId: string) => {
 		if (this.sessions.some((session) => session.id === sessionId)) {
 			this.selectedSessionId = sessionId;
+		}
+	};
+
+	createSessionForWorkspace = async (workspaceId: string): Promise<string | null> => {
+		try {
+			const agentId = await this.resolveAgentId();
+			if (!agentId) {
+				return null;
+			}
+
+			this.workspaceId = workspaceId;
+
+			const generatedId =
+				typeof crypto !== "undefined" && "randomUUID" in crypto
+					? crypto.randomUUID()
+					: `session-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
+
+			const created = await api.createSession({
+				id: generatedId,
+				workspaceId,
+				agentId,
+			});
+
+			await this.refreshSessions();
+			this.selectSession(created.id);
+			this.errorMessage = undefined;
+			return created.id;
+		} catch (error) {
+			this.errorMessage = this.formatErrorMessage(error, "Failed to create session");
+			return null;
 		}
 	};
 

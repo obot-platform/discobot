@@ -85,6 +85,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     openssh-client \
     openssh-sftp-server \
     psmisc \
+    poppler-utils \
     ripgrep \
     shellcheck \
     python3 \

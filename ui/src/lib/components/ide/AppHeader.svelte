@@ -78,6 +78,10 @@
 		app.selectSession(sessionId);
 	}
 
+	function handleStartNewSession() {
+		app.startNewSession();
+	}
+
 	function showMacSpacer(): boolean {
 		return app.isTauri && app.windowControlsSide === "left";
 	}
@@ -107,7 +111,7 @@
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" class="w-80">
-				<DropdownMenuItem onclick={app.startNewSession}>New session</DropdownMenuItem>
+				<DropdownMenuItem onclick={handleStartNewSession}>New session</DropdownMenuItem>
 				<DropdownMenuSeparator />
 				<DropdownMenuLabel class="text-xs uppercase tracking-[0.16em] text-muted-foreground">
 					Recent sessions
@@ -166,6 +170,19 @@
 				{/each}
 			</DropdownMenuContent>
 		</DropdownMenu>
+
+		<div class="tauri-no-drag flex flex-wrap items-center gap-1">
+			{#each app.workflowActions as action, index (action + index)}
+				<Button
+					variant="ghost"
+					size="xs"
+					class="h-7 px-2 text-xs"
+					disabled={!app.selectedSessionId}
+				>
+					{action}
+				</Button>
+			{/each}
+		</div>
 	</div>
 
 	<div class="relative flex items-center gap-1 pr-2">

@@ -33,9 +33,7 @@ export function createSessionRuntime(bootstrap: SessionRuntimeBootstrap): Sessio
 	let selectedFile = $state("");
 	let selectedThreadId = $state<string | null>(null);
 	let ideMenuOpen = $state(false);
-	let composerDraft = $state(
-		"Ask Discobot to refine the shell, inspect files, open a docked service, or compare the new Svelte UI with the current app...",
-	);
+	let composerDraft = $state("");
 
 	let sessionDataById = $state<Record<string, SessionData>>(bootstrap.sessionDataById);
 	let envSetList = $state(bootstrap.envSets);
@@ -57,7 +55,6 @@ export function createSessionRuntime(bootstrap: SessionRuntimeBootstrap): Sessio
 	const files = $derived.by(() => current?.editorFiles ?? []);
 	const threadFileContents = $derived.by(() => current?.fileContents ?? {});
 	const services = $derived.by(() => current?.services ?? []);
-	const suggestedPrompts = $derived.by(() => current?.suggestedPrompts ?? []);
 	const activeEnvSetIds = $derived.by(() => current?.activeEnvSetIds ?? []);
 	const activeService = $derived.by(
 		() => services.find((item) => centerPanel === `service:${item.id}`) ?? null,
@@ -171,9 +168,6 @@ export function createSessionRuntime(bootstrap: SessionRuntimeBootstrap): Sessio
 			},
 			get services() {
 				return services;
-			},
-			get suggestedPrompts() {
-				return suggestedPrompts;
 			},
 			get activeService() {
 				return activeService;

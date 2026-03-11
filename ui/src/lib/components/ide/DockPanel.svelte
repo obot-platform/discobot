@@ -12,7 +12,6 @@
 	const threadUi = thread.ui;
 	const sessionFiles = $derived.by(() => session.files);
 	const sessionFileContents = $derived.by(() => session.fileContents);
-	const sessionSuggestedPrompts = $derived.by(() => session.suggestedPrompts);
 	const sessionActiveService = $derived.by(() => session.activeService);
 </script>
 
@@ -20,7 +19,7 @@
 	{#if threadUi.centerPanel === "terminal"}
 		<TerminalPanel onClose={threadUi.openChat} />
 	{:else if threadUi.centerPanel === "desktop"}
-		<DesktopPanel onClose={threadUi.openChat} suggestedPrompts={sessionSuggestedPrompts} />
+		<DesktopPanel onClose={threadUi.openChat} />
 	{:else if threadUi.centerPanel === "files"}
 		<FilesPanel
 			fileContents={sessionFileContents}

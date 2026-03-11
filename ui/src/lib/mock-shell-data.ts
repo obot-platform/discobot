@@ -64,12 +64,6 @@ export const services: ServiceItem[] = [
 	{ id: "db", label: "DB", target: "localhost:8080" },
 ];
 
-export const suggestedPrompts = [
-	"Tighten the header spacing",
-	"Show a mobile drawer concept",
-	"Compare with the current React shell",
-];
-
 export const envSets: EnvSetWithVars[] = [
 	{
 		id: "env-core",
@@ -358,7 +352,6 @@ const sessionFixtures: SessionData[] = allSessionStatuses.map((status, index) =>
 		editorFiles: files,
 		fileContents,
 		services,
-		suggestedPrompts,
 	};
 });
 

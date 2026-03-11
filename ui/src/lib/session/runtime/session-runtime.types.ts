@@ -59,7 +59,6 @@ export type SessionRuntime = {
 	files: string[];
 	fileContents: Record<string, string>;
 	services: SessionData["services"];
-	suggestedPrompts: string[];
 	activeService: SessionData["services"][number] | null;
 	queryClient: QueryClient;
 	cache: SessionQueryCache;

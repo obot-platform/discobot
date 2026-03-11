@@ -1,7 +1,9 @@
+import { getApiBase as getConfiguredApiBase, isTauri } from "$lib/api-config";
+
 export function isTauriShell(): boolean {
-	return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+	return isTauri();
 }
 
 export function getApiBase(): string {
-	return import.meta.env.VITE_API_BASE_URL || "/api";
+	return getConfiguredApiBase();
 }
