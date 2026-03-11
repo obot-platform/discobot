@@ -35,6 +35,24 @@ func TestSelectInitialThreadID_UsesExplicitSessionIDByDefault(t *testing.T) {
 	}
 }
 
+func TestSelectInitialThreadID_DefaultsToFreshThread(t *testing.T) {
+	baseDir := t.TempDir()
+	store := thread.NewStore(baseDir)
+	cfg := &config.Config{SessionID: "default"}
+
+	if err := os.MkdirAll(filepath.Join(baseDir, "thread-existing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	threadID := selectInitialThreadID(store, cfg, false)
+	if threadID == "thread-existing" {
+		t.Fatalf("expected a fresh thread id, got existing thread %q", threadID)
+	}
+	if !strings.HasPrefix(threadID, "thread-") {
+		t.Fatalf("expected generated thread ID with prefix thread-, got %q", threadID)
+	}
+}
+
 func TestAgentSlashCommands_LoadsSkillsAndCommands(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", filepath.Join(root, "home"))
@@ -100,6 +118,28 @@ func TestHandleSlashCommand_UnknownStillHandledLocally(t *testing.T) {
 	}
 	if threadID != "thread-1" {
 		t.Fatalf("threadID changed unexpectedly: %q", threadID)
+	}
+}
+
+func TestHandleSlashCommand_PlanDoesNotCreateThreadBeforePrompt(t *testing.T) {
+	threadsDir := t.TempDir()
+	store := thread.NewStore(threadsDir)
+	cfg := &config.Config{AgentCwd: threadsDir, ThreadsDir: threadsDir}
+	planMode := false
+	threadID := "thread-lazy"
+
+	newThreadID, handled := handleSlashCommand(context.Background(), "/plan", nil, store, cfg, threadID, nil, nil, &planMode)
+	if !handled {
+		t.Fatalf("expected /plan to be handled locally")
+	}
+	if newThreadID != threadID {
+		t.Fatalf("expected thread id to remain %q, got %q", threadID, newThreadID)
+	}
+	if !planMode {
+		t.Fatalf("expected /plan to toggle plan mode on")
+	}
+	if _, err := os.Stat(filepath.Join(threadsDir, threadID)); !os.IsNotExist(err) {
+		t.Fatalf("expected no thread directory before first prompt, stat err=%v", err)
 	}
 }
 

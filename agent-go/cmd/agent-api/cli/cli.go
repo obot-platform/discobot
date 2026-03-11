@@ -116,7 +116,7 @@ type Flags struct {
 // Must be called before flag.Parse().
 func AddFlags() *Flags {
 	newThread := new(bool)
-	flag.BoolVar(newThread, "new-thread", false, "Start a new thread on launch instead of resuming")
+	flag.BoolVar(newThread, "new-thread", false, "Start with a fresh thread ID (default behavior; retained for compatibility)")
 	flag.BoolVar(newThread, "n", false, "Alias for --new-thread")
 
 	return &Flags{
@@ -264,7 +264,9 @@ func Run(cfg *config.Config, flags *Flags) {
 	planMode := getThreadPlanMode(store, threadID)
 	if *flags.plan {
 		planMode = true
-		saveThreadPlanMode(store, threadID, true)
+		if threadExists(cfg.ThreadsDir, threadID) {
+			saveThreadPlanMode(store, threadID, true)
+		}
 	}
 
 	// ── Main input loop ───────────────────────────────────────────────────────
@@ -338,6 +340,7 @@ func Run(cfg *config.Config, flags *Flags) {
 					return
 				}
 
+				threadExistedBeforePrompt := threadExists(cfg.ThreadsDir, threadID)
 				req := agent.PromptRequest{
 					Model:        model,
 					Reasoning:    reasoning,
@@ -350,6 +353,9 @@ func Run(cfg *config.Config, flags *Flags) {
 					planMode = enabled
 					saveThreadPlanMode(store, threadID, enabled)
 				})
+				if !threadExistedBeforePrompt && planMode && threadExists(cfg.ThreadsDir, threadID) {
+					saveThreadPlanMode(store, threadID, true)
+				}
 			})
 			if rootCtx.Err() != nil {
 				break
@@ -396,6 +402,7 @@ func Run(cfg *config.Config, flags *Flags) {
 				}
 			}
 
+			threadExistedBeforePrompt := threadExists(cfg.ThreadsDir, threadID)
 			req := agent.PromptRequest{
 				Model:        model,
 				Reasoning:    reasoning,
@@ -408,6 +415,9 @@ func Run(cfg *config.Config, flags *Flags) {
 				planMode = enabled
 				saveThreadPlanMode(store, threadID, enabled)
 			})
+			if !threadExistedBeforePrompt && planMode && threadExists(cfg.ThreadsDir, threadID) {
+				saveThreadPlanMode(store, threadID, true)
+			}
 		})
 
 		if rootCtx.Err() != nil {
@@ -539,7 +549,9 @@ func handleSlashCommand(ctx context.Context, line string, a *agentimpl.DefaultAg
 	case "/plan":
 		enabled := !*currentPlanMode
 		*currentPlanMode = enabled
-		saveThreadPlanMode(store, currentThreadID, enabled)
+		if threadExists(cfg.ThreadsDir, currentThreadID) {
+			saveThreadPlanMode(store, currentThreadID, enabled)
+		}
 		if enabled {
 			fmt.Fprintln(os.Stderr, "Plan mode enabled.")
 		} else {
@@ -775,8 +787,16 @@ func normalizeCWD(path string) string {
 	return path
 }
 
+func threadExists(threadsDir, threadID string) bool {
+	if strings.TrimSpace(threadID) == "" {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(threadsDir, threadID))
+	return err == nil && fi.IsDir()
+}
+
 func startupCommandHints(store *thread.Store, cfg *config.Config, threadID string) (showResume bool, showHistory bool) {
-	if _, err := os.Stat(filepath.Join(cfg.ThreadsDir, threadID)); err == nil {
+	if threadExists(cfg.ThreadsDir, threadID) {
 		showHistory = true
 	}
 
@@ -810,7 +830,7 @@ func startupCommandHints(store *thread.Store, cfg *config.Config, threadID strin
 	return showResume, showHistory
 }
 
-func selectInitialThreadID(store *thread.Store, cfg *config.Config, forceNew bool) string {
+func selectInitialThreadID(_ *thread.Store, cfg *config.Config, forceNew bool) string {
 	if forceNew {
 		return "thread-" + agent.GenerateID()
 	}
@@ -820,38 +840,8 @@ func selectInitialThreadID(store *thread.Store, cfg *config.Config, forceNew boo
 		return cfg.SessionID
 	}
 
-	threadIDs, err := store.ListThreads()
-	if err != nil || len(threadIDs) == 0 {
-		if cfg.SessionID != "" {
-			return cfg.SessionID
-		}
-		return "thread-" + agent.GenerateID()
-	}
-
-	cwd := normalizeCWD(cfg.AgentCwd)
-	latestID := ""
-	latestModTime := time.Time{}
-	for _, id := range threadIDs {
-		threadCfg, err := store.LoadConfig(id)
-		if err != nil || threadCfg.CWD == "" {
-			continue
-		}
-		if normalizeCWD(threadCfg.CWD) != cwd {
-			continue
-		}
-		modTime := time.Time{}
-		if fi, err := os.Stat(filepath.Join(cfg.ThreadsDir, id)); err == nil {
-			modTime = fi.ModTime()
-		}
-		if latestID == "" || modTime.After(latestModTime) {
-			latestID = id
-			latestModTime = modTime
-		}
-	}
-	if latestID != "" {
-		return latestID
-	}
-
+	// CLI starts in a fresh thread by default. Existing threads are still
+	// available via /resume.
 	return "thread-" + agent.GenerateID()
 }
 
