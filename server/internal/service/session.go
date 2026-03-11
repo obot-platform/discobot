@@ -859,9 +859,9 @@ func ptrString(s string) *string {
 //
 // Flow:
 // 1. Set workspace/session to committing, get fresh base commit
-// 2. If workspace commit changed, update baseCommit and check for existing patches
+// 2. If workspace commit changed, update baseCommit and check for an existing replay bundle
 // 3. If pending: send /discobot-commit to agent, transition to committing
-// 4. If appliedCommit not set: fetch patches from agent-api, apply to workspace
+// 4. If appliedCommit not set: fetch replay bundle from agent-api and apply it to the workspace
 // 5. Transition to completed
 func (s *SessionService) PerformCommit(ctx context.Context, projectID, sessionID string) (retErr error) {
 	// Get session
@@ -913,9 +913,9 @@ func (s *SessionService) PerformCommit(ctx context.Context, projectID, sessionID
 		return nil
 	}
 
-	// Step 1.5: Optimistically check if agent already has patches ready
+	// Step 1.5: Optimistically check if the agent already has a replay bundle ready
 	if sess.CommitStatus == model.CommitStatusPending && (sess.AppliedCommit == nil || *sess.AppliedCommit == "") {
-		if err := s.tryApplyExistingPatches(ctx, projectID, workspace, sess); err != nil {
+		if err := s.tryApplyExistingReplayBundle(ctx, projectID, workspace, sess); err != nil {
 			return err
 		}
 		if sess.CommitStatus == model.CommitStatusFailed {
@@ -933,9 +933,9 @@ func (s *SessionService) PerformCommit(ctx context.Context, projectID, sessionID
 		}
 	}
 
-	// Step 3: Fetch and apply patches (if not yet done)
+	// Step 3: Fetch and apply replay bundle (if not yet done)
 	if sess.AppliedCommit == nil || *sess.AppliedCommit == "" {
-		if err := s.fetchAndApplyPatches(ctx, projectID, workspace, sess); err != nil {
+		if err := s.fetchAndApplyReplayBundle(ctx, projectID, workspace, sess); err != nil {
 			return err
 		}
 		if sess.CommitStatus == model.CommitStatusFailed {
@@ -1039,7 +1039,7 @@ func (s *SessionService) PerformRebase(ctx context.Context, projectID, sessionID
 }
 
 // syncBaseCommit checks if the workspace commit has changed and updates baseCommit.
-// If patches are already available from the agent, it applies them directly.
+// If a replay bundle is already available from the agent, it applies it directly.
 func (s *SessionService) syncBaseCommit(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session) error {
 	gitStatus, err := s.gitService.Status(ctx, sess.WorkspaceID)
 	if err != nil {
@@ -1061,34 +1061,34 @@ func (s *SessionService) syncBaseCommit(ctx context.Context, projectID string, w
 	return nil
 }
 
-// tryApplyExistingPatches checks if the agent already has patches ready and applies them.
-// This is called optimistically before sending /discobot-commit in case patches are already available.
-func (s *SessionService) tryApplyExistingPatches(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session) error {
+// tryApplyExistingReplayBundle checks if the agent already has a replay bundle ready and applies it.
+// This is called optimistically before sending /discobot-commit in case commits are already available.
+func (s *SessionService) tryApplyExistingReplayBundle(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session) error {
 	if s.sandboxService == nil {
 		return nil
 	}
 
-	log.Printf("Session %s: checking if agent has existing patches for commit %s", sess.ID, *sess.BaseCommit)
+	log.Printf("Session %s: checking if agent has an existing replay bundle for commit %s", sess.ID, *sess.BaseCommit)
 
 	client, err := s.sandboxService.GetClient(ctx, sess.ID)
 	if err != nil {
-		log.Printf("Session %s: no existing patches available (error: %v), continuing with prompt", sess.ID, err)
+		log.Printf("Session %s: no existing replay bundle available (error: %v), continuing with prompt", sess.ID, err)
 		return nil
 	}
 
 	commitsResp, err := client.GetCommits(ctx, *sess.BaseCommit)
 	if err != nil {
-		log.Printf("Session %s: no existing patches available (error: %v), continuing with prompt", sess.ID, err)
+		log.Printf("Session %s: no existing replay bundle available (error: %v), continuing with prompt", sess.ID, err)
 		return nil
 	}
 	if commitsResp.CommitCount == 0 {
-		log.Printf("Session %s: no existing patches available (commit count: 0), continuing with prompt", sess.ID)
+		log.Printf("Session %s: no existing replay bundle available (commit count: 0), continuing with prompt", sess.ID)
 		return nil
 	}
 
-	// Agent has patches ready - apply them directly
-	log.Printf("Session %s: agent has %d existing commits, skipping prompt and applying patches", sess.ID, commitsResp.CommitCount)
-	return s.applyPatches(ctx, projectID, workspace, sess, commitsResp.Patches, commitsResp.CommitCount)
+	// Agent already has commits ready - apply the replay bundle directly
+	log.Printf("Session %s: agent has %d existing commits, skipping prompt and applying replay bundle", sess.ID, commitsResp.CommitCount)
+	return s.applyReplayBundle(ctx, projectID, workspace, sess, commitsResp.ReplayBundle, commitsResp.CommitCount)
 }
 
 // sendCommitPrompt sends the /discobot-commit command to the agent.
@@ -1238,8 +1238,8 @@ func (s *SessionService) validateSandboxRebased(ctx context.Context, projectID s
 	return true, nil
 }
 
-// fetchAndApplyPatches fetches patches from the agent and applies them to the workspace.
-func (s *SessionService) fetchAndApplyPatches(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session) error {
+// fetchAndApplyReplayBundle fetches a replay bundle from the agent and applies it to the workspace.
+func (s *SessionService) fetchAndApplyReplayBundle(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session) error {
 	if s.sandboxService == nil {
 		s.setCommitFailed(ctx, projectID, workspace, sess, "Sandbox service not available")
 		return nil
@@ -1264,12 +1264,12 @@ func (s *SessionService) fetchAndApplyPatches(ctx context.Context, projectID str
 		return nil
 	}
 
-	log.Printf("Session %s: received %d commits from agent, applying patches to workspace", sess.ID, commitsResp.CommitCount)
-	return s.applyPatches(ctx, projectID, workspace, sess, commitsResp.Patches, commitsResp.CommitCount)
+	log.Printf("Session %s: received %d commits from agent, applying replay bundle to workspace", sess.ID, commitsResp.CommitCount)
+	return s.applyReplayBundle(ctx, projectID, workspace, sess, commitsResp.ReplayBundle, commitsResp.CommitCount)
 }
 
-// applyPatches applies the given patches to the workspace and updates the session.
-func (s *SessionService) applyPatches(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session, patches string, commitCount int) error {
+// applyReplayBundle applies the given replay bundle to the workspace and updates the session.
+func (s *SessionService) applyReplayBundle(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session, replayBundle string, commitCount int) error {
 	if sess.CommitStatus != model.CommitStatusCommitting {
 		sess.CommitStatus = model.CommitStatusCommitting
 		if err := s.store.UpdateSession(ctx, sess); err != nil {
@@ -1278,9 +1278,9 @@ func (s *SessionService) applyPatches(ctx context.Context, projectID string, wor
 		s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusCommitting)
 	}
 
-	finalCommit, err := s.gitService.ApplyPatches(ctx, sess.WorkspaceID, []byte(patches))
+	finalCommit, err := s.gitService.ApplyReplayBundle(ctx, sess.WorkspaceID, []byte(replayBundle))
 	if err != nil {
-		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed to apply patches to workspace: %v", err))
+		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed to apply replay bundle to workspace: %v", err))
 		return nil
 	}
 
@@ -1289,7 +1289,7 @@ func (s *SessionService) applyPatches(ctx context.Context, projectID string, wor
 		return fmt.Errorf("failed to update session applied commit: %w", err)
 	}
 	s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusCommitting)
-	log.Printf("Session %s: %d patches applied, final commit=%s", sess.ID, commitCount, finalCommit)
+	log.Printf("Session %s: %d replayed commits applied, final commit=%s", sess.ID, commitCount, finalCommit)
 	return nil
 }
 

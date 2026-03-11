@@ -108,9 +108,9 @@ func (s *GitService) RemoveWorkspace(ctx context.Context, workspaceID string) er
 	return s.provider.RemoveWorkspace(ctx, workspaceID)
 }
 
-// ApplyPatches applies mbox-format patches to the workspace.
-func (s *GitService) ApplyPatches(ctx context.Context, workspaceID string, patches []byte) (string, error) {
-	return s.provider.ApplyPatches(ctx, workspaceID, patches)
+// ApplyReplayBundle applies a serialized commit replay bundle to the workspace.
+func (s *GitService) ApplyReplayBundle(ctx context.Context, workspaceID string, replayBundle []byte) (string, error) {
+	return s.provider.ApplyReplayBundle(ctx, workspaceID, replayBundle)
 }
 
 // Provider returns the underlying git provider.

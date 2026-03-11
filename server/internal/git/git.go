@@ -84,10 +84,10 @@ type Provider interface {
 	// RemoveWorkspace removes the workspace working directory.
 	RemoveWorkspace(ctx context.Context, workspaceID string) error
 
-	// ApplyPatches applies mbox-format patches (from git format-patch) to the workspace.
-	// Returns the final commit SHA after all patches are applied.
-	// If application fails, the working tree is reset to the original state.
-	ApplyPatches(ctx context.Context, workspaceID string, patches []byte) (finalCommit string, err error)
+	// ApplyReplayBundle applies a serialized commit replay bundle to the workspace.
+	// Returns the final commit SHA after all commits are replayed.
+	// If application fails, the working tree is restored to its original state.
+	ApplyReplayBundle(ctx context.Context, workspaceID string, replayBundle []byte) (finalCommit string, err error)
 
 	// GetUserConfig retrieves the global git user name and email configuration.
 	// Returns empty strings if not configured.

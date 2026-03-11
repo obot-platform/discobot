@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobot/server/internal/config"
 	"github.com/obot-platform/discobot/server/internal/database"
@@ -38,6 +39,54 @@ type testEnv struct {
 	eventBroker  *events.Broker
 	workspaceDir string
 	cleanup      func()
+}
+
+type testCommitBundle struct {
+	Version int                `json:"version"`
+	Commits []testReplayCommit `json:"commits"`
+}
+
+type testReplayCommit struct {
+	Message        string                 `json:"message"`
+	AuthorName     string                 `json:"authorName"`
+	AuthorEmail    string                 `json:"authorEmail"`
+	AuthorDate     time.Time              `json:"authorDate"`
+	CommitterName  string                 `json:"committerName"`
+	CommitterEmail string                 `json:"committerEmail"`
+	CommitterDate  time.Time              `json:"committerDate"`
+	Changes        []testReplayFileChange `json:"changes"`
+}
+
+type testReplayFileChange struct {
+	Path            string `json:"path"`
+	Status          string `json:"status"`
+	PreviousContent []byte `json:"previousContent,omitempty"`
+	Content         []byte `json:"content,omitempty"`
+}
+
+func addedFileCommitBundle(message, authorName, authorEmail, path, content string) string {
+	timestamp := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	payload, err := json.Marshal(testCommitBundle{
+		Version: 1,
+		Commits: []testReplayCommit{{
+			Message:        message,
+			AuthorName:     authorName,
+			AuthorEmail:    authorEmail,
+			AuthorDate:     timestamp,
+			CommitterName:  authorName,
+			CommitterEmail: authorEmail,
+			CommitterDate:  timestamp,
+			Changes: []testReplayFileChange{{
+				Path:    path,
+				Status:  "added",
+				Content: []byte(content),
+			}},
+		}},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return string(payload)
 }
 
 // newTestEnv creates a test environment with an in-memory database and git workspace.
@@ -316,25 +365,8 @@ func TestPerformCommit_WorkspaceUnchangedNoExistingPatches(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{CommitCount: 0})
 			} else {
 				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{
-					Patches: `From abc123 Mon Sep 17 00:00:00 2001
-From: Test <test@example.com>
-Date: Mon, 1 Jan 2024 00:00:00 +0000
-Subject: Test commit
-
----
- test.txt | 1 +
- 1 file changed, 1 insertion(+)
-
-diff --git a/test.txt b/test.txt
-new file mode 100644
-index 0000000..abc123
---- /dev/null
-+++ b/test.txt
-@@ -0,0 +1 @@
-+test content
---
-`,
-					CommitCount: 1,
+					ReplayBundle: addedFileCommitBundle("Test commit", "Test", "test@example.com", "test.txt", "test content\n"),
+					CommitCount:  1,
 				})
 			}
 		},
@@ -401,25 +433,8 @@ func TestPerformCommit_WorkspaceChangedWithPatches(t *testing.T) {
 	// Set up mock handler with patches available (simulating agent already has work done)
 	handler := newMockHandler()
 	handler.commitsResponse = &sandboxapi.CommitsResponse{
-		Patches: `From def456 Mon Sep 17 00:00:00 2001
-From: Agent <agent@example.com>
-Date: Mon, 1 Jan 2024 00:00:00 +0000
-Subject: Agent work
-
----
- agent.txt | 1 +
- 1 file changed, 1 insertion(+)
-
-diff --git a/agent.txt b/agent.txt
-new file mode 100644
-index 0000000..def456
---- /dev/null
-+++ b/agent.txt
-@@ -0,0 +1 @@
-+agent work
---
-`,
-		CommitCount: 1,
+		ReplayBundle: addedFileCommitBundle("Agent work", "Agent", "agent@example.com", "agent.txt", "agent work\n"),
+		CommitCount:  1,
 	}
 	env.mockSandbox.HTTPHandler = handler
 
@@ -516,25 +531,8 @@ func TestPerformCommit_WorkspaceChangedNoPatches(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{CommitCount: 0})
 			} else {
 				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{
-					Patches: `From abc123 Mon Sep 17 00:00:00 2001
-From: Agent <agent@example.com>
-Date: Mon, 1 Jan 2024 00:00:00 +0000
-Subject: Work done
-
----
- work.txt | 1 +
- 1 file changed, 1 insertion(+)
-
-diff --git a/work.txt b/work.txt
-new file mode 100644
-index 0000000..abc123
---- /dev/null
-+++ b/work.txt
-@@ -0,0 +1 @@
-+work
---
-`,
-					CommitCount: 1,
+					ReplayBundle: addedFileCommitBundle("Work done", "Agent", "agent@example.com", "work.txt", "work\n"),
+					CommitCount:  1,
 				})
 			}
 		},
@@ -636,25 +634,8 @@ func TestPerformCommit_WorkspaceChangedGetCommitsError(t *testing.T) {
 				})
 			} else {
 				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{
-					Patches: `From abc123 Mon Sep 17 00:00:00 2001
-From: Agent <agent@example.com>
-Date: Mon, 1 Jan 2024 00:00:00 +0000
-Subject: Work
-
----
- work.txt | 1 +
- 1 file changed, 1 insertion(+)
-
-diff --git a/work.txt b/work.txt
-new file mode 100644
-index 0000000..abc123
---- /dev/null
-+++ b/work.txt
-@@ -0,0 +1 @@
-+work
---
-`,
-					CommitCount: 1,
+					ReplayBundle: addedFileCommitBundle("Work", "Agent", "agent@example.com", "work.txt", "work\n"),
+					CommitCount:  1,
 				})
 			}
 		},
@@ -719,25 +700,8 @@ func TestPerformCommit_WorkspaceUnchangedWithExistingPatches(t *testing.T) {
 	// This simulates the agent having already created commits
 	handler := newMockHandler()
 	handler.commitsResponse = &sandboxapi.CommitsResponse{
-		Patches: `From abc123 Mon Sep 17 00:00:00 2001
-From: Agent <agent@example.com>
-Date: Mon, 1 Jan 2024 00:00:00 +0000
-Subject: Pre-existing agent work
-
----
- preexisting.txt | 1 +
- 1 file changed, 1 insertion(+)
-
-diff --git a/preexisting.txt b/preexisting.txt
-new file mode 100644
-index 0000000..abc123
---- /dev/null
-+++ b/preexisting.txt
-@@ -0,0 +1 @@
-+pre-existing work from agent
---
-`,
-		CommitCount: 1,
+		ReplayBundle: addedFileCommitBundle("Pre-existing agent work", "Agent", "agent@example.com", "preexisting.txt", "pre-existing work from agent\n"),
+		CommitCount:  1,
 	}
 	env.mockSandbox.HTTPHandler = handler
 
@@ -929,25 +893,8 @@ func TestPerformCommit_SandboxNotRunning(t *testing.T) {
 	// Set up mock handler to return patches
 	handler := newMockHandler()
 	handler.commitsResponse = &sandboxapi.CommitsResponse{
-		Patches: `From abc123 Mon Sep 17 00:00:00 2001
-From: Test <test@example.com>
-Date: Mon, 1 Jan 2024 00:00:00 +0000
-Subject: Test commit
-
----
- test.txt | 1 +
- 1 file changed, 1 insertion(+)
-
-diff --git a/test.txt b/test.txt
-new file mode 100644
-index 0000000..abc123
---- /dev/null
-+++ b/test.txt
-@@ -0,0 +1 @@
-+test content
---
-`,
-		CommitCount: 1,
+		ReplayBundle: addedFileCommitBundle("Test commit", "Test", "test@example.com", "test.txt", "test content\n"),
+		CommitCount:  1,
 	}
 	env.mockSandbox.HTTPHandler = handler
 

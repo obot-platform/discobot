@@ -3,6 +3,7 @@ package gitops
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -37,10 +38,36 @@ type DiffResult struct {
 	Stats DiffStats       `json:"stats"`
 }
 
-// CommitsResult is the successful result of getting commit patches.
+// CommitsResult is the successful result of getting recent commit replay data.
 type CommitsResult struct {
-	Patches     string `json:"patches"`
-	CommitCount int    `json:"commitCount"`
+	ReplayBundle string `json:"replayBundle"`
+	CommitCount  int    `json:"commitCount"`
+}
+
+type commitReplayBundle struct {
+	Version int                 `json:"version"`
+	Commits []commitReplayEntry `json:"commits"`
+}
+
+type commitReplayEntry struct {
+	SHA            string             `json:"sha,omitempty"`
+	Message        string             `json:"message"`
+	AuthorName     string             `json:"authorName"`
+	AuthorEmail    string             `json:"authorEmail"`
+	AuthorDate     time.Time          `json:"authorDate"`
+	CommitterName  string             `json:"committerName,omitempty"`
+	CommitterEmail string             `json:"committerEmail,omitempty"`
+	CommitterDate  *time.Time         `json:"committerDate,omitempty"`
+	Changes        []commitFileChange `json:"changes"`
+}
+
+type commitFileChange struct {
+	Path            string `json:"path"`
+	OldPath         string `json:"oldPath,omitempty"`
+	Status          string `json:"status"`
+	Binary          bool   `json:"binary,omitempty"`
+	PreviousContent []byte `json:"previousContent,omitempty"`
+	Content         []byte `json:"content,omitempty"`
 }
 
 // CommitsError represents an error during commit operations.
@@ -73,6 +100,12 @@ func gitCmdCtx(ctx context.Context, dir string, args ...string) (string, error) 
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\r\n"), err
+}
+
+func gitCmdBytes(dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	return cmd.Output()
 }
 
 // fetchOrigin fetches from origin with a timeout.
@@ -328,8 +361,8 @@ func GetDiff(workspaceRoot string, singlePath string) DiffResult {
 	return trackedDiff
 }
 
-// GetCommitPatches returns format-patch output for commits since a parent.
-func GetCommitPatches(workspaceRoot, parent string) (*CommitsResult, *CommitsError) {
+// GetCommitReplayBundle returns the serialized commit replay bundle for commits since a parent.
+func GetCommitReplayBundle(workspaceRoot, parent string) (*CommitsResult, *CommitsError) {
 	if parent == "" || strings.TrimSpace(parent) == "" {
 		return nil, &CommitsError{Code: "invalid_parent", Message: "Parent commit SHA is required"}
 	}
@@ -338,43 +371,152 @@ func GetCommitPatches(workspaceRoot, parent string) (*CommitsResult, *CommitsErr
 		return nil, &CommitsError{Code: "not_git_repo", Message: "Workspace is not a git repository"}
 	}
 
-	// Validate the parent commit exists
 	if _, err := gitCmd(workspaceRoot, "cat-file", "-t", parent); err != nil {
-		return nil, &CommitsError{
-			Code:    "invalid_parent",
-			Message: fmt.Sprintf("Parent commit %s does not exist in repository", parent),
-		}
+		return nil, &CommitsError{Code: "invalid_parent", Message: fmt.Sprintf("Parent commit %s does not exist in repository", parent)}
 	}
 
-	// Check if parent is an ancestor of HEAD
 	if _, err := gitCmd(workspaceRoot, "merge-base", "--is-ancestor", parent, "HEAD"); err != nil {
-		return nil, &CommitsError{
-			Code:    "parent_mismatch",
-			Message: fmt.Sprintf("Commit %s is not an ancestor of HEAD", parent),
-		}
+		return nil, &CommitsError{Code: "parent_mismatch", Message: fmt.Sprintf("Commit %s is not an ancestor of HEAD", parent)}
 	}
 
-	// Count commits since parent
 	countStr, err := gitCmd(workspaceRoot, "rev-list", "--count", parent+"..HEAD")
 	if err != nil {
 		return nil, &CommitsError{Code: "no_commits", Message: "Failed to count commits"}
 	}
 	commitCount, err := strconv.Atoi(countStr)
 	if err != nil || commitCount == 0 {
-		return nil, &CommitsError{
-			Code:    "no_commits",
-			Message: fmt.Sprintf("No commits found between %s and HEAD", parent),
-		}
+		return nil, &CommitsError{Code: "no_commits", Message: fmt.Sprintf("No commits found between %s and HEAD", parent)}
 	}
 
-	// Generate format-patch output
-	out, err := gitCmd(workspaceRoot, "format-patch", "--stdout", parent+"..HEAD")
+	bundleJSON, err := buildCommitReplayBundle(workspaceRoot, parent)
 	if err != nil {
-		return nil, &CommitsError{
-			Code:    "no_commits",
-			Message: fmt.Sprintf("Failed to generate patches: %v", err),
+		return nil, &CommitsError{Code: "no_commits", Message: fmt.Sprintf("Failed to build commit replay bundle: %v", err)}
+	}
+
+	return &CommitsResult{ReplayBundle: bundleJSON, CommitCount: commitCount}, nil
+}
+
+func buildCommitReplayBundle(workspaceRoot, parent string) (string, error) {
+	commitsOutput, err := gitCmd(workspaceRoot, "rev-list", "--reverse", parent+"..HEAD")
+	if err != nil {
+		return "", err
+	}
+
+	bundle := commitReplayBundle{Version: 1}
+	previous := parent
+	for _, sha := range strings.Split(strings.TrimSpace(commitsOutput), "\n") {
+		sha = strings.TrimSpace(sha)
+		if sha == "" {
+			continue
+		}
+		entry, err := buildCommitReplayEntry(workspaceRoot, previous, sha)
+		if err != nil {
+			return "", err
+		}
+		bundle.Commits = append(bundle.Commits, entry)
+		previous = sha
+	}
+
+	payload, err := json.Marshal(bundle)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
+func buildCommitReplayEntry(workspaceRoot, parent, sha string) (commitReplayEntry, error) {
+	metaBytes, err := gitCmdBytes(workspaceRoot, "show", "-s", "--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%B", sha)
+	if err != nil {
+		return commitReplayEntry{}, err
+	}
+	meta := strings.SplitN(string(metaBytes), "\x00", 7)
+	if len(meta) != 7 {
+		return commitReplayEntry{}, fmt.Errorf("unexpected metadata for commit %s", sha)
+	}
+	authorDate, err := time.Parse(time.RFC3339, strings.TrimSpace(meta[2]))
+	if err != nil {
+		return commitReplayEntry{}, err
+	}
+	committerDate, err := time.Parse(time.RFC3339, strings.TrimSpace(meta[5]))
+	if err != nil {
+		return commitReplayEntry{}, err
+	}
+
+	entry := commitReplayEntry{
+		SHA:            sha,
+		Message:        strings.TrimRight(meta[6], "\n"),
+		AuthorName:     meta[0],
+		AuthorEmail:    meta[1],
+		AuthorDate:     authorDate,
+		CommitterName:  meta[3],
+		CommitterEmail: meta[4],
+		CommitterDate:  &committerDate,
+	}
+
+	changeBytes, err := gitCmdBytes(workspaceRoot, "diff-tree", "--no-commit-id", "--find-renames", "-r", "--name-status", "-z", parent, sha)
+	if err != nil {
+		return commitReplayEntry{}, err
+	}
+	for i, tokens := 0, splitNullTokens(changeBytes); i < len(tokens); {
+		statusToken := tokens[i]
+		i++
+		switch {
+		case strings.HasPrefix(statusToken, "R"):
+			oldPath := tokens[i]
+			newPath := tokens[i+1]
+			i += 2
+			oldContent, err := gitCmdBytes(workspaceRoot, "show", parent+":"+oldPath)
+			if err != nil {
+				return commitReplayEntry{}, err
+			}
+			newContent, err := gitCmdBytes(workspaceRoot, "show", sha+":"+newPath)
+			if err != nil {
+				return commitReplayEntry{}, err
+			}
+			entry.Changes = append(entry.Changes, commitFileChange{Path: newPath, OldPath: oldPath, Status: "renamed", PreviousContent: oldContent, Content: newContent})
+		case statusToken == "A":
+			path := tokens[i]
+			i++
+			content, err := gitCmdBytes(workspaceRoot, "show", sha+":"+path)
+			if err != nil {
+				return commitReplayEntry{}, err
+			}
+			entry.Changes = append(entry.Changes, commitFileChange{Path: path, Status: "added", Content: content})
+		case statusToken == "M":
+			path := tokens[i]
+			i++
+			previousContent, err := gitCmdBytes(workspaceRoot, "show", parent+":"+path)
+			if err != nil {
+				return commitReplayEntry{}, err
+			}
+			content, err := gitCmdBytes(workspaceRoot, "show", sha+":"+path)
+			if err != nil {
+				return commitReplayEntry{}, err
+			}
+			entry.Changes = append(entry.Changes, commitFileChange{Path: path, Status: "modified", PreviousContent: previousContent, Content: content})
+		case statusToken == "D":
+			path := tokens[i]
+			i++
+			previousContent, err := gitCmdBytes(workspaceRoot, "show", parent+":"+path)
+			if err != nil {
+				return commitReplayEntry{}, err
+			}
+			entry.Changes = append(entry.Changes, commitFileChange{Path: path, Status: "deleted", PreviousContent: previousContent})
+		default:
+			return commitReplayEntry{}, fmt.Errorf("unsupported change type %q", statusToken)
 		}
 	}
 
-	return &CommitsResult{Patches: out, CommitCount: commitCount}, nil
+	return entry, nil
+}
+
+func splitNullTokens(data []byte) []string {
+	parts := strings.Split(string(data), "\x00")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			filtered = append(filtered, part)
+		}
+	}
+	return filtered
 }

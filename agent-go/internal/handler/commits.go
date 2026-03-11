@@ -7,7 +7,7 @@ import (
 	"github.com/obot-platform/discobot/agent-go/internal/gitops"
 )
 
-// GetCommits handles GET /commits — returns git format-patch output for commits since a parent.
+// GetCommits handles GET /commits — returns a serialized commit replay bundle for commits since a parent.
 // Query params:
 //   - parent: required, the parent commit hash
 func (h *Handler) GetCommits(w http.ResponseWriter, r *http.Request) {
@@ -20,7 +20,7 @@ func (h *Handler) GetCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, commitsErr := gitops.GetCommitPatches(h.agentCwd, parent)
+	result, commitsErr := gitops.GetCommitReplayBundle(h.agentCwd, parent)
 	if commitsErr != nil {
 		status := http.StatusInternalServerError
 		switch commitsErr.Code {
@@ -42,7 +42,7 @@ func (h *Handler) GetCommits(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.JSON(w, http.StatusOK, api.CommitsResponse{
-		Patches:     result.Patches,
-		CommitCount: result.CommitCount,
+		ReplayBundle: result.ReplayBundle,
+		CommitCount:  result.CommitCount,
 	})
 }
