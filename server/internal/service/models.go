@@ -45,6 +45,48 @@ func NewModelsService(s *store.Store, agentSvc *AgentService, credSvc *Credentia
 	}
 }
 
+// GetModelsForProject returns available models based only on configured project credentials.
+func (s *ModelsService) GetModelsForProject(ctx context.Context, projectID string) ([]Model, error) {
+	credentials, err := s.credentialService.List(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list credentials: %w", err)
+	}
+
+	providerIDs := make([]string, 0)
+	providerSet := make(map[string]bool)
+	for _, cred := range credentials {
+		if !cred.IsConfigured {
+			continue
+		}
+		if providerSet[cred.Provider] {
+			continue
+		}
+		providerSet[cred.Provider] = true
+		providerIDs = append(providerIDs, cred.Provider)
+	}
+
+	if len(providerIDs) == 0 {
+		return []Model{}, nil
+	}
+
+	providerModels, err := providers.GetModelsForProviders(providerIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get models: %w", err)
+	}
+
+	models := make([]Model, len(providerModels))
+	for i, pm := range providerModels {
+		models[i] = Model{
+			ID:        pm.ID,
+			Name:      pm.Name,
+			Provider:  pm.Provider,
+			Reasoning: pm.Reasoning,
+		}
+	}
+
+	return models, nil
+}
+
 // GetModelsForAgent returns available models based on agent's credentials
 func (s *ModelsService) GetModelsForAgent(ctx context.Context, agentID, projectID string) ([]Model, error) {
 	// Get the agent
@@ -175,16 +217,19 @@ func (s *ModelsService) GetModelsForSession(ctx context.Context, sessionID strin
 		return s.GetModelsForAgent(ctx, *session.AgentID, session.ProjectID)
 	}
 
-	// Convert to service Model type
-	models := make([]Model, len(modelsResp.Models))
-	for i, m := range modelsResp.Models {
-		models[i] = Model{
+	// Convert to service Model type and keep only tool-capable models.
+	models := make([]Model, 0, len(modelsResp.Models))
+	for _, m := range modelsResp.Models {
+		if !providers.IsProviderModelToolCallable(m.Provider, m.ID) {
+			continue
+		}
+		models = append(models, Model{
 			ID:          m.ID,
 			Name:        m.DisplayName,
 			Provider:    m.Provider,
 			Description: "",          // Claude API doesn't provide description
 			Reasoning:   m.Reasoning, // Extended thinking support
-		}
+		})
 	}
 
 	return models, nil

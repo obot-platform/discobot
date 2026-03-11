@@ -3,6 +3,7 @@ package providers
 import (
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/obot-platform/discobot/server/static"
@@ -40,7 +41,51 @@ type modelMetadata struct {
 	Name      string    `json:"name"`
 	Family    string    `json:"family,omitempty"`
 	Reasoning bool      `json:"reasoning"`
+	ToolCall  bool      `json:"tool_call"`
 	Cost      modelCost `json:"cost"`
+}
+
+// Provider aliases for model lookups in models-dev-api.json.
+// Example: Codex credentials should surface OpenAI models.
+var modelProviderAliases = map[string]string{
+	"codex": "openai",
+}
+
+func resolveModelProviderID(providerID string) string {
+	if alias, ok := modelProviderAliases[providerID]; ok {
+		return alias
+	}
+	return providerID
+}
+
+func resolveProviderAndModelID(providerID, modelID string) (string, string) {
+	resolvedProviderID := resolveModelProviderID(providerID)
+	rawModelID := modelID
+	if idx := strings.Index(rawModelID, "/"); idx >= 0 {
+		rawModelID = rawModelID[idx+1:]
+	}
+	return resolvedProviderID, rawModelID
+}
+
+// IsProviderModelToolCallable reports whether a model supports tool calling.
+func IsProviderModelToolCallable(providerID, modelID string) bool {
+	loadModelsData()
+	if modelsLoadErr != nil {
+		return false
+	}
+
+	resolvedProviderID, rawModelID := resolveProviderAndModelID(providerID, modelID)
+	provider, exists := cachedModels[resolvedProviderID]
+	if !exists {
+		return false
+	}
+
+	modelData, exists := provider.Models[rawModelID]
+	if !exists {
+		return false
+	}
+
+	return modelData.ToolCall
 }
 
 // Cached models data
@@ -79,7 +124,7 @@ func GetModelsForProviders(providerIDs []string) ([]ModelInfo, error) {
 	// Create a map for fast provider lookup
 	providerMap := make(map[string]bool)
 	for _, id := range providerIDs {
-		providerMap[id] = true
+		providerMap[resolveModelProviderID(id)] = true
 	}
 
 	var models []ModelInfo
@@ -93,6 +138,10 @@ func GetModelsForProviders(providerIDs []string) ([]ModelInfo, error) {
 
 		// Extract all models for this provider
 		for _, modelData := range provider.Models {
+			if !modelData.ToolCall {
+				continue
+			}
+
 			// Create fully qualified model ID: provider-id/model-id
 			qualifiedID := providerID + "/" + modelData.ID
 
@@ -123,16 +172,17 @@ func GetFreeModelsForProvider(providerID string) ([]ModelInfo, error) {
 		return nil, modelsLoadErr
 	}
 
-	provider, exists := cachedModels[providerID]
+	resolvedProviderID := resolveModelProviderID(providerID)
+	provider, exists := cachedModels[resolvedProviderID]
 	if !exists {
 		return nil, nil
 	}
 
 	var models []ModelInfo
 	for _, modelData := range provider.Models {
-		if modelData.Cost.Input == 0 && modelData.Cost.Output == 0 {
+		if modelData.Cost.Input == 0 && modelData.Cost.Output == 0 && modelData.ToolCall {
 			models = append(models, ModelInfo{
-				ID:        providerID + "/" + modelData.ID,
+				ID:        resolvedProviderID + "/" + modelData.ID,
 				Name:      modelData.Name,
 				Family:    modelData.Family,
 				Provider:  provider.Name,
@@ -157,6 +207,10 @@ func GetAllModels() ([]ModelInfo, error) {
 
 	for providerID, provider := range cachedModels {
 		for _, modelData := range provider.Models {
+			if !modelData.ToolCall {
+				continue
+			}
+
 			// Create fully qualified model ID: provider-id/model-id
 			qualifiedID := providerID + "/" + modelData.ID
 

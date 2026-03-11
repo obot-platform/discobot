@@ -1,235 +1,235 @@
 name: Build & Release
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+    push:
+        branches:
+            - main
+        tags:
+            - "v*"
+    pull_request:
+        branches:
+            - main
+    workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+    contents: write
+    packages: write
+    id-token: write
 
 jobs:
-  # Build and push the runtime container image
-  build-runtime-image:
-    runs-on: depot-ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
+    # Build and push the runtime container image
+    build-runtime-image:
+        runs-on: depot-ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+            id-token: write
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
 
-      - name: Set up Depot
-        uses: depot/setup-action@v1
+            - name: Set up Depot
+              uses: depot/setup-action@v1
 
-      - name: Log in to Container Registry
+            - name: Log in to Container Registry
+              if: github.event_name != 'pull_request'
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Extract metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ghcr.io/${{ github.repository }}
+                  tags: |
+                      type=ref,event=branch
+                      type=ref,event=pr
+                      type=semver,pattern={{version}}
+                      type=semver,pattern={{major}}.{{minor}}
+
+            - name: Build and push runtime image
+              uses: depot/build-push-action@v1
+              with:
+                  project: bbqjs4tj1g
+                  context: .
+                  platforms: linux/amd64,linux/arm64
+                  push: ${{ github.event_name != 'pull_request' }}
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+
+    # Build and push the VZ VM image (needed for macOS Tauri builds)
+    # Depends on runtime image so crane can pull it during the Docker build
+    build-vz-image:
+        needs: build-runtime-image
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        runs-on: depot-ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+            id-token: write
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
 
-      - name: Build and push runtime image
-        uses: depot/build-push-action@v1
-        with:
-          project: bbqjs4tj1g
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+            - name: Set up Depot
+              uses: depot/setup-action@v1
 
-  # Build and push the VZ VM image (needed for macOS Tauri builds)
-  # Depends on runtime image so crane can pull it during the Docker build
-  build-vz-image:
-    needs: build-runtime-image
-    if: github.event_name != 'pull_request'
-    runs-on: depot-ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
+            - name: Log in to Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+            - name: Extract metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ghcr.io/${{ github.repository }}-vz
+                  tags: |
+                      type=ref,event=branch
+                      type=semver,pattern={{version}}
+                      type=semver,pattern={{major}}.{{minor}}
 
-      - name: Set up Depot
-        uses: depot/setup-action@v1
+            - name: Compute preload image ref
+              id: preload
+              run: |
+                  if [ "${{ github.ref_type }}" = "tag" ]; then
+                    IMAGE_TAG="${GITHUB_REF_NAME#v}"
+                  else
+                    IMAGE_TAG="main"
+                  fi
+                  echo "image=ghcr.io/${{ github.repository }}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+            - name: Build and push VZ image
+              uses: depot/build-push-action@v1
+              with:
+                  project: bbqjs4tj1g
+                  context: .
+                  target: vz-image
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  build-args: |
+                      PRELOAD_IMAGE=${{ steps.preload.outputs.image }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}-vz
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+    # Build Tauri app and create GitHub release (tags only)
+    release:
+        needs: build-vz-image
+        if: startsWith(github.ref, 'refs/tags/v')
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    # macOS ARM64 (Apple Silicon)
+                    - platform: depot-macos-15
+                      target: aarch64-apple-darwin
+                      vz-arch: arm64
 
-      - name: Compute preload image ref
-        id: preload
-        run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            IMAGE_TAG="${GITHUB_REF_NAME#v}"
-          else
-            IMAGE_TAG="main"
-          fi
-          echo "image=ghcr.io/${{ github.repository }}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+        runs-on: ${{ matrix.platform }}
 
-      - name: Build and push VZ image
-        uses: depot/build-push-action@v1
-        with:
-          project: bbqjs4tj1g
-          context: .
-          target: vz-image
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            PRELOAD_IMAGE=${{ steps.preload.outputs.image }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
 
-  # Build Tauri app and create GitHub release (tags only)
-  release:
-    needs: build-vz-image
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # macOS ARM64 (Apple Silicon)
-          - platform: depot-macos-15
-            target: aarch64-apple-darwin
-            vz-arch: arm64
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 22
 
-    runs-on: ${{ matrix.platform }}
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 10
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+            - name: Setup Rust
+              uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  toolchain: stable
+                  target: ${{ matrix.target }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
+            - name: Setup Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version: "1.26"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
 
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{ matrix.target }}
+            # Install crane for extracting VZ image (Docker is not available on macOS runners)
+            - name: Install crane
+              if: matrix.vz-arch
+              run: go install github.com/google/go-containerregistry/cmd/crane@latest
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.26'
+            # Extract VZ image files for macOS builds
+            - name: Extract VZ image
+              if: matrix.vz-arch
+              shell: bash
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  # Authenticate crane with ghcr.io
+                  echo "${GITHUB_TOKEN}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+                  # Determine the image tag — strip 'v' prefix to match semver tags from metadata-action
+                  if [ "${{ github.ref_type }}" = "tag" ]; then
+                    IMAGE_TAG="${GITHUB_REF_NAME#v}"
+                  else
+                    IMAGE_TAG="main"
+                  fi
+                  IMAGE_REF="ghcr.io/${{ github.repository }}-vz:${IMAGE_TAG}"
+                  echo "Extracting VZ image: ${IMAGE_REF}"
+                  node scripts/extract-vz-image.mjs "${IMAGE_REF}" ${{ matrix.vz-arch }}
 
-      # Install crane for extracting VZ image (Docker is not available on macOS runners)
-      - name: Install crane
-        if: matrix.vz-arch
-        run: go install github.com/google/go-containerregistry/cmd/crane@latest
+            # Extract versions from tag
+            # Full version for Go server: v0.1.0-alpha12 → 0.1.0-alpha12
+            # Tauri version for Windows installer: v0.1.0-alpha12 → 0.1.0-12
+            - name: Parse version from tag
+              id: version
+              shell: bash
+              run: |
+                  TAG="${GITHUB_REF_NAME#v}"  # Strip 'v' prefix
+                  echo "full=$TAG" >> "$GITHUB_OUTPUT"
+                  echo "Full version: $TAG"
+                  # Strip alpha/beta/rc text for Tauri (Windows installer compatibility)
+                  TAURI_VERSION=$(echo "$TAG" | sed -E 's/(alpha|beta|rc)//g')
+                  echo "tauri=$TAURI_VERSION" >> "$GITHUB_OUTPUT"
+                  echo "Tauri version: $TAURI_VERSION"
 
-      # Extract VZ image files for macOS builds
-      - name: Extract VZ image
-        if: matrix.vz-arch
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Authenticate crane with ghcr.io
-          echo "${GITHUB_TOKEN}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          # Determine the image tag — strip 'v' prefix to match semver tags from metadata-action
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            IMAGE_TAG="${GITHUB_REF_NAME#v}"
-          else
-            IMAGE_TAG="main"
-          fi
-          IMAGE_REF="ghcr.io/${{ github.repository }}-vz:${IMAGE_TAG}"
-          echo "Extracting VZ image: ${IMAGE_REF}"
-          node scripts/extract-vz-image.mjs "${IMAGE_REF}" ${{ matrix.vz-arch }}
-
-      # Extract versions from tag
-      # Full version for Go server: v0.1.0-alpha12 → 0.1.0-alpha12
-      # Tauri version for Windows installer: v0.1.0-alpha12 → 0.1.0-12
-      - name: Parse version from tag
-        id: version
-        shell: bash
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"  # Strip 'v' prefix
-          echo "full=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Full version: $TAG"
-          # Strip alpha/beta/rc text for Tauri (Windows installer compatibility)
-          TAURI_VERSION=$(echo "$TAG" | sed -E 's/(alpha|beta|rc)//g')
-          echo "tauri=$TAURI_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Tauri version: $TAURI_VERSION"
-
-      # Build Tauri app and create release
-      - name: Build and Release
-        uses: tauri-apps/tauri-action@v0.6.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_TARGET_TRIPLE: ${{ matrix.target }}
-          TAURI_BUNDLER_DMG_IGNORE_CI: false
-          DISCOBOT_VERSION: ${{ steps.version.outputs.full }}
-          DISCOBOT_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.DISCOBOT_GITHUB_OAUTH_CLIENT_ID }}
-          # Tauri updater signing
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS code signing
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Discobot ${{ github.ref_name }}'
-          releaseBody: 'See the assets below for download links.'
-          releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: true
-          updaterJsonKeepUniversal: true
-          args: >-
-            --target ${{ matrix.target }}
-            --config '{"version":"${{ steps.version.outputs.tauri }}"}'
-            ${{ matrix.bundles && format('--bundles {0}', matrix.bundles) || '' }}
+            # Build Tauri app and create release
+            - name: Build and Release
+              uses: tauri-apps/tauri-action@v0.6.1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAURI_TARGET_TRIPLE: ${{ matrix.target }}
+                  TAURI_BUNDLER_DMG_IGNORE_CI: false
+                  DISCOBOT_VERSION: ${{ steps.version.outputs.full }}
+                  GITHUB_OAUTH_CLIENT_ID: ${{ secrets.DISCOBOT_GITHUB_OAUTH_CLIENT_ID }}
+                  # Tauri updater signing
+                  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+                  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+                  # macOS code signing
+                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+                  APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+                  APPLE_ID: ${{ secrets.APPLE_ID }}
+                  APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+              with:
+                  tagName: ${{ github.ref_name }}
+                  releaseName: "Discobot ${{ github.ref_name }}"
+                  releaseBody: "See the assets below for download links."
+                  releaseDraft: true
+                  prerelease: false
+                  includeUpdaterJson: true
+                  updaterJsonKeepUniversal: true
+                  args: >-
+                      --target ${{ matrix.target }}
+                      --config '{"version":"${{ steps.version.outputs.tauri }}"}'
+                      ${{ matrix.bundles && format('--bundles {0}', matrix.bundles) || '' }}

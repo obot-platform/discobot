@@ -179,7 +179,7 @@ func (p *Provider) CountTokens(ctx context.Context, req providers.CountTokensReq
 
 func (p *Provider) DefaultModels() map[string]providers.ModelRef {
 	return map[string]providers.ModelRef{
-		providers.ModelTaskChat: {ProviderID: providerID, ModelID: "gpt-5.3-codex"},
+		providers.ModelTaskChat: {ProviderID: providerID, ModelID: "gpt-5.4"},
 	}
 }
 

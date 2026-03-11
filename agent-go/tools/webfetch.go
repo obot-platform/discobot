@@ -54,10 +54,18 @@ func (e *Executor) executeWebFetch(ctx context.Context, call message.ToolCallPar
 
 	if apiKey := e.getenv("TAVILY_API_KEY"); apiKey != "" {
 		markdown, err := fetchWithTavily(ctx, rawURL, apiKey)
-		if err != nil {
-			return errResult(call, fmt.Sprintf("Tavily request failed: %v", err)), nil
+		if err == nil {
+			return textResult(call, trimWebFetchContent(markdown)), nil
 		}
-		return textResult(call, trimWebFetchContent(markdown)), nil
+
+		// Fall back to native fetching so WebFetch still works when Tavily cannot
+		// extract a specific URL.
+		fallbackMarkdown, fallbackErr := fetchWithNativeHTTP(ctx, rawURL)
+		if fallbackErr == nil {
+			return textResult(call, trimWebFetchContent(fallbackMarkdown)), nil
+		}
+
+		return errResult(call, fmt.Sprintf("Tavily request failed: %v; native fallback failed: %v", err, fallbackErr)), nil
 	}
 
 	markdown, err := fetchWithNativeHTTP(ctx, rawURL)

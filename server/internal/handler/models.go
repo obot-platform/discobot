@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobot/server/internal/middleware"
+	"github.com/obot-platform/discobot/server/internal/service"
 )
 
 // ModelsResponse contains the list of available models
@@ -20,6 +21,38 @@ type ModelInfo struct {
 	Provider    string `json:"provider"`
 	Description string `json:"description,omitempty"`
 	Reasoning   bool   `json:"reasoning,omitempty"` // Whether model supports extended thinking
+}
+
+// toModelInfos converts service models to API response models.
+func toModelInfos(models []service.Model) []ModelInfo {
+	modelInfos := make([]ModelInfo, len(models))
+	for i, m := range models {
+		modelInfos[i] = ModelInfo{
+			ID:          m.ID,
+			Name:        m.Name,
+			Provider:    m.Provider,
+			Description: m.Description,
+			Reasoning:   m.Reasoning,
+		}
+	}
+	return modelInfos
+}
+
+// GetProjectModels returns available models for a project based on configured credentials.
+func (h *Handler) GetProjectModels(w http.ResponseWriter, r *http.Request) {
+	projectID := middleware.GetProjectID(r.Context())
+	if projectID == "" {
+		h.Error(w, http.StatusBadRequest, "Project ID is required")
+		return
+	}
+
+	models, err := h.modelsService.GetModelsForProject(r.Context(), projectID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, "Failed to get models for project")
+		return
+	}
+
+	h.JSON(w, http.StatusOK, ModelsResponse{Models: toModelInfos(models)})
 }
 
 // GetAgentModels returns available models for an agent based on configured credentials
@@ -38,19 +71,7 @@ func (h *Handler) GetAgentModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert service models to API response
-	modelInfos := make([]ModelInfo, len(models))
-	for i, m := range models {
-		modelInfos[i] = ModelInfo{
-			ID:          m.ID,
-			Name:        m.Name,
-			Provider:    m.Provider,
-			Description: m.Description,
-			Reasoning:   m.Reasoning,
-		}
-	}
-
-	h.JSON(w, http.StatusOK, ModelsResponse{Models: modelInfos})
+	h.JSON(w, http.StatusOK, ModelsResponse{Models: toModelInfos(models)})
 }
 
 // GetSessionModels returns available models for a session based on its agent and credentials
@@ -68,17 +89,5 @@ func (h *Handler) GetSessionModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert service models to API response
-	modelInfos := make([]ModelInfo, len(models))
-	for i, m := range models {
-		modelInfos[i] = ModelInfo{
-			ID:          m.ID,
-			Name:        m.Name,
-			Provider:    m.Provider,
-			Description: m.Description,
-			Reasoning:   m.Reasoning,
-		}
-	}
-
-	h.JSON(w, http.StatusOK, ModelsResponse{Models: modelInfos})
+	h.JSON(w, http.StatusOK, ModelsResponse{Models: toModelInfos(models)})
 }

@@ -18,7 +18,7 @@ const appName = "discobot"
 
 // GitHubOAuthClientID is the GitHub OAuth App client ID for git operations (repo scope).
 // Set at build time via -ldflags "-X github.com/obot-platform/discobot/server/internal/config.GitHubOAuthClientID=..."
-// Can be overridden at runtime via the DISCOBOT_GITHUB_OAUTH_CLIENT_ID environment variable.
+// Can be overridden at runtime via the GITHUB_OAUTH_CLIENT_ID environment variable.
 var GitHubOAuthClientID = ""
 
 // DefaultSandboxImage returns the default sandbox image for sessions,
@@ -231,8 +231,8 @@ func Load() (*Config, error) {
 	// AI Provider OAuth client IDs (public, used in PKCE flows)
 	cfg.AnthropicClientID = getEnv("ANTHROPIC_CLIENT_ID", "9d1c250a-e61b-44d9-88ed-5944d1962f5e")
 	cfg.GitHubCopilotClientID = getEnv("GITHUB_COPILOT_CLIENT_ID", "Iv1.b507a08c87ecfe98")
-	cfg.CodexClientID = getEnv("CODEX_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann")
-	cfg.GitHubOAuthClientID = getEnv("DISCOBOT_GITHUB_OAUTH_CLIENT_ID", GitHubOAuthClientID)
+	cfg.CodexClientID = getEnv("GITHUB_CODEX_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann")
+	cfg.GitHubOAuthClientID = getEnv("GITHUB_OAUTH_CLIENT_ID", GitHubOAuthClientID)
 
 	// Debug settings
 	cfg.DebugDocker = getEnvBool("DEBUG_DOCKER", false)
