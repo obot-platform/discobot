@@ -33,7 +33,8 @@ export function createSessionThreadsModule(
 			return;
 		}
 
-		const threadId = args.createThreadId();
+		const threadId =
+			currentSession.threads.length === 0 ? sessionId : args.createThreadId();
 		const nextName = name?.trim() || `Thread ${currentSession.threads.length + 1}`;
 
 		args.setSessionDataById({

@@ -70,6 +70,33 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// Thread represents a single conversation thread.
+type Thread struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListThreadsResponse is the GET /threads response.
+type ListThreadsResponse struct {
+	Threads []Thread `json:"threads"`
+}
+
+// CreateThreadRequest is the POST /threads request body.
+type CreateThreadRequest struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+// UpdateThreadRequest is the PUT /threads/{id} request body.
+type UpdateThreadRequest struct {
+	Name string `json:"name"`
+}
+
+// DeleteThreadResponse is the DELETE /threads/{id} response body.
+type DeleteThreadResponse struct {
+	Success bool `json:"success"`
+}
+
 // ChatStatusResponse is the GET /threads/{id}/chat/status response.
 type ChatStatusResponse struct {
 	IsRunning bool `json:"isRunning"`
@@ -233,8 +260,8 @@ type SingleFileDiffResponse struct {
 
 // CommitsResponse is the GET /commits response (success case).
 type CommitsResponse struct {
-	Patches     string `json:"patches"`
-	CommitCount int    `json:"commitCount"`
+	ReplayBundle string `json:"replayBundle"` // Serialized commit replay bundle JSON
+	CommitCount  int    `json:"commitCount"`  // Number of commits in the bundle
 }
 
 // CommitsErrorResponse is the GET /commits error response.

@@ -108,7 +108,20 @@ func NewTestServer(t *testing.T) *TestServer {
 		t.Fatalf("Failed to create database: %v", err)
 	}
 
-	if !skipMigrate {
+	if skipMigrate {
+		// Template DBs can occasionally miss schema changes if WAL state isn't fully
+		// materialized into the copied file. Verify required tables and run migration
+		// only when needed.
+		migrator := db.Migrator()
+		for _, m := range model.AllModels() {
+			if !migrator.HasTable(m) {
+				if err := db.Migrate(); err != nil {
+					t.Fatalf("Failed to run migrations: %v", err)
+				}
+				break
+			}
+		}
+	} else {
 		if err := db.Migrate(); err != nil {
 			t.Fatalf("Failed to run migrations: %v", err)
 		}
@@ -256,6 +269,7 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 			r.Route("/workspaces", func(r chi.Router) {
 				r.Get("/", h.ListWorkspaces)
 				r.Post("/", h.CreateWorkspace)
+				r.Post("/validate", h.ValidateWorkspace)
 				r.Get("/{workspaceId}", h.GetWorkspace)
 				r.Put("/{workspaceId}", h.UpdateWorkspace)
 				r.Delete("/{workspaceId}", h.DeleteWorkspace)
@@ -291,6 +305,12 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 					r.Put("/files/write", h.WriteSessionFile)
 					r.Get("/diff", h.GetSessionDiff)
 					r.Get("/messages", h.ListMessages)
+					r.Get("/threads", h.ListThreads)
+					r.Post("/threads", h.CreateThread)
+					r.Get("/threads/{threadId}", h.GetThread)
+					r.Put("/threads/{threadId}", h.UpdateThread)
+					r.Patch("/threads/{threadId}", h.UpdateThread)
+					r.Delete("/threads/{threadId}", h.DeleteThread)
 					r.Get("/terminal/ws", h.TerminalWebSocket)
 					r.Get("/terminal/history", h.GetTerminalHistory)
 					r.Get("/terminal/status", h.GetTerminalStatus)
@@ -376,7 +396,20 @@ func NewTestServerNoAuth(t *testing.T) *TestServer {
 		t.Fatalf("Failed to create database: %v", err)
 	}
 
-	if !skipMigrate {
+	if skipMigrate {
+		// Template DBs can occasionally miss schema changes if WAL state isn't fully
+		// materialized into the copied file. Verify required tables and run migration
+		// only when needed.
+		migrator := db.Migrator()
+		for _, m := range model.AllModels() {
+			if !migrator.HasTable(m) {
+				if err := db.Migrate(); err != nil {
+					t.Fatalf("Failed to run migrations: %v", err)
+				}
+				break
+			}
+		}
+	} else {
 		if err := db.Migrate(); err != nil {
 			t.Fatalf("Failed to run migrations: %v", err)
 		}

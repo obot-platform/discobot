@@ -172,6 +172,44 @@ func (s *Store) ListThreads() ([]string, error) {
 	return ids, nil
 }
 
+func (s *Store) threadDir(threadID string) string {
+	return filepath.Join(s.baseDir, threadID)
+}
+
+// ThreadExists reports whether a thread directory exists.
+func (s *Store) ThreadExists(threadID string) (bool, error) {
+	info, err := os.Stat(s.threadDir(threadID))
+	if err == nil {
+		return info.IsDir(), nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("thread exists: %w", err)
+}
+
+// CreateThread ensures a thread directory exists.
+func (s *Store) CreateThread(threadID string) error {
+	if strings.TrimSpace(threadID) == "" {
+		return fmt.Errorf("thread ID is required")
+	}
+	if err := os.MkdirAll(s.threadDir(threadID), 0o755); err != nil {
+		return fmt.Errorf("create thread dir: %w", err)
+	}
+	return nil
+}
+
+// DeleteThread removes all persisted data for a thread.
+func (s *Store) DeleteThread(threadID string) error {
+	if strings.TrimSpace(threadID) == "" {
+		return fmt.Errorf("thread ID is required")
+	}
+	if err := os.RemoveAll(s.threadDir(threadID)); err != nil {
+		return fmt.Errorf("delete thread: %w", err)
+	}
+	return nil
+}
+
 // CreateStepFile creates (or truncates) a JSONL file for a given step
 // within a turn. The caller is responsible for closing the file.
 func (s *Store) CreateStepFile(threadID, turnID string, step int) (*os.File, error) {
@@ -505,6 +543,8 @@ func (s *Store) LoadCompaction(threadID string) (*CompactionRecord, error) {
 // and is used to remember things like the last-used model so that new sessions
 // continue with the same provider/model without the user needing to re-select.
 type Config struct {
+	// Name is the display name for this thread.
+	Name string `json:"name,omitempty"`
 	// Model is the full "providerId/modelId" ref (e.g. "anthropic/claude-sonnet-4-6").
 	Model string `json:"model,omitempty"`
 	// CWD is the working directory associated with this thread.
@@ -547,6 +587,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	}
 	// Use a raw struct for migration: old format had separate providerId + bare model.
 	var raw struct {
+		Name         string `json:"name"`
 		Model        string `json:"model"`
 		ProviderID   string `json:"providerId"`
 		CWD          string `json:"cwd"`
@@ -561,7 +602,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	if model != "" && !strings.Contains(model, "/") && raw.ProviderID != "" {
 		model = raw.ProviderID + "/" + model
 	}
-	return Config{Model: model, CWD: raw.CWD, PlanMode: raw.PlanMode, ActiveLeafID: raw.ActiveLeafID}, nil
+	return Config{Name: raw.Name, Model: model, CWD: raw.CWD, PlanMode: raw.PlanMode, ActiveLeafID: raw.ActiveLeafID}, nil
 }
 
 // FindLeaf returns the leaf message ID for a thread — the message that is not

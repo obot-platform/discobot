@@ -2,17 +2,210 @@ package handler
 
 import (
 	"net/http"
+	"sort"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 )
+
+func (h *Handler) requireThreadStore(w http.ResponseWriter) bool {
+	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
+		h.Error(w, http.StatusNotImplemented, "thread store unavailable")
+		return false
+	}
+	return true
+}
 
 // ListThreads handles GET /threads — lists all threads.
 func (h *Handler) ListThreads(w http.ResponseWriter, _ *http.Request) {
-	threads, err := h.completions.ListThreads()
+	if !h.requireThreadStore(w) {
+		return
+	}
+
+	threadIDs, err := h.completions.ListThreads()
 	if err != nil {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if threads == nil {
-		threads = []string{}
+	if threadIDs == nil {
+		threadIDs = []string{}
 	}
-	h.JSON(w, http.StatusOK, map[string]any{"threads": threads})
+	sort.Strings(threadIDs)
+
+	threads := make([]api.Thread, 0, len(threadIDs))
+	store := h.defaultAgent.Store()
+	for _, threadID := range threadIDs {
+		name := threadID
+		cfg, cfgErr := store.LoadConfig(threadID)
+		if cfgErr == nil && strings.TrimSpace(cfg.Name) != "" {
+			name = cfg.Name
+		}
+		threads = append(threads, api.Thread{ID: threadID, Name: name})
+	}
+
+	h.JSON(w, http.StatusOK, api.ListThreadsResponse{Threads: threads})
+}
+
+// CreateThread handles POST /threads — creates a new thread.
+func (h *Handler) CreateThread(w http.ResponseWriter, r *http.Request) {
+	if !h.requireThreadStore(w) {
+		return
+	}
+
+	var req api.CreateThreadRequest
+	if err := h.DecodeJSON(r, &req); err != nil {
+		h.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.ID) == "" {
+		h.Error(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		req.Name = req.ID
+	}
+
+	store := h.defaultAgent.Store()
+	exists, err := store.ThreadExists(req.ID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if exists {
+		h.Error(w, http.StatusConflict, "thread already exists")
+		return
+	}
+
+	if err := store.CreateThread(req.ID); err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	cfg, err := store.LoadConfig(req.ID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	cfg.Name = req.Name
+	if err := store.SaveConfig(req.ID, cfg); err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.JSON(w, http.StatusCreated, api.Thread(req))
+}
+
+// GetThread handles GET /threads/{id} — returns thread metadata.
+func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
+	if !h.requireThreadStore(w) {
+		return
+	}
+
+	threadID := chi.URLParam(r, "id")
+	if strings.TrimSpace(threadID) == "" {
+		h.Error(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	store := h.defaultAgent.Store()
+	exists, err := store.ThreadExists(threadID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		h.Error(w, http.StatusNotFound, "thread not found")
+		return
+	}
+
+	name := threadID
+	cfg, err := store.LoadConfig(threadID)
+	if err == nil && strings.TrimSpace(cfg.Name) != "" {
+		name = cfg.Name
+	}
+
+	h.JSON(w, http.StatusOK, api.Thread{ID: threadID, Name: name})
+}
+
+// UpdateThread handles PUT/PATCH /threads/{id} — updates thread metadata.
+func (h *Handler) UpdateThread(w http.ResponseWriter, r *http.Request) {
+	if !h.requireThreadStore(w) {
+		return
+	}
+
+	threadID := chi.URLParam(r, "id")
+	if strings.TrimSpace(threadID) == "" {
+		h.Error(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	var req api.UpdateThreadRequest
+	if err := h.DecodeJSON(r, &req); err != nil {
+		h.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		h.Error(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	store := h.defaultAgent.Store()
+	exists, err := store.ThreadExists(threadID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		h.Error(w, http.StatusNotFound, "thread not found")
+		return
+	}
+
+	cfg, err := store.LoadConfig(threadID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	cfg.Name = req.Name
+	if err := store.SaveConfig(threadID, cfg); err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.JSON(w, http.StatusOK, api.Thread{ID: threadID, Name: req.Name})
+}
+
+// DeleteThread handles DELETE /threads/{id} — removes a thread.
+func (h *Handler) DeleteThread(w http.ResponseWriter, r *http.Request) {
+	if !h.requireThreadStore(w) {
+		return
+	}
+
+	threadID := chi.URLParam(r, "id")
+	if strings.TrimSpace(threadID) == "" {
+		h.Error(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	store := h.defaultAgent.Store()
+	exists, err := store.ThreadExists(threadID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		h.Error(w, http.StatusNotFound, "thread not found")
+		return
+	}
+
+	// Best-effort cancel if a completion is currently active for this thread.
+	h.completions.Cancel(threadID)
+
+	if err := store.DeleteThread(threadID); err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.JSON(w, http.StatusOK, api.DeleteThreadResponse{Success: true})
 }

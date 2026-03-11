@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"syscall"
 	"time"
@@ -106,12 +107,17 @@ func NewSandboxChatClient(provider sandbox.Provider, fetcher CredentialFetcher, 
 	return c
 }
 
+// threadsURL returns the agent-go thread collection route.
+func (c *SandboxChatClient) threadsURL() string {
+	return "http://sandbox/threads"
+}
+
 // threadURL returns a URL under the agent-go thread-scoped route.
 // For example, threadURL("sess-123", "/chat") returns "http://sandbox/threads/sess-123/chat".
 // The HTTP client's transport routes the request to the correct sandbox container
 // based on the sessionID passed to getHTTPClient — the URL host is always "sandbox".
 func (c *SandboxChatClient) threadURL(sessionID, path string) string {
-	return "http://sandbox/threads/" + sessionID + path
+	return c.threadsURL() + "/" + url.PathEscape(sessionID) + path
 }
 
 // isRetryableError checks if an error is a transient protocol error that should be retried.
@@ -484,6 +490,218 @@ func (c *SandboxChatClient) GetMessages(ctx context.Context, sessionID string, o
 	}
 
 	return response.Messages, nil
+}
+
+// ListThreads retrieves all threads from the sandbox agent.
+func (c *SandboxChatClient) ListThreads(ctx context.Context, sessionID string) (*sandboxapi.ListThreadsResponse, error) {
+	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
+		client, err := c.getHTTPClient(ctx, sessionID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", c.threadsURL(), nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+		if err := c.applyRequestAuth(ctx, req, sessionID, nil); err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		return resp, resp.StatusCode, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list threads: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result sandboxapi.ListThreadsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetThread retrieves a specific thread from the sandbox agent.
+func (c *SandboxChatClient) GetThread(ctx context.Context, sessionID, threadID string) (*sandboxapi.Thread, error) {
+	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
+		client, err := c.getHTTPClient(ctx, sessionID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", c.threadURL(threadID, ""), nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+		if err := c.applyRequestAuth(ctx, req, sessionID, nil); err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		return resp, resp.StatusCode, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get thread: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result sandboxapi.Thread
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// CreateThread creates a new thread in the sandbox agent.
+func (c *SandboxChatClient) CreateThread(ctx context.Context, sessionID string, reqBody *sandboxapi.CreateThreadRequest) (*sandboxapi.Thread, error) {
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
+		client, err := c.getHTTPClient(ctx, sessionID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", c.threadsURL(), bytes.NewReader(body))
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if err := c.applyRequestAuth(ctx, req, sessionID, nil); err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		return resp, resp.StatusCode, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create thread: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result sandboxapi.Thread
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// UpdateThread updates a thread in the sandbox agent.
+func (c *SandboxChatClient) UpdateThread(ctx context.Context, sessionID, threadID string, reqBody *sandboxapi.UpdateThreadRequest) (*sandboxapi.Thread, error) {
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
+		client, err := c.getHTTPClient(ctx, sessionID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "PUT", c.threadURL(threadID, ""), bytes.NewReader(body))
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if err := c.applyRequestAuth(ctx, req, sessionID, nil); err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		return resp, resp.StatusCode, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update thread: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result sandboxapi.Thread
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// DeleteThread removes a thread from the sandbox agent.
+func (c *SandboxChatClient) DeleteThread(ctx context.Context, sessionID, threadID string) (*sandboxapi.DeleteThreadResponse, error) {
+	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
+		client, err := c.getHTTPClient(ctx, sessionID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "DELETE", c.threadURL(threadID, ""), nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+		if err := c.applyRequestAuth(ctx, req, sessionID, nil); err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		return resp, resp.StatusCode, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete thread: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result sandboxapi.DeleteThreadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
 }
 
 // GetChatStatus retrieves the completion status from the sandbox.
@@ -1130,8 +1348,8 @@ func (c *SandboxChatClient) GetDiff(ctx context.Context, sessionID string, path 
 	return &result, nil
 }
 
-// GetCommits retrieves git format-patch output from the sandbox for commits since a parent.
-// Returns the patches string and commit count on success, or an error on failure.
+// GetCommits retrieves a serialized commit replay bundle from the sandbox for commits since a parent.
+// Returns the bundle string and commit count on success, or an error on failure.
 // Retries with exponential backoff on connection errors and 5xx responses.
 func (c *SandboxChatClient) GetCommits(ctx context.Context, sessionID string, parentCommit string) (*sandboxapi.CommitsResponse, error) {
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {

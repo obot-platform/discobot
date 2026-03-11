@@ -478,6 +478,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			cwd = threadCfg.CWD
 		}
 		_ = a.store.SaveConfig(threadID, thread.Config{
+			Name:         threadCfg.Name,
 			Model:        cfg.ProviderID + "/" + cfg.Model,
 			CWD:          cwd,
 			PlanMode:     planMode,

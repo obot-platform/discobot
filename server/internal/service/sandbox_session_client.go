@@ -127,6 +127,41 @@ func (c *SessionClient) GetMessages(ctx context.Context, opts *RequestOptions) (
 	})
 }
 
+// ListThreads retrieves all threads from the sandbox.
+func (c *SessionClient) ListThreads(ctx context.Context) (*sandboxapi.ListThreadsResponse, error) {
+	return withReconciliation(ctx, c, func() (*sandboxapi.ListThreadsResponse, error) {
+		return c.inner.ListThreads(ctx, c.sessionID)
+	})
+}
+
+// GetThread retrieves a specific thread from the sandbox.
+func (c *SessionClient) GetThread(ctx context.Context, threadID string) (*sandboxapi.Thread, error) {
+	return withReconciliation(ctx, c, func() (*sandboxapi.Thread, error) {
+		return c.inner.GetThread(ctx, c.sessionID, threadID)
+	})
+}
+
+// CreateThread creates a new thread in the sandbox.
+func (c *SessionClient) CreateThread(ctx context.Context, req *sandboxapi.CreateThreadRequest) (*sandboxapi.Thread, error) {
+	return withReconciliation(ctx, c, func() (*sandboxapi.Thread, error) {
+		return c.inner.CreateThread(ctx, c.sessionID, req)
+	})
+}
+
+// UpdateThread updates a thread in the sandbox.
+func (c *SessionClient) UpdateThread(ctx context.Context, threadID string, req *sandboxapi.UpdateThreadRequest) (*sandboxapi.Thread, error) {
+	return withReconciliation(ctx, c, func() (*sandboxapi.Thread, error) {
+		return c.inner.UpdateThread(ctx, c.sessionID, threadID, req)
+	})
+}
+
+// DeleteThread removes a thread from the sandbox.
+func (c *SessionClient) DeleteThread(ctx context.Context, threadID string) (*sandboxapi.DeleteThreadResponse, error) {
+	return withReconciliation(ctx, c, func() (*sandboxapi.DeleteThreadResponse, error) {
+		return c.inner.DeleteThread(ctx, c.sessionID, threadID)
+	})
+}
+
 // GetChatStatus retrieves the completion status from the sandbox.
 func (c *SessionClient) GetChatStatus(ctx context.Context) (*sandboxapi.ChatStatusResponse, error) {
 	return withReconciliation(ctx, c, func() (*sandboxapi.ChatStatusResponse, error) {
@@ -205,7 +240,7 @@ func (c *SessionClient) GetDiff(ctx context.Context, path, format string) (any, 
 	})
 }
 
-// GetCommits retrieves git format-patch output from the sandbox.
+// GetCommits retrieves a serialized commit replay bundle from the sandbox.
 func (c *SessionClient) GetCommits(ctx context.Context, parentCommit string) (*sandboxapi.CommitsResponse, error) {
 	return withReconciliation(ctx, c, func() (*sandboxapi.CommitsResponse, error) {
 		return c.inner.GetCommits(ctx, c.sessionID, parentCommit)

@@ -403,6 +403,86 @@ func (c *ChatService) GetMessages(ctx context.Context, projectID, sessionID stri
 	return client.GetMessages(ctx, nil)
 }
 
+// ListThreads retrieves all threads for a session from the sandbox agent.
+func (c *ChatService) ListThreads(ctx context.Context, projectID, sessionID string) (*sandboxapi.ListThreadsResponse, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.ListThreads(ctx)
+}
+
+// GetThread retrieves a single thread for a session from the sandbox agent.
+func (c *ChatService) GetThread(ctx context.Context, projectID, sessionID, threadID string) (*sandboxapi.Thread, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.GetThread(ctx, threadID)
+}
+
+// CreateThread creates a thread for a session in the sandbox agent.
+func (c *ChatService) CreateThread(ctx context.Context, projectID, sessionID string, req *sandboxapi.CreateThreadRequest) (*sandboxapi.Thread, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.CreateThread(ctx, req)
+}
+
+// UpdateThread updates a thread for a session in the sandbox agent.
+func (c *ChatService) UpdateThread(ctx context.Context, projectID, sessionID, threadID string, req *sandboxapi.UpdateThreadRequest) (*sandboxapi.Thread, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.UpdateThread(ctx, threadID, req)
+}
+
+// DeleteThread deletes a thread for a session in the sandbox agent.
+func (c *ChatService) DeleteThread(ctx context.Context, projectID, sessionID, threadID string) (*sandboxapi.DeleteThreadResponse, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.DeleteThread(ctx, threadID)
+}
+
 // CancelCompletion cancels an in-progress chat completion in the sandbox.
 // Returns ErrNoActiveCompletion if no completion is active.
 // The sandbox is automatically reconciled if not running.

@@ -678,6 +678,16 @@ func main() {
 				},
 			})
 
+			projReg.Register(r, routes.Route{
+				Method: "GET", Pattern: "/models",
+				Handler: h.GetProjectModels,
+				Meta: routes.Meta{
+					Group:       "Models",
+					Description: "Get available models for project credentials",
+					Params:      []routes.Param{{Name: "projectId", Example: "local"}},
+				},
+			})
+
 			// Workspaces
 			r.Route("/workspaces", func(r chi.Router) {
 				wsReg := projReg.WithPrefix("/workspaces")
@@ -723,6 +733,17 @@ func main() {
 						Description: "Create workspace",
 						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
 						Body:        map[string]any{"name": "My Workspace", "path": "/home/user/code", "source_type": "local"},
+					},
+				})
+
+				wsReg.Register(r, routes.Route{
+					Method: "POST", Pattern: "/validate",
+					Handler: h.ValidateWorkspace,
+					Meta: routes.Meta{
+						Group:       "Workspaces",
+						Description: "Validate workspace input",
+						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
+						Body:        map[string]any{"path": "~/projects/my-app", "sourceType": "local"},
 					},
 				})
 
@@ -909,7 +930,7 @@ func main() {
 						Group:       "Sessions",
 						Description: "Create session (without chat message)",
 						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"id": "abc123", "workspaceId": "", "agentId": ""},
+						Body:        map[string]any{"id": "abc123", "agentId": "", "workspaceId": "optional"},
 					},
 				})
 
@@ -1101,6 +1122,69 @@ func main() {
 							Group:       "Sessions",
 							Description: "List messages",
 							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "GET", Pattern: "/threads",
+						Handler: h.ListThreads,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "List session threads",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "POST", Pattern: "/threads",
+						Handler: h.CreateThread,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "Create session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}},
+							Body:        map[string]any{"id": "thread-1", "name": "Thread 1"},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "GET", Pattern: "/threads/{threadId}",
+						Handler: h.GetThread,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "Get session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "PUT", Pattern: "/threads/{threadId}",
+						Handler: h.UpdateThread,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "Update session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+							Body:        map[string]any{"name": "Renamed thread"},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "PATCH", Pattern: "/threads/{threadId}",
+						Handler: h.UpdateThread,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "Patch session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+							Body:        map[string]any{"name": "Renamed thread"},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "DELETE", Pattern: "/threads/{threadId}",
+						Handler: h.DeleteThread,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "Delete session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
 						},
 					})
 

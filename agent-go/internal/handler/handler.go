@@ -116,7 +116,17 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 
 	// Thread routes
 	reg.Register(r, routes.Route{Method: "GET", Pattern: "/threads", Handler: h.ListThreads,
-		Meta: routes.Meta{Group: "Threads", Description: "List all thread IDs"}})
+		Meta: routes.Meta{Group: "Threads", Description: "List all threads"}})
+	reg.Register(r, routes.Route{Method: "POST", Pattern: "/threads", Handler: h.CreateThread,
+		Meta: routes.Meta{Group: "Threads", Description: "Create a thread"}})
+	reg.Register(r, routes.Route{Method: "GET", Pattern: "/threads/{id}", Handler: h.GetThread,
+		Meta: routes.Meta{Group: "Threads", Description: "Get thread metadata"}})
+	reg.Register(r, routes.Route{Method: "PUT", Pattern: "/threads/{id}", Handler: h.UpdateThread,
+		Meta: routes.Meta{Group: "Threads", Description: "Replace thread metadata"}})
+	reg.Register(r, routes.Route{Method: "PATCH", Pattern: "/threads/{id}", Handler: h.UpdateThread,
+		Meta: routes.Meta{Group: "Threads", Description: "Update thread metadata"}})
+	reg.Register(r, routes.Route{Method: "DELETE", Pattern: "/threads/{id}", Handler: h.DeleteThread,
+		Meta: routes.Meta{Group: "Threads", Description: "Delete a thread"}})
 
 	r.Route("/threads/{id}", func(r chi.Router) {
 		threadReg := reg.WithPrefix("/threads/{id}")
@@ -162,7 +172,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		Meta: routes.Meta{Group: "Git", Description: "Get workspace diff",
 			Params: []routes.Param{{Name: "path", In: "query"}, {Name: "format", In: "query"}}}})
 	reg.Register(r, routes.Route{Method: "GET", Pattern: "/commits", Handler: h.GetCommits,
-		Meta: routes.Meta{Group: "Git", Description: "Get recent commit patches",
+		Meta: routes.Meta{Group: "Git", Description: "Get recent commit replay bundle",
 			Params: []routes.Param{{Name: "parent", In: "query"}}}})
 
 	// Hook routes

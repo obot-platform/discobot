@@ -92,6 +92,33 @@ type ErrorResponse struct {
 // Shared Types
 // ============================================================================
 
+// Thread represents a conversation thread persisted by the agent.
+type Thread struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListThreadsResponse is the GET /threads response.
+type ListThreadsResponse struct {
+	Threads []Thread `json:"threads"`
+}
+
+// CreateThreadRequest is the POST /threads request body.
+type CreateThreadRequest struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+// UpdateThreadRequest is the PUT /threads/{id} request body.
+type UpdateThreadRequest struct {
+	Name string `json:"name"`
+}
+
+// DeleteThreadResponse is the DELETE /threads/{id} response body.
+type DeleteThreadResponse struct {
+	Success bool `json:"success"`
+}
+
 // UIMessage represents a message in AI SDK UIMessage format.
 // This is a minimal representation - the full structure is passed through
 // as raw JSON where possible to avoid tight coupling with AI SDK internals.
@@ -229,10 +256,10 @@ type SingleFileDiffResponse struct {
 // ============================================================================
 
 // CommitsResponse is the GET /commits response (success case).
-// Returns git format-patch output for commits since a parent.
+// Returns a serialized commit replay bundle for commits since a parent.
 type CommitsResponse struct {
-	Patches     string `json:"patches"`     // Git format-patch output (mbox format)
-	CommitCount int    `json:"commitCount"` // Number of commits in patches
+	ReplayBundle string `json:"replayBundle"` // Serialized commit replay bundle JSON
+	CommitCount  int    `json:"commitCount"`  // Number of commits in the bundle
 }
 
 // CommitsErrorResponse is the GET /commits error response.

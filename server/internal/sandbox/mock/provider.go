@@ -3,9 +3,11 @@ package mock
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +37,8 @@ type Provider struct {
 
 	// HTTPHandler is used by HTTPClient to handle requests without network.
 	// If nil, a default handler that returns 202/200 is used.
-	HTTPHandler http.Handler
+	HTTPHandler        http.Handler
+	defaultHTTPHandler http.Handler
 
 	// Configurable behaviors for testing
 	CreateFunc     func(ctx context.Context, sessionID string, opts sandbox.CreateOptions) (*sandbox.Sandbox, error)
@@ -346,10 +349,10 @@ func (p *Provider) List(_ context.Context) ([]*sandbox.Sandbox, error) {
 // For mock provider, this returns a client that uses the configured HTTPHandler
 // without making real network connections.
 func (p *Provider) HTTPClient(_ context.Context, sessionID string) (*http.Client, error) {
-	p.mu.RLock()
-	s, exists := p.sandboxes[sessionID]
-	p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
+	s, exists := p.sandboxes[sessionID]
 	if !exists {
 		return nil, sandbox.ErrNotFound
 	}
@@ -358,10 +361,13 @@ func (p *Provider) HTTPClient(_ context.Context, sessionID string) (*http.Client
 		return nil, sandbox.ErrNotRunning
 	}
 
-	// Use mock transport that calls the handler directly
+	// Use mock transport that calls the handler directly.
 	handler := p.HTTPHandler
 	if handler == nil {
-		handler = defaultMockHandler()
+		if p.defaultHTTPHandler == nil {
+			p.defaultHTTPHandler = defaultMockHandler()
+		}
+		handler = p.defaultHTTPHandler
 	}
 
 	return &http.Client{
@@ -748,8 +754,13 @@ func (w *pipeResponseWriter) ensureHeaderReady() {
 // GET /threads/{id}/chat/status returns {"isRunning":false}.
 // GET /threads/{id}/chat/stream returns 200 with SSE [DONE].
 // GET /threads/{id}/messages returns empty message list.
-// Also supports file and diff endpoints for testing.
+// Also supports thread CRUD, file, and diff endpoints for testing.
 func defaultMockHandler() http.Handler {
+	var (
+		mu      sync.Mutex
+		threads = map[string]string{}
+	)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -779,6 +790,119 @@ func defaultMockHandler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"messages":[]}`))
 			return
+
+		case r.URL.Path == "/threads" && r.Method == "GET":
+			mu.Lock()
+			ids := make([]string, 0, len(threads))
+			for id := range threads {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
+			result := make([]map[string]string, 0, len(ids))
+			for _, id := range ids {
+				result = append(result, map[string]string{"id": id, "name": threads[id]})
+			}
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{"threads": result})
+			return
+
+		case r.URL.Path == "/threads" && r.Method == "POST":
+			var req struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"invalid request body"}`))
+				return
+			}
+			if strings.TrimSpace(req.ID) == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"id is required"}`))
+				return
+			}
+			if strings.TrimSpace(req.Name) == "" {
+				req.Name = req.ID
+			}
+
+			mu.Lock()
+			if _, exists := threads[req.ID]; exists {
+				mu.Unlock()
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"error":"thread already exists"}`))
+				return
+			}
+			threads[req.ID] = req.Name
+			mu.Unlock()
+
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "name": req.Name})
+			return
+
+		case strings.HasPrefix(r.URL.Path, "/threads/") && !strings.Contains(strings.TrimPrefix(r.URL.Path, "/threads/"), "/"):
+			threadID := strings.TrimPrefix(r.URL.Path, "/threads/")
+			if threadID == "" {
+				http.NotFound(w, r)
+				return
+			}
+
+			switch r.Method {
+			case "GET":
+				mu.Lock()
+				name, ok := threads[threadID]
+				mu.Unlock()
+				if !ok {
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"error":"thread not found"}`))
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(map[string]string{"id": threadID, "name": name})
+				return
+			case "PUT", "PATCH":
+				var req struct {
+					Name string `json:"name"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":"invalid request body"}`))
+					return
+				}
+				if strings.TrimSpace(req.Name) == "" {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":"name is required"}`))
+					return
+				}
+
+				mu.Lock()
+				if _, ok := threads[threadID]; !ok {
+					mu.Unlock()
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"error":"thread not found"}`))
+					return
+				}
+				threads[threadID] = req.Name
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(map[string]string{"id": threadID, "name": req.Name})
+				return
+			case "DELETE":
+				mu.Lock()
+				if _, ok := threads[threadID]; !ok {
+					mu.Unlock()
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"error":"thread not found"}`))
+					return
+				}
+				delete(threads, threadID)
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
+				return
+			}
 
 		case r.URL.Path == "/files" && r.Method == "GET":
 			// List files - return mock directory listing
