@@ -68,7 +68,6 @@ type Session struct {
 	ErrorMessage    string     `json:"errorMessage,omitempty"`
 	Files           []FileNode `json:"files"`
 	WorkspaceID     string     `json:"workspaceId,omitempty"`
-	AgentID         string     `json:"agentId,omitempty"`
 	Model           string     `json:"model,omitempty"`
 	Reasoning       string     `json:"reasoning,omitempty"`
 	Mode            string     `json:"mode,omitempty"`
@@ -151,16 +150,10 @@ func (s *SessionService) GetSession(ctx context.Context, sessionID string) (*Ses
 
 // CreateSession creates a new session with initializing status and auto-generated ID.
 // If initialMessage is provided, it creates the first user message in the session.
-func (s *SessionService) CreateSession(ctx context.Context, projectID, workspaceID, name, agentID, initialMessage string) (*Session, error) {
-	var aidPtr *string
-	if agentID != "" {
-		aidPtr = &agentID
-	}
-
+func (s *SessionService) CreateSession(ctx context.Context, projectID, workspaceID, name, initialMessage string) (*Session, error) {
 	sess := &model.Session{
 		ProjectID:   projectID,
 		WorkspaceID: workspaceID,
-		AgentID:     aidPtr,
 		Name:        name,
 		Description: nil,
 		Status:      model.SessionStatusInitializing,
@@ -186,12 +179,7 @@ func (s *SessionService) CreateSession(ctx context.Context, projectID, workspace
 }
 
 // CreateSessionWithID creates a new session with the provided client ID.
-func (s *SessionService) CreateSessionWithID(ctx context.Context, sessionID, projectID, workspaceID, name, agentID, modelID, reasoning, mode string) (*Session, error) {
-	var aidPtr *string
-	if agentID != "" {
-		aidPtr = &agentID
-	}
-
+func (s *SessionService) CreateSessionWithID(ctx context.Context, sessionID, projectID, workspaceID, name, modelID, reasoning, mode string) (*Session, error) {
 	var modelPtr *string
 	if modelID != "" {
 		modelPtr = &modelID
@@ -211,7 +199,6 @@ func (s *SessionService) CreateSessionWithID(ctx context.Context, sessionID, pro
 		ID:          sessionID, // Use client-provided ID
 		ProjectID:   projectID,
 		WorkspaceID: workspaceID,
-		AgentID:     aidPtr,
 		Model:       modelPtr,
 		Reasoning:   reasoningPtr,
 		Mode:        modePtr,
@@ -509,11 +496,6 @@ func (s *SessionService) PerformDeletion(ctx context.Context, projectID, session
 
 // mapSession maps a model Session to a service Session
 func (s *SessionService) mapSession(sess *model.Session) *Session {
-	agentID := ""
-	if sess.AgentID != nil {
-		agentID = *sess.AgentID
-	}
-
 	description := ""
 	if sess.Description != nil {
 		description = *sess.Description
@@ -600,7 +582,6 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 		ErrorMessage:    errorMessage,
 		Files:           []FileNode{},
 		WorkspaceID:     sess.WorkspaceID,
-		AgentID:         agentID,
 		Model:           model,
 		Reasoning:       reasoning,
 		Mode:            mode,
@@ -614,7 +595,6 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 type SessionConfig struct {
 	Session   *Session   `json:"session"`
 	Workspace *Workspace `json:"workspace"`
-	Agent     *Agent     `json:"agent"`
 }
 
 // Initialize performs the session initialization work synchronously.
@@ -637,52 +617,11 @@ func (s *SessionService) Initialize(
 		return fmt.Errorf("workspace not found: %w", err)
 	}
 
-	// Get agent info (optional, with fallback to default)
-	var agent *model.Agent
-	var needsAgentFallback bool
-	var fallbackReason string
-
-	if sessionModel.AgentID == nil {
-		// No agent assigned - try to use default agent
-		needsAgentFallback = true
-		fallbackReason = "no agent assigned"
-	} else {
-		// Try to fetch the assigned agent
-		agent, err = s.store.GetAgentByID(ctx, *sessionModel.AgentID)
-		if err != nil {
-			// Agent not found (deleted) - try to use default agent
-			needsAgentFallback = true
-			fallbackReason = fmt.Sprintf("assigned agent %s not found (deleted)", *sessionModel.AgentID)
-		}
-	}
-
-	// If we need to fallback, try to get and assign the default agent
-	if needsAgentFallback {
-		log.Printf("Session %s: %s, attempting to use default agent", sessionID, fallbackReason)
-
-		defaultAgent, err := s.store.GetDefaultAgent(ctx, sessionModel.ProjectID)
-		if err != nil {
-			// No default agent available - fail with helpful message
-			s.updateStatusWithEvent(ctx, sessionModel.ProjectID, sessionID, model.SessionStatusError,
-				ptrString("This session has no agent assigned and no default agent is configured. Please create a new session with an available agent."))
-			return fmt.Errorf("session has no valid agent and no default agent is configured")
-		}
-
-		// Update session to use default agent
-		log.Printf("Session %s: assigning default agent %s (type: %s)", sessionID, defaultAgent.ID, defaultAgent.AgentType)
-		sessionModel.AgentID = &defaultAgent.ID
-		if err := s.store.UpdateSession(ctx, sessionModel); err != nil {
-			return fmt.Errorf("failed to update session with default agent: %w", err)
-		}
-
-		agent = defaultAgent
-	}
-
 	// Convert to service Session for initializeSync
 	session := s.mapSession(sessionModel)
 
 	// Run initialization synchronously
-	return s.initializeSync(ctx, session.ProjectID, session, workspace, agent)
+	return s.initializeSync(ctx, session.ProjectID, session, workspace)
 }
 
 // initializeSync runs the initialization flow synchronously.
@@ -692,7 +631,6 @@ func (s *SessionService) initializeSync(
 	projectID string,
 	session *Session,
 	workspace *model.Workspace,
-	_ *model.Agent,
 ) error {
 	sessionID := session.ID
 

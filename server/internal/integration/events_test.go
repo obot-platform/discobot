@@ -276,7 +276,6 @@ func TestEvents_SessionCreationEmitsEvents(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Connect to SSE
@@ -330,7 +329,6 @@ func TestEvents_SessionCreationEmitsEvents(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	defer createResp.Body.Close()
 

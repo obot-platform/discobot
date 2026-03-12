@@ -23,13 +23,10 @@ func TestSessionInitialize_SetsWorkspaceCommitOnFirstInit(t *testing.T) {
 	// Get the current HEAD commit
 	expectedCommit := getGitHead(t, workspace.Path)
 
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-
 	// Create session in initializing state (not ready yet)
 	session := &model.Session{
 		ProjectID:   workspace.ProjectID,
 		WorkspaceID: workspace.ID,
-		AgentID:     &agent.ID,
 		Name:        "Test Session",
 		Status:      model.SessionStatusInitializing,
 	}
@@ -90,13 +87,10 @@ func TestSessionInitialize_PreservesWorkspaceCommitOnReconcile(t *testing.T) {
 	// Get the initial HEAD commit
 	initialCommit := getGitHead(t, workspace.Path)
 
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-
 	// Create session in initializing state
 	session := &model.Session{
 		ProjectID:   workspace.ProjectID,
 		WorkspaceID: workspace.ID,
-		AgentID:     &agent.ID,
 		Name:        "Test Session",
 		Status:      model.SessionStatusInitializing,
 	}
@@ -176,15 +170,12 @@ func TestSessionInitialize_EnsuresWorkspaceOnReconcile(t *testing.T) {
 	// Create a workspace with a real git repo
 	workspace := ts.CreateTestWorkspaceWithGitRepo(project)
 
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-
 	// Create session with WorkspacePath already set (simulating previous initialization)
 	workspacePath := workspace.Path
 	workspaceCommit := getGitHead(t, workspace.Path)
 	session := &model.Session{
 		ProjectID:       workspace.ProjectID,
 		WorkspaceID:     workspace.ID,
-		AgentID:         &agent.ID,
 		Name:            "Test Session",
 		Status:          model.SessionStatusError, // Needs reconcile
 		WorkspacePath:   &workspacePath,
@@ -238,13 +229,10 @@ func TestSessionInitialize_WorkspaceCommitUsedForSandbox(t *testing.T) {
 	// Get the initial commit
 	initialCommit := getGitHead(t, workspace.Path)
 
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-
 	// Create session in initializing state
 	session := &model.Session{
 		ProjectID:   workspace.ProjectID,
 		WorkspaceID: workspace.ID,
-		AgentID:     &agent.ID,
 		Name:        "Test Session",
 		Status:      model.SessionStatusInitializing,
 	}
@@ -339,7 +327,6 @@ func TestMapSession_IncludesWorkspaceFields(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspaceWithGitRepo(project)
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 
 	// Create session with workspace fields set
 	workspacePath := workspace.Path
@@ -347,7 +334,6 @@ func TestMapSession_IncludesWorkspaceFields(t *testing.T) {
 	session := &model.Session{
 		ProjectID:       workspace.ProjectID,
 		WorkspaceID:     workspace.ID,
-		AgentID:         &agent.ID,
 		Name:            "Test Session",
 		Status:          model.SessionStatusReady,
 		WorkspacePath:   &workspacePath,
@@ -383,12 +369,9 @@ func TestSessionInitialize_NoGitService(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/some/local/path")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-
 	session := &model.Session{
 		ProjectID:   workspace.ProjectID,
 		WorkspaceID: workspace.ID,
-		AgentID:     &agent.ID,
 		Name:        "Test Session",
 		Status:      model.SessionStatusInitializing,
 	}

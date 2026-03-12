@@ -11,8 +11,7 @@ func TestSessionThreadCRUD(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	basePath := "/api/projects/" + project.ID + "/sessions/" + session.ID + "/threads"
@@ -118,8 +117,7 @@ func TestListThreadMessages_Empty(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	basePath := "/api/projects/" + project.ID + "/sessions/" + session.ID + "/threads"

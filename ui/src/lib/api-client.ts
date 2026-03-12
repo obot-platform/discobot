@@ -13,7 +13,6 @@ export class FileConflictError extends Error {
 }
 
 import type {
-	Agent,
 	AnswerQuestionRequest,
 	AnswerQuestionResponse,
 	AuthProvider,
@@ -23,7 +22,6 @@ import type {
 	CodexAuthorizeResponse,
 	CodexExchangeRequest,
 	CodexExchangeResponse,
-	CreateAgentRequest,
 	CreateCredentialRequest,
 	CreateWorkspaceRequest,
 	CredentialInfo,
@@ -68,7 +66,6 @@ import type {
 	StartServiceResponse,
 	StopServiceResponse,
 	Suggestion,
-	SupportedAgentType,
 	SupportInfoResponse,
 	Thread,
 	SystemStatusResponse,
@@ -210,7 +207,6 @@ class ApiClient {
 	async createSession(data: {
 		id: string;
 		workspaceId?: string;
-		agentId: string;
 		model?: string;
 		reasoning?: string;
 	}): Promise<{ id: string }> {
@@ -550,57 +546,16 @@ class ApiClient {
 		);
 	}
 
-	// Agents
-	async getAgents(): Promise<{ agents: Agent[] }> {
-		return this.fetch<{ agents: Agent[] }>("/agents");
-	}
-
-	async getAgent(id: string): Promise<Agent> {
-		return this.fetch<Agent>(`/agents/${id}`);
-	}
-
-	async createAgent(data: CreateAgentRequest): Promise<Agent> {
-		return this.fetch<Agent>("/agents", {
-			method: "POST",
-			body: JSON.stringify(data),
-		});
-	}
-
-	async updateAgent(id: string): Promise<Agent> {
-		return this.fetch<Agent>(`/agents/${id}`, {
-			method: "PUT",
-		});
-	}
-
-	async deleteAgent(id: string): Promise<void> {
-		await this.fetch(`/agents/${id}`, { method: "DELETE" });
-	}
-
-	async setDefaultAgent(id: string): Promise<Agent> {
-		return this.fetch<Agent>("/agents/default", {
-			method: "POST",
-			body: JSON.stringify({ agentId: id }),
-		});
-	}
-
 	async getProjectModels(): Promise<ModelsResponse> {
 		return this.fetch<ModelsResponse>("/models");
-	}
-
-	async getAgentModels(agentId: string): Promise<ModelsResponse> {
-		return this.fetch<ModelsResponse>(`/agents/${agentId}/models`);
 	}
 
 	async getSessionModels(sessionId: string): Promise<ModelsResponse> {
 		return this.fetch<ModelsResponse>(`/sessions/${sessionId}/models`);
 	}
 
-	async getAgentTypes(): Promise<{ agentTypes: SupportedAgentType[] }> {
-		return this.fetch("/agents/types");
-	}
-
 	async getAuthProviders(): Promise<{ authProviders: AuthProvider[] }> {
-		return this.fetch("/agents/auth-providers");
+		return this.fetch("/auth-providers");
 	}
 
 	// Terminal

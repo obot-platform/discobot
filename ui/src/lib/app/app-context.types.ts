@@ -1,5 +1,5 @@
 import type {
-	AgentModel,
+	ModelInfo,
 	AuthProvider,
 	CodexAuthorizeResponse,
 	CodexExchangeRequest,
@@ -14,6 +14,7 @@ import type {
 	OAuthExchangeRequest,
 	OAuthExchangeResponse,
 	OAuthRefreshResponse,
+	CredentialAuthType,
 	SupportInfoResponse,
 	ThemeColorScheme,
 	Workspace,
@@ -121,7 +122,7 @@ export type AppWorkspaces = {
 };
 
 export type AppModels = {
-	list: AgentModel[];
+	list: ModelInfo[];
 	refresh: () => Promise<void>;
 };
 
@@ -130,8 +131,8 @@ export type AppCredentials = {
 	providers: AuthProvider[];
 	get: (idOrProvider: string) => CredentialInfo | null;
 	refresh: () => Promise<void>;
-	create: (provider: string, apiKey: string) => Promise<CredentialInfo>;
-	update: (provider: string, apiKey: string) => Promise<CredentialInfo>;
+	create: (provider: string, authType: CredentialAuthType, apiKey: string) => Promise<CredentialInfo>;
+	update: (provider: string, authType: CredentialAuthType, apiKey: string) => Promise<CredentialInfo>;
 	remove: (provider: string) => Promise<void>;
 	refreshCredential: (provider: string) => Promise<OAuthRefreshResponse>;
 	anthropicAuthorize: () => Promise<OAuthAuthorizeResponse>;

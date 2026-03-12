@@ -42,8 +42,8 @@ func setupChatTestStore(t *testing.T) *store.Store {
 	return store.New(db, nil)
 }
 
-// seedWorkspaceAndAgent creates a workspace and agent in the store for testing.
-func seedWorkspaceAndAgent(t *testing.T, s *store.Store) {
+// seedWorkspace creates a workspace in the store for testing.
+func seedWorkspace(t *testing.T, s *store.Store) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -56,15 +56,6 @@ func seedWorkspaceAndAgent(t *testing.T, s *store.Store) {
 	}
 	if err := s.CreateWorkspace(ctx, workspace); err != nil {
 		t.Fatalf("failed to create workspace: %v", err)
-	}
-
-	agent := &model.Agent{
-		ID:        "test-agent",
-		ProjectID: testProjectID,
-		AgentType: "claude-code",
-	}
-	if err := s.CreateAgent(ctx, agent); err != nil {
-		t.Fatalf("failed to create agent: %v", err)
 	}
 }
 
@@ -157,7 +148,6 @@ func TestChat_GetSessionByID_UnexpectedError(t *testing.T) {
 		ID:          "session-123",
 		Messages:    json.RawMessage(`[{"role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 		WorkspaceID: "test-workspace",
-		AgentID:     "test-agent",
 	})
 	w := httptest.NewRecorder()
 
@@ -172,7 +162,7 @@ func TestChat_GetSessionByID_UnexpectedError(t *testing.T) {
 func TestChat_EmptyMessages_CreatesSessionWithoutSendingToSandbox(t *testing.T) {
 	s := setupChatTestStore(t)
 	provider := mocksandbox.NewProvider()
-	seedWorkspaceAndAgent(t, s)
+	seedWorkspace(t, s)
 
 	getCalled := false
 	provider.GetFunc = func(_ context.Context, _ string) (*sandbox.Sandbox, error) {
@@ -187,7 +177,6 @@ func TestChat_EmptyMessages_CreatesSessionWithoutSendingToSandbox(t *testing.T) 
 		ID:          "session-empty-create",
 		Messages:    json.RawMessage(`[]`),
 		WorkspaceID: "test-workspace",
-		AgentID:     "test-agent",
 	})
 	w := httptest.NewRecorder()
 

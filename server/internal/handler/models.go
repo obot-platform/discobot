@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobot/server/internal/middleware"
+	"github.com/obot-platform/discobot/server/internal/providers"
 	"github.com/obot-platform/discobot/server/internal/service"
 )
 
@@ -55,26 +56,7 @@ func (h *Handler) GetProjectModels(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, ModelsResponse{Models: toModelInfos(models)})
 }
 
-// GetAgentModels returns available models for an agent based on configured credentials
-func (h *Handler) GetAgentModels(w http.ResponseWriter, r *http.Request) {
-	projectID := middleware.GetProjectID(r.Context())
-	agentID := chi.URLParam(r, "agentId")
-
-	if agentID == "" {
-		h.Error(w, http.StatusBadRequest, "Agent ID is required")
-		return
-	}
-
-	models, err := h.modelsService.GetModelsForAgent(r.Context(), agentID, projectID)
-	if err != nil {
-		h.Error(w, http.StatusInternalServerError, "Failed to get models for agent")
-		return
-	}
-
-	h.JSON(w, http.StatusOK, ModelsResponse{Models: toModelInfos(models)})
-}
-
-// GetSessionModels returns available models for a session based on its agent and credentials
+// GetSessionModels returns available models for a session based on its credentials
 func (h *Handler) GetSessionModels(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionId")
 
@@ -90,4 +72,9 @@ func (h *Handler) GetSessionModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.JSON(w, http.StatusOK, ModelsResponse{Models: toModelInfos(models)})
+}
+
+// GetAuthProviders returns available auth providers from models.dev data
+func (h *Handler) GetAuthProviders(w http.ResponseWriter, _ *http.Request) {
+	h.JSON(w, http.StatusOK, map[string]any{"authProviders": providers.GetAll()})
 }

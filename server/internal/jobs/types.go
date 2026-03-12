@@ -41,7 +41,6 @@ type SessionInitPayload struct {
 	ProjectID   string `json:"projectId"`
 	SessionID   string `json:"sessionId"`
 	WorkspaceID string `json:"workspaceId"`
-	AgentID     string `json:"agentId"`
 }
 
 func (p SessionInitPayload) JobType() JobType              { return JobTypeSessionInit }

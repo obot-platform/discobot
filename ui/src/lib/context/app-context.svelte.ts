@@ -7,7 +7,6 @@ import { createAppSessionsDomain } from "$lib/app/domains/app-sessions.svelte";
 import { createAppSupportInfoDomain } from "$lib/app/domains/app-support-info.svelte";
 import { createAppWorkspacesDomain } from "$lib/app/domains/app-workspaces.svelte";
 import {
-	createAppAgentService,
 	createAppPreferencesService,
 	createAppUpdateService,
 } from "$lib/app/services";
@@ -31,7 +30,6 @@ function createAppContext(bootstrap: AppContextBootstrap): AppContext {
 	const store = createAppStore(bootstrap);
 	const view = createAppViewState(bootstrap.selectedSessionId);
 
-	const agentService = createAppAgentService({ queryClient });
 	const preferencesService = createAppPreferencesService({ store });
 	const updateService = createAppUpdateService({ store });
 	const workspaces = createAppWorkspacesDomain({ queryClient });
@@ -43,7 +41,6 @@ function createAppContext(bootstrap: AppContextBootstrap): AppContext {
 		view,
 		queryClient,
 		setResolvedWorkspaceId: workspaces.select,
-		resolveAgentId: agentService.resolveAgentId,
 	});
 
 	const ui = {

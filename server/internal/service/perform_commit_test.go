@@ -157,20 +157,6 @@ func (e *testEnv) createTestProject(t *testing.T) *model.Project {
 	return project
 }
 
-// createTestAgent creates a test agent.
-func (e *testEnv) createTestAgent(t *testing.T, projectID string) *model.Agent {
-	t.Helper()
-	agent := &model.Agent{
-		ID:        "test-agent",
-		ProjectID: projectID,
-		AgentType: "claude-code",
-	}
-	if err := e.store.CreateAgent(context.Background(), agent); err != nil {
-		t.Fatalf("Failed to create agent: %v", err)
-	}
-	return agent
-}
-
 // createTestWorkspace creates a test workspace with a git repo.
 func (e *testEnv) createTestWorkspace(t *testing.T, projectID string) (*model.Workspace, string) {
 	t.Helper()
@@ -212,13 +198,12 @@ func (e *testEnv) createTestWorkspace(t *testing.T, projectID string) (*model.Wo
 }
 
 // createTestSession creates a test session.
-func (e *testEnv) createTestSession(t *testing.T, projectID, workspaceID, agentID, baseCommit string) *model.Session {
+func (e *testEnv) createTestSession(t *testing.T, projectID, workspaceID, baseCommit string) *model.Session {
 	t.Helper()
 	session := &model.Session{
 		ID:           "test-session",
 		ProjectID:    projectID,
 		WorkspaceID:  workspaceID,
-		AgentID:      ptrString(agentID),
 		Name:         "Test Session",
 		Status:       model.SessionStatusReady,
 		CommitStatus: model.CommitStatusNone,
@@ -337,10 +322,9 @@ func TestPerformCommit_WorkspaceUnchangedNoExistingPatches(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	callCount := 0
 	var mu sync.Mutex
@@ -421,11 +405,10 @@ func TestPerformCommit_WorkspaceChangedWithPatches(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
 	// Create session with the initial commit
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	// Add a new commit to the workspace (simulating external change)
 	newCommit := env.addCommitToWorkspace(t, workspace.Path, "external.txt", "external content\n")
@@ -495,11 +478,10 @@ func TestPerformCommit_WorkspaceChangedNoPatches(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
 	// Create session with the initial commit
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	// Add a new commit to the workspace
 	newCommit := env.addCommitToWorkspace(t, workspace.Path, "external.txt", "external content\n")
@@ -599,11 +581,10 @@ func TestPerformCommit_WorkspaceChangedGetCommitsError(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
 	// Create session with the initial commit
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	// Add a new commit to the workspace
 	_ = env.addCommitToWorkspace(t, workspace.Path, "external.txt", "external content\n")
@@ -690,11 +671,10 @@ func TestPerformCommit_WorkspaceUnchangedWithExistingPatches(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
 	// Create session with baseCommit equal to workspace commit (no change scenario)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	// Set up mock handler with patches already available
 	// This simulates the agent having already created commits
@@ -761,9 +741,8 @@ func TestPerformRebase_ParentMismatchPrecheckContinuesToPrompt(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	callCount := 0
 	requestOrder := make([]string, 0, 3)
@@ -885,10 +864,9 @@ func TestPerformCommit_SandboxNotRunning(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	// Set up mock handler to return patches
 	handler := newMockHandler()

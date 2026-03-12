@@ -1419,12 +1419,15 @@
 								description: "Session display name",
 							},
 							{
-								name: "agent",
-								type: "object",
-								properties: [
-									{ name: "agentId", type: "string", required: true },
-									{ name: "mode", type: "string" },
-								],
+								name: "workspaceId",
+								type: "string",
+								required: false,
+								description: "Optional workspace identifier",
+							},
+							{
+								name: "mode",
+								type: "string",
+								required: false,
 							},
 						]}
 						responseBody={[

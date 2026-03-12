@@ -1,5 +1,3 @@
-export { createAppAgentService } from "$lib/app/services/app-agent-service";
-export type { AppAgentService } from "$lib/app/services/app-agent-service";
 export {
 	createAppPreferencesService,
 	ignoreVersionPreference,

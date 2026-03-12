@@ -16,9 +16,8 @@ func TestCommitSession_Success(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	var enqueuedJob jobs.JobPayload
 	mockEnqueuer := &mockJobEnqueuer{
@@ -56,9 +55,8 @@ func TestCommitSession_EnqueueFailure(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	mockEnqueuer := &mockJobEnqueuer{
 		enqueueFunc: func(_ context.Context, _ jobs.JobPayload) error {
@@ -80,9 +78,8 @@ func TestRebaseSession_Success(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	var enqueuedJob jobs.JobPayload
 	mockEnqueuer := &mockJobEnqueuer{
@@ -120,9 +117,8 @@ func TestRebaseSession_EnqueueFailure(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	mockEnqueuer := &mockJobEnqueuer{
 		enqueueFunc: func(_ context.Context, _ jobs.JobPayload) error {
@@ -144,9 +140,8 @@ func TestSessionOperations_BlockParallelStart(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	session.CommitStatus = model.CommitStatusPending
 	session.CommitOperation = ptrString(model.CommitOperationCommit)
@@ -166,9 +161,8 @@ func TestReconcileCommitStates_ReenqueuesCommitWhenOperationUnset(t *testing.T) 
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	session.CommitStatus = model.CommitStatusPending
 	session.CommitOperation = nil
@@ -201,9 +195,8 @@ func TestReconcileCommitStates_ReenqueuesRebaseWhenOperationSet(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	session.CommitStatus = model.CommitStatusCommitting
 	session.CommitOperation = ptrString(model.CommitOperationRebase)
@@ -236,9 +229,8 @@ func TestReconcileCommitStates_ReenqueuesRebaseWhenWorkspaceJobIsRunning(t *test
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	session.CommitStatus = model.CommitStatusPending
 	session.CommitOperation = ptrString(model.CommitOperationRebase)
@@ -283,9 +275,8 @@ func TestMarkCommitCompleted_CommitMarksCompleted(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	session.CommitStatus = model.CommitStatusCommitting
 	session.CommitOperation = ptrString(model.CommitOperationCommit)
@@ -315,9 +306,8 @@ func TestMarkCommitCompleted_RebaseClearsCommitState(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 
 	session.CommitStatus = model.CommitStatusCommitting
 	session.CommitOperation = ptrString(model.CommitOperationRebase)
@@ -420,11 +410,10 @@ func TestUpdateStatus_ClearsCommitStatusOnRunning(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
 	// Create session with completed commit status
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 	session.CommitStatus = model.CommitStatusCompleted
 	session.AppliedCommit = ptrString("abc123")
 	if err := env.store.UpdateSession(context.Background(), session); err != nil {
@@ -461,11 +450,10 @@ func TestUpdateStatus_DoesNotClearCommitStatusWhenNotCompleted(t *testing.T) {
 	defer env.cleanup()
 
 	project := env.createTestProject(t)
-	agent := env.createTestAgent(t, project.ID)
 	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
 
 	// Create session with no commit status
-	session := env.createTestSession(t, project.ID, workspace.ID, agent.ID, initialCommit)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
 	session.CommitStatus = model.CommitStatusNone
 	if err := env.store.UpdateSession(context.Background(), session); err != nil {
 		t.Fatalf("Failed to update session: %v", err)

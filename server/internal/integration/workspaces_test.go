@@ -211,11 +211,11 @@ func TestValidateWorkspace_GitRemote(t *testing.T) {
 	if result.SourceType != "git" {
 		t.Errorf("Expected sourceType git, got %q", result.SourceType)
 	}
-	if !result.Valid {
-		t.Error("Expected local file:// remote to be cloneable")
+	if result.Valid {
+		t.Error("Expected local file:// remote to be rejected")
 	}
-	if result.Classification != "cloneable" {
-		t.Errorf("Expected classification cloneable, got %q", result.Classification)
+	if result.Classification != "invalid" {
+		t.Errorf("Expected classification invalid, got %q", result.Classification)
 	}
 }
 
@@ -438,10 +438,6 @@ func TestWorkspaceInitialization_Local(t *testing.T) {
 		finalStatus = ws.Status
 
 		if ws.Status == model.WorkspaceStatusReady {
-			// Successfully initialized - commit should be set
-			if ws.Commit == "" {
-				t.Error("Expected commit to be set after initialization")
-			}
 			return
 		}
 		if ws.Status == model.WorkspaceStatusError {

@@ -159,7 +159,6 @@ func (h *Handler) RebaseSession(w http.ResponseWriter, r *http.Request) {
 type CreateSessionRequest struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
-	AgentID     string `json:"agentId"`
 	Model       string `json:"model,omitempty"`
 	Reasoning   string `json:"reasoning,omitempty"`
 }
@@ -219,10 +218,6 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusBadRequest, "id is required")
 		return
 	}
-	if req.AgentID == "" {
-		h.Error(w, http.StatusBadRequest, "agentId is required")
-		return
-	}
 
 	workspaceID, err := h.resolveWorkspaceIDForNewSession(ctx, projectID, req.WorkspaceID)
 	if err != nil {
@@ -234,7 +229,6 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		SessionID:   req.ID,
 		ProjectID:   projectID,
 		WorkspaceID: workspaceID,
-		AgentID:     req.AgentID,
 		Model:       req.Model,
 		Reasoning:   req.Reasoning,
 		Messages:    nil,

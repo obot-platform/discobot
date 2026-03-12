@@ -93,15 +93,13 @@ func TestGetTerminalStatus_SessionNotFound(t *testing.T) {
 	resp := client.Get("/api/projects/" + project.ID + "/sessions/nonexistent-session/terminal/status")
 	defer resp.Body.Close()
 
-	// Should return not_created since container doesn't exist
-	// (The session check happens in the WebSocket handler, not status)
-	AssertStatus(t, resp, http.StatusOK)
+	AssertStatus(t, resp, http.StatusNotFound)
 
 	var status map[string]interface{}
 	ParseJSON(t, resp, &status)
 
-	if status["status"] != "not_created" {
-		t.Errorf("Expected status 'not_created', got '%v'", status["status"])
+	if status["error"] != "Session not found" {
+		t.Errorf("Expected error 'Session not found', got '%v'", status["error"])
 	}
 }
 
@@ -135,7 +133,6 @@ func TestCreateSession_CreatesSandbox(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspaceWithGitRepo(project) // Local workspaces need real git repos
-	agent := ts.CreateTestAgent(project, "Claude", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Sessions are created implicitly via the chat endpoint
@@ -153,7 +150,6 @@ func TestCreateSession_CreatesSandbox(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	defer resp.Body.Close()
 

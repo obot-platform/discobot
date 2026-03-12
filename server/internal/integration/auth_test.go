@@ -97,13 +97,11 @@ func TestNoAuthMode_AuthMe(t *testing.T) {
 	}
 }
 
-func TestNoAuthMode_APIAccess(t *testing.T) {
+func TestNoAuthMode_AuthProvidersIncludeDiscobotMetadata(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServerNoAuth(t)
 
-	// In no-auth mode, API should be accessible without authentication
-	// and should use the default project for the anonymous user
-	resp, err := http.Get(ts.Server.URL + "/api/projects/" + model.DefaultProjectID + "/agents/types")
+	resp, err := http.Get(ts.Server.URL + "/api/projects/" + model.DefaultProjectID + "/auth-providers")
 	if err != nil {
 		t.Fatalf("Failed to call API: %v", err)
 	}
@@ -112,11 +110,22 @@ func TestNoAuthMode_APIAccess(t *testing.T) {
 	AssertStatus(t, resp, http.StatusOK)
 
 	var result struct {
-		AgentTypes []map[string]interface{} `json:"agentTypes"`
+		AuthProviders []map[string]interface{} `json:"authProviders"`
 	}
 	ParseJSON(t, resp, &result)
 
-	if len(result.AgentTypes) == 0 {
-		t.Error("Expected at least one agent type")
+	for _, provider := range result.AuthProviders {
+		if provider["id"] != "discobot" {
+			continue
+		}
+		if provider["configuredName"] != "Discobot ID" {
+			t.Errorf("Expected configuredName 'Discobot ID', got %v", provider["configuredName"])
+		}
+		if provider["secretDescription"] != "Used to identify you for cloud services." {
+			t.Errorf("Expected secretDescription for Discobot, got %v", provider["secretDescription"])
+		}
+		return
 	}
+
+	t.Fatal("Expected Discobot auth provider to be returned")
 }

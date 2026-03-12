@@ -321,15 +321,7 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 				})
 			})
 
-			r.Route("/agents", func(r chi.Router) {
-				r.Get("/", h.ListAgents)
-				r.Post("/", h.CreateAgent)
-				r.Get("/types", h.GetAgentTypes)
-				r.Post("/default", h.SetDefaultAgent)
-				r.Get("/{agentId}", h.GetAgent)
-				r.Put("/{agentId}", h.UpdateAgent)
-				r.Delete("/{agentId}", h.DeleteAgent)
-			})
+			r.Get("/auth-providers", h.GetAuthProviders)
 
 			r.Get("/suggestions", h.GetSuggestions)
 			r.Get("/events", h.Events)
@@ -666,30 +658,9 @@ func (ts *TestServer) CreateTestSession(workspace *model.Workspace, name string)
 	return session
 }
 
-// CreateTestSessionWithAgent creates a test session with an agent assigned.
-func (ts *TestServer) CreateTestSessionWithAgent(workspace *model.Workspace, agent *model.Agent, name string) *model.Session {
-	ts.T.Helper()
-
-	workspacePath := workspace.Path
-	session := &model.Session{
-		ProjectID:     workspace.ProjectID,
-		WorkspaceID:   workspace.ID,
-		AgentID:       &agent.ID,
-		Name:          name,
-		Status:        model.SessionStatusReady,
-		WorkspacePath: &workspacePath,
-	}
-
-	if err := ts.Store.CreateSession(context.Background(), session); err != nil {
-		ts.T.Fatalf("Failed to create test session: %v", err)
-	}
-
-	return session
-}
-
 // CreateTestSessionWithMockSandbox creates a test session with a properly configured
 // mock sandbox that points to the provided mock server URL.
-func (ts *TestServer) CreateTestSessionWithMockSandbox(workspace *model.Workspace, agent *model.Agent, name string, mockServerURL string) *model.Session {
+func (ts *TestServer) CreateTestSessionWithMockSandbox(workspace *model.Workspace, name string, mockServerURL string) *model.Session {
 	ts.T.Helper()
 
 	// Parse mock server URL to get host and port
@@ -708,7 +679,6 @@ func (ts *TestServer) CreateTestSessionWithMockSandbox(workspace *model.Workspac
 	session := &model.Session{
 		ProjectID:     workspace.ProjectID,
 		WorkspaceID:   workspace.ID,
-		AgentID:       &agent.ID,
 		Name:          name,
 		Status:        model.SessionStatusReady, // Session is ready
 		WorkspacePath: &workspacePath,
@@ -739,14 +709,13 @@ func (ts *TestServer) CreateTestSessionWithMockSandbox(workspace *model.Workspac
 
 // CreateTestSessionWithSandbox creates a test session with a running mock sandbox
 // that uses the mock provider's default handler (supports /files, /chat, /diff endpoints).
-func (ts *TestServer) CreateTestSessionWithSandbox(workspace *model.Workspace, agent *model.Agent, name string) *model.Session {
+func (ts *TestServer) CreateTestSessionWithSandbox(workspace *model.Workspace, name string) *model.Session {
 	ts.T.Helper()
 
 	workspacePath := workspace.Path
 	session := &model.Session{
 		ProjectID:     workspace.ProjectID,
 		WorkspaceID:   workspace.ID,
-		AgentID:       &agent.ID,
 		Name:          name,
 		Status:        model.SessionStatusReady, // Session is ready
 		WorkspacePath: &workspacePath,
@@ -788,23 +757,6 @@ func (ts *TestServer) CreateAndStartSandbox(sessionID string) {
 	if err := ts.MockSandbox.Start(ctx, sessionID); err != nil {
 		ts.T.Fatalf("Failed to start mock sandbox: %v", err)
 	}
-}
-
-// CreateTestAgent creates a test agent
-func (ts *TestServer) CreateTestAgent(project *model.Project, _, agentType string) *model.Agent {
-	ts.T.Helper()
-
-	agent := &model.Agent{
-		ProjectID: project.ID,
-		AgentType: agentType,
-		IsDefault: false,
-	}
-
-	if err := ts.Store.CreateAgent(context.Background(), agent); err != nil {
-		ts.T.Fatalf("Failed to create test agent: %v", err)
-	}
-
-	return agent
 }
 
 // Client returns an HTTP client with cookie jar for the test server

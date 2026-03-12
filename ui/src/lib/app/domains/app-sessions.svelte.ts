@@ -16,7 +16,6 @@ type CreateAppSessionsDomainArgs = {
 	view: AppViewState;
 	queryClient: QueryClient;
 	setResolvedWorkspaceId: (workspaceId: string | null) => void;
-	resolveAgentId: () => Promise<string | null>;
 };
 
 function sessionsQueryOptions() {
@@ -83,18 +82,12 @@ export function createAppSessionsDomain(args: CreateAppSessionsDomainArgs): AppS
 
 	const createMutationResult = createMutation(() => ({
 		mutationFn: async (workspaceId?: string) => {
-			const agentId = await args.resolveAgentId();
-			if (!agentId) {
-				throw new Error("Failed to resolve agent");
-			}
-
 			if (workspaceId) {
 				args.setResolvedWorkspaceId(workspaceId);
 			}
 
 			return api.createSession({
 				id: generateId(),
-				agentId,
 				...(workspaceId ? { workspaceId } : {}),
 			});
 		},

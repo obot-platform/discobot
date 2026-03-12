@@ -49,7 +49,6 @@ type NewSessionRequest struct {
 	SessionID   string
 	ProjectID   string
 	WorkspaceID string
-	AgentID     string
 	Model       string
 	Reasoning   string
 	Mode        string
@@ -83,20 +82,11 @@ func (c *ChatService) NewSession(ctx context.Context, req NewSessionRequest) (st
 		return "", fmt.Errorf("workspace does not belong to this project")
 	}
 
-	// Validate agent belongs to project
-	agent, err := c.store.GetAgentByID(ctx, req.AgentID)
-	if err != nil {
-		return "", fmt.Errorf("agent not found: %w", err)
-	}
-	if agent.ProjectID != req.ProjectID {
-		return "", fmt.Errorf("agent does not belong to this project")
-	}
-
 	// Try to derive session name from first user message text
 	name := deriveSessionName(req.Messages)
 
 	// Use SessionService to create the session with client-provided ID
-	sess, err := c.sessionService.CreateSessionWithID(ctx, req.SessionID, req.ProjectID, req.WorkspaceID, name, req.AgentID, req.Model, req.Reasoning, req.Mode)
+	sess, err := c.sessionService.CreateSessionWithID(ctx, req.SessionID, req.ProjectID, req.WorkspaceID, name, req.Model, req.Reasoning, req.Mode)
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
@@ -106,7 +96,6 @@ func (c *ChatService) NewSession(ctx context.Context, req NewSessionRequest) (st
 		ProjectID:   req.ProjectID,
 		SessionID:   sess.ID,
 		WorkspaceID: req.WorkspaceID,
-		AgentID:     req.AgentID,
 	}); err != nil {
 		// Log but don't fail - session was created, init can be retried
 		fmt.Printf("Warning: failed to enqueue session init for %s: %v\n", sess.ID, err)
@@ -176,7 +165,7 @@ func (c *ChatService) UpdateSessionMode(ctx context.Context, sessionID, mode str
 	return c.eventBroker.PublishSessionUpdated(ctx, session.ProjectID, sessionID, string(session.Status), string(session.CommitStatus))
 }
 
-// ValidateSessionResources validates that a session's workspace and agent belong to the project.
+// ValidateSessionResources validates that a session's workspace belongs to the project.
 func (c *ChatService) ValidateSessionResources(ctx context.Context, projectID string, session *model.Session) error {
 	// Validate workspace belongs to project
 	workspace, err := c.store.GetWorkspaceByID(ctx, session.WorkspaceID)
@@ -185,17 +174,6 @@ func (c *ChatService) ValidateSessionResources(ctx context.Context, projectID st
 	}
 	if workspace.ProjectID != projectID {
 		return fmt.Errorf("session's workspace does not belong to this project")
-	}
-
-	// Validate agent belongs to project (if set)
-	if session.AgentID != nil {
-		agent, err := c.store.GetAgentByID(ctx, *session.AgentID)
-		if err != nil {
-			return fmt.Errorf("agent not found: %w", err)
-		}
-		if agent.ProjectID != projectID {
-			return fmt.Errorf("session's agent does not belong to this project")
-		}
 	}
 
 	return nil

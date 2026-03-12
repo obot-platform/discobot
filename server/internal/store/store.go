@@ -154,11 +154,6 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 			return err
 		}
 
-		// Delete agents
-		if err := tx.Where("project_id = ?", id).Delete(&model.Agent{}).Error; err != nil {
-			return err
-		}
-
 		// Delete invitations
 		if err := tx.Where("project_id = ?", id).Delete(&model.ProjectInvitation{}).Error; err != nil {
 			return err
@@ -381,67 +376,6 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 
 		// Delete the session
 		return tx.Delete(&model.Session{}, "id = ?", id).Error
-	})
-}
-
-// --- Agents ---
-
-func (s *Store) GetAgentByID(ctx context.Context, id string) (*model.Agent, error) {
-	var agent model.Agent
-	if err := s.readDB.WithContext(ctx).First(&agent, "id = ?", id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	return &agent, nil
-}
-
-func (s *Store) GetDefaultAgent(ctx context.Context, projectID string) (*model.Agent, error) {
-	var agent model.Agent
-	if err := s.readDB.WithContext(ctx).First(&agent, "project_id = ? AND is_default = ?", projectID, true).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	return &agent, nil
-}
-
-func (s *Store) ListAgentsByProject(ctx context.Context, projectID string) ([]*model.Agent, error) {
-	var agents []*model.Agent
-	err := s.readDB.WithContext(ctx).Where("project_id = ?", projectID).Find(&agents).Error
-	return agents, err
-}
-
-func (s *Store) CreateAgent(ctx context.Context, agent *model.Agent) error {
-	return s.writeDB.WithContext(ctx).Create(agent).Error
-}
-
-func (s *Store) UpdateAgent(ctx context.Context, agent *model.Agent) error {
-	return s.writeDB.WithContext(ctx).Save(agent).Error
-}
-
-func (s *Store) DeleteAgent(ctx context.Context, id string) error {
-	return s.writeDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Nullify agent references in sessions (don't delete sessions)
-		if err := tx.Model(&model.Session{}).Where("agent_id = ?", id).Update("agent_id", nil).Error; err != nil {
-			return err
-		}
-
-		// Delete the agent
-		return tx.Delete(&model.Agent{}, "id = ?", id).Error
-	})
-}
-
-func (s *Store) SetDefaultAgent(ctx context.Context, projectID, agentID string) error {
-	return s.writeDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Clear existing default
-		if err := tx.Model(&model.Agent{}).Where("project_id = ?", projectID).Update("is_default", false).Error; err != nil {
-			return err
-		}
-		// Set new default
-		return tx.Model(&model.Agent{}).Where("id = ?", agentID).Update("is_default", true).Error
 	})
 }
 

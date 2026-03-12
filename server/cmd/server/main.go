@@ -929,7 +929,7 @@ func main() {
 						Group:       "Sessions",
 						Description: "Create session (without chat message)",
 						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"id": "abc123", "agentId": "", "workspaceId": "optional"},
+						Body:        map[string]any{"id": "abc123", "workspaceId": "optional"},
 					},
 				})
 
@@ -1363,102 +1363,15 @@ func main() {
 				})
 			})
 
-			// Agents
-			r.Route("/agents", func(r chi.Router) {
-				agentReg := projReg.WithPrefix("/agents")
-
-				agentReg.Register(r, routes.Route{
-					Method: "GET", Pattern: "/",
-					Handler: h.ListAgents,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "List agents",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "POST", Pattern: "/",
-					Handler: h.CreateAgent,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Create agent",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"name": "My Agent", "agent_type": "claude-code"},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "GET", Pattern: "/types",
-					Handler: h.GetAgentTypes,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Get agent types",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "GET", Pattern: "/auth-providers",
-					Handler: h.GetAuthProviders,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Get auth providers",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "POST", Pattern: "/default",
-					Handler: h.SetDefaultAgent,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Set default agent",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"agent_id": ""},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "GET", Pattern: "/{agentId}",
-					Handler: h.GetAgent,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Get agent",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "PUT", Pattern: "/{agentId}",
-					Handler: h.UpdateAgent,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Update agent",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"name": "Updated Agent"},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "DELETE", Pattern: "/{agentId}",
-					Handler: h.DeleteAgent,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Delete agent",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					},
-				})
-
-				agentReg.Register(r, routes.Route{
-					Method: "GET", Pattern: "/{agentId}/models",
-					Handler: h.GetAgentModels,
-					Meta: routes.Meta{
-						Group:       "Agents",
-						Description: "Get available models for agent",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "agentId", Example: ""}},
-					},
-				})
+			// Auth Providers
+			projReg.Register(r, routes.Route{
+				Method: "GET", Pattern: "/auth-providers",
+				Handler: h.GetAuthProviders,
+				Meta: routes.Meta{
+					Group:       "Other",
+					Description: "Get auth providers",
+					Params:      []routes.Param{{Name: "projectId", Example: "local"}},
+				},
 			})
 
 			// Suggestions

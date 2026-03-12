@@ -40,7 +40,6 @@ func TestCreateSession_ViaChat(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Sessions are created implicitly via the chat endpoint
@@ -58,7 +57,6 @@ func TestCreateSession_ViaChat(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	defer resp.Body.Close()
 
@@ -97,13 +95,72 @@ func TestCreateSession_ViaChat(t *testing.T) {
 	}
 }
 
+func TestCreateSession_ViaChatWithSessionID(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("test@example.com")
+	project := ts.CreateTestProject(user, "Test Project")
+	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
+	client := ts.AuthenticatedClient(user)
+
+	sessionID := "test-session-id-session-field"
+	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
+		"sessionId": sessionID,
+		"messages": []map[string]interface{}{
+			{
+				"id":   "msg-1",
+				"role": "user",
+				"parts": []map[string]interface{}{
+					{"type": "text", "text": "Create a session using sessionId"},
+				},
+			},
+		},
+		"workspaceId": workspace.ID,
+	})
+	defer resp.Body.Close()
+
+	AssertStatus(t, resp, http.StatusOK)
+
+	var chatResult map[string]interface{}
+	ParseJSON(t, resp, &chatResult)
+	if chatResult["sessionId"] != sessionID {
+		t.Fatalf("Expected sessionId %q, got %v", sessionID, chatResult["sessionId"])
+	}
+	if chatResult["threadId"] != sessionID {
+		t.Fatalf("Expected default threadId %q, got %v", sessionID, chatResult["threadId"])
+	}
+	if chatResult["workspaceId"] != workspace.ID {
+		t.Fatalf("Expected workspaceId %q, got %v", workspace.ID, chatResult["workspaceId"])
+	}
+}
+
+func TestCreateSession_ViaChatRequiresIDOrSessionID(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("test@example.com")
+	project := ts.CreateTestProject(user, "Test Project")
+	client := ts.AuthenticatedClient(user)
+
+	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
+		"messages": []map[string]interface{}{},
+	})
+	defer resp.Body.Close()
+
+	AssertStatus(t, resp, http.StatusBadRequest)
+
+	var result map[string]interface{}
+	ParseJSON(t, resp, &result)
+	if result["error"] != "id or sessionId is required" {
+		t.Fatalf("Expected error %q, got %v", "id or sessionId is required", result["error"])
+	}
+}
+
 func TestCreateSession_ViaEmptyChat(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	sessionID := "test-session-id-empty-chat"
@@ -111,7 +168,6 @@ func TestCreateSession_ViaEmptyChat(t *testing.T) {
 		"id":          sessionID,
 		"messages":    []map[string]interface{}{},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	defer resp.Body.Close()
 
@@ -148,13 +204,12 @@ func TestCreateSession_ViaCreateSessionEndpointWithoutWorkspace(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	sessionID := "test-session-id-no-workspace-1"
-	resp := client.Post("/api/projects/"+project.ID+"/sessions", map[string]interface{}{
-		"id":      sessionID,
-		"agentId": agent.ID,
+	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
+		"id":       sessionID,
+		"messages": []map[string]interface{}{},
 	})
 	defer resp.Body.Close()
 
@@ -162,8 +217,8 @@ func TestCreateSession_ViaCreateSessionEndpointWithoutWorkspace(t *testing.T) {
 
 	var createResult map[string]string
 	ParseJSON(t, resp, &createResult)
-	if createResult["id"] != sessionID {
-		t.Fatalf("Expected created session id %q, got %q", sessionID, createResult["id"])
+	if createResult["sessionId"] != sessionID {
+		t.Fatalf("Expected created session id %q, got %q", sessionID, createResult["sessionId"])
 	}
 
 	sessionResp := client.Get("/api/projects/" + project.ID + "/sessions/" + sessionID)
@@ -205,7 +260,6 @@ func TestCreateSession_ViaChatWithoutWorkspace(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	sessionID := "test-session-id-no-workspace-2"
@@ -220,7 +274,6 @@ func TestCreateSession_ViaChatWithoutWorkspace(t *testing.T) {
 				},
 			},
 		},
-		"agentId": agent.ID,
 	})
 	defer resp.Body.Close()
 
@@ -260,16 +313,15 @@ func TestCreateSession_ViaChatWithoutWorkspace(t *testing.T) {
 	}
 }
 
-func TestCreateSession_ViaChatWithAgent(t *testing.T) {
+func TestCreateSession_ViaChatWithWorkspace(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Claude", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
-	// Sessions are created implicitly via the chat endpoint with agent
+	// Sessions are created implicitly via the chat endpoint with workspace
 	// Format matches AI SDK's DefaultChatTransport with UIMessage format
 	sessionID := "test-session-id-2"
 	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
@@ -284,13 +336,12 @@ func TestCreateSession_ViaChatWithAgent(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	defer resp.Body.Close()
 
 	AssertStatus(t, resp, http.StatusOK)
 
-	// Verify session was created with agent by listing sessions
+	// Verify session was created by listing sessions
 	listResp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer listResp.Body.Close()
 
@@ -303,10 +354,6 @@ func TestCreateSession_ViaChatWithAgent(t *testing.T) {
 		t.Errorf("Expected 1 session, got %d", len(result.Sessions))
 		return
 	}
-
-	if result.Sessions[0]["agentId"] != agent.ID {
-		t.Errorf("Expected agentId '%s', got '%v'", agent.ID, result.Sessions[0]["agentId"])
-	}
 }
 
 func TestCreateSession_NameFromLongPrompt(t *testing.T) {
@@ -315,7 +362,6 @@ func TestCreateSession_NameFromLongPrompt(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Session name is derived from the full prompt text (no truncation)
@@ -333,7 +379,6 @@ func TestCreateSession_NameFromLongPrompt(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	defer resp.Body.Close()
 
@@ -470,11 +515,10 @@ func TestListSessionFiles(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
+	client := ts.AuthenticatedClient(user)
 
 	// Create a session with sandbox (uses mock provider's default handler which supports /files)
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
-	client := ts.AuthenticatedClient(user)
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 
 	resp := client.Get("/api/projects/" + project.ID + "/sessions/" + session.ID + "/files?path=.")
 	defer resp.Body.Close()
@@ -506,7 +550,6 @@ func TestListMessages(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 
 	// Set up mock sandbox HTTP server that responds to /chat
 	mockSandboxServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -522,7 +565,7 @@ func TestListMessages(t *testing.T) {
 	defer mockSandboxServer.Close()
 
 	// Create session with sandbox using mock server
-	session := ts.CreateTestSessionWithMockSandbox(workspace, agent, "Test Session", mockSandboxServer.URL)
+	session := ts.CreateTestSessionWithMockSandbox(workspace, "Test Session", mockSandboxServer.URL)
 	client := ts.AuthenticatedClient(user)
 
 	// Get messages from sandbox - returns empty since no messages have been sent
@@ -551,10 +594,9 @@ func TestCommitSession_NoWorkspaceCommit(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 
 	// Create a session with a running sandbox
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	// First verify the session exists and can be fetched
@@ -562,19 +604,12 @@ func TestCommitSession_NoWorkspaceCommit(t *testing.T) {
 	AssertStatus(t, getResp, http.StatusOK)
 	getResp.Body.Close()
 
-	// Initiate commit - this will fail because the workspace path doesn't exist
-	// The git provider returns "not found: workspace" which the handler interprets
-	// as session not found. This is expected behavior for a non-existent workspace path.
+	// Initiate commit - the request is accepted synchronously and any workspace/git
+	// failure will happen during async job processing.
 	resp := client.Post("/api/projects/"+project.ID+"/sessions/"+session.ID+"/commit", nil)
 	defer resp.Body.Close()
 
-	// The commit initiation should fail because the workspace doesn't exist as a git repo.
-	// The handler returns 404 because it interprets the git provider's "not found" error
-	// as a session not found error. This is acceptable behavior - the commit cannot proceed
-	// without a valid workspace.
-	if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("Expected status 404 or 500, got %d", resp.StatusCode)
-	}
+	AssertStatus(t, resp, http.StatusOK)
 }
 
 func TestCommitSession_NotFound(t *testing.T) {
@@ -597,8 +632,7 @@ func TestCommitSession_AlreadyInProgress(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	// Manually set commit status to pending to simulate in-progress commit
@@ -634,8 +668,7 @@ func TestRebaseSession_AlreadyInProgress(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	session.CommitStatus = "pending"
@@ -657,8 +690,7 @@ func TestGetSession_IncludesCommitStatus(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	// Set commit status to test it's included in response
@@ -697,8 +729,7 @@ func TestGetSession_IncludesCommitError(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	// Set commit status to failed with error
@@ -732,8 +763,7 @@ func TestListSessions_IncludesCommitStatus(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
 	// Set commit status
@@ -789,8 +819,6 @@ func TestCommitSession_SendsCommitMessageToAgent(t *testing.T) {
 	statusResp.Body.Close()
 	baseCommit := gitStatus.Commit
 
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
-
 	// Track messages sent to the agent
 	var capturedMessages []map[string]interface{}
 	var messagesMu sync.Mutex
@@ -841,7 +869,7 @@ func TestCommitSession_SendsCommitMessageToAgent(t *testing.T) {
 	})
 
 	// Create session with sandbox
-	session := ts.CreateTestSessionWithSandbox(workspace, agent, "Test Session")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 
 	// The session should be in ready state, call commit API to trigger the full flow
 	// This will set baseCommit, status to pending, and enqueue the job

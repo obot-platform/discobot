@@ -150,15 +150,11 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
-	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
+	workspace := ts.CreateTestWorkspaceWithGitRepo(project)
 	client := ts.AuthenticatedClient(user)
 
-	// Create session with agent
-	session := ts.CreateTestSessionWithAgent(workspace, agent, "Test Session")
-
-	// Create a sandbox so the session has a running container
-	ts.CreateAndStartSandbox(session.ID)
+	// Create session with sandbox
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 
 	// Configure mock sandbox with a custom HTTP handler that simulates
 	// an active SSE stream with multiple messages
@@ -256,12 +252,10 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
-	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
+	workspace := ts.CreateTestWorkspaceWithGitRepo(project)
 	client := ts.AuthenticatedClient(user)
 
-	session := ts.CreateTestSessionWithAgent(workspace, agent, "Test Session")
-	ts.CreateAndStartSandbox(session.ID)
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 
 	// Configure mock sandbox to send messages with delays
 	ts.MockSandbox.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -354,12 +348,10 @@ func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
-	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
+	workspace := ts.CreateTestWorkspaceWithGitRepo(project)
 	client := ts.AuthenticatedClient(user)
 
-	session := ts.CreateTestSessionWithAgent(workspace, agent, "Test Session")
-	ts.CreateAndStartSandbox(session.ID)
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 
 	// Configure mock sandbox to send only DONE signal
 	ts.MockSandbox.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

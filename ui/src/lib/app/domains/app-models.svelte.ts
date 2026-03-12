@@ -3,12 +3,12 @@ import { createQuery, queryOptions } from "@tanstack/svelte-query";
 import { api } from "$lib/api-client";
 import type { AppModels } from "$lib/app/app-context.types";
 import { appQueryKeys } from "$lib/app/query/app-query-keys";
-import type { AgentModel } from "$lib/api-types";
+import type { ModelInfo } from "$lib/api-types";
 
 function modelsQueryOptions() {
 	return queryOptions({
 		queryKey: appQueryKeys.models(),
-		queryFn: async (): Promise<AgentModel[]> => {
+		queryFn: async (): Promise<ModelInfo[]> => {
 			const { models } = await api.getProjectModels();
 			return models;
 		},

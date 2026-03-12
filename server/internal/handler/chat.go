@@ -21,7 +21,7 @@ import (
 // The Messages field is kept as raw JSON to pass through to the sandbox
 // without requiring the Go server to understand the UIMessage structure.
 type ChatRequest struct {
-	// ID is the legacy chat/session ID field used by current clients.
+	// ID is the deprecated legacy chat/session ID field.
 	ID string `json:"id"`
 	// SessionID is the preferred explicit session identifier.
 	SessionID string `json:"sessionId,omitempty"`
@@ -37,9 +37,7 @@ type ChatRequest struct {
 	// WorkspaceID is optional for new sessions.
 	// If omitted, the server creates a local workspace under Discobot's data directory.
 	WorkspaceID string `json:"workspaceId,omitempty"`
-	// AgentID is required for new sessions
-	AgentID string `json:"agentId,omitempty"`
-	// Model is optional, if not provided uses agent's default model
+	// Model is optional for new sessions.
 	Model string `json:"model,omitempty"`
 	// Reasoning controls extended thinking: "enabled", "disabled", or "" for default
 	Reasoning string `json:"reasoning,omitempty"`
@@ -56,7 +54,7 @@ type ChatResponse struct {
 
 // Chat handles AI chat initiation.
 // POST /api/chat
-// Request body: { id, messages, workspaceId?, agentId?, trigger?, messageId? }
+// Request body: { id?, sessionId?, threadId?, messages, workspaceId?, trigger?, messageId? }
 // Response: JSON metadata for the initiated chat request
 func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -77,9 +75,9 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 	threadID := resolveChatThreadID(sessionID, req.ThreadID)
 
-	// session ID is required - client generates IDs
+	// The client must provide either the legacy id or the preferred sessionId.
 	if sessionID == "" {
-		h.Error(w, http.StatusBadRequest, "id is required")
+		h.Error(w, http.StatusBadRequest, "id or sessionId is required")
 		return
 	}
 	// Check if session exists
@@ -98,7 +96,7 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 			h.Error(w, http.StatusForbidden, "session does not belong to this project")
 			return
 		}
-		// For existing sessions, validate workspace and agent still belong to project
+		// For existing sessions, validate session resources still belong to project
 		if err := h.chatService.ValidateSessionResources(ctx, projectID, existingSession); err != nil {
 			h.Error(w, http.StatusForbidden, err.Error())
 			return
@@ -111,11 +109,6 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		sessionWorkspaceID = existingSession.WorkspaceID
 	} else {
 		// Session doesn't exist - create it
-		if req.AgentID == "" {
-			h.Error(w, http.StatusBadRequest, "agentId is required for new sessions")
-			return
-		}
-
 		workspaceID, err := h.resolveWorkspaceIDForNewSession(ctx, projectID, req.WorkspaceID)
 		if err != nil {
 			h.Error(w, http.StatusInternalServerError, err.Error())
@@ -123,12 +116,10 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 		sessionWorkspaceID = workspaceID
 
-		// NewSession validates that workspace and agent belong to project
 		_, err = h.chatService.NewSession(ctx, service.NewSessionRequest{
 			SessionID:   sessionID,
 			ProjectID:   projectID,
 			WorkspaceID: workspaceID,
-			AgentID:     req.AgentID,
 			Model:       req.Model,
 			Reasoning:   req.Reasoning,
 			Mode:        req.Mode,

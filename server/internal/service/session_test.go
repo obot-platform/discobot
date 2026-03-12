@@ -135,7 +135,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		ID:              "test-id",
 		ProjectID:       "test-project",
 		WorkspaceID:     "test-workspace",
-		AgentID:         strPtr("test-agent"),
 		Name:            "test-name",
 		DisplayName:     strPtr("Test Display"),
 		Description:     strPtr("Test Description"),
@@ -166,7 +165,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		"ID":              "ID",
 		"ProjectID":       "ProjectID",
 		"WorkspaceID":     "WorkspaceID",
-		"AgentID":         "AgentID",
 		"Name":            "Name",
 		"DisplayName":     "DisplayName",
 		"Description":     "Description",
@@ -185,7 +183,7 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		"ActiveEnvSetIDs": "ActiveEnvSetIDs",
 		// Excluded fields (not part of API response):
 		// - CreatedAt, UpdatedAt: mapped to Timestamp
-		// - Project, Workspace, Agent, Messages: relationships, not serialized
+		// - Project, Workspace, Messages: relationships, not serialized
 		// - Files: always initialized as empty array in mapSession
 	}
 
@@ -201,7 +199,7 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		// Skip GORM metadata fields and relationship fields
 		if modelFieldName == "CreatedAt" || modelFieldName == "UpdatedAt" ||
 			modelFieldName == "Project" || modelFieldName == "Workspace" ||
-			modelFieldName == "Agent" || modelFieldName == "Messages" {
+			modelFieldName == "Messages" {
 			continue
 		}
 
@@ -252,9 +250,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 	}
 	if result.DisplayName != "Test Display" {
 		t.Errorf("DisplayName = %q, want %q", result.DisplayName, "Test Display")
-	}
-	if result.AgentID != "test-agent" {
-		t.Errorf("AgentID = %q, want %q", result.AgentID, "test-agent")
 	}
 
 	// Verify Files is initialized (not nil)

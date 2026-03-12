@@ -11,7 +11,6 @@ func TestSessionDisplayName_SetAndGet(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Create a session via chat
@@ -28,7 +27,6 @@ func TestSessionDisplayName_SetAndGet(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	resp.Body.Close()
 	AssertStatus(t, resp, http.StatusOK)
@@ -89,7 +87,6 @@ func TestSessionDisplayName_ClearDisplayName(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Create a session
@@ -106,7 +103,6 @@ func TestSessionDisplayName_ClearDisplayName(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	resp.Body.Close()
 	AssertStatus(t, resp, http.StatusOK)
@@ -144,7 +140,6 @@ func TestSessionDisplayName_InList(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Create multiple sessions with different displayName configurations
@@ -161,7 +156,6 @@ func TestSessionDisplayName_InList(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	resp1.Body.Close()
 	AssertStatus(t, resp1, http.StatusOK)
@@ -179,7 +173,6 @@ func TestSessionDisplayName_InList(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	resp2.Body.Close()
 	AssertStatus(t, resp2, http.StatusOK)
@@ -246,7 +239,6 @@ func TestSessionDisplayName_EmptyString(t *testing.T) {
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
 	client := ts.AuthenticatedClient(user)
 
 	// Create a session
@@ -263,7 +255,6 @@ func TestSessionDisplayName_EmptyString(t *testing.T) {
 			},
 		},
 		"workspaceId": workspace.ID,
-		"agentId":     agent.ID,
 	})
 	resp.Body.Close()
 	AssertStatus(t, resp, http.StatusOK)

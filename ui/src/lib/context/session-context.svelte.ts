@@ -42,13 +42,15 @@ function createSessionContext(_bootstrap?: SessionContextBootstrap): SessionCont
 		}
 		return (sessionsQuery.data ?? []).find((session) => session.id === selectedSessionId) ?? null;
 	});
+	const getCurrentSession = () => current;
+	const getCurrentSessionId = () => getCurrentSession()?.id ?? null;
 
 	const ui = createSessionViewState({
 		getFiles: () => filesDomain?.list ?? [],
 	});
 
-	let cache = $state(createSessionQueryCache(queryClient, current?.id ?? "session"));
-	let previousSessionId = $state<string | null>(current?.id ?? null);
+	let cache = $state(createSessionQueryCache(queryClient, getCurrentSessionId() ?? "session"));
+	let previousSessionId = $state<string | null>(getCurrentSessionId());
 
 	const filesDomain = createSessionFilesDomain({
 		queryClient,
