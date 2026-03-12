@@ -61,7 +61,6 @@ type Project struct {
 
 	Members    []ProjectMember `gorm:"foreignKey:ProjectID" json:"-"`
 	Workspaces []Workspace     `gorm:"foreignKey:ProjectID" json:"-"`
-	Agents     []Agent         `gorm:"foreignKey:ProjectID" json:"-"`
 }
 
 func (Project) TableName() string { return "projects" }
@@ -120,6 +119,7 @@ func (i *ProjectInvitation) BeforeCreate(_ *gorm.DB) error {
 }
 
 // Agent represents an AI agent configuration.
+// Deprecated: Agent concept has been removed. This struct is kept only for DB migration compatibility.
 type Agent struct {
 	ID        string    `gorm:"primaryKey;type:text" json:"id"`
 	ProjectID string    `gorm:"column:project_id;not null;type:text;index" json:"project_id"`
@@ -219,7 +219,6 @@ type Session struct {
 	ID              string    `gorm:"primaryKey;type:text" json:"id"`
 	ProjectID       string    `gorm:"column:project_id;not null;type:text;index" json:"projectId"`
 	WorkspaceID     string    `gorm:"column:workspace_id;not null;type:text;index" json:"workspaceId"`
-	AgentID         *string   `gorm:"column:agent_id;type:text;index" json:"agentId,omitempty"`
 	Name            string    `gorm:"not null;type:text" json:"name"`
 	DisplayName     *string   `gorm:"column:display_name;type:text" json:"displayName,omitempty"`
 	Description     *string   `gorm:"type:text" json:"description,omitempty"`
@@ -241,7 +240,6 @@ type Session struct {
 
 	Project   *Project   `gorm:"foreignKey:ProjectID" json:"-"`
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceID" json:"-"`
-	Agent     *Agent     `gorm:"foreignKey:AgentID" json:"-"`
 	Messages  []Message  `gorm:"foreignKey:SessionID" json:"-"`
 }
 

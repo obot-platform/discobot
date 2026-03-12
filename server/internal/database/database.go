@@ -159,23 +159,55 @@ func newSQLite(dsn string, dbLogger logger.Interface) (*DB, error) {
 	return &DB{DB: writeDB, ReadDB: readDB, Driver: "sqlite"}, nil
 }
 
+// migrateModels returns the model list to use for AutoMigrate.
+//
+// The deprecated agents table is intentionally skipped on SQLite. Older SQLite
+// databases may still have foreign keys referencing agents, and asking GORM's
+// SQLite migrator to reconcile the Agent schema can trigger a table rebuild
+// that attempts to drop `agents`, causing restart-time migration failures.
+func (db *DB) migrateModels() []interface{} {
+	models := model.AllModels()
+	if !db.IsSQLite() {
+		return models
+	}
+
+	filtered := make([]interface{}, 0, len(models))
+	for _, m := range models {
+		if _, ok := m.(*model.Agent); ok {
+			continue
+		}
+		filtered = append(filtered, m)
+	}
+	return filtered
+}
+
 // Migrate runs database migrations using GORM's AutoMigrate
 func (db *DB) Migrate() error {
 	log.Println("Running GORM AutoMigrate...")
 
-	// First run AutoMigrate to add new columns/tables
-	if err := db.AutoMigrate(model.AllModels()...); err != nil {
+	// First run AutoMigrate to add new columns/tables.
+	// On SQLite, skip the deprecated Agent model entirely to avoid unsafe table
+	// rebuilds on legacy databases during startup.
+	if err := db.AutoMigrate(db.migrateModels()...); err != nil {
 		return err
 	}
 
 	// Drop obsolete columns that are no longer in the model
-	// Note: AutoMigrate only adds columns, it never removes them
+	// Note: AutoMigrate only adds columns, it never removes them.
+	//
+	// SQLite implements DROP COLUMN by rebuilding tables. That rebuild can fail on
+	// older Discobot schemas where foreign keys still reference legacy tables or
+	// columns (for example sessions.agent_id -> agents.id). Since those obsolete
+	// columns are harmless and compatibility is more important than cleanup during
+	// startup, skip destructive column cleanup entirely on SQLite.
+	if db.IsSQLite() {
+		log.Println("Skipping obsolete column cleanup on SQLite for migration compatibility")
+		return nil
+	}
+
 	migrator := db.Migrator()
 
 	// Drop obsolete Agent columns (removed when simplifying agent configuration)
-	// SQLite's column drop rebuilds the table (DROP + CREATE), which fails when
-	// other tables have foreign key constraints referencing agents. Temporarily
-	// disable foreign key enforcement during the migration.
 	obsoleteAgentCols := []string{"name", "description", "system_prompt"}
 	var agentColsToDrop []string
 	for _, col := range obsoleteAgentCols {
@@ -183,21 +215,10 @@ func (db *DB) Migrate() error {
 			agentColsToDrop = append(agentColsToDrop, col)
 		}
 	}
-	if len(agentColsToDrop) > 0 {
-		if db.IsSQLite() {
-			db.Exec("PRAGMA foreign_keys = OFF")
-		}
-		for _, col := range agentColsToDrop {
-			log.Printf("Dropping obsolete Agent.%s column...\n", col)
-			if err := migrator.DropColumn(&model.Agent{}, col); err != nil {
-				if db.IsSQLite() {
-					db.Exec("PRAGMA foreign_keys = ON")
-				}
-				return fmt.Errorf("failed to drop Agent.%s: %w", col, err)
-			}
-		}
-		if db.IsSQLite() {
-			db.Exec("PRAGMA foreign_keys = ON")
+	for _, col := range agentColsToDrop {
+		log.Printf("Dropping obsolete Agent.%s column...\n", col)
+		if err := migrator.DropColumn(&model.Agent{}, col); err != nil {
+			return fmt.Errorf("failed to drop Agent.%s: %w", col, err)
 		}
 	}
 
@@ -209,21 +230,10 @@ func (db *DB) Migrate() error {
 			workspaceColsToDrop = append(workspaceColsToDrop, col)
 		}
 	}
-	if len(workspaceColsToDrop) > 0 {
-		if db.IsSQLite() {
-			db.Exec("PRAGMA foreign_keys = OFF")
-		}
-		for _, col := range workspaceColsToDrop {
-			log.Printf("Dropping obsolete Workspace.%s column...\n", col)
-			if err := migrator.DropColumn(&model.Workspace{}, col); err != nil {
-				if db.IsSQLite() {
-					db.Exec("PRAGMA foreign_keys = ON")
-				}
-				return fmt.Errorf("failed to drop Workspace.%s: %w", col, err)
-			}
-		}
-		if db.IsSQLite() {
-			db.Exec("PRAGMA foreign_keys = ON")
+	for _, col := range workspaceColsToDrop {
+		log.Printf("Dropping obsolete Workspace.%s column...\n", col)
+		if err := migrator.DropColumn(&model.Workspace{}, col); err != nil {
+			return fmt.Errorf("failed to drop Workspace.%s: %w", col, err)
 		}
 	}
 
