@@ -9,6 +9,7 @@ import type {
 	CodexAuthorizeResponse,
 	CodexExchangeRequest,
 	CodexExchangeResponse,
+	CredentialAuthType,
 	CredentialInfo,
 	GitHubDeviceCodeRequest,
 	GitHubDeviceCodeResponse,
@@ -53,14 +54,16 @@ export function createAppCredentialsDomain(
 	const createCredentialMutation = createMutation(() => ({
 		mutationFn: async ({
 			provider,
+			authType,
 			apiKey,
 		}: {
 			provider: string;
+			authType: CredentialAuthType;
 			apiKey: string;
 		}) =>
 			api.createCredential({
 				provider,
-				authType: "api_key",
+				authType,
 				apiKey,
 			}),
 		onSuccess: (credential) => {
@@ -107,11 +110,11 @@ export function createAppCredentialsDomain(
 		refresh: async () => {
 			await Promise.all([providersQuery.refetch(), credentialsQuery.refetch()]);
 		},
-		create: async (provider: string, apiKey: string) => {
-			return createCredentialMutation.mutateAsync({ provider, apiKey });
+		create: async (provider: string, authType: CredentialAuthType, apiKey: string) => {
+			return createCredentialMutation.mutateAsync({ provider, authType, apiKey });
 		},
-		update: async (provider: string, apiKey: string) => {
-			return createCredentialMutation.mutateAsync({ provider, apiKey });
+		update: async (provider: string, authType: CredentialAuthType, apiKey: string) => {
+			return createCredentialMutation.mutateAsync({ provider, authType, apiKey });
 		},
 		remove: async (provider: string) => {
 			await removeCredentialMutation.mutateAsync(provider);

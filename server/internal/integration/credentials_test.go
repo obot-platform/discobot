@@ -60,6 +60,41 @@ func TestCreateCredential_APIKey(t *testing.T) {
 	}
 }
 
+func TestCreateCredential_ID(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("cred@test.com")
+	project := ts.CreateTestProject(user, "cred-project")
+
+	client := ts.AuthenticatedClient(user)
+	resp := client.Post("/api/projects/"+project.ID+"/credentials", map[string]string{
+		"provider": "discobot",
+		"name":     "My Discobot ID",
+		"authType": "id",
+		"apiKey":   "discobot-test-id-123",
+	})
+	AssertStatus(t, resp, http.StatusOK)
+
+	var cred map[string]interface{}
+	ParseJSON(t, resp, &cred)
+
+	if cred["provider"] != "discobot" {
+		t.Errorf("Expected provider 'discobot', got %v", cred["provider"])
+	}
+	if cred["name"] != "My Discobot ID" {
+		t.Errorf("Expected name 'My Discobot ID', got %v", cred["name"])
+	}
+	if cred["authType"] != "id" {
+		t.Errorf("Expected authType 'id', got %v", cred["authType"])
+	}
+	if cred["isConfigured"] != true {
+		t.Errorf("Expected isConfigured true, got %v", cred["isConfigured"])
+	}
+	if _, ok := cred["apiKey"]; ok {
+		t.Error("credential secret should not be returned in response")
+	}
+}
+
 func TestCreateCredential_MissingProvider(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)

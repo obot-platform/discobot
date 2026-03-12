@@ -26,6 +26,7 @@ const (
 	ProviderCodex         = "codex"
 	ProviderOpenAI        = "openai"
 	ProviderTavily        = "tavily"
+	ProviderDiscobot      = "discobot"
 )
 
 // mcpProviderPrefix is the credential provider prefix for MCP OAuth tokens.
@@ -36,6 +37,7 @@ const mcpProviderPrefix = "mcp:"
 const (
 	AuthTypeAPIKey = "api_key"
 	AuthTypeOAuth  = "oauth"
+	AuthTypeID     = "id"
 )
 
 // oauthEnvVars maps provider IDs to their OAuth-specific environment variable names.
@@ -54,7 +56,8 @@ var (
 	ErrDecryptionFailed   = errors.New("decryption failed")
 )
 
-// APIKeyCredential represents an API key credential
+// APIKeyCredential represents an encrypted secret-style credential value.
+// It is used for both api_key and id auth types.
 type APIKeyCredential struct {
 	APIKey string `json:"api_key"`
 }
@@ -134,12 +137,21 @@ func (s *CredentialService) Get(ctx context.Context, projectID, provider string)
 
 // SetAPIKey creates or updates an API key credential
 func (s *CredentialService) SetAPIKey(ctx context.Context, projectID, provider, name, apiKey string) (*CredentialInfo, error) {
+	return s.setSecretCredential(ctx, projectID, provider, name, AuthTypeAPIKey, apiKey)
+}
+
+// SetID creates or updates an ID credential.
+func (s *CredentialService) SetID(ctx context.Context, projectID, provider, name, value string) (*CredentialInfo, error) {
+	return s.setSecretCredential(ctx, projectID, provider, name, AuthTypeID, value)
+}
+
+func (s *CredentialService) setSecretCredential(ctx context.Context, projectID, provider, name, authType, value string) (*CredentialInfo, error) {
 	if !isValidProvider(provider) {
 		return nil, ErrInvalidProvider
 	}
 
 	// Encrypt the API key
-	data := APIKeyCredential{APIKey: apiKey}
+	data := APIKeyCredential{APIKey: value}
 	encrypted, err := s.encryptor.EncryptJSON(data)
 	if err != nil {
 		return nil, ErrEncryptionFailed
@@ -154,7 +166,7 @@ func (s *CredentialService) SetAPIKey(ctx context.Context, projectID, provider, 
 	if existing != nil {
 		// Update existing
 		existing.Name = name
-		existing.AuthType = AuthTypeAPIKey
+		existing.AuthType = authType
 		existing.EncryptedData = encrypted
 		existing.IsConfigured = true
 		if err := s.store.UpdateCredential(ctx, existing); err != nil {
@@ -169,7 +181,7 @@ func (s *CredentialService) SetAPIKey(ctx context.Context, projectID, provider, 
 		ProjectID:     projectID,
 		Provider:      provider,
 		Name:          name,
-		AuthType:      AuthTypeAPIKey,
+		AuthType:      authType,
 		EncryptedData: encrypted,
 		IsConfigured:  true,
 	}
@@ -377,7 +389,7 @@ type CredentialEnvVar struct {
 	EnvVar    string `json:"envVar"`
 	Value     string `json:"value"`
 	Provider  string `json:"provider"`
-	AuthType  string `json:"authType"`            // "api_key" or "oauth"
+	AuthType  string `json:"authType"`            // "api_key", "id", or "oauth"
 	ExpiresAt int64  `json:"expiresAt,omitempty"` // OAuth only (unix timestamp)
 }
 
@@ -417,7 +429,7 @@ func (s *CredentialService) GetAllDecrypted(ctx context.Context, projectID strin
 		}
 
 		switch c.AuthType {
-		case AuthTypeAPIKey:
+		case AuthTypeAPIKey, AuthTypeID:
 			var data APIKeyCredential
 			if err := s.encryptor.DecryptJSON(c.EncryptedData, &data); err != nil {
 				// Skip credentials that fail to decrypt
@@ -428,7 +440,7 @@ func (s *CredentialService) GetAllDecrypted(ctx context.Context, projectID strin
 				EnvVar:   envVars[0],
 				Value:    data.APIKey,
 				Provider: c.Provider,
-				AuthType: AuthTypeAPIKey,
+				AuthType: c.AuthType,
 			})
 		case AuthTypeOAuth:
 			// Use GetOAuthTokens to get auto-refresh behavior for expired tokens
@@ -523,7 +535,7 @@ func (s *CredentialService) StoreMCPToken(ctx context.Context, projectID string,
 // isValidProvider checks if a provider is supported
 func isValidProvider(provider string) bool {
 	switch provider {
-	case ProviderAnthropic, ProviderGitHubCopilot, ProviderGitHub, ProviderCodex, ProviderOpenAI, ProviderTavily:
+	case ProviderAnthropic, ProviderGitHubCopilot, ProviderGitHub, ProviderCodex, ProviderOpenAI, ProviderTavily, ProviderDiscobot:
 		return true
 	default:
 		return false

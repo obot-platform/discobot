@@ -17,7 +17,7 @@ import (
 type CreateCredentialRequest struct {
 	Provider string `json:"provider"`
 	Name     string `json:"name"`
-	AuthType string `json:"authType"` // "api_key" or "oauth"
+	AuthType string `json:"authType"` // "api_key", "id", or "oauth"
 	APIKey   string `json:"apiKey,omitempty"`
 }
 
@@ -53,8 +53,8 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 		req.Name = req.Provider // Default name to provider
 	}
 
-	// Currently only support API key creation via this endpoint
-	// OAuth tokens are set via the OAuth flow endpoints
+	// Currently only support secret-style credential creation via this endpoint.
+	// OAuth tokens are set via the OAuth flow endpoints.
 	if req.AuthType == "" || req.AuthType == service.AuthTypeAPIKey {
 		if req.APIKey == "" {
 			h.Error(w, http.StatusBadRequest, "api_key is required for api_key auth type")
@@ -62,6 +62,26 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 		}
 
 		info, err := h.credentialService.SetAPIKey(r.Context(), projectID, req.Provider, req.Name, req.APIKey)
+		if err != nil {
+			if errors.Is(err, service.ErrInvalidProvider) {
+				h.Error(w, http.StatusBadRequest, "Invalid provider")
+				return
+			}
+			h.Error(w, http.StatusInternalServerError, "Failed to create credential")
+			return
+		}
+
+		h.JSON(w, http.StatusOK, info)
+		return
+	}
+
+	if req.AuthType == service.AuthTypeID {
+		if req.APIKey == "" {
+			h.Error(w, http.StatusBadRequest, "api_key is required for id auth type")
+			return
+		}
+
+		info, err := h.credentialService.SetID(r.Context(), projectID, req.Provider, req.Name, req.APIKey)
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidProvider) {
 				h.Error(w, http.StatusBadRequest, "Invalid provider")

@@ -9,6 +9,52 @@ import (
 	"github.com/obot-platform/discobot/server/internal/providers"
 )
 
+func TestGetAllDecrypted_DiscobotID_UsesCorrectEnvVar(t *testing.T) {
+	st := setupTestStore(t)
+	cfg := &config.Config{
+		EncryptionKey: []byte("test-key-32-bytes-long-123456789"),
+	}
+
+	credSvc, err := NewCredentialService(st, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create credential service: %v", err)
+	}
+
+	ctx := context.Background()
+	projectID := "test-project"
+
+	envVars := providers.GetEnvVars(ProviderDiscobot)
+	if len(envVars) < 1 {
+		t.Fatalf("Expected Discobot provider to have at least 1 env var, got %d", len(envVars))
+	}
+	if envVars[0] != "DISCOBOT_TOKEN" {
+		t.Errorf("Expected first env var to be DISCOBOT_TOKEN, got %s", envVars[0])
+	}
+
+	_, err = credSvc.SetID(ctx, projectID, ProviderDiscobot, "Discobot Token", "discobot-token-123")
+	if err != nil {
+		t.Fatalf("Failed to set API key: %v", err)
+	}
+
+	envVarMappings, err := credSvc.GetAllDecrypted(ctx, projectID)
+	if err != nil {
+		t.Fatalf("Failed to get all decrypted: %v", err)
+	}
+
+	if len(envVarMappings) != 1 {
+		t.Fatalf("Expected 1 env var mapping, got %d", len(envVarMappings))
+	}
+	if envVarMappings[0].AuthType != AuthTypeID {
+		t.Errorf("Expected auth type %s, got %s", AuthTypeID, envVarMappings[0].AuthType)
+	}
+	if envVarMappings[0].EnvVar != "DISCOBOT_TOKEN" {
+		t.Errorf("Expected env var DISCOBOT_TOKEN, got %s", envVarMappings[0].EnvVar)
+	}
+	if envVarMappings[0].Value != "discobot-token-123" {
+		t.Errorf("Expected value 'discobot-token-123', got %s", envVarMappings[0].Value)
+	}
+}
+
 func TestGetAllDecrypted_AnthropicOAuth_UsesCorrectEnvVar(t *testing.T) {
 	// Create in-memory store
 	st := setupTestStore(t)
