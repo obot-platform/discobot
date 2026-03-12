@@ -14,11 +14,18 @@ body {
 	min-height: 100vh;
 }
 
-/* Ensure native select dropdown option contrast in dark mode */
+/* Best-effort native select theming in dark mode */
+.dark [data-slot="native-select"],
+.dark [data-slot="calendar-native-select"] {
+	color-scheme: dark;
+}
+
 .dark [data-slot="native-select"] option,
-.dark [data-slot="native-select"] optgroup {
-	background-color: oklch(1 0 0);
-	color: oklch(0.15 0 0);
+.dark [data-slot="native-select"] optgroup,
+.dark [data-slot="calendar-native-select"] option,
+.dark [data-slot="calendar-native-select"] optgroup {
+	background-color: var(--popover);
+	color: var(--popover-foreground);
 }
 
 .scrollbar-none {

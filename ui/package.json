@@ -54,6 +54,7 @@
 		"typescript": "latest",
 		"typescript-eslint": "latest",
 		"vaul-svelte": "1.0.0-next.7",
-		"vite": "latest"
+		"vite": "latest",
+		"vite-plugin-devtools-json": "^1.0.0"
 	}
 }

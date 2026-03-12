@@ -26,7 +26,13 @@ export type WorkspaceSelectorState = {
 	setupMessage: string | null;
 };
 
+export type WorkspaceReadyResult = {
+	ready: boolean;
+	workspaceId: string | null;
+};
+
 export type WorkspaceSelectorHandle = {
+	ensureWorkspaceReady: () => Promise<WorkspaceReadyResult>;
 	ensureSessionReady: () => Promise<boolean>;
 	resetForNewSession: () => void;
 };

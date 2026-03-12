@@ -1,7 +1,7 @@
 <script lang="ts">
 	import BrainIcon from "@lucide/svelte/icons/brain";
 	import CheckIcon from "@lucide/svelte/icons/check";
-	import type { AgentModel } from "$lib/api-types";
+	import type { ModelInfo } from "$lib/api-types";
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -16,7 +16,7 @@
 	type ModelVariant = {
 		id: string;
 		displayName: string;
-		model: AgentModel;
+		model: ModelInfo;
 		reasoning: boolean;
 	};
 
@@ -31,7 +31,7 @@
 	let { value = $bindable<string | null>(null), reasoning = $bindable(false) }: Props = $props();
 
 	const modelVariants = $derived.by(() => {
-		const modelByName: Record<string, AgentModel> = {};
+		const modelByName: Record<string, ModelInfo> = {};
 
 		for (const model of models.list) {
 			const cleanName = model.name.replace(/\s*\(latest\)\s*/gi, "").trim();

@@ -1,6 +1,10 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { getHookResumeDecision, isChatStreamActive } from "./chat-panel";
+import {
+	buildCreateOnlyChatRequest,
+	getHookResumeDecision,
+	isChatStreamActive,
+} from "./chat-panel";
 
 describe("chat-panel hook resume logic", () => {
 	it("treats submitted and streaming chats as active streams", () => {
@@ -50,5 +54,26 @@ describe("chat-panel hook resume logic", () => {
 			nextPendingResume: true,
 			shouldResume: true,
 		});
+	});
+
+	it("builds a create-only request for blank new sessions", () => {
+		const request = buildCreateOnlyChatRequest({
+			sessionId: "session-new",
+			workspaceId: "ws-1",
+			agentId: "agent-1",
+			modelId: "claude-sonnet-4:thinking",
+			mode: "build",
+		});
+
+		assert.deepStrictEqual(request, {
+			sessionId: "session-new",
+			messages: [],
+			workspaceId: "ws-1",
+			agentId: "agent-1",
+			model: "claude-sonnet-4",
+			reasoning: "enabled",
+			mode: "",
+		});
+		assert.ok(!("text" in request));
 	});
 });

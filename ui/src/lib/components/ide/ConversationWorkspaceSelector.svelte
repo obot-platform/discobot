@@ -6,6 +6,7 @@
 	import GithubIcon from "@lucide/svelte/icons/github";
 	import { onDestroy, tick } from "svelte";
 	import type { Workspace, WorkspaceValidationResult } from "$lib/api-types";
+	import type { WorkspaceReadyResult } from "$lib/components/ide/conversation-composer.types";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import {
 		DropdownMenu,
@@ -373,97 +374,142 @@
 		resetSourceInputState();
 	}
 
-	export function resetForNewSession() {
-		hasUserSelectedWorkspace = false;
-		hasInitializedSelection = false;
-		selectedWorkspaceOption = "new-workspace";
-		selectedWorkspaceBranch = "";
+export function resetForNewSession() {
+	hasUserSelectedWorkspace = false;
+	hasInitializedSelection = false;
+	selectedWorkspaceOption = "new-workspace";
+	selectedWorkspaceBranch = "";
+	setupMessage = null;
+	creatingSessionSetup = false;
+	resetSourceInputState();
+}
+
+async function resolveWorkspaceReadyState(): Promise<WorkspaceReadyResult> {
+	let workspaceId: string | null = null;
+
+	if (selectedWorkspaceOption.startsWith("existing:")) {
+		workspaceId = selectedWorkspaceOption.slice("existing:".length);
+		if (!workspaces.list.some((workspace) => workspace.id === workspaceId)) {
+			setupMessage = "Select an existing workspace.";
+			return { ready: false, workspaceId: null };
+		}
+		return { ready: true, workspaceId };
+	}
+
+	if (!requiresSourceInput) {
+		return { ready: true, workspaceId: null };
+	}
+
+	if (validatingWorkspaceSource) {
+		setupMessage = "Validating workspace...";
+		return { ready: false, workspaceId: null };
+	}
+
+	if (!workspaceValidation || workspaceValidation.sourceType !== workspaceSourceType) {
+		setupMessage = workspaceSourceType === "git"
+			? "Enter a Git repository URL."
+			: "Enter a local directory path.";
+		return { ready: false, workspaceId: null };
+	}
+
+	if (!workspaceValidation.valid) {
+		setupMessage = workspaceValidation.error ||
+			(workspaceSourceType === "git"
+				? "Enter a valid Git repository URL."
+				: "Enter a valid local directory path.");
+		return { ready: false, workspaceId: null };
+	}
+
+	const normalizedPath = workspaceValidation.path.trim();
+	if (normalizedPath.length === 0) {
+		setupMessage = workspaceSourceType === "git"
+			? "Enter a Git repository URL."
+			: "Enter a local directory path.";
+		return { ready: false, workspaceId: null };
+	}
+
+	let matchingWorkspace = findExistingWorkspaceBySourceAndPath(normalizedPath, workspaceSourceType);
+	if (!matchingWorkspace) {
+		await workspaces.refresh();
+		matchingWorkspace = findExistingWorkspaceBySourceAndPath(normalizedPath, workspaceSourceType);
+	}
+
+	if (matchingWorkspace) {
+		applyCreatedWorkspace(matchingWorkspace);
+		return { ready: true, workspaceId: matchingWorkspace.id };
+	}
+
+	const workspace = await workspaces.create({
+		path: normalizedPath,
+		sourceType: workspaceSourceType,
+	});
+	applyCreatedWorkspace(workspace);
+	return { ready: true, workspaceId: workspace.id };
+}
+
+export async function ensureWorkspaceReady(): Promise<WorkspaceReadyResult> {
+	if (creatingSessionSetup) {
+		return { ready: false, workspaceId: null };
+	}
+
+	creatingSessionSetup = true;
+	try {
+		const result = await resolveWorkspaceReadyState();
+		if (!result.ready) {
+			return result;
+		}
+
+		if (result.workspaceId) {
+			workspaces.select(result.workspaceId);
+		}
+
+		await workspaces.refresh();
 		setupMessage = null;
+		return result;
+	} catch (error) {
+		setupMessage = error instanceof Error
+			? `Failed to set up session: ${error.message}`
+			: "Failed to set up session.";
+		return { ready: false, workspaceId: null };
+	} finally {
 		creatingSessionSetup = false;
-		resetSourceInputState();
+	}
+}
+
+export async function ensureSessionReady(): Promise<boolean> {
+	if (creatingSessionSetup) {
+		return false;
 	}
 
-	export async function ensureSessionReady(): Promise<boolean> {
-		if (creatingSessionSetup) {
+	creatingSessionSetup = true;
+	try {
+		const result = await resolveWorkspaceReadyState();
+		if (!result.ready) {
 			return false;
 		}
 
-		creatingSessionSetup = true;
-		try {
-			let workspaceId: string | undefined;
-
-			if (selectedWorkspaceOption.startsWith("existing:")) {
-				workspaceId = selectedWorkspaceOption.slice("existing:".length);
-				if (!workspaces.list.some((workspace) => workspace.id === workspaceId)) {
-					setupMessage = "Select an existing workspace.";
-					return false;
-				}
-			} else if (requiresSourceInput) {
-				if (validatingWorkspaceSource) {
-					setupMessage = "Validating workspace...";
-					return false;
-				}
-
-				if (!workspaceValidation || workspaceValidation.sourceType !== workspaceSourceType) {
-					setupMessage = workspaceSourceType === "git"
-						? "Enter a Git repository URL."
-						: "Enter a local directory path.";
-					return false;
-				}
-
-				if (!workspaceValidation.valid) {
-					setupMessage = workspaceValidation.error ||
-						(workspaceSourceType === "git"
-							? "Enter a valid Git repository URL."
-							: "Enter a valid local directory path.");
-					return false;
-				}
-
-				const normalizedPath = workspaceValidation.path.trim();
-				if (normalizedPath.length === 0) {
-					setupMessage = workspaceSourceType === "git"
-						? "Enter a Git repository URL."
-						: "Enter a local directory path.";
-					return false;
-				}
-
-				let matchingWorkspace = findExistingWorkspaceBySourceAndPath(normalizedPath, workspaceSourceType);
-				if (!matchingWorkspace) {
-					await workspaces.refresh();
-					matchingWorkspace = findExistingWorkspaceBySourceAndPath(normalizedPath, workspaceSourceType);
-				}
-
-				if (matchingWorkspace) {
-					workspaceId = matchingWorkspace.id;
-					applyCreatedWorkspace(matchingWorkspace);
-				} else {
-					const workspace = await workspaces.create({
-						path: normalizedPath,
-						sourceType: workspaceSourceType,
-					});
-					workspaceId = workspace.id;
-					applyCreatedWorkspace(workspace);
-				}
-			}
-
-			const sessionId = await sessions.create(workspaceId);
-			if (!sessionId) {
-				setupMessage = "Failed to create session.";
-				return false;
-			}
-
-			await workspaces.refresh();
-			setupMessage = null;
-			return true;
-		} catch (error) {
-			setupMessage = error instanceof Error
-				? `Failed to set up session: ${error.message}`
-				: "Failed to set up session.";
-			return false;
-		} finally {
-			creatingSessionSetup = false;
+		if (result.workspaceId) {
+			workspaces.select(result.workspaceId);
 		}
+
+		const sessionId = await sessions.create(result.workspaceId ?? undefined);
+		if (!sessionId) {
+			setupMessage = "Failed to create session.";
+			return false;
+		}
+
+		await workspaces.refresh();
+		setupMessage = null;
+		return true;
+	} catch (error) {
+		setupMessage = error instanceof Error
+			? `Failed to set up session: ${error.message}`
+			: "Failed to set up session.";
+		return false;
+	} finally {
+		creatingSessionSetup = false;
 	}
+}
 
 	$effect(() => {
 		if (workspaces.status === "idle") {

@@ -851,6 +851,10 @@ export const PromptInputTextarea = forwardRef<
 				return;
 			}
 
+			if (!e.currentTarget.value.trim()) {
+				return;
+			}
+
 			form?.requestSubmit();
 		}
 

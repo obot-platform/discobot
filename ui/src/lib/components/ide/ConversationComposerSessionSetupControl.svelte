@@ -2,6 +2,7 @@
 	import ConversationWorkspaceSelector from "$lib/components/ide/ConversationWorkspaceSelector.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import type {
+		WorkspaceReadyResult,
 		WorkspaceSelectorHandle,
 		WorkspaceSelectorState,
 	} from "$lib/components/ide/conversation-composer.types";
@@ -42,6 +43,10 @@
 
 	export function resetForNewSession() {
 		workspaceSelectorRef?.resetForNewSession();
+	}
+
+	export async function ensureWorkspaceReady(): Promise<WorkspaceReadyResult> {
+		return workspaceSelectorRef?.ensureWorkspaceReady() ?? { ready: false, workspaceId: null };
 	}
 
 	export async function ensureSessionReady(): Promise<boolean> {

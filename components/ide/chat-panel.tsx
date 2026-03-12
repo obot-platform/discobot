@@ -100,6 +100,52 @@ function normalizeSelectedMode(
 	return mode;
 }
 
+function getChatRequestOptions(
+	modelId: string | null | undefined,
+	mode: string | null | undefined,
+) {
+	let model: string | undefined;
+	let reasoning: "enabled" | "disabled" | "" = "";
+
+	if (modelId) {
+		if (modelId.endsWith(":thinking")) {
+			model = modelId.slice(0, -9);
+			reasoning = "enabled";
+		} else {
+			model = modelId;
+			reasoning = "disabled";
+		}
+	}
+
+	return {
+		...(model ? { model } : {}),
+		reasoning,
+		mode: normalizeSelectedMode(mode) || "",
+	};
+}
+
+export function buildCreateOnlyChatRequest({
+	sessionId,
+	workspaceId,
+	agentId,
+	modelId,
+	mode,
+}: {
+	sessionId: string;
+	workspaceId: string;
+	agentId: string;
+	modelId: string | null | undefined;
+	mode: string | null | undefined;
+}) {
+	return {
+		sessionId,
+		messages: [],
+		workspaceId,
+		agentId,
+		...getChatRequestOptions(modelId, mode),
+	};
+}
+
 export function isChatStreamActive(status: string): boolean {
 	return status === "streaming" || status === "submitted";
 }
@@ -286,24 +332,7 @@ export function ChatPanel({
 				fetch: (async (url, options) => {
 					const { resume, workspaceId, agentId, modelId, mode, envSetIds } =
 						selectionRef.current;
-
-					// Parse model variant to extract actual model ID and reasoning mode
-					// Format: "modelId" or "modelId:thinking" or null
-					let actualModelId: string | undefined;
-					let reasoning: "enabled" | "disabled" | "" = "";
-
-					if (modelId) {
-						if (modelId.endsWith(":thinking")) {
-							// Model with thinking enabled
-							actualModelId = modelId.slice(0, -9); // Remove ":thinking" suffix
-							reasoning = "enabled";
-						} else {
-							// Model with thinking disabled (or model doesn't support thinking)
-							actualModelId = modelId;
-							reasoning = "disabled";
-						}
-					}
-					// If modelId is null, reasoning stays as "" (empty string for default)
+					const requestOptions = getChatRequestOptions(modelId, mode);
 
 					// Create abort controller for this request
 					const controller = new AbortController();
@@ -314,11 +343,7 @@ export function ChatPanel({
 						const body = JSON.parse(options.body as string);
 						body.workspaceId = workspaceId;
 						body.agentId = agentId;
-						if (actualModelId) {
-							body.model = actualModelId;
-						}
-						body.reasoning = reasoning;
-						body.mode = normalizeSelectedMode(mode) || "";
+						Object.assign(body, requestOptions);
 
 						const authUrl = appendAuthToken(url as string);
 						const response = await fetch(authUrl, {
@@ -352,11 +377,7 @@ export function ChatPanel({
 					// For resumed sessions, also inject reasoning and model flags
 					if (resume && options?.body) {
 						const body = JSON.parse(options.body as string);
-						if (actualModelId) {
-							body.model = actualModelId;
-						}
-						body.reasoning = reasoning;
-						body.mode = normalizeSelectedMode(mode) || "";
+						Object.assign(body, requestOptions);
 
 						return fetch(appendAuthToken(url as string), {
 							...options,
@@ -581,32 +602,37 @@ export function ChatPanel({
 	const handleCreateEmptySession = React.useCallback(async () => {
 		if (resume || !localSelectedWorkspaceId || !localSelectedAgentId) return;
 
-		// Parse model variant (same logic as transport)
-		let actualModelId: string | undefined;
-		let reasoning: string | undefined;
-		if (localSelectedModelId) {
-			if (localSelectedModelId.endsWith(":thinking")) {
-				actualModelId = localSelectedModelId.slice(0, -9);
-				reasoning = "enabled";
-			} else {
-				actualModelId = localSelectedModelId;
-				reasoning = "disabled";
-			}
-		}
-
 		try {
-			await api.createSession({
-				id: sessionId,
-				workspaceId: localSelectedWorkspaceId,
-				agentId: localSelectedAgentId,
-				model: actualModelId,
-				reasoning,
+			const response = await fetch(appendAuthToken(`${getApiBase()}/chat`), {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(
+					buildCreateOnlyChatRequest({
+						sessionId,
+						workspaceId: localSelectedWorkspaceId,
+						agentId: localSelectedAgentId,
+						modelId: localSelectedModelId,
+						mode: localSelectedMode,
+					}),
+				),
 			});
+			if (!response.ok) {
+				throw new Error("Failed to create empty session");
+			}
 			onSessionCreated?.(
 				sessionId,
 				localSelectedWorkspaceId,
 				localSelectedAgentId,
 			);
+			if (localActiveEnvSetIds.length > 0) {
+				api
+					.setSessionActiveEnvSets(sessionId, localActiveEnvSetIds)
+					.catch((err) =>
+						console.error("Failed to apply env sets to new session:", err),
+					);
+			}
 		} catch (err) {
 			console.error("Failed to create empty session:", err);
 			throw err;
@@ -617,6 +643,8 @@ export function ChatPanel({
 		localSelectedWorkspaceId,
 		localSelectedAgentId,
 		localSelectedModelId,
+		localSelectedMode,
+		localActiveEnvSetIds,
 		onSessionCreated,
 	]);
 

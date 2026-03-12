@@ -135,9 +135,7 @@ export type SessionData = {
 	status: Session["status"];
 	files: Session["files"];
 	workspaceId?: Session["workspaceId"];
-	agentId?: Session["agentId"];
-	model?: Session["model"];
-	reasoning?: Session["reasoning"];
+	model?: Session["model"];	reasoning?: Session["reasoning"];
 	mode?: Session["mode"];
 	activeEnvSetIds?: Session["activeEnvSetIds"];
 	baseBranch: string;

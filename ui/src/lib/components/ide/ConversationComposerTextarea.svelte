@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ConversationFileMentionDropdown from "$lib/components/ide/ConversationFileMentionDropdown.svelte";
+	import { shouldSubmitComposerOnEnter } from "$lib/components/ide/conversation-composer.helpers";
 	import { InputGroupTextarea } from "$lib/components/ui/input-group";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 
@@ -34,6 +35,9 @@
 
 		if (event.key === "Enter") {
 			if (isComposing || event.isComposing || event.shiftKey) {
+				return;
+			}
+			if (!shouldSubmitComposerOnEnter(sessionView.composerDraft)) {
 				return;
 			}
 			event.preventDefault();

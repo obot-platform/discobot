@@ -23,7 +23,7 @@
 		{...restProps}
 	>
 		{#snippet child({ props, yearItems, selectedYearItem })}
-			<select {...props} {value}>
+			<select data-slot="calendar-native-select" {...props} {value}>
 				{#each yearItems as yearItem (yearItem.value)}
 					<option
 						value={yearItem.value}

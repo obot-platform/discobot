@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { generateId } from "ai";
+	import { api } from "$lib/api-client";
 	import { InputGroup, InputGroupAddon } from "$lib/components/ui/input-group";
 	import ConversationComposerAttachmentButton from "$lib/components/ide/ConversationComposerAttachmentButton.svelte";
 	import ConversationComposerAttachments from "$lib/components/ide/ConversationComposerAttachments.svelte";
@@ -10,6 +12,9 @@
 	import ConversationComposerSessionSetupStatus from "$lib/components/ide/ConversationComposerSessionSetupStatus.svelte";
 	import ConversationComposerSubmitButton from "$lib/components/ide/ConversationComposerSubmitButton.svelte";
 	import ConversationComposerTextarea from "$lib/components/ide/ConversationComposerTextarea.svelte";
+	import {
+		buildEmptySessionStartChatRequest,
+	} from "$lib/components/ide/conversation-composer.helpers";
 	import ConversationEnvSetsControl from "$lib/components/ide/ConversationEnvSetsControl.svelte";
 	import ConversationHooksPanel from "$lib/components/ide/ConversationHooksPanel.svelte";
 	import ConversationQueuePanel from "$lib/components/ide/ConversationQueuePanel.svelte";
@@ -20,6 +25,7 @@
 		ComposerAttachment,
 		ComposerMode,
 		ConversationComposerTextareaHandle,
+		WorkspaceReadyResult,
 		WorkspaceSelectorHandle,
 		WorkspaceSelectorState,
 	} from "$lib/components/ide/conversation-composer.types";
@@ -154,10 +160,44 @@
 		attachmentFiles = [];
 	}
 
+	async function createEmptySessionViaChat() {
+		const workspaceReady = await (
+			sessionSetupRef?.ensureWorkspaceReady() ??
+			Promise.resolve<WorkspaceReadyResult>({ ready: false, workspaceId: null })
+		);
+		if (!workspaceReady.ready) {
+			return;
+		}
+
+		const response = await api.startChat(
+			buildEmptySessionStartChatRequest({
+				sessionId: generateId(),
+				workspaceId: workspaceReady.workspaceId,
+				mode: selectedMode,
+				modelId: selectedModelId,
+				reasoning: selectedReasoning,
+			}),
+		);
+		await Promise.all([sessions.refresh(), workspaces.refresh()]);
+		workspaces.select(response.workspaceId);
+		sessions.select(response.sessionId);
+		composerTextareaRef?.closeMentionDropdown();
+	}
+
 	async function submitComposer() {
 		if (isGenerating()) {
 			await conversation.cancel();
 			composerTextareaRef?.closeMentionDropdown();
+			return;
+		}
+
+		const emptyWithoutAttachments = inputEmpty() && attachmentFiles.length === 0;
+		if (emptyWithoutAttachments) {
+			if (session.current) {
+				return;
+			}
+
+			await createEmptySessionViaChat();
 			return;
 		}
 
@@ -166,14 +206,6 @@
 			if (!ready) {
 				return;
 			}
-		}
-
-		if (inputEmpty() && attachmentFiles.length === 0) {
-			if (!session.current) {
-				return;
-			}
-			await sessions.create(session.current.workspaceId);
-			return;
 		}
 
 		const nextMessageText = sessionView.composerDraft.trim();

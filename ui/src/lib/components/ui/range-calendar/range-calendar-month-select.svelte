@@ -20,7 +20,7 @@
 >
 	<RangeCalendarPrimitive.MonthSelect bind:ref class="absolute inset-0 opacity-0" {...restProps}>
 		{#snippet child({ props, monthItems, selectedMonthItem })}
-			<select {...props} {value} {onchange}>
+			<select data-slot="calendar-native-select" {...props} {value} {onchange}>
 				{#each monthItems as monthItem (monthItem.value)}
 					<option
 						value={monthItem.value}
