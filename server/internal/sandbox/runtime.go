@@ -94,6 +94,20 @@ type Provider interface {
 	RemoveProject(ctx context.Context, projectID string) error
 }
 
+const MetadataImageID = "image_id"
+
+// CurrentImageIDProvider is an optional provider capability that returns the
+// immutable image ID for the configured sandbox image.
+type CurrentImageIDProvider interface {
+	CurrentImageID(ctx context.Context) (string, error)
+}
+
+// CleanupUnusedImagesProvider is an optional provider capability for cleaning up
+// sandbox images that are no longer referenced after reconciliation.
+type CleanupUnusedImagesProvider interface {
+	CleanupUnusedImages(ctx context.Context) error
+}
+
 // DockerProxyProvider is an optional interface that sandbox providers can implement
 // to expose the Docker daemon for debugging. This is used by the debug Docker proxy
 // to forward Docker API requests to the sandbox runtime (e.g., inside a VZ VM).

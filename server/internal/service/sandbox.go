@@ -239,18 +239,11 @@ func (s *SandboxService) ReconcileSandbox(ctx context.Context, sessionID string)
 		return nil
 	}
 
-	// Determine agent ID for job
-	agentID := ""
-	if sess.AgentID != nil {
-		agentID = *sess.AgentID
-	}
-
 	// Enqueue initialization job
 	err = s.jobEnqueuer.Enqueue(ctx, jobs.SessionInitPayload{
 		ProjectID:   projectID,
 		SessionID:   sessionID,
 		WorkspaceID: sess.WorkspaceID,
-		AgentID:     agentID,
 	})
 	if err != nil {
 		log.Printf("Note: session init job may already exist for %s: %v", sessionID, err)
@@ -447,6 +440,23 @@ func (s *SandboxService) ReconcileSandboxes(ctx context.Context) error {
 		return nil
 	}
 
+	providerForImageOps := s.provider
+	if defaultProviderGetter, ok := s.provider.(interface{ DefaultProvider() sandbox.Provider }); ok {
+		if defaultProvider := defaultProviderGetter.DefaultProvider(); defaultProvider != nil {
+			providerForImageOps = defaultProvider
+		}
+	}
+
+	expectedImageID := ""
+	if imageIDProvider, ok := providerForImageOps.(sandbox.CurrentImageIDProvider); ok {
+		imageID, err := imageIDProvider.CurrentImageID(ctx)
+		if err != nil {
+			log.Printf("Warning: Failed to resolve current sandbox image ID for %s: %v", expectedImage, err)
+		} else {
+			expectedImageID = imageID
+		}
+	}
+
 	sandboxes, err := s.provider.List(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list sandboxes: %w", err)
@@ -455,8 +465,16 @@ func (s *SandboxService) ReconcileSandboxes(ctx context.Context) error {
 	log.Printf("Reconciling %d sandboxes (expected image: %s)", len(sandboxes), expectedImage)
 
 	for _, sb := range sandboxes {
-		// Check if the sandbox uses the expected image
-		if sb.Image == expectedImage {
+		usesExpectedImage := sb.Image == expectedImage
+		if expectedImageID != "" {
+			if sandboxImageID := sb.Metadata[sandbox.MetadataImageID]; sandboxImageID != "" {
+				usesExpectedImage = sandboxImageID == expectedImageID
+			} else {
+				log.Printf("Sandbox for session %s is missing image ID metadata, falling back to image reference comparison", sb.SessionID)
+			}
+		}
+
+		if usesExpectedImage {
 			log.Printf("Sandbox for session %s uses correct image", sb.SessionID)
 			continue
 		}
@@ -491,7 +509,13 @@ func (s *SandboxService) ReconcileSandboxes(ctx context.Context) error {
 		log.Printf("Successfully recreated sandbox for session %s with image %s", sb.SessionID, expectedImage)
 	}
 
-	// Run provider-specific reconciliation (BuildKit containers, image cleanup, etc.)
+	if cleanupProvider, ok := providerForImageOps.(sandbox.CleanupUnusedImagesProvider); ok {
+		if err := cleanupProvider.CleanupUnusedImages(ctx); err != nil {
+			log.Printf("Warning: Failed to clean up sandbox images: %v", err)
+		}
+	}
+
+	// Run provider-specific reconciliation (BuildKit containers, etc.)
 	if err := s.provider.Reconcile(ctx); err != nil {
 		log.Printf("Warning: Provider reconciliation failed: %v", err)
 	}

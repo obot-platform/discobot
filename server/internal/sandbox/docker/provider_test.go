@@ -10,6 +10,8 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	imageTypes "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
+
+	"github.com/obot-platform/discobot/server/internal/config"
 )
 
 func TestIsLocalImage(t *testing.T) {
@@ -115,7 +117,7 @@ func TestPullSandboxImage_SkipsDigestReferences(t *testing.T) {
 	}
 }
 
-func TestCleanupOldSandboxImages_PreservesCurrentImage(t *testing.T) {
+func TestCleanupUnusedImages_SkipsWhenCurrentImageMissing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -136,6 +138,9 @@ func TestCleanupOldSandboxImages_PreservesCurrentImage(t *testing.T) {
 
 	p := &Provider{
 		client: cli,
+		cfg: &config.Config{
+			SandboxImage: "nonexistent-image:fake-tag",
+		},
 	}
 
 	// Test that cleanup handles missing images gracefully
@@ -143,11 +148,10 @@ func TestCleanupOldSandboxImages_PreservesCurrentImage(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Use a non-existent image
-		err := p.cleanupOldSandboxImages(ctx, "nonexistent-image:fake-tag")
+		err := p.CleanupUnusedImages(ctx)
 		// Should not error even if current image doesn't exist
 		if err != nil {
-			t.Errorf("cleanupOldSandboxImages() should handle missing current image gracefully, got error: %v", err)
+			t.Errorf("CleanupUnusedImages() should handle missing current image gracefully, got error: %v", err)
 		}
 	})
 }

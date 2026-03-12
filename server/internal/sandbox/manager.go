@@ -175,6 +175,11 @@ func (p *ProviderProxy) Image() string {
 	return provider.Image()
 }
 
+// DefaultProvider returns the current default provider.
+func (p *ProviderProxy) DefaultProvider() Provider {
+	return p.manager.GetDefault()
+}
+
 // Create creates a sandbox using the provider determined by providerGetter.
 func (p *ProviderProxy) Create(ctx context.Context, sessionID string, opts CreateOptions) (*Sandbox, error) {
 	providerName, err := p.providerGetter(ctx, sessionID)

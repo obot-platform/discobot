@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -108,6 +110,136 @@ func createTestSession(t *testing.T, s *store.Store, sessionID, workspacePath st
 	}
 }
 
+type imageIDAwareReconcileProvider struct {
+	sandboxes         map[string]*sandbox.Sandbox
+	configuredImage   string
+	configuredImageID string
+	createCount       int
+	cleanupCalls      int
+}
+
+func newImageIDAwareReconcileProvider(image, imageID string) *imageIDAwareReconcileProvider {
+	return &imageIDAwareReconcileProvider{
+		sandboxes:         make(map[string]*sandbox.Sandbox),
+		configuredImage:   image,
+		configuredImageID: imageID,
+	}
+}
+
+func (p *imageIDAwareReconcileProvider) ImageExists(_ context.Context) bool {
+	return true
+}
+
+func (p *imageIDAwareReconcileProvider) Image() string {
+	return p.configuredImage
+}
+
+func (p *imageIDAwareReconcileProvider) CurrentImageID(_ context.Context) (string, error) {
+	return p.configuredImageID, nil
+}
+
+func (p *imageIDAwareReconcileProvider) CleanupUnusedImages(_ context.Context) error {
+	p.cleanupCalls++
+	return nil
+}
+
+func (p *imageIDAwareReconcileProvider) Create(_ context.Context, sessionID string, _ sandbox.CreateOptions) (*sandbox.Sandbox, error) {
+	if _, exists := p.sandboxes[sessionID]; exists {
+		return nil, sandbox.ErrAlreadyExists
+	}
+
+	p.createCount++
+	sb := &sandbox.Sandbox{
+		ID:        fmt.Sprintf("recreated-%d", p.createCount),
+		SessionID: sessionID,
+		Status:    sandbox.StatusCreated,
+		Image:     p.configuredImage,
+		CreatedAt: time.Now(),
+		Metadata: map[string]string{
+			sandbox.MetadataImageID: p.configuredImageID,
+		},
+	}
+	p.sandboxes[sessionID] = sb
+	return sb, nil
+}
+
+func (p *imageIDAwareReconcileProvider) Start(_ context.Context, sessionID string) error {
+	sb, ok := p.sandboxes[sessionID]
+	if !ok {
+		return sandbox.ErrNotFound
+	}
+
+	now := time.Now()
+	sb.Status = sandbox.StatusRunning
+	sb.StartedAt = &now
+	return nil
+}
+
+func (p *imageIDAwareReconcileProvider) Stop(_ context.Context, sessionID string, _ time.Duration) error {
+	sb, ok := p.sandboxes[sessionID]
+	if !ok {
+		return sandbox.ErrNotFound
+	}
+
+	sb.Status = sandbox.StatusStopped
+	return nil
+}
+
+func (p *imageIDAwareReconcileProvider) Remove(_ context.Context, sessionID string, _ ...sandbox.RemoveOption) error {
+	delete(p.sandboxes, sessionID)
+	return nil
+}
+
+func (p *imageIDAwareReconcileProvider) Get(_ context.Context, sessionID string) (*sandbox.Sandbox, error) {
+	sb, ok := p.sandboxes[sessionID]
+	if !ok {
+		return nil, sandbox.ErrNotFound
+	}
+	return sb, nil
+}
+
+func (p *imageIDAwareReconcileProvider) GetSecret(_ context.Context, _ string) (string, error) {
+	return "", sandbox.ErrNotFound
+}
+
+func (p *imageIDAwareReconcileProvider) List(_ context.Context) ([]*sandbox.Sandbox, error) {
+	result := make([]*sandbox.Sandbox, 0, len(p.sandboxes))
+	for _, sb := range p.sandboxes {
+		result = append(result, sb)
+	}
+	return result, nil
+}
+
+func (p *imageIDAwareReconcileProvider) Exec(_ context.Context, _ string, _ []string, _ sandbox.ExecOptions) (*sandbox.ExecResult, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (p *imageIDAwareReconcileProvider) Attach(_ context.Context, _ string, _ sandbox.AttachOptions) (sandbox.PTY, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (p *imageIDAwareReconcileProvider) ExecStream(_ context.Context, _ string, _ []string, _ sandbox.ExecStreamOptions) (sandbox.Stream, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (p *imageIDAwareReconcileProvider) HTTPClient(_ context.Context, _ string) (*http.Client, error) {
+	return &http.Client{}, nil
+}
+
+func (p *imageIDAwareReconcileProvider) Watch(_ context.Context) (<-chan sandbox.StateEvent, error) {
+	ch := make(chan sandbox.StateEvent)
+	close(ch)
+	return ch, nil
+}
+
+func (p *imageIDAwareReconcileProvider) Reconcile(_ context.Context) error {
+	return nil
+}
+
+func (p *imageIDAwareReconcileProvider) RemoveProject(_ context.Context, _ string) error {
+	return nil
+}
+
 func TestSandboxService_CreateForSession(t *testing.T) {
 	mockProvider := mock.NewProviderWithImage(testImage)
 	testStore := setupTestStore(t)
@@ -140,6 +272,51 @@ func TestSandboxService_CreateForSession(t *testing.T) {
 
 	if sb.Image != testImage {
 		t.Errorf("Expected image %s, got %s", testImage, sb.Image)
+	}
+}
+
+func TestReconcileSandboxes_UsesImageIDAndRunsCleanup(t *testing.T) {
+	provider := newImageIDAwareReconcileProvider("ghcr.io/obot-platform/discobot:latest", "sha256:new")
+	testStore := setupTestStore(t)
+	cfg := &config.Config{}
+	svc := NewSandboxService(testStore, provider, cfg, nil, nil, nil, nil)
+	svc.SetSessionInitializer(&sandboxCreatingInitializer{sandboxSvc: svc})
+
+	ctx := context.Background()
+	sessionID := "test-session-image-id"
+	workspacePath := "/workspace"
+	createTestSession(t, testStore, sessionID, workspacePath)
+
+	provider.sandboxes[sessionID] = &sandbox.Sandbox{
+		ID:        "old-sandbox",
+		SessionID: sessionID,
+		Status:    sandbox.StatusRunning,
+		Image:     provider.configuredImage,
+		CreatedAt: time.Now(),
+		Metadata: map[string]string{
+			sandbox.MetadataImageID: "sha256:old",
+		},
+	}
+
+	if err := svc.ReconcileSandboxes(ctx); err != nil {
+		t.Fatalf("ReconcileSandboxes failed: %v", err)
+	}
+
+	sb, err := provider.Get(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+
+	if sb.ID == "old-sandbox" {
+		t.Fatalf("expected sandbox to be recreated when image ID changed")
+	}
+
+	if got := sb.Metadata[sandbox.MetadataImageID]; got != provider.configuredImageID {
+		t.Fatalf("expected recreated sandbox image ID %s, got %s", provider.configuredImageID, got)
+	}
+
+	if provider.cleanupCalls != 1 {
+		t.Fatalf("expected cleanup to run once, got %d", provider.cleanupCalls)
 	}
 }
 

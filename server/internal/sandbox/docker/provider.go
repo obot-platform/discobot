@@ -199,14 +199,6 @@ func NewProvider(cfg *config.Config, sessionProjectResolver SessionProjectResolv
 	go func() {
 		_ = p.EnsureImage(context.Background())
 
-		// Clean up old sandbox images after the pull completes
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cleanupCancel()
-
-		if err := p.cleanupOldSandboxImages(cleanupCtx, cfg.SandboxImage); err != nil {
-			log.Printf("Warning: Failed to clean up old sandbox images: %v", err)
-		}
-
 		log.Printf("Docker provider background initialization complete")
 	}()
 
@@ -704,9 +696,18 @@ func (p *Provider) processPullProgress(reader io.Reader, taskID string) error {
 	return nil
 }
 
-// cleanupOldSandboxImages removes old sandbox images with the discobot label.
-// This helps clean up images from previous versions when the sandbox image is updated.
-func (p *Provider) cleanupOldSandboxImages(ctx context.Context, currentImage string) error {
+// CurrentImageID returns the immutable image ID for the configured sandbox image.
+func (p *Provider) CurrentImageID(ctx context.Context) (string, error) {
+	info, err := p.client.ImageInspect(ctx, p.cfg.SandboxImage)
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect current sandbox image %s: %w", p.cfg.SandboxImage, err)
+	}
+	return info.ID, nil
+}
+
+// CleanupUnusedImages removes labeled sandbox images that are no longer referenced
+// by the configured image or by any managed sandbox container.
+func (p *Provider) CleanupUnusedImages(ctx context.Context) error {
 	// List all images with the discobot sandbox label
 	images, err := p.client.ImageList(ctx, imageTypes.ListOptions{
 		Filters: filters.NewArgs(
@@ -717,28 +718,41 @@ func (p *Provider) cleanupOldSandboxImages(ctx context.Context, currentImage str
 		return fmt.Errorf("failed to list sandbox images: %w", err)
 	}
 
-	// Get the current image ID to avoid deleting it
-	currentImageInfo, err := p.client.ImageInspect(ctx, currentImage)
+	currentImageID, err := p.CurrentImageID(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to inspect current sandbox image %s: %v", currentImage, err)
-		currentImageInfo.ID = "" // Empty ID means nothing will match it in the cleanup loop
+		log.Printf("Skipping sandbox image cleanup: unable to resolve current sandbox image ID: %v", err)
+		return nil
+	}
+
+	containers, err := p.client.ContainerList(ctx, containerTypes.ListOptions{
+		All: true,
+		Filters: filters.NewArgs(
+			filters.Arg("label", "discobot.managed=true"),
+		),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list managed sandbox containers: %w", err)
+	}
+
+	protectedImageIDs := map[string]struct{}{
+		currentImageID: {},
+	}
+
+	for _, ctr := range containers {
+		if ctr.ImageID == "" {
+			continue
+		}
+		protectedImageIDs[ctr.ImageID] = struct{}{}
 	}
 
 	deletedCount := 0
 	for _, img := range images {
-		// Skip the current image
-		if currentImageInfo.ID != "" && img.ID == currentImageInfo.ID {
+		if _, ok := protectedImageIDs[img.ID]; ok {
+			log.Printf("Skipping sandbox image cleanup (still referenced): %s (ID: %s)", img.RepoTags, img.ID)
 			continue
 		}
 
-		// Skip images that are less than a day old
-		if time.Since(time.Unix(img.Created, 0)) < 24*time.Hour {
-			log.Printf("Skipping sandbox image cleanup (too recent): %s (ID: %s)", img.RepoTags, img.ID)
-			continue
-		}
-
-		// Delete the old image
-		log.Printf("Removing old sandbox image: %s (ID: %s)", img.RepoTags, img.ID)
+		log.Printf("Removing unused sandbox image: %s (ID: %s)", img.RepoTags, img.ID)
 		_, err := p.client.ImageRemove(ctx, img.ID, imageTypes.RemoveOptions{
 			Force:         true, // Force removal even if image has tags
 			PruneChildren: true,
@@ -758,11 +772,7 @@ func (p *Provider) cleanupOldSandboxImages(ctx context.Context, currentImage str
 }
 
 // Reconcile performs provider-specific reconciliation on startup.
-// Cleans up old sandbox images that are no longer in use.
-func (p *Provider) Reconcile(ctx context.Context) error {
-	if err := p.cleanupOldSandboxImages(ctx, p.cfg.SandboxImage); err != nil {
-		log.Printf("Warning: Failed to clean up old sandbox images: %v", err)
-	}
+func (p *Provider) Reconcile(_ context.Context) error {
 	return nil
 }
 
@@ -874,7 +884,8 @@ func (p *Provider) Get(ctx context.Context, sessionID string) (*sandbox.Sandbox,
 		SessionID: sessionID,
 		Image:     info.Config.Image,
 		Metadata: map[string]string{
-			"name": info.Name,
+			"name":                  info.Name,
+			sandbox.MetadataImageID: info.Image,
 		},
 	}
 
@@ -1282,7 +1293,8 @@ func (p *Provider) List(ctx context.Context) ([]*sandbox.Sandbox, error) {
 			SessionID: sessionID,
 			Image:     info.Config.Image,
 			Metadata: map[string]string{
-				"name": info.Name,
+				"name":                  info.Name,
+				sandbox.MetadataImageID: c.ImageID,
 			},
 		}
 
