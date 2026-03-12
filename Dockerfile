@@ -51,8 +51,8 @@ COPY agent-go/ ./
 # Use mcp_go_client_oauth build tag to enable OAuth support for MCP tools
 RUN CGO_ENABLED=0 go build -tags mcp_go_client_oauth -ldflags="-s -w" -o /discobot-agent-api ./cmd/agent-api
 
-# Stage 3: Minimal Ubuntu runtime (without graphical tools)
-FROM ubuntu:24.04 AS runtime-shell
+# Stage 3: Shared Ubuntu runtime base
+FROM ubuntu:24.04 AS runtime-base
 
 # Label for image identification and cleanup
 LABEL io.discobot.sandbox-image=true
@@ -60,8 +60,8 @@ LABEL io.discobot.sandbox-image=true
 # Tell systemd it's running inside a container
 ENV container=docker
 
-# Install all apt packages first for better layer caching
-# (apt-get changes infrequently; binary copies change with each code change)
+# Install shared apt packages first for better layer caching
+# Keep repo COPY steps in later stages so source changes do not invalidate this layer
 # systemd + dbus: init system for managing services (PID 1)
 # git is needed for workspace cloning
 # socat is needed for vsock forwarding in VZ VMs
@@ -153,47 +153,12 @@ RUN mkdir -p /home/discobot/.npm-global/bin \
     > /etc/profile.d/npm-global.sh \
     && chmod 644 /etc/profile.d/npm-global.sh
 
-# Copy container-specific agent configuration (Claude Code commands, etc.)
-# These are placed in /home/discobot/.claude/ for user-level availability
-COPY --chown=discobot:discobot container-assets/claude /home/discobot/.claude
-COPY --chown=discobot:discobot container-assets/docs.txt /discobot/docs.txt
-
 # Create directory structure per filesystem design
 # /.data      - persistent storage (Docker volume or VZ disk)
 # /.workspace - base workspace (read-only)
 # /workspace  - project root (writable)
 RUN mkdir -p /.data /.workspace /opt/discobot/bin \
     && chown discobot:discobot /.data
-
-# Copy binaries to /opt/discobot/bin
-# (placed after apt-get so code changes don't invalidate apt cache)
-COPY --from=agent-go-builder /discobot-agent-api /opt/discobot/bin/discobot-agent-api
-COPY --from=proxy-builder /proxy /opt/discobot/bin/proxy
-COPY --from=agent-builder /discobot-agent /opt/discobot/bin/discobot-agent
-RUN chmod +x /opt/discobot/bin/* \
-    && ln -s /opt/discobot/bin/discobot-agent-api /opt/discobot/bin/disco
-
-# Docker wrapper: injects --output type=docker for build commands so remote
-# buildx builders always load images into the local daemon.
-COPY --chmod=755 container-assets/docker-wrapper.sh /usr/local/bin/docker
-
-# Copy systemd service files for container service management
-COPY container-assets/systemd/ /etc/systemd/system/
-
-# Configure systemd for container environment
-# Disable docker.service so it only starts via docker.socket activation
-# (the Ubuntu docker.io package preset enables it by default)
-RUN systemctl mask \
-    console-getty.service \
-    getty@.service \
-    serial-getty@.service \
-    systemd-logind.service \
-    && systemctl disable docker.service containerd.service \
-    && systemctl enable \
-    discobot-setup.service \
-    discobot-proxy.service \
-    docker.socket \
-    discobot-agent-api.service
 
 # Add discobot binaries and npm global bin to PATH
 # Also set NPM_CONFIG_PREFIX for non-login shell contexts
@@ -214,8 +179,8 @@ EXPOSE 3002
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
 
-# Stage 3b: Full runtime with graphical desktop tools (X11, VNC, browser)
-FROM runtime-shell AS runtime
+# Stage 3b: Shared graphical runtime base
+FROM runtime-base AS runtime-gui-base
 
 # Install graphical packages: virtual X11 display, VNC, window manager, browser
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -274,15 +239,74 @@ RUN mkdir -p /home/discobot/Desktop \
     && chmod 755 /home/discobot/Desktop/*.desktop \
     && chown -R discobot:discobot /home/discobot/Desktop
 
-# Enable graphical systemd services (X11 virtual display, VNC, WebSocket proxy)
-RUN systemctl enable \
-    x11-display.socket \
-    x11vnc.socket \
-    websockify-proxy.socket
-
 ENV DISPLAY=:0
 
 EXPOSE 5900
+
+# Stage 3c: Runtime overlay with frequently-changing binaries and container assets
+FROM scratch AS runtime-overlay
+
+# Copy binaries to /opt/discobot/bin
+COPY --from=agent-go-builder --chmod=755 /discobot-agent-api /opt/discobot/bin/discobot-agent-api
+COPY --from=proxy-builder --chmod=755 /proxy /opt/discobot/bin/proxy
+COPY --from=agent-builder --chmod=755 /discobot-agent /opt/discobot/bin/discobot-agent
+
+# Docker wrapper: injects --output type=docker for build commands so remote
+# buildx builders always load images into the local daemon.
+COPY --chmod=755 container-assets/docker-wrapper.sh /usr/local/bin/docker
+
+# Copy systemd service files for container service management
+COPY container-assets/systemd/ /etc/systemd/system/
+
+# Copy container-specific agent configuration (Claude Code commands, etc.)
+# These are placed in /home/discobot/.claude/ for user-level availability
+COPY --chown=1000:1000 container-assets/claude /home/discobot/.claude
+COPY --chown=1000:1000 container-assets/docs.txt /discobot/docs.txt
+
+# Stage 3d: Minimal runtime without graphical tools
+FROM runtime-base AS runtime-shell
+
+COPY --from=runtime-overlay / /
+
+# Configure systemd for container environment
+# Disable docker.service so it only starts via docker.socket activation
+# (the Ubuntu docker.io package preset enables it by default)
+RUN ln -s /opt/discobot/bin/discobot-agent-api /opt/discobot/bin/disco \
+    && systemctl mask \
+    console-getty.service \
+    getty@.service \
+    serial-getty@.service \
+    systemd-logind.service \
+    && systemctl disable docker.service containerd.service \
+    && systemctl enable \
+    discobot-setup.service \
+    discobot-proxy.service \
+    docker.socket \
+    discobot-agent-api.service
+
+# Stage 3e: Full runtime with graphical desktop tools (X11, VNC, browser)
+FROM runtime-gui-base AS runtime
+
+COPY --from=runtime-overlay / /
+
+# Configure systemd for container environment
+# Disable docker.service so it only starts via docker.socket activation
+# (the Ubuntu docker.io package preset enables it by default)
+RUN ln -s /opt/discobot/bin/discobot-agent-api /opt/discobot/bin/disco \
+    && systemctl mask \
+    console-getty.service \
+    getty@.service \
+    serial-getty@.service \
+    systemd-logind.service \
+    && systemctl disable docker.service containerd.service \
+    && systemctl enable \
+    discobot-setup.service \
+    discobot-proxy.service \
+    docker.socket \
+    discobot-agent-api.service \
+    x11-display.socket \
+    x11vnc.socket \
+    websockify-proxy.socket
 
 # Stage 4: VZ root filesystem builder with systemd and Docker
 # Build with: docker build --target vz-image --output type=local,dest=. .
