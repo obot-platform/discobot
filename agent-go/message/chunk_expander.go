@@ -94,7 +94,7 @@ func (e *ChunkExpander) Expand(chunk ProviderMessageChunk) []MessageChunk {
 		return []MessageChunk{ToolInputAvailableChunk{
 			ToolCallID:       v.ToolCallID,
 			ToolName:         active.toolName,
-			Input:            json.RawMessage(active.inputBuf),
+			Input:            toolInputJSONValue(active.inputBuf),
 			ProviderExecuted: active.providerExecuted,
 			Dynamic:          new(true),
 			Title:            active.title,
@@ -113,7 +113,7 @@ func (e *ChunkExpander) Expand(chunk ProviderMessageChunk) []MessageChunk {
 			ToolInputAvailableChunk{
 				ToolCallID:       v.ToolCallID,
 				ToolName:         v.ToolName,
-				Input:            json.RawMessage(v.Input),
+				Input:            toolInputJSONValue(v.Input),
 				ProviderExecuted: v.ProviderExecuted,
 				Dynamic:          new(true),
 			},

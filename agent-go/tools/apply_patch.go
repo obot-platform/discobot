@@ -274,7 +274,7 @@ func parsePatchOperation(lines []string) (patchOperation, int, error) {
 
 	if strings.HasPrefix(header, addFileMarker) {
 		path := strings.TrimSpace(strings.TrimPrefix(header, addFileMarker))
-		if err := ensureRelativePatchPath(path); err != nil {
+		if err := validatePatchPath(path); err != nil {
 			return patchOperation{}, 0, err
 		}
 		consumed := 1
@@ -292,7 +292,7 @@ func parsePatchOperation(lines []string) (patchOperation, int, error) {
 
 	if strings.HasPrefix(header, deleteFileMarker) {
 		path := strings.TrimSpace(strings.TrimPrefix(header, deleteFileMarker))
-		if err := ensureRelativePatchPath(path); err != nil {
+		if err := validatePatchPath(path); err != nil {
 			return patchOperation{}, 0, err
 		}
 		return patchOperation{kind: patchDeleteFile, path: path}, 1, nil
@@ -300,7 +300,7 @@ func parsePatchOperation(lines []string) (patchOperation, int, error) {
 
 	if strings.HasPrefix(header, updateFileMarker) {
 		path := strings.TrimSpace(strings.TrimPrefix(header, updateFileMarker))
-		if err := ensureRelativePatchPath(path); err != nil {
+		if err := validatePatchPath(path); err != nil {
 			return patchOperation{}, 0, err
 		}
 		consumed := 1
@@ -309,7 +309,7 @@ func parsePatchOperation(lines []string) (patchOperation, int, error) {
 			next := strings.TrimSpace(lines[consumed])
 			if strings.HasPrefix(next, moveToMarker) {
 				movePath = strings.TrimSpace(strings.TrimPrefix(next, moveToMarker))
-				if err := ensureRelativePatchPath(movePath); err != nil {
+				if err := validatePatchPath(movePath); err != nil {
 					return patchOperation{}, 0, err
 				}
 				consumed++
@@ -645,7 +645,7 @@ func normalizePatchNewlines(s string) string {
 	return s
 }
 
-func ensureRelativePatchPath(path string) error {
+func validatePatchPath(path string) error {
 	if path == "" {
 		return fmt.Errorf("path is required")
 	}

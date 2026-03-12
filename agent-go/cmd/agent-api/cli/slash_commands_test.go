@@ -3,14 +3,39 @@ package cli
 import (
 	"context"
 	"encoding/base64"
+	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobot/agent-go/internal/config"
+	"github.com/obot-platform/discobot/agent-go/message"
+	"github.com/obot-platform/discobot/agent-go/providers"
 	"github.com/obot-platform/discobot/agent-go/thread"
 )
+
+type testModelListProvider struct {
+	id     string
+	models []providers.ModelInfo
+}
+
+func (p *testModelListProvider) ID() string { return p.id }
+
+func (p *testModelListProvider) Complete(_ context.Context, _ providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
+	return func(func(message.ProviderMessageChunk, error) bool) {}
+}
+
+func (p *testModelListProvider) CountTokens(_ context.Context, _ providers.CountTokensRequest) (providers.CountTokensResponse, error) {
+	return providers.CountTokensResponse{}, nil
+}
+
+func (p *testModelListProvider) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
+	return p.models, nil
+}
+
+func (p *testModelListProvider) DefaultModels() map[string]providers.ModelRef { return nil }
 
 func TestSelectInitialThreadID_ForceNewThread(t *testing.T) {
 	store := thread.NewStore(t.TempDir())
@@ -162,6 +187,83 @@ func TestHandleSlashCommand_LocalCommandsTakePriority(t *testing.T) {
 	}
 	if newThreadID == "thread-1" {
 		t.Fatalf("expected /clear to start a new thread")
+	}
+}
+
+func TestHandleModelsCommand_SortsModelList(t *testing.T) {
+	reg := providers.NewProviderRegistry(nil)
+	reg.Add(&testModelListProvider{
+		id: "openai",
+		models: []providers.ModelInfo{
+			{ID: "gpt-4o", DisplayName: "GPT-4o"},
+			{ID: "gpt-4.1", DisplayName: "GPT-4.1"},
+		},
+	})
+	reg.Add(&testModelListProvider{
+		id: "anthropic",
+		models: []providers.ModelInfo{
+			{ID: "claude-sonnet-4", DisplayName: "Claude Sonnet 4"},
+			{ID: "claude-opus-4", DisplayName: "Claude Opus 4"},
+		},
+	})
+
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdinReader.Close()
+	defer stderrReader.Close()
+
+	if _, err := stdinWriter.WriteString("\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := stdinWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdin := os.Stdin
+	oldStderr := os.Stderr
+	oldNoColor := noColor
+	os.Stdin = stdinReader
+	os.Stderr = stderrWriter
+	noColor = true
+	defer func() {
+		os.Stdin = oldStdin
+		os.Stderr = oldStderr
+		noColor = oldNoColor
+	}()
+
+	currentModel := ""
+	handleModelsCommand(context.Background(), reg, &currentModel)
+
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(stderrReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := []string{
+		"1. anthropic/claude-opus-4 — Claude Opus 4",
+		"2. anthropic/claude-sonnet-4 — Claude Sonnet 4",
+		"3. openai/gpt-4.1 — GPT-4.1",
+		"4. openai/gpt-4o — GPT-4o",
+	}
+	lastIndex := -1
+	for _, line := range lines {
+		idx := strings.Index(string(output), line)
+		if idx == -1 {
+			t.Fatalf("expected output to contain %q, got:\n%s", line, string(output))
+		}
+		if idx <= lastIndex {
+			t.Fatalf("expected output line %q to appear after previous model, got:\n%s", line, string(output))
+		}
+		lastIndex = idx
 	}
 }
 

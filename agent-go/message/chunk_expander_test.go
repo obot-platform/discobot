@@ -98,6 +98,32 @@ func TestExpander_ToolCallNonStreaming(t *testing.T) {
 	}
 }
 
+func TestExpander_ToolCallNonStreamingRawInput(t *testing.T) {
+	exp := NewChunkExpander(false)
+	patch := "*** Begin Patch\n*** End Patch"
+	chunks := exp.Expand(ToolCallChunk{
+		ToolCallID: "tc2",
+		ToolName:   "apply_patch",
+		Input:      patch,
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want 2", len(chunks))
+	}
+	avail, ok := chunks[1].(ToolInputAvailableChunk)
+	if !ok {
+		t.Fatalf("chunks[1] type: got %T", chunks[1])
+	}
+	var got struct {
+		Raw string `json:"raw"`
+	}
+	if err := json.Unmarshal(avail.Input, &got); err != nil {
+		t.Fatalf("input should be wrapped in an object: %v", err)
+	}
+	if got.Raw != patch {
+		t.Fatalf("Input.raw: got %q, want %q", got.Raw, patch)
+	}
+}
+
 func TestExpander_ToolResultSuccess(t *testing.T) {
 	exp := NewChunkExpander(false)
 	chunks := exp.Expand(ToolResultChunk{

@@ -339,7 +339,7 @@ func (e *Executor) dispatch(ctx context.Context, toolCtx *thread.ToolContext, ca
 			return errResult(call, "EnterPlanMode is not available — you are already in plan mode"), nil
 		}
 		planFile := e.resolveActivePlanFile(toolCtx)
-		return errResult(call, fmt.Sprintf("%s is not available in plan mode — use the Write or Edit tool to write your complete plan to %s (Write and Edit are allowed for the plan file), then call ExitPlanMode", call.ToolName, planFile)), nil
+		return errResult(call, fmt.Sprintf("%s is not available in plan mode — use the Write, Edit, or apply_patch tool to write your complete plan to %s (Write, Edit, and apply_patch are allowed for the plan file), then call ExitPlanMode", call.ToolName, planFile)), nil
 	}
 
 	switch call.ToolName {
@@ -488,13 +488,21 @@ func unmarshalInput(call message.ToolCallPart, dst any) error {
 	return nil
 }
 
-// isPlanFileCall returns true when a Write or Edit tool call targets the plan
-// file for the current thread. These calls are allowed even in plan mode so the
-// agent can write its plan.
+// isPlanFileCall returns true when a Write, Edit, or apply_patch tool call
+// targets only the active plan file for the current thread. These calls are
+// allowed even in plan mode so the agent can write its plan.
 func (e *Executor) isPlanFileCall(toolCtx *thread.ToolContext, call message.ToolCallPart) bool {
-	if call.ToolName != "Write" && call.ToolName != "Edit" {
+	switch call.ToolName {
+	case "Write", "Edit":
+		return e.isPlanFileWriteCall(toolCtx, call)
+	case "apply_patch":
+		return e.isPlanFilePatchCall(toolCtx, call)
+	default:
 		return false
 	}
+}
+
+func (e *Executor) isPlanFileWriteCall(toolCtx *thread.ToolContext, call message.ToolCallPart) bool {
 	planFile := e.resolveActivePlanFile(toolCtx)
 
 	var input struct {
@@ -504,14 +512,43 @@ func (e *Executor) isPlanFileCall(toolCtx *thread.ToolContext, call message.Tool
 		return false
 	}
 	target := resolvePath(e.cwd, input.FilePath)
-	if !filepath.IsAbs(target) {
-		return false
-	}
-	absPlan, err := filepath.Abs(planFile)
+	return sameResolvedPath(target, planFile)
+}
+
+func (e *Executor) isPlanFilePatchCall(toolCtx *thread.ToolContext, call message.ToolCallPart) bool {
+	patchText, err := parseApplyPatchInput(call.Input)
 	if err != nil {
 		return false
 	}
-	return target == absPlan
+	ops, err := parseApplyPatch(patchText)
+	if err != nil {
+		return false
+	}
+	if len(ops) == 0 {
+		return false
+	}
+	planFile := e.resolveActivePlanFile(toolCtx)
+	for _, op := range ops {
+		if op.kind == patchDeleteFile || op.movePath != "" {
+			return false
+		}
+		if !sameResolvedPath(resolvePath(e.cwd, op.path), planFile) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameResolvedPath(targetPath, expectedPath string) bool {
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return false
+	}
+	absExpected, err := filepath.Abs(expectedPath)
+	if err != nil {
+		return false
+	}
+	return absTarget == absExpected
 }
 
 // resolvePath resolves a file path relative to cwd.

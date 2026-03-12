@@ -688,6 +688,10 @@ func handleModelsCommand(ctx context.Context, reg *providers.ProviderRegistry, c
 		return
 	}
 
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+
 	// Build a list of provider entries (use provider default) followed by individual models.
 	// Each entry has a selection ID (what gets stored in currentModel) and a display string.
 	type entry struct {
@@ -1352,7 +1356,7 @@ func renderChunk(chunk message.MessageChunk, md *markdownRenderer, tools *toolRe
 
 	case message.ToolOutputErrorChunk:
 		label := tools.labelFor(c.ToolCallID, "")
-		renderToolTail(label, true, c.ErrorText, "")
+		renderToolTail(label, true, c.ErrorText, toolErrorDetail(c.ErrorText))
 
 	case message.ToolApprovalRequestChunk:
 		// The turn will pause after the iterator ends; no action needed here.
@@ -1494,6 +1498,14 @@ func renderToolTail(label string, isError bool, text, detail string) {
 		fmt.Fprintf(os.Stderr, "    %s\n", line)
 	}
 	fmt.Fprintln(os.Stderr, styleToolDivider())
+}
+
+func toolErrorDetail(text string) string {
+	text = strings.TrimSpace(normalizeNewlines(text))
+	if text == "" {
+		return ""
+	}
+	return "tool output:\n" + text
 }
 
 func toolOutputDetail(toolName string, input json.RawMessage) string {

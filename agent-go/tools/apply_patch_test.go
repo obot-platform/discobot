@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -76,6 +77,27 @@ func TestApplyPatch_RawInput(t *testing.T) {
 	}
 	if string(data) != "hello\n" {
 		t.Fatalf("unexpected raw file content: %q", string(data))
+	}
+}
+
+func TestApplyPatch_JSONStringInput(t *testing.T) {
+	cwd := t.TempDir()
+	e := New(cwd, t.TempDir(), t.Name())
+	patch := "*** Begin Patch\n*** Add File: quoted.txt\n+hello\n*** End Patch"
+
+	out, ok := runApplyPatchRaw(t, e, strconv.Quote(patch))
+	if !ok {
+		t.Fatalf("unexpected error: %q", out)
+	}
+	if !strings.Contains(out, "A quoted.txt") {
+		t.Fatalf("expected add summary, got: %q", out)
+	}
+	data, err := os.ReadFile(filepath.Join(cwd, "quoted.txt"))
+	if err != nil {
+		t.Fatalf("failed reading quoted file: %v", err)
+	}
+	if string(data) != "hello\n" {
+		t.Fatalf("unexpected quoted file content: %q", string(data))
 	}
 }
 

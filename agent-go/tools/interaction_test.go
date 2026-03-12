@@ -146,3 +146,111 @@ func TestExecuteExitPlanMode_RequiresApprovalWhenPromptRequestPlan(t *testing.T)
 		t.Fatalf("expected Plan approval header, got %v", questions[0]["header"])
 	}
 }
+
+func TestExecutePlanModeApplyPatch_AllowsPlanFileOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	e := New(t.TempDir(), dataDir, "thread-1")
+	planFile := filepath.Join(dataDir, "plans", "thread-1", "plan.md")
+	toolCtx := &thread.ToolContext{
+		ThreadID:     "thread-1",
+		PlanMode:     true,
+		PlanFilePath: planFile,
+	}
+
+	patch := "*** Begin Patch\n*** Add File: " + planFile + "\n+## Plan\n*** End Patch"
+	raw, err := json.Marshal(map[string]any{"input": patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := e.Execute(context.Background(), toolCtx, message.ToolCallPart{
+		ToolCallID: "tc-plan-patch",
+		ToolName:   "apply_patch",
+		Input:      string(raw),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	textOut, ok := result.Result.Output.(message.TextOutput)
+	if !ok {
+		t.Fatalf("expected TextOutput result, got %T", result.Result.Output)
+	}
+	if !strings.Contains(textOut.Value, "A "+planFile) {
+		t.Fatalf("expected apply_patch success output, got %q", textOut.Value)
+	}
+
+	data, err := os.ReadFile(planFile)
+	if err != nil {
+		t.Fatalf("failed to read plan file: %v", err)
+	}
+	if string(data) != "## Plan\n" {
+		t.Fatalf("unexpected plan file content: %q", string(data))
+	}
+}
+
+func TestExecutePlanModeApplyPatch_RejectsNonPlanFile(t *testing.T) {
+	dataDir := t.TempDir()
+	cwd := t.TempDir()
+	e := New(cwd, dataDir, "thread-1")
+	planFile := filepath.Join(dataDir, "plans", "thread-1", "plan.md")
+	toolCtx := &thread.ToolContext{
+		ThreadID:     "thread-1",
+		PlanMode:     true,
+		PlanFilePath: planFile,
+	}
+
+	patch := "*** Begin Patch\n*** Add File: other.md\n+## Not the plan\n*** End Patch"
+	raw, err := json.Marshal(map[string]any{"input": patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := e.Execute(context.Background(), toolCtx, message.ToolCallPart{
+		ToolCallID: "tc-other-patch",
+		ToolName:   "apply_patch",
+		Input:      string(raw),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	errOut, ok := result.Result.Output.(message.ErrorTextOutput)
+	if !ok {
+		t.Fatalf("expected ErrorTextOutput result, got %T", result.Result.Output)
+	}
+	if !strings.Contains(errOut.Value, "Write, Edit, or apply_patch") {
+		t.Fatalf("expected updated plan-mode guidance, got %q", errOut.Value)
+	}
+	if !strings.Contains(errOut.Value, planFile) {
+		t.Fatalf("expected plan file path in guidance, got %q", errOut.Value)
+	}
+}
+
+func TestExecutePlanModeBlockedToolMessageMentionsApplyPatch(t *testing.T) {
+	dataDir := t.TempDir()
+	e := New(t.TempDir(), dataDir, "thread-1")
+	planFile := filepath.Join(dataDir, "plans", "thread-1", "plan.md")
+	toolCtx := &thread.ToolContext{
+		ThreadID:     "thread-1",
+		PlanMode:     true,
+		PlanFilePath: planFile,
+	}
+
+	result, err := e.Execute(context.Background(), toolCtx, message.ToolCallPart{
+		ToolCallID: "tc-bash",
+		ToolName:   "Bash",
+		Input:      "{}",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	errOut, ok := result.Result.Output.(message.ErrorTextOutput)
+	if !ok {
+		t.Fatalf("expected ErrorTextOutput result, got %T", result.Result.Output)
+	}
+	if !strings.Contains(errOut.Value, "Write, Edit, and apply_patch are allowed for the plan file") {
+		t.Fatalf("expected apply_patch in plan-mode guidance, got %q", errOut.Value)
+	}
+}

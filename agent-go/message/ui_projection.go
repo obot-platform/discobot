@@ -215,7 +215,7 @@ func convertAssistantToolPairToUI(ass Message, toolMsg *Message) ([]UIPart, erro
 				Type:             "dynamic-tool",
 				ToolName:         v.ToolName,
 				ToolCallID:       v.ToolCallID,
-				Input:            json.RawMessage(v.Input),
+				Input:            toolInputJSONValue(v.Input),
 				ProviderExecuted: v.ProviderExecuted,
 				State:            "input-available",
 			}

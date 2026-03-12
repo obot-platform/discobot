@@ -105,6 +105,45 @@ func TestPartRoundTrip_ToolCall(t *testing.T) {
 	})
 }
 
+func TestPartRoundTrip_ToolCallRawInput(t *testing.T) {
+	patch := "*** Begin Patch\n*** End Patch"
+
+	data, err := MarshalPart(ToolCallPart{
+		ToolCallID: "tc1",
+		ToolName:   "apply_patch",
+		Input:      patch,
+	})
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var raw struct {
+		Input     json.RawMessage `json:"input"`
+		InputText string          `json:"inputText"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal raw data: %v", err)
+	}
+	if raw.InputText != patch {
+		t.Fatalf("InputText: got %q, want %q", raw.InputText, patch)
+	}
+	if len(raw.Input) != 0 {
+		t.Fatalf("expected raw JSON input to be omitted, got %s", raw.Input)
+	}
+
+	part, err := UnmarshalPart(data)
+	if err != nil {
+		t.Fatalf("unmarshal part: %v", err)
+	}
+	toolCall, ok := part.(ToolCallPart)
+	if !ok {
+		t.Fatalf("got %T, want ToolCallPart", part)
+	}
+	if toolCall.Input != patch {
+		t.Fatalf("Input: got %q, want %q", toolCall.Input, patch)
+	}
+}
+
 func TestPartRoundTrip_ToolResult(t *testing.T) {
 	partRoundTrip(t, "ToolResultPart/text", ToolResultPart{
 		ToolCallID: "tc1",

@@ -116,6 +116,48 @@ func TestProjectUIMessages_AssistantToolPair(t *testing.T) {
 	}
 }
 
+func TestProjectUIMessages_RawToolInput(t *testing.T) {
+	patch := "*** Begin Patch\n*** End Patch"
+	msgs := []Message{{
+		ID:   "m1",
+		Role: "assistant",
+		Parts: []Part{
+			ToolCallPart{ToolCallID: "tc1", ToolName: "apply_patch", Input: patch},
+		},
+	}}
+
+	result, err := ProjectUIMessages(msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ui struct {
+		Parts []json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal(result[0], &ui); err != nil {
+		t.Fatalf("unmarshal ui message: %v", err)
+	}
+	if len(ui.Parts) != 1 {
+		t.Fatalf("parts: got %d, want 1", len(ui.Parts))
+	}
+
+	var dp struct {
+		Input json.RawMessage `json:"input"`
+	}
+	if err := json.Unmarshal(ui.Parts[0], &dp); err != nil {
+		t.Fatalf("unmarshal dynamic tool: %v", err)
+	}
+	var got struct {
+		Raw string `json:"raw"`
+	}
+	if err := json.Unmarshal(dp.Input, &got); err != nil {
+		t.Fatalf("input should be wrapped in an object: %v", err)
+	}
+	if got.Raw != patch {
+		t.Fatalf("Input.raw: got %q, want %q", got.Raw, patch)
+	}
+}
+
 func TestProjectUIMessages_MultiStep(t *testing.T) {
 	// Two assistant+tool steps merged into one UIMessage.
 	msgs := []Message{

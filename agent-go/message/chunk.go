@@ -100,7 +100,7 @@ type ToolInputStartChunk struct {
 func (ToolInputStartChunk) chunkType() string { return "tool-input-start" }
 func (ToolInputStartChunk) providerChunk()    {}
 
-// ToolInputDeltaChunk streams a partial tool call input as a JSON text delta.
+// ToolInputDeltaChunk streams a partial tool call input as text.
 type ToolInputDeltaChunk struct {
 	ToolCallID     string `json:"toolCallId"`
 	InputTextDelta string `json:"inputTextDelta"`
@@ -127,7 +127,7 @@ func (ToolInputEndChunk) providerChunk()    {}
 type ToolCallChunk struct {
 	ToolCallID       string          `json:"toolCallId"`
 	ToolName         string          `json:"toolName"`
-	Input            string          `json:"input"` // Stringified JSON
+	Input            string          `json:"input"` // Raw tool input text (JSON or custom text)
 	ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
 	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`

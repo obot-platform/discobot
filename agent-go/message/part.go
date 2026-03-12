@@ -35,6 +35,35 @@ func MarshalProviderMetadata(meta DiscobotPartMetadata) json.RawMessage {
 	return data
 }
 
+func toolInputJSONValue(input string) json.RawMessage {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return json.RawMessage("null")
+	}
+	if json.Valid([]byte(trimmed)) {
+		switch trimmed[0] {
+		case '{', '[':
+			return json.RawMessage(trimmed)
+		}
+	}
+	data, err := json.Marshal(map[string]string{"raw": input})
+	if err != nil {
+		return json.RawMessage("null")
+	}
+	return json.RawMessage(data)
+}
+
+func persistedToolInputFields(input string) (json.RawMessage, string) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed != "" && json.Valid([]byte(trimmed)) {
+		return json.RawMessage(trimmed), ""
+	}
+	if input == "" {
+		return nil, ""
+	}
+	return nil, input
+}
+
 // TextPart is a text content part.
 type TextPart struct {
 	ID               string          `json:"id,omitempty"`
@@ -110,9 +139,9 @@ type FilePart struct {
 func (FilePart) partType() string { return "file" }
 
 // ToolCallPart is a tool call invocation (assistant messages).
-// Input holds the raw JSON string as accumulated from the provider stream.
-// It is stored as a plain string to avoid JSON-validity checks during message
-// marshaling; validity is enforced at tool-execution time.
+// Input holds the raw tool input text as accumulated from the provider.
+// Most tools use JSON text, but custom grammar tools (for example apply_patch)
+// may store non-JSON raw text.
 type ToolCallPart struct {
 	ToolCallID       string          `json:"toolCallId"`
 	ToolName         string          `json:"toolName"`
@@ -213,20 +242,13 @@ func MarshalPart(p Part) ([]byte, error) {
 			FilePart
 		}{"file", v})
 	case ToolCallPart:
-		// Marshal Input as a json.RawMessage so the wire format stays a JSON
-		// object. If the string isn't valid JSON (e.g. truncated stream), fall
-		// back to null — the error will surface at tool-execution time.
-		var inputRaw json.RawMessage
-		if trimmed := strings.TrimSpace(v.Input); trimmed != "" && json.Valid([]byte(trimmed)) {
-			inputRaw = json.RawMessage(trimmed)
-		} else {
-			inputRaw = json.RawMessage("null")
-		}
+		inputRaw, inputText := persistedToolInputFields(v.Input)
 		return json.Marshal(struct {
 			Type             string          `json:"type"`
 			ToolCallID       string          `json:"toolCallId"`
 			ToolName         string          `json:"toolName"`
-			Input            json.RawMessage `json:"input"`
+			Input            json.RawMessage `json:"input,omitempty"`
+			InputText        string          `json:"inputText,omitempty"`
 			ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 			ProviderOptions  json.RawMessage `json:"providerOptions,omitempty"`
 		}{
@@ -234,6 +256,7 @@ func MarshalPart(p Part) ([]byte, error) {
 			ToolCallID:       v.ToolCallID,
 			ToolName:         v.ToolName,
 			Input:            inputRaw,
+			InputText:        inputText,
 			ProviderExecuted: v.ProviderExecuted,
 			ProviderOptions:  v.ProviderOptions,
 		})
@@ -317,16 +340,21 @@ func UnmarshalPart(data []byte) (Part, error) {
 			ToolCallID       string          `json:"toolCallId"`
 			ToolName         string          `json:"toolName"`
 			Input            json.RawMessage `json:"input"`
+			InputText        string          `json:"inputText,omitempty"`
 			ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 			ProviderOptions  json.RawMessage `json:"providerOptions,omitempty"`
 		}
 		if err := json.Unmarshal(data, &raw); err != nil {
 			return nil, err
 		}
+		input := raw.InputText
+		if input == "" {
+			input = string(raw.Input)
+		}
 		return ToolCallPart{
 			ToolCallID:       raw.ToolCallID,
 			ToolName:         raw.ToolName,
-			Input:            string(raw.Input),
+			Input:            input,
 			ProviderExecuted: raw.ProviderExecuted,
 			ProviderOptions:  raw.ProviderOptions,
 		}, nil

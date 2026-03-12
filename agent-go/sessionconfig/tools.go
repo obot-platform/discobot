@@ -358,7 +358,8 @@ It is important to remember:
 
 - You must include a header with your intended action (Add/Delete/Update)
 - You must prefix new lines with + even when creating a new file
-- File references can only be relative, NEVER ABSOLUTE.`,
+- File references may be relative or absolute
+- In plan mode, apply_patch may only write to the active plan file.`,
 			InputSchema: mustJSON(map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
