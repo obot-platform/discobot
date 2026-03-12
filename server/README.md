@@ -129,7 +129,7 @@ go build -o discobot-server ./cmd/server
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/projects/{id}/chat` | Send chat message (SSE) |
+| POST | `/api/projects/{id}/chat` | Start chat request and return JSON metadata |
 
 ### Agents
 

@@ -160,7 +160,7 @@ func TestCreateSession_CreatesSandbox(t *testing.T) {
 	AssertStatus(t, resp, http.StatusOK)
 
 	// Get the session that was created
-	listResp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	listResp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer listResp.Body.Close()
 
 	var result struct {

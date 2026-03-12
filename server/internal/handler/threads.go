@@ -65,6 +65,27 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, result)
 }
 
+// ListThreadMessages returns messages for a specific thread by querying the sandbox.
+// GET /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/messages
+func (h *Handler) ListThreadMessages(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID := middleware.GetProjectID(ctx)
+	sessionID := chi.URLParam(r, "sessionId")
+	threadID := chi.URLParam(r, "threadId")
+	if threadID == "" {
+		h.Error(w, http.StatusBadRequest, "threadId is required")
+		return
+	}
+
+	messages, err := h.chatService.GetThreadMessages(ctx, projectID, sessionID, threadID)
+	if err != nil {
+		h.Error(w, threadErrorStatus(err), err.Error())
+		return
+	}
+
+	h.JSON(w, http.StatusOK, map[string]any{"messages": messages})
+}
+
 // CreateThread creates a thread in a session's sandbox.
 // POST /api/projects/{projectId}/sessions/{sessionId}/threads
 func (h *Handler) CreateThread(w http.ResponseWriter, r *http.Request) {

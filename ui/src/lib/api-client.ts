@@ -19,6 +19,7 @@ import type {
 	AuthProvider,
 	CancelChatResponse,
 	ChatMessage,
+	CreateThreadRequest,
 	CodexAuthorizeResponse,
 	CodexExchangeRequest,
 	CodexExchangeResponse,
@@ -42,6 +43,7 @@ import type {
 	HookOutputResponse,
 	HookRerunResponse,
 	HooksStatusResponse,
+	ListThreadsResponse,
 	ListServicesResponse,
 	ListSessionFilesResponse,
 	ModelsResponse,
@@ -61,13 +63,17 @@ import type {
 	SessionDiffFilesResponse,
 	SessionDiffResponse,
 	SessionSingleFileDiffResponse,
+	StartChatRequest,
+	StartChatResponse,
 	StartServiceResponse,
 	StopServiceResponse,
 	Suggestion,
 	SupportedAgentType,
 	SupportInfoResponse,
+	Thread,
 	SystemStatusResponse,
 	TerminalExecuteResponse,
+	UpdateThreadRequest,
 	UpdateSessionRequest,
 	UserPreference,
 	WorkspaceValidationResult,
@@ -193,10 +199,8 @@ class ApiClient {
 	}
 
 	// Sessions
-	async getSessions(workspaceId: string): Promise<{ sessions: Session[] }> {
-		return this.fetch<{ sessions: Session[] }>(
-			`/workspaces/${workspaceId}/sessions`,
-		);
+	async getSessions(): Promise<{ sessions: Session[] }> {
+		return this.fetch<{ sessions: Session[] }>("/sessions");
 	}
 
 	async getSession(id: string): Promise<Session> {
@@ -398,6 +402,22 @@ class ApiClient {
 		);
 	}
 
+	async getThreadMessages(
+		sessionId: string,
+		threadId: string,
+	): Promise<{ messages: ChatMessage[] }> {
+		return this.fetch<{ messages: ChatMessage[] }>(
+			`/sessions/${sessionId}/threads/${threadId}/messages`,
+		);
+	}
+
+	async startChat(data: StartChatRequest): Promise<StartChatResponse> {
+		return this.fetch<StartChatResponse>("/chat", {
+			method: "POST",
+			body: JSON.stringify(data),
+		});
+	}
+
 	/**
 	 * Get the URL for resuming an in-progress chat stream via SSE.
 	 * Returns SSE stream if completion is in progress, 204 No Content if not.
@@ -405,6 +425,12 @@ class ApiClient {
 	 */
 	getChatStreamUrl(sessionId: string): string {
 		return appendAuthToken(`${this.base}/chat/${sessionId}/stream`);
+	}
+
+	getThreadChatStreamUrl(sessionId: string, threadId: string): string {
+		return appendAuthToken(
+			`${this.base}/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/stream`,
+		);
 	}
 
 	/**
@@ -415,6 +441,18 @@ class ApiClient {
 		return this.fetch(`/chat/${sessionId}/cancel`, {
 			method: "POST",
 		});
+	}
+
+	async cancelThreadChat(
+		sessionId: string,
+		threadId: string,
+	): Promise<CancelChatResponse> {
+		return this.fetch(
+			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/cancel`,
+			{
+				method: "POST",
+			},
+		);
 	}
 
 	/**
@@ -432,6 +470,16 @@ class ApiClient {
 		);
 	}
 
+	async getThreadChatQuestion(
+		sessionId: string,
+		threadId: string,
+		questionId: string,
+	): Promise<PendingQuestionResponse> {
+		return this.fetch<PendingQuestionResponse>(
+			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/question/${encodeURIComponent(questionId)}`,
+		);
+	}
+
 	/**
 	 * Submit answers to a pending AskUserQuestion.
 	 * @param sessionId Session ID
@@ -446,6 +494,58 @@ class ApiClient {
 			{
 				method: "POST",
 				body: JSON.stringify({ answers: data.answers }),
+			},
+		);
+	}
+
+	async submitThreadChatAnswer(
+		sessionId: string,
+		threadId: string,
+		data: AnswerQuestionRequest,
+	): Promise<AnswerQuestionResponse> {
+		return this.fetch<AnswerQuestionResponse>(
+			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/answer/${encodeURIComponent(data.toolUseID)}`,
+			{
+				method: "POST",
+				body: JSON.stringify({ answers: data.answers }),
+			},
+		);
+	}
+
+	// Threads
+	async getThreads(sessionId: string): Promise<ListThreadsResponse> {
+		return this.fetch<ListThreadsResponse>(`/sessions/${sessionId}/threads`);
+	}
+
+	async createThread(
+		sessionId: string,
+		data: CreateThreadRequest,
+	): Promise<Thread> {
+		return this.fetch<Thread>(`/sessions/${sessionId}/threads`, {
+			method: "POST",
+			body: JSON.stringify(data),
+		});
+	}
+
+	async updateThread(
+		sessionId: string,
+		threadId: string,
+		data: UpdateThreadRequest,
+	): Promise<Thread> {
+		return this.fetch<Thread>(
+			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}`,
+			{
+				method: "PATCH",
+				body: JSON.stringify(data),
+			},
+		);
+	}
+
+	async deleteThread(sessionId: string, threadId: string): Promise<{ success: boolean }> {
+		return this.fetch<{ success: boolean }>(
+			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}`,
+			{
+				method: "DELETE",
 			},
 		);
 	}

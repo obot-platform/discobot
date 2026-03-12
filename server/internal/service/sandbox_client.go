@@ -113,11 +113,11 @@ func (c *SandboxChatClient) threadsURL() string {
 }
 
 // threadURL returns a URL under the agent-go thread-scoped route.
-// For example, threadURL("sess-123", "/chat") returns "http://sandbox/threads/sess-123/chat".
+// For example, threadURL("thread-123", "/chat") returns "http://sandbox/threads/thread-123/chat".
 // The HTTP client's transport routes the request to the correct sandbox container
 // based on the sessionID passed to getHTTPClient — the URL host is always "sandbox".
-func (c *SandboxChatClient) threadURL(sessionID, path string) string {
-	return c.threadsURL() + "/" + url.PathEscape(sessionID) + path
+func (c *SandboxChatClient) threadURL(threadID, path string) string {
+	return c.threadsURL() + "/" + url.PathEscape(threadID) + path
 }
 
 // isRetryableError checks if an error is a transient protocol error that should be retried.
@@ -190,13 +190,17 @@ func retryWithBackoff[T any](ctx context.Context, fn func() (T, int, error)) (T,
 	return zero, fmt.Errorf("max retry attempts exceeded")
 }
 
-// SSELine represents a raw SSE data line from the sandbox.
+// SSELine represents a raw SSE event from the sandbox.
 // The content is passed through without parsing - the sandbox
 // is expected to send data in AI SDK UIMessage Stream format.
 type SSELine struct {
-	// Data is the raw JSON payload (without "data: " prefix)
+	// ID is the optional SSE event id.
+	ID string
+	// Event is the optional SSE event name.
+	Event string
+	// Data is the raw JSON payload (without "data: " prefix).
 	Data string
-	// Done indicates this is the [DONE] signal
+	// Done indicates this is the terminal done event.
 	Done bool
 }
 
@@ -218,6 +222,9 @@ type RequestOptions struct {
 
 	// Mode is the permission mode: "plan" for planning mode, "" for default.
 	Mode string
+
+	// LastEventID forwards the client's SSE resume cursor when reconnecting.
+	LastEventID string
 }
 
 // applyRequestAuth sets Authorization and credentials headers on a request.
@@ -256,11 +263,8 @@ func (c *SandboxChatClient) applyRequestAuth(ctx context.Context, req *http.Requ
 	return nil
 }
 
-// SendMessages sends messages to the sandbox and returns a channel of raw SSE lines.
-// The sandbox is expected to respond with SSE events in AI SDK UIMessage Stream format.
-// Messages and responses are passed through without parsing.
-// Retries with exponential backoff on connection errors and 5xx responses.
-func (c *SandboxChatClient) SendMessages(ctx context.Context, sessionID string, messages json.RawMessage, model string, opts *RequestOptions) (<-chan SSELine, error) {
+// StartChat sends messages to the sandbox and returns the initial completion metadata.
+func (c *SandboxChatClient) StartChat(ctx context.Context, sessionID, threadID string, messages json.RawMessage, model string, opts *RequestOptions) (*sandboxapi.ChatStartedResponse, error) {
 	// Build the request body once - pass messages through as-is
 	reasoning := ""
 	mode := ""
@@ -279,17 +283,13 @@ func (c *SandboxChatClient) SendMessages(ctx context.Context, sessionID string, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Use retry logic to handle transient connection errors during container startup
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
 		client, err := c.getHTTPClient(ctx, sessionID)
 		if err != nil {
-			// Don't retry on sandbox not running - let caller handle reconciliation
 			return nil, 0, err
 		}
 
-		// Create the HTTP request (fresh each attempt since body reader is consumed)
-		// URL host is ignored - the client's transport handles routing to the sandbox
-		req, err := http.NewRequestWithContext(ctx, "POST", c.threadURL(sessionID, "/chat"), bytes.NewReader(bodyBytes))
+		req, err := http.NewRequestWithContext(ctx, "POST", c.threadURL(threadID, "/chat"), bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -299,29 +299,52 @@ func (c *SandboxChatClient) SendMessages(ctx context.Context, sessionID string, 
 			return nil, 0, err
 		}
 
-		// Send the request
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		// Return response with status code for retry logic
 		return resp, resp.StatusCode, nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
 		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	_ = resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sandbox response: %w", err)
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return &sandboxapi.ChatStartedResponse{Status: "started"}, nil
+	}
+
+	var started sandboxapi.ChatStartedResponse
+	if err := json.Unmarshal(body, &started); err != nil {
+		return nil, fmt.Errorf("failed to decode sandbox response: %w", err)
+	}
+	if started.Status == "" {
+		started.Status = "started"
+	}
+	return &started, nil
+}
+
+// SendMessages sends messages to the sandbox and returns a channel of raw SSE lines.
+// The sandbox is expected to respond with SSE events in AI SDK UIMessage Stream format.
+// Messages and responses are passed through without parsing.
+// Retries with exponential backoff on connection errors and 5xx responses.
+func (c *SandboxChatClient) SendMessages(ctx context.Context, sessionID, threadID string, messages json.RawMessage, model string, opts *RequestOptions) (<-chan SSELine, error) {
+	if _, err := c.StartChat(ctx, sessionID, threadID, messages, model, opts); err != nil {
+		return nil, err
+	}
 
 	// POST returns 202 Accepted - now GET the SSE stream
-	return c.GetStream(ctx, sessionID, opts, false)
+	return c.GetStream(ctx, sessionID, threadID, opts, false)
 }
 
 // GetStream connects to the sandbox's SSE stream for an in-progress completion.
@@ -330,7 +353,7 @@ func (c *SandboxChatClient) SendMessages(ctx context.Context, sessionID string, 
 // If replay is true, an inactive-but-existing completion is streamed rather than
 // returning a closed channel, allowing callers to replay the last turn.
 // Retries with exponential backoff on connection errors and 5xx responses.
-func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID string, opts *RequestOptions, replay bool) (<-chan SSELine, error) {
+func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID string, opts *RequestOptions, _ bool) (<-chan SSELine, error) {
 	// Use retry logic to handle transient connection errors during container startup
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
 		client, err := c.getHTTPClient(ctx, sessionID)
@@ -341,9 +364,13 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID string, opt
 		client.Timeout = 0 // SSE stream - no timeout
 
 		// URL host is ignored - the client's transport handles routing to the sandbox
-		req, err := http.NewRequestWithContext(ctx, "GET", c.threadURL(sessionID, "/chat/stream"), nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", c.threadURL(threadID, "/chat/stream"), nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Accept", "text/event-stream")
+		if opts != nil && opts.LastEventID != "" {
+			req.Header.Set("Last-Event-ID", opts.LastEventID)
 		}
 
 		if err := c.applyRequestAuth(ctx, req, sessionID, opts); err != nil {
@@ -375,15 +402,6 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID string, opt
 		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// X-Discobot-Completion-Active: false means a completion record exists but is no longer
-	// running. Unless replay is requested, treat this the same as no active stream.
-	if !replay && resp.Header.Get("X-Discobot-Completion-Active") == "false" {
-		_ = resp.Body.Close()
-		ch := make(chan SSELine)
-		close(ch)
-		return ch, nil
-	}
-
 	// Create channel for raw SSE lines
 	lineCh := make(chan SSELine, 100)
 
@@ -394,33 +412,62 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID string, opt
 
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+		current := SSELine{}
+		hasCurrent := false
+		emitCurrent := func() bool {
+			if !hasCurrent {
+				return true
+			}
+			if current.Event == "done" {
+				current.Done = true
+			}
+			if current.Data == "[DONE]" {
+				current.Event = "done"
+				current.Data = `{}`
+				current.Done = true
+			}
+			select {
+			case lineCh <- current:
+				current = SSELine{}
+				hasCurrent = false
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		for scanner.Scan() {
 			line := scanner.Text()
 
-			// Skip empty lines and comments
-			if line == "" || strings.HasPrefix(line, ":") {
+			if strings.HasPrefix(line, ":") {
+				continue
+			}
+			if line == "" {
+				if !emitCurrent() {
+					return
+				}
 				continue
 			}
 
-			// Pass through SSE data lines
-			if strings.HasPrefix(line, "data: ") {
+			hasCurrent = true
+			switch {
+			case strings.HasPrefix(line, "id: "):
+				current.ID = line[4:]
+			case strings.HasPrefix(line, "event: "):
+				current.Event = line[7:]
+			case strings.HasPrefix(line, "data: "):
 				data := line[6:]
-
-				// Check for [DONE] signal
-				if data == "[DONE]" {
-					select {
-					case lineCh <- SSELine{Done: true}:
-					case <-ctx.Done():
-					}
-					return
+				if current.Data == "" {
+					current.Data = data
+				} else {
+					current.Data += "\n" + data
 				}
-
-				// Pass through raw data without parsing
-				select {
-				case lineCh <- SSELine{Data: data}:
-				case <-ctx.Done():
-					return
-				}
+			}
+		}
+		if hasCurrent {
+			if !emitCurrent() {
+				return
 			}
 		}
 
@@ -445,10 +492,10 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID string, opt
 	return lineCh, nil
 }
 
-// GetMessages retrieves message history from the sandbox.
+// GetMessages retrieves message history for a thread from the sandbox.
 // The sandbox is expected to respond with an array of UIMessages.
 // Retries with exponential backoff on connection errors and 5xx responses.
-func (c *SandboxChatClient) GetMessages(ctx context.Context, sessionID string, opts *RequestOptions) ([]sandboxapi.UIMessage, error) {
+func (c *SandboxChatClient) GetMessages(ctx context.Context, sessionID, threadID string, opts *RequestOptions) ([]sandboxapi.UIMessage, error) {
 	// Use retry logic to handle transient connection errors during container startup
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
 		client, err := c.getHTTPClient(ctx, sessionID)
@@ -458,7 +505,7 @@ func (c *SandboxChatClient) GetMessages(ctx context.Context, sessionID string, o
 		}
 
 		// URL host is ignored - the client's transport handles routing to the sandbox
-		req, err := http.NewRequestWithContext(ctx, "GET", c.threadURL(sessionID, "/messages"), nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", c.threadURL(threadID, "/messages"), nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -749,14 +796,14 @@ func (c *SandboxChatClient) GetChatStatus(ctx context.Context, sessionID string)
 // CancelCompletion cancels an in-progress completion in the sandbox.
 // Returns ErrNoActiveCompletion if no completion is active (409 status).
 // Retries with exponential backoff on connection errors.
-func (c *SandboxChatClient) CancelCompletion(ctx context.Context, sessionID string) (*CancelCompletionResponse, error) {
+func (c *SandboxChatClient) CancelCompletion(ctx context.Context, sessionID, threadID string) (*CancelCompletionResponse, error) {
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
 		client, err := c.getHTTPClient(ctx, sessionID)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", c.threadURL(sessionID, "/chat/cancel"), nil)
+		req, err := http.NewRequestWithContext(ctx, "POST", c.threadURL(threadID, "/chat/cancel"), nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -799,14 +846,14 @@ func (c *SandboxChatClient) CancelCompletion(ctx context.Context, sessionID stri
 // ============================================================================
 
 // GetQuestion returns the pending AskUserQuestion for a specific question ID.
-func (c *SandboxChatClient) GetQuestion(ctx context.Context, sessionID string, toolUseID string) (*sandboxapi.PendingQuestionResponse, error) {
+func (c *SandboxChatClient) GetQuestion(ctx context.Context, sessionID, threadID string, toolUseID string) (*sandboxapi.PendingQuestionResponse, error) {
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
 		client, err := c.getHTTPClient(ctx, sessionID)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		url := c.threadURL(sessionID, "/chat/question/"+toolUseID)
+		url := c.threadURL(threadID, "/chat/question/"+toolUseID)
 
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
@@ -843,7 +890,7 @@ func (c *SandboxChatClient) GetQuestion(ctx context.Context, sessionID string, t
 }
 
 // AnswerQuestion submits the user's answer to a pending AskUserQuestion.
-func (c *SandboxChatClient) AnswerQuestion(ctx context.Context, sessionID string, req *sandboxapi.AnswerQuestionRequest) (*sandboxapi.AnswerQuestionResponse, error) {
+func (c *SandboxChatClient) AnswerQuestion(ctx context.Context, sessionID, threadID string, req *sandboxapi.AnswerQuestionRequest) (*sandboxapi.AnswerQuestionResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -855,7 +902,7 @@ func (c *SandboxChatClient) AnswerQuestion(ctx context.Context, sessionID string
 			return nil, 0, err
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.threadURL(sessionID, "/chat/answer/"+req.ToolUseID), bytes.NewReader(body))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.threadURL(threadID, "/chat/answer/"+req.ToolUseID), bytes.NewReader(body))
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}

@@ -6,15 +6,17 @@
 		validateAskUserQuestionInput,
 		validateAskUserQuestionOutput,
 	} from "$lib/components/ai/tool-schemas/askuserquestion-schema";
+	import { api } from "$lib/api-client";
 	import { getAppContextIfPresent } from "$lib/context/app-context.svelte";
 	import { getSessionContextIfPresent } from "$lib/context/session-context.svelte";
-	import { getApiBase } from "$lib/environment";
+	import { getThreadContextIfPresent } from "$lib/context/thread-context.svelte";
 	import AskUserQuestionWizard from "./AskUserQuestionWizard.svelte";
 	import type { ToolRendererComponentProps } from "./types";
 
 	let { toolPart }: ToolRendererComponentProps = $props();
 	const sessionContext = getSessionContextIfPresent();
 	const appContext = getAppContextIfPresent();
+	const threadContext = getThreadContextIfPresent();
 
 	type PendingQuestionLike = {
 		toolUseID: string;
@@ -57,8 +59,9 @@
 			toolPart.state === "approval-requested",
 	);
 	const activeSessionId = $derived.by(
-		() => sessionContext?.sessionId ?? appContext?.selectedSessionId ?? null,
+		() => sessionContext?.sessionId ?? appContext?.sessions.selectedId ?? null,
 	);
+	const activeThreadId = $derived.by(() => threadContext?.threadId ?? null);
 	const approvalId = $derived.by(() => getApprovalId());
 	const inputValidation = $derived.by(() =>
 		validateAskUserQuestionInput(toolPart.input),
@@ -95,17 +98,18 @@
 
 	async function fetchPendingQuestion(
 		sessionId: string,
+		threadId: string | null,
 		questionId: string,
 	): Promise<PendingQuestionResponse> {
-		const response = await fetch(
-			`${getApiBase()}/chat/${sessionId}/question/${encodeURIComponent(questionId)}`,
-		);
-
-		if (!response.ok) {
-			throw new Error(`Request failed with status ${response.status}`);
+		if (threadId && threadId !== sessionId) {
+			return (await api.getThreadChatQuestion(
+				sessionId,
+				threadId,
+				questionId,
+			)) as PendingQuestionResponse;
 		}
 
-		return (await response.json()) as PendingQuestionResponse;
+		return (await api.getChatQuestion(sessionId, questionId)) as PendingQuestionResponse;
 	}
 
 	$effect(() => {
@@ -138,7 +142,7 @@
 		pendingQuestion = null;
 
 		let cancelled = false;
-		void fetchPendingQuestion(activeSessionId, approvalId)
+		void fetchPendingQuestion(activeSessionId, activeThreadId, approvalId)
 			.then((result) => {
 				if (cancelled) {
 					return;
@@ -178,20 +182,16 @@
 		}
 
 		try {
-			const response = await fetch(
-				`${getApiBase()}/chat/${activeSessionId}/answer/${encodeURIComponent(toolUseID)}`,
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({ answers }),
-				},
-			);
-
-			if (!response.ok) {
-				const responseText = await response.text();
-				throw new Error(responseText || `Request failed with status ${response.status}`);
+			if (activeThreadId && activeThreadId !== activeSessionId) {
+				await api.submitThreadChatAnswer(activeSessionId, activeThreadId, {
+					toolUseID,
+					answers,
+				});
+			} else {
+				await api.submitChatAnswer(activeSessionId, {
+					toolUseID,
+					answers,
+				});
 			}
 
 			approvalStatus = "answered";

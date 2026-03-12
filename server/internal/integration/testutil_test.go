@@ -274,9 +274,6 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 				r.Put("/{workspaceId}", h.UpdateWorkspace)
 				r.Delete("/{workspaceId}", h.DeleteWorkspace)
 
-				// Sessions within workspace (list only - creation via /chat endpoint)
-				r.Get("/{workspaceId}/sessions", h.ListSessionsByWorkspace)
-
 				// Git operations
 				r.Get("/{workspaceId}/git/status", h.GetWorkspaceGitStatus)
 				r.Post("/{workspaceId}/git/fetch", h.FetchWorkspace)
@@ -292,6 +289,7 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 			})
 
 			r.Route("/sessions", func(r chi.Router) {
+				r.Get("/", h.ListSessions)
 				r.Route("/{sessionId}", func(r chi.Router) {
 					r.Use(middleware.SessionBelongsToProject(s))
 					r.Get("/", h.GetSession)
@@ -308,9 +306,15 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 					r.Get("/threads", h.ListThreads)
 					r.Post("/threads", h.CreateThread)
 					r.Get("/threads/{threadId}", h.GetThread)
+					r.Get("/threads/{threadId}/messages", h.ListThreadMessages)
 					r.Put("/threads/{threadId}", h.UpdateThread)
 					r.Patch("/threads/{threadId}", h.UpdateThread)
 					r.Delete("/threads/{threadId}", h.DeleteThread)
+					r.Post("/threads/{threadId}/chat", h.Chat)
+					r.Get("/threads/{threadId}/stream", h.ChatStream)
+					r.Post("/threads/{threadId}/cancel", h.ChatCancel)
+					r.Get("/threads/{threadId}/question/{questionId}", h.ChatQuestion)
+					r.Post("/threads/{threadId}/answer/{questionId}", h.ChatAnswer)
 					r.Get("/terminal/ws", h.TerminalWebSocket)
 					r.Get("/terminal/history", h.GetTerminalHistory)
 					r.Get("/terminal/status", h.GetTerminalStatus)

@@ -131,8 +131,10 @@ func TestSandboxChatClient_SendMessages_Returns202ThenStreams(t *testing.T) {
 			// Return SSE stream
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("event: chunk\n"))
 			w.Write([]byte("data: {\"type\":\"text\"}\n\n"))
-			w.Write([]byte("data: [DONE]\n\n"))
+			w.Write([]byte("event: done\n"))
+			w.Write([]byte("data: {}\n\n"))
 			return
 		}
 
@@ -149,7 +151,7 @@ func TestSandboxChatClient_SendMessages_Returns202ThenStreams(t *testing.T) {
 	defer cancel()
 
 	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
-	ch, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	ch, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err != nil {
 		t.Fatalf("SendMessages failed: %v", err)
 	}
@@ -180,6 +182,40 @@ func TestSandboxChatClient_SendMessages_Returns202ThenStreams(t *testing.T) {
 	}
 }
 
+func TestSandboxChatClient_StartChat_UsesProvidedThreadID(t *testing.T) {
+	var requestedPath string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/chat") {
+			requestedPath = r.URL.Path
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(map[string]string{
+				"completionId": "test-123",
+				"status":       "started",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
+	_, err := client.StartChat(ctx, "test-session", "thread-custom", messages, "", nil)
+	if err != nil {
+		t.Fatalf("StartChat failed: %v", err)
+	}
+
+	if requestedPath != "/threads/thread-custom/chat" {
+		t.Fatalf("expected thread-specific path %q, got %q", "/threads/thread-custom/chat", requestedPath)
+	}
+}
+
 func TestSandboxChatClient_SendMessages_Non202Error(t *testing.T) {
 	// Create handler that returns 400 Bad Request
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +237,7 @@ func TestSandboxChatClient_SendMessages_Non202Error(t *testing.T) {
 	defer cancel()
 
 	messages := json.RawMessage(`[]`)
-	_, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	_, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err == nil {
 		t.Fatal("Expected error for 400 response")
 	}
@@ -234,7 +270,7 @@ func TestSandboxChatClient_SendMessages_409Conflict(t *testing.T) {
 	defer cancel()
 
 	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
-	_, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	_, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err == nil {
 		t.Fatal("Expected error for 409 response")
 	}
@@ -261,7 +297,7 @@ func TestSandboxChatClient_GetStream_NoContent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -295,7 +331,7 @@ func TestSandboxChatClient_GetStream_CompletionInactive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -307,6 +343,59 @@ func TestSandboxChatClient_GetStream_CompletionInactive(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("Expected 0 events for inactive completion, got %d", count)
+	}
+}
+
+func TestSandboxChatClient_GetStream_PreservesEventAndID(t *testing.T) {
+	var receivedLastEventID string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/chat/stream") {
+			receivedLastEventID = r.Header.Get("Last-Event-ID")
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("event: history-start\n"))
+			_, _ = w.Write([]byte("data: {}\n\n"))
+			_, _ = w.Write([]byte("id: completion-1:0\n"))
+			_, _ = w.Write([]byte("event: history-message\n"))
+			_, _ = w.Write([]byte("data: {\"id\":\"msg-1\"}\n\n"))
+			_, _ = w.Write([]byte("event: done\n"))
+			_, _ = w.Write([]byte("data: {}\n\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ch, err := client.GetStream(ctx, "test-session", "test-session", &RequestOptions{LastEventID: "completion-1:0"}, false)
+	if err != nil {
+		t.Fatalf("GetStream failed: %v", err)
+	}
+
+	var events []SSELine
+	for line := range ch {
+		events = append(events, line)
+	}
+
+	if receivedLastEventID != "completion-1:0" {
+		t.Fatalf("expected Last-Event-ID to be forwarded, got %q", receivedLastEventID)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 SSE events, got %d", len(events))
+	}
+	if events[0].Event != "history-start" || events[0].Data != "{}" {
+		t.Fatalf("unexpected history-start event: %+v", events[0])
+	}
+	if events[1].ID != "completion-1:0" || events[1].Event != "history-message" || events[1].Data != `{"id":"msg-1"}` {
+		t.Fatalf("unexpected message event: %+v", events[1])
+	}
+	if events[2].Event != "done" || !events[2].Done {
+		t.Fatalf("expected final DONE event, got %+v", events[2])
 	}
 }
 
@@ -329,7 +418,7 @@ func TestSandboxChatClient_GetStream_AllowsLargeSSEDataLine(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -367,7 +456,7 @@ func TestSandboxChatClient_GetStream_ScannerErrorEmitsErrorEvent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -439,7 +528,7 @@ func TestSandboxChatClient_SendMessages_WithCredentials(t *testing.T) {
 	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
 
 	// Credentials are automatically fetched by the client
-	ch, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	ch, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err != nil {
 		t.Fatalf("SendMessages failed: %v", err)
 	}
@@ -486,7 +575,7 @@ func TestSandboxChatClient_SendMessages_WithAuthorization(t *testing.T) {
 	defer cancel()
 
 	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
-	ch, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	ch, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err != nil {
 		t.Fatalf("SendMessages failed: %v", err)
 	}
@@ -520,7 +609,7 @@ func TestSandboxChatClient_SendMessages_RetriesOnEOF(t *testing.T) {
 	defer cancel()
 
 	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
-	ch, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	ch, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err != nil {
 		t.Fatalf("SendMessages failed: %v", err)
 	}
@@ -689,7 +778,7 @@ func TestSandboxChatClient_SendMessages_WithGitConfig(t *testing.T) {
 
 	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
 
-	ch, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	ch, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err != nil {
 		t.Fatalf("SendMessages failed: %v", err)
 	}
@@ -740,7 +829,7 @@ func TestSandboxChatClient_SendMessages_WithPartialGitConfig(t *testing.T) {
 
 	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
 
-	ch, err := client.SendMessages(ctx, "test-session", messages, "", nil)
+	ch, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
 	if err != nil {
 		t.Fatalf("SendMessages failed: %v", err)
 	}
@@ -886,7 +975,7 @@ func TestSandboxChatClient_GetQuestion_PreservesQuestionNotes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	result, err := client.GetQuestion(ctx, "test-session", "tool-123")
+	result, err := client.GetQuestion(ctx, "test-session", "test-session", "tool-123")
 	if err != nil {
 		t.Fatalf("GetQuestion failed: %v", err)
 	}

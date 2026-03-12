@@ -20,14 +20,22 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	threadID := chi.URLParam(r, "id")
 	leafID := r.URL.Query().Get("leafId")
 
-	msgs, err := h.completions.MessagesJSON(threadID, leafID)
+	msgs, err := h.completions.Messages(threadID, leafID)
 	if err != nil {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if msgs == nil {
+		msgs = []json.RawMessage{}
+	}
+	data, err := json.Marshal(msgs)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, "failed to marshal messages: "+err.Error())
+		return
+	}
 
 	h.JSON(w, http.StatusOK, api.GetMessagesResponse{
-		Messages: msgs,
+		Messages: data,
 	})
 }
 
@@ -84,39 +92,42 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 }
 
 // ChatStream handles GET /threads/{id}/chat/stream — streams SSE events for a completion.
-// Returns 204 No Content only if no completion record exists at all.
-// If a completion exists (active or finished), responds with 200 and sets the
-// X-Discobot-Completion-Active header to "true" or "false" before any SSE data is written,
-// so callers can determine activity state from the initial response headers.
-//
-// Each SSE event carries an id of the form "{completionID}:{offset}" so that
-// clients can resume after a dropped connection by sending Last-Event-ID.
-// If the completion ID in Last-Event-ID does not match the current completion,
-// the stream restarts from offset 0 (a new completion is in progress).
+// Fresh requests (no Last-Event-ID, or an invalid one) replay the full persisted
+// UI message history first using named SSE events, then continue with any live
+// in-memory deltas. Valid Last-Event-ID reconnects keep the existing resume-only
+// behavior. The SSE protocol is explicit:
+//   - history-start / history-message / history-end for replayed UIMessage values
+//   - chunk for UIMessageChunk deltas
+//   - done for stream completion
 func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	threadID := chi.URLParam(r, "id")
 
-	// Return 204 only if there is no completion record at all.
 	snapshot := h.completions.PollChunks(threadID, 0)
-	if snapshot == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
+	freshRequest := false
+	offset := 0
+	if lastEventID := r.Header.Get("Last-Event-ID"); lastEventID != "" {
+		if id, n, ok := parseSSEEventID(lastEventID); ok && snapshot != nil && id == snapshot.CompletionID {
+			freshRequest = false
+			offset = n + 1
+		} else {
+			freshRequest = true
+			offset = 0
+		}
+	} else {
+		freshRequest = true
+		offset = 0
 	}
 
-	// Determine starting offset: Last-Event-ID takes precedence (reconnection),
-	// then the offset query param, then 0.
-	offset := 0
-	if v, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil {
-		offset = v
-	}
-	if lastEventID := r.Header.Get("Last-Event-ID"); lastEventID != "" {
-		if id, n, ok := parseSSEEventID(lastEventID); ok {
-			if id == snapshot.CompletionID {
-				// Same completion — resume after the last received chunk.
-				offset = n + 1
-			}
-			// Different completion ID: a new completion is running; stream from
-			// the beginning (or the query-param offset, already set above).
+	var historyMessages []json.RawMessage
+	if freshRequest {
+		var err error
+		historyMessages, err = h.completions.Messages(threadID, "")
+		if err != nil {
+			h.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if historyMessages == nil {
+			historyMessages = []json.RawMessage{}
 		}
 	}
 
@@ -126,9 +137,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set X-Discobot-Completion-Active before WriteHeader so callers can read it from
-	// the initial response before any SSE data arrives.
-	isActive := !snapshot.Done
+	isActive := snapshot != nil && !snapshot.Done
 	w.Header().Set("X-Discobot-Completion-Active", strconv.FormatBool(isActive))
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -136,11 +145,40 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
+	if freshRequest {
+		writeSSEEvent(w, "", "history-start", json.RawMessage(`{}`))
+		flusher.Flush()
+		for _, msg := range historyMessages {
+			writeSSEEvent(w, "", "history-message", msg)
+			flusher.Flush()
+		}
+
+		if snapshot != nil && !snapshot.Done {
+			for index, chunk := range snapshot.Chunks {
+				data, err := message.MarshalChunk(chunk)
+				if err != nil {
+					continue
+				}
+				writeSSEEvent(w, fmt.Sprintf("%s:%d", snapshot.CompletionID, index), "chunk", data)
+				flusher.Flush()
+				offset = index + 1
+			}
+		}
+
+		writeSSEEvent(w, "", "history-end", json.RawMessage(`{}`))
+		flusher.Flush()
+
+		if snapshot == nil || snapshot.Done {
+			writeSSEEvent(w, "", "done", json.RawMessage(`{}`))
+			flusher.Flush()
+			return
+		}
+	}
+
 	for {
 		result := h.completions.WaitChunks(r.Context(), threadID, offset)
 		if result == nil {
-			// Completion was cleaned up — signal done to the client.
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			writeSSEEvent(w, "", "done", json.RawMessage(`{}`))
 			flusher.Flush()
 			return
 		}
@@ -151,14 +189,13 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 				offset++
 				continue
 			}
-			fmt.Fprintf(w, "id: %s:%d\n", result.CompletionID, offset)
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, offset), "chunk", data)
 			flusher.Flush()
 			offset++
 		}
 
 		if result.Done {
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			writeSSEEvent(w, "", "done", json.RawMessage(`{}`))
 			flusher.Flush()
 			return
 		}
@@ -167,6 +204,16 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func writeSSEEvent(w http.ResponseWriter, id, event string, data []byte) {
+	if id != "" {
+		fmt.Fprintf(w, "id: %s\n", id)
+	}
+	if event != "" {
+		fmt.Fprintf(w, "event: %s\n", event)
+	}
+	fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
 // parseSSEEventID parses a "{completionID}:{offset}" SSE event ID.

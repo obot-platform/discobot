@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/obot-platform/discobot/server/internal/middleware"
 	"github.com/obot-platform/discobot/server/internal/model"
@@ -21,9 +21,14 @@ import (
 // The Messages field is kept as raw JSON to pass through to the sandbox
 // without requiring the Go server to understand the UIMessage structure.
 type ChatRequest struct {
-	// ID is the chat/session ID (AI SDK sends this as "id")
+	// ID is the legacy chat/session ID field used by current clients.
 	ID string `json:"id"`
-	// Messages is the raw UIMessage array - passed through to sandbox as-is
+	// SessionID is the preferred explicit session identifier.
+	SessionID string `json:"sessionId,omitempty"`
+	// ThreadID is optional. When omitted, the session ID is used.
+	ThreadID string `json:"threadId,omitempty"`
+	// Messages is optional for create-only requests. When omitted, null, or [], the
+	// handler creates/validates the session and returns an immediate empty SSE completion.
 	Messages json.RawMessage `json:"messages"`
 	// Trigger indicates the type of request: "submit-message" or "regenerate-message"
 	Trigger string `json:"trigger,omitempty"`
@@ -42,10 +47,17 @@ type ChatRequest struct {
 	Mode string `json:"mode,omitempty"`
 }
 
-// Chat handles AI chat streaming.
+type ChatResponse struct {
+	WorkspaceID string `json:"workspaceId"`
+	SessionID   string `json:"sessionId"`
+	ThreadID    string `json:"threadId"`
+	MessageID   string `json:"messageId,omitempty"`
+}
+
+// Chat handles AI chat initiation.
 // POST /api/chat
 // Request body: { id, messages, workspaceId?, agentId?, trigger?, messageId? }
-// Response: SSE stream with AI SDK UI message protocol
+// Response: JSON metadata for the initiated chat request
 func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
@@ -57,19 +69,19 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate messages is provided and not empty
-	if len(req.Messages) == 0 || string(req.Messages) == "null" {
-		h.Error(w, http.StatusBadRequest, "messages array required")
-		return
-	}
+	emptySubmission := isEmptyChatMessages(req.Messages)
 
-	// id (chat ID) is required - client generates IDs
-	if req.ID == "" {
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = req.ID
+	}
+	threadID := resolveChatThreadID(sessionID, req.ThreadID)
+
+	// session ID is required - client generates IDs
+	if sessionID == "" {
 		h.Error(w, http.StatusBadRequest, "id is required")
 		return
 	}
-	sessionID := req.ID
-
 	// Check if session exists
 	existingSession, err := h.chatService.GetSessionByID(ctx, sessionID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -77,6 +89,8 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusInternalServerError, "failed to look up session")
 		return
 	}
+
+	sessionWorkspaceID := ""
 
 	if existingSession != nil {
 		// Session exists - validate it belongs to this project
@@ -89,11 +103,12 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 			h.Error(w, http.StatusForbidden, err.Error())
 			return
 		}
-		// Block chat during commit states
-		if existingSession.CommitStatus == "pending" || existingSession.CommitStatus == "committing" {
+		// Block chat during commit states for real prompt submissions.
+		if !emptySubmission && (existingSession.CommitStatus == "pending" || existingSession.CommitStatus == "committing") {
 			h.Error(w, http.StatusConflict, "Cannot send messages while session is committing")
 			return
 		}
+		sessionWorkspaceID = existingSession.WorkspaceID
 	} else {
 		// Session doesn't exist - create it
 		if req.AgentID == "" {
@@ -106,6 +121,7 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 			h.Error(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		sessionWorkspaceID = workspaceID
 
 		// NewSession validates that workspace and agent belong to project
 		_, err = h.chatService.NewSession(ctx, service.NewSessionRequest{
@@ -124,89 +140,30 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Set up SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
-	w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
+	response := ChatResponse{
+		WorkspaceID: sessionWorkspaceID,
+		SessionID:   sessionID,
+		ThreadID:    threadID,
+		MessageID:   extractSubmittedMessageID(req.Messages, req.MessageID),
+	}
 
-	// Create a context that won't be cancelled when the client disconnects.
-	// This ensures sandbox creation and message sending complete even if the
-	// client aborts the SSE request. The explicit cancel endpoint (/chat/{id}/cancel)
-	// is the only way to stop a running chat completion.
-	//
-	// We derive a cancellable child context (streamCtx) so that when the handler
-	// exits, we clean up the SSE reader goroutine via streamCancel().
-	sendCtx := context.WithoutCancel(ctx)
-	streamCtx, streamCancel := context.WithCancel(sendCtx)
-
-	// Send messages to sandbox and get raw SSE stream
-	// ChatService handles session state reconciliation (starting stopped containers, etc.)
-	// Pass the model and reasoning flag from the request
-	sseCh, err := h.chatService.SendToSandbox(streamCtx, projectID, sessionID, req.Messages, req.Model, req.Reasoning, req.Mode)
-	if err != nil {
-		streamCancel()
-		writeSSEErrorAndDone(w, err.Error())
+	if emptySubmission {
+		h.JSON(w, http.StatusOK, response)
 		return
 	}
 
-	// Track whether the completion finished naturally (DONE or channel closed).
-	// Only reset session status to "ready" when it actually finishes.
-	// If the client disconnects early, status stays "running" because
-	// the sandbox is still processing the completion.
-	completionDone := false
-	defer func() {
-		streamCancel()
-		if completionDone {
-			// Reset session status to ready after chat completion
-			// Use sendCtx (not request ctx) since the request may already be cancelled
-			if _, err := h.sessionService.UpdateStatus(sendCtx, projectID, sessionID, model.SessionStatusReady, nil); err != nil {
-				log.Printf("[Chat] Warning: failed to reset session %s status to ready: %v", sessionID, err)
-			}
-		} else {
-			log.Printf("[Chat] Client disconnected before completion finished for session %s, status remains running", sessionID)
+	// Use a context that won't be cancelled when the client disconnects.
+	// This ensures sandbox creation and message sending complete even if the
+	// client aborts the request. The explicit cancel endpoint (/chat/{id}/cancel)
+	// remains the way to stop a running chat completion.
+	sendCtx := context.WithoutCancel(ctx)
+	go func() {
+		if _, err := h.chatService.StartChat(sendCtx, projectID, sessionID, threadID, req.Messages, req.Model, req.Reasoning, req.Mode); err != nil {
+			log.Printf("[Chat] Failed to start chat for session %s: %v", sessionID, err)
 		}
 	}()
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		h.Error(w, http.StatusInternalServerError, "Streaming not supported")
-		return
-	}
-
-	// Pass through raw SSE lines from sandbox
-	for {
-		select {
-		case <-ctx.Done():
-			// Client disconnected
-			log.Printf("[Chat] Client disconnected, stopping SSE stream")
-			return
-		case line, ok := <-sseCh:
-			if !ok {
-				// Channel closed without explicit DONE
-				completionDone = true
-				_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
-				flusher.Flush()
-				return
-			}
-			if line.Done {
-				// Container sent [DONE] signal
-				completionDone = true
-				log.Printf("[Chat] Received [DONE] signal from sandbox")
-				_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
-				flusher.Flush()
-				return
-			}
-			// Log error events for debugging
-			if strings.Contains(line.Data, `"type":"error"`) {
-				log.Printf("[Chat] Passing through error event: %s", line.Data)
-			}
-			// Pass through raw data line without parsing
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", line.Data)
-			flusher.Flush()
-		}
-	}
+	h.JSON(w, http.StatusOK, response)
 }
 
 // ChatStream handles resuming an in-progress chat stream.
@@ -218,29 +175,16 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
-	sessionID := r.PathValue("sessionId")
-
-	if sessionID == "" {
-		h.Error(w, http.StatusBadRequest, "sessionId is required")
+	sessionID, threadID, existingSession, ok := h.resolveSessionAndThread(w, r, projectID, true)
+	if !ok {
 		return
 	}
 
 	replay := r.URL.Query().Get("replay") == "true"
-
-	// Validate session belongs to this project
-	existingSession, err := h.chatService.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		// No session = no stream
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if existingSession.ProjectID != projectID {
-		h.Error(w, http.StatusForbidden, "session does not belong to this project")
-		return
-	}
+	lastEventID := r.Header.Get("Last-Event-ID")
 
 	// Get the stream from sandbox
-	sseCh, err := h.chatService.GetStream(ctx, projectID, sessionID, replay)
+	sseCh, err := h.chatService.GetStream(ctx, projectID, sessionID, threadID, replay, lastEventID)
 	if err != nil {
 		// Sandbox unavailable or error - return 204 (no active stream)
 		log.Printf("[ChatStream] Error getting stream: %v", err)
@@ -288,19 +232,19 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send the first message if we consumed one during the check
+	// Send the first event if we consumed one during the check
 	if firstLine != nil {
 		if firstLine.Done {
-			log.Printf("[ChatStream] Received [DONE] signal from sandbox (first line)")
-			_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+			log.Printf("[ChatStream] Received done signal from sandbox (first line)")
+			writeStreamEvent(w, *firstLine)
 			flusher.Flush()
 			return
 		}
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", firstLine.Data)
+		writeStreamEvent(w, *firstLine)
 		flusher.Flush()
 	}
 
-	// Pass through remaining SSE lines from sandbox
+	// Pass through remaining SSE events from sandbox
 	for {
 		select {
 		case <-ctx.Done():
@@ -309,21 +253,31 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		case line, ok := <-sseCh:
 			if !ok {
-				// Channel closed without explicit DONE
-				_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+				// Channel closed without explicit done event.
+				writeStreamEvent(w, service.SSELine{Event: "done", Data: `{}`, Done: true})
 				flusher.Flush()
 				return
 			}
 			if line.Done {
-				log.Printf("[ChatStream] Received [DONE] signal from sandbox")
-				_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+				log.Printf("[ChatStream] Received done signal from sandbox")
+				writeStreamEvent(w, line)
 				flusher.Flush()
 				return
 			}
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", line.Data)
+			writeStreamEvent(w, line)
 			flusher.Flush()
 		}
 	}
+}
+
+func writeStreamEvent(w http.ResponseWriter, line service.SSELine) {
+	if line.ID != "" {
+		_, _ = fmt.Fprintf(w, "id: %s\n", line.ID)
+	}
+	if line.Event != "" {
+		_, _ = fmt.Fprintf(w, "event: %s\n", line.Event)
+	}
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", line.Data)
 }
 
 // ChatQuestion returns the current pending AskUserQuestion for a session.
@@ -333,16 +287,14 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ChatQuestion(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
-	sessionID := r.PathValue("sessionId")
-
-	if sessionID == "" {
-		h.Error(w, http.StatusBadRequest, "sessionId is required")
+	sessionID, threadID, _, ok := h.resolveSessionAndThread(w, r, projectID, false)
+	if !ok {
 		return
 	}
 
 	toolUseID := r.PathValue("questionId")
 
-	result, err := h.chatService.GetQuestion(ctx, projectID, sessionID, toolUseID)
+	result, err := h.chatService.GetQuestion(ctx, projectID, sessionID, threadID, toolUseID)
 	if err != nil {
 		log.Printf("[ChatQuestion] Error: %v", err)
 		h.Error(w, http.StatusInternalServerError, err.Error())
@@ -357,10 +309,8 @@ func (h *Handler) ChatQuestion(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ChatAnswer(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
-	sessionID := r.PathValue("sessionId")
-
-	if sessionID == "" {
-		h.Error(w, http.StatusBadRequest, "sessionId is required")
+	sessionID, threadID, _, ok := h.resolveSessionAndThread(w, r, projectID, false)
+	if !ok {
 		return
 	}
 
@@ -382,7 +332,7 @@ func (h *Handler) ChatAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.chatService.AnswerQuestion(ctx, projectID, sessionID, &req)
+	result, err := h.chatService.AnswerQuestion(ctx, projectID, sessionID, threadID, &req)
 	if err != nil {
 		if errors.Is(err, service.ErrNoActiveCompletion) {
 			h.Error(w, http.StatusNotFound, "no pending question for this toolUseID")
@@ -396,42 +346,18 @@ func (h *Handler) ChatAnswer(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, result)
 }
 
-// writeSSEError sends an error SSE event in UIMessage Stream format.
-// This is used for Go server-originated errors (not pass-through from sandbox).
-func writeSSEError(w http.ResponseWriter, errorText string) {
-	data := map[string]string{"type": "error", "errorText": errorText}
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return
-	}
-	_, _ = fmt.Fprintf(w, "data: %s\n\n", jsonData)
-}
-
 // ChatCancel handles cancelling an in-progress chat completion.
 // POST /api/projects/{projectId}/chat/{sessionId}/cancel
 func (h *Handler) ChatCancel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
-	sessionID := r.PathValue("sessionId")
-
-	if sessionID == "" {
-		h.Error(w, http.StatusBadRequest, "sessionId is required")
-		return
-	}
-
-	// Validate session belongs to this project
-	existingSession, err := h.chatService.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		h.Error(w, http.StatusNotFound, "session not found")
-		return
-	}
-	if existingSession.ProjectID != projectID {
-		h.Error(w, http.StatusForbidden, "session does not belong to this project")
+	sessionID, threadID, _, ok := h.resolveSessionAndThread(w, r, projectID, false)
+	if !ok {
 		return
 	}
 
 	// Cancel the completion
-	result, err := h.chatService.CancelCompletion(ctx, projectID, sessionID)
+	result, err := h.chatService.CancelCompletion(ctx, projectID, sessionID, threadID)
 	if err != nil {
 		if errors.Is(err, service.ErrNoActiveCompletion) {
 			h.Error(w, http.StatusConflict, "no active completion to cancel")
@@ -450,12 +376,66 @@ func (h *Handler) ChatCancel(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, result)
 }
 
-// writeSSEErrorAndDone sends an error SSE event followed by the [DONE] signal.
-// This ensures the AI SDK properly closes the stream after receiving the error.
-func writeSSEErrorAndDone(w http.ResponseWriter, errorText string) {
-	writeSSEError(w, errorText)
-	_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
+func resolveChatThreadID(sessionID, threadID string) string {
+	if threadID != "" {
+		return threadID
 	}
+	// TODO: Remove the sessionID fallback once clients migrate to explicit
+	// thread-scoped chat APIs under /sessions/{sessionId}/threads/{threadId}/...
+	return sessionID
+}
+
+func (h *Handler) resolveSessionAndThread(w http.ResponseWriter, r *http.Request, projectID string, noContentOnMissing bool) (sessionID, threadID string, session *model.Session, ok bool) {
+	ctx := r.Context()
+	sessionID = r.PathValue("sessionId")
+	if sessionID == "" {
+		h.Error(w, http.StatusBadRequest, "sessionId is required")
+		return "", "", nil, false
+	}
+
+	session, err := h.chatService.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		if noContentOnMissing {
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			h.Error(w, http.StatusNotFound, "session not found")
+		}
+		return "", "", nil, false
+	}
+	if session.ProjectID != projectID {
+		h.Error(w, http.StatusForbidden, "session does not belong to this project")
+		return "", "", nil, false
+	}
+
+	threadID = resolveChatThreadID(sessionID, r.PathValue("threadId"))
+	return sessionID, threadID, session, true
+}
+
+func extractSubmittedMessageID(messages json.RawMessage, fallback string) string {
+	if fallback != "" {
+		return fallback
+	}
+	if len(messages) == 0 {
+		return ""
+	}
+
+	var rawMessages []struct {
+		ID   string `json:"id"`
+		Role string `json:"role"`
+	}
+	if err := json.Unmarshal(messages, &rawMessages); err != nil {
+		return ""
+	}
+
+	for i := len(rawMessages) - 1; i >= 0; i-- {
+		if rawMessages[i].Role == "user" && rawMessages[i].ID != "" {
+			return rawMessages[i].ID
+		}
+	}
+	return ""
+}
+
+func isEmptyChatMessages(messages json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(messages)
+	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("[]"))
 }

@@ -10,6 +10,53 @@ import (
 	"time"
 )
 
+type chatSSEFrame struct {
+	Event string
+	Data  string
+}
+
+func readChatSSEFrames(body io.Reader) ([]chatSSEFrame, error) {
+	scanner := bufio.NewScanner(body)
+	frames := []chatSSEFrame{}
+	current := chatSSEFrame{}
+	hasCurrent := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if hasCurrent {
+				frames = append(frames, current)
+				current = chatSSEFrame{}
+				hasCurrent = false
+			}
+			continue
+		}
+
+		hasCurrent = true
+		switch {
+		case strings.HasPrefix(line, "event: "):
+			current.Event = strings.TrimPrefix(line, "event: ")
+		case strings.HasPrefix(line, "data: "):
+			data := strings.TrimPrefix(line, "data: ")
+			if current.Data == "" {
+				current.Data = data
+			} else {
+				current.Data += "\n" + data
+			}
+		}
+	}
+
+	if hasCurrent {
+		frames = append(frames, current)
+	}
+
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	return frames, nil
+}
+
 func TestChatStream_SessionNotFound(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -122,8 +169,8 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 	}
 
 	ts.MockSandbox.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only handle GET /chat for SSE streams
-		if r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/chat") {
+		// Only handle GET /chat/stream for SSE streams
+		if r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/chat/stream") {
 			http.NotFound(w, r)
 			return
 		}
@@ -137,14 +184,15 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 			// Write all messages immediately so they're available when
 			// the handler checks the channel
 			for _, msg := range messages {
+				_, _ = fmt.Fprintf(w, "event: chunk\n")
 				_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
 				if f, ok := w.(http.Flusher); ok {
 					f.Flush()
 				}
 			}
 
-			// Send DONE signal
-			_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+			_, _ = fmt.Fprintf(w, "event: done\n")
+			_, _ = fmt.Fprintf(w, "data: {}\n\n")
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -169,22 +217,15 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 		t.Errorf("Expected x-vercel-ai-ui-message-stream v1, got %s", stream)
 	}
 
-	// Read and verify all SSE messages
-	scanner := bufio.NewScanner(resp.Body)
-	receivedMessages := []string{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				break
-			}
-			receivedMessages = append(receivedMessages, data)
-		}
-	}
-
-	if err := scanner.Err(); err != nil && err != io.EOF {
+	frames, err := readChatSSEFrames(resp.Body)
+	if err != nil {
 		t.Fatalf("Error reading SSE stream: %v", err)
+	}
+	receivedMessages := []string{}
+	for _, frame := range frames {
+		if frame.Event == "chunk" {
+			receivedMessages = append(receivedMessages, frame.Data)
+		}
 	}
 
 	// Verify we received all messages including the first one
@@ -224,7 +265,7 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 
 	// Configure mock sandbox to send messages with delays
 	ts.MockSandbox.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/chat") {
+		if r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/chat/stream") {
 			http.NotFound(w, r)
 			return
 		}
@@ -235,6 +276,7 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 
 			// Send first message immediately
+			_, _ = fmt.Fprintf(w, "event: chunk\n")
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"type":"text","text":"Message 1"}`)
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
@@ -242,13 +284,14 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 
 			// Wait a bit before sending second message
 			time.Sleep(10 * time.Millisecond)
+			_, _ = fmt.Fprintf(w, "event: chunk\n")
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"type":"text","text":"Message 2"}`)
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
 
-			// Send DONE
-			_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+			_, _ = fmt.Fprintf(w, "event: done\n")
+			_, _ = fmt.Fprintf(w, "data: {}\n\n")
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -265,20 +308,20 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 	AssertStatus(t, resp, http.StatusOK)
 
 	// Read messages with a reasonable timeout
-	scanner := bufio.NewScanner(resp.Body)
 	receivedMessages := []string{}
 	done := make(chan struct{})
+	errCh := make(chan error, 1)
 
 	go func() {
 		defer close(done)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "data: ") {
-				data := strings.TrimPrefix(line, "data: ")
-				if data == "[DONE]" {
-					break
-				}
-				receivedMessages = append(receivedMessages, data)
+		frames, err := readChatSSEFrames(resp.Body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		for _, frame := range frames {
+			if frame.Event == "chunk" {
+				receivedMessages = append(receivedMessages, frame.Data)
 			}
 		}
 	}()
@@ -287,6 +330,11 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 	select {
 	case <-done:
 		// Success
+		select {
+		case err := <-errCh:
+			t.Fatalf("Error reading SSE stream: %v", err)
+		default:
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for stream messages")
 	}
@@ -315,7 +363,7 @@ func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 
 	// Configure mock sandbox to send only DONE signal
 	ts.MockSandbox.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/chat") {
+		if r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/chat/stream") {
 			http.NotFound(w, r)
 			return
 		}
@@ -325,8 +373,8 @@ func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 			w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 			w.WriteHeader(http.StatusOK)
 
-			// Send DONE immediately
-			_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+			_, _ = fmt.Fprintf(w, "event: done\n")
+			_, _ = fmt.Fprintf(w, "data: {}\n\n")
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -342,21 +390,20 @@ func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 
 	AssertStatus(t, resp, http.StatusOK)
 
-	// Read and verify we get DONE
-	scanner := bufio.NewScanner(resp.Body)
+	// Read and verify we get the done event
 	gotDone := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				gotDone = true
-				break
-			}
+	frames, err := readChatSSEFrames(resp.Body)
+	if err != nil {
+		t.Fatalf("Error reading SSE stream: %v", err)
+	}
+	for _, frame := range frames {
+		if frame.Event == "done" {
+			gotDone = true
+			break
 		}
 	}
 
 	if !gotDone {
-		t.Error("Expected to receive [DONE] signal")
+		t.Error("expected to receive done event")
 	}
 }

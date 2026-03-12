@@ -5,6 +5,7 @@ import type {
 	SessionStatus as SessionStatusConstants,
 	WorkspaceStatus as WorkspaceStatusConstants,
 } from "./api-constants";
+import type { UIMessage } from "ai";
 
 /** User preference key-value pair */
 export interface UserPreference {
@@ -549,6 +550,49 @@ export interface CancelChatResponse {
 	success: boolean;
 	completionId: string;
 	status: "cancelled";
+}
+
+export interface Thread {
+	id: string;
+	name: string;
+}
+
+export interface ListThreadsResponse {
+	threads: Thread[];
+}
+
+export interface CreateThreadRequest {
+	id: string;
+	name?: string;
+}
+
+export interface UpdateThreadRequest {
+	name: string;
+}
+
+export interface DeleteThreadResponse {
+	success: boolean;
+}
+
+export interface StartChatRequest {
+	id?: string;
+	sessionId: string;
+	threadId?: string;
+	messages: UIMessage[];
+	workspaceId?: string;
+	agentId?: string;
+	model?: string;
+	reasoning?: string;
+	mode?: string;
+	trigger?: string;
+	messageId?: string;
+}
+
+export interface StartChatResponse {
+	workspaceId: string;
+	sessionId: string;
+	threadId: string;
+	messageId?: string;
 }
 
 // ============================================================================

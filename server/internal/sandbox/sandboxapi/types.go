@@ -83,6 +83,12 @@ type ChatStatusResponse struct {
 	Error        *string `json:"error"`
 }
 
+// ChatStartedResponse is the POST /chat response.
+type ChatStartedResponse struct {
+	CompletionID string `json:"completionId,omitempty"`
+	Status       string `json:"status,omitempty"`
+}
+
 // ErrorResponse is returned for 4xx/5xx errors.
 type ErrorResponse struct {
 	Error string `json:"error"`

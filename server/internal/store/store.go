@@ -293,7 +293,15 @@ func (s *Store) GetSessionByID(ctx context.Context, id string) (*model.Session, 
 	return &session, nil
 }
 
+// ListSessionsByProject returns all sessions for a project.
+func (s *Store) ListSessionsByProject(ctx context.Context, projectID string) ([]*model.Session, error) {
+	var sessions []*model.Session
+	err := s.readDB.WithContext(ctx).Where("project_id = ?", projectID).Find(&sessions).Error
+	return sessions, err
+}
+
 // ListSessionsByWorkspace returns all sessions for a workspace.
+// Deprecated: prefer ListSessionsByProject for project-scoped session listing.
 func (s *Store) ListSessionsByWorkspace(ctx context.Context, workspaceID string) ([]*model.Session, error) {
 	var sessions []*model.Session
 	err := s.readDB.WithContext(ctx).Where("workspace_id = ?", workspaceID).Find(&sessions).Error

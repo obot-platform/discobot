@@ -12,15 +12,14 @@ import (
 	"time"
 )
 
-func TestListSessionsByWorkspace_Empty(t *testing.T) {
+func TestListSessionsByProject_Empty(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
-	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
 	client := ts.AuthenticatedClient(user)
 
-	resp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	resp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer resp.Body.Close()
 
 	AssertStatus(t, resp, http.StatusOK)
@@ -63,11 +62,23 @@ func TestCreateSession_ViaChat(t *testing.T) {
 	})
 	defer resp.Body.Close()
 
-	// Chat endpoint returns 200 with SSE stream
+	// Chat endpoint returns a normal JSON response.
 	AssertStatus(t, resp, http.StatusOK)
 
+	var chatResult map[string]interface{}
+	ParseJSON(t, resp, &chatResult)
+	if chatResult["sessionId"] != sessionID {
+		t.Fatalf("Expected sessionId %q, got %v", sessionID, chatResult["sessionId"])
+	}
+	if chatResult["threadId"] != sessionID {
+		t.Fatalf("Expected default threadId %q, got %v", sessionID, chatResult["threadId"])
+	}
+	if chatResult["workspaceId"] != workspace.ID {
+		t.Fatalf("Expected workspaceId %q, got %v", workspace.ID, chatResult["workspaceId"])
+	}
+
 	// Verify session was created by listing sessions
-	listResp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	listResp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer listResp.Body.Close()
 
 	var result struct {
@@ -83,6 +94,52 @@ func TestCreateSession_ViaChat(t *testing.T) {
 	// Session name is derived from the prompt
 	if result.Sessions[0]["name"] != "Create a new session" {
 		t.Errorf("Expected name derived from prompt, got '%v'", result.Sessions[0]["name"])
+	}
+}
+
+func TestCreateSession_ViaEmptyChat(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("test@example.com")
+	project := ts.CreateTestProject(user, "Test Project")
+	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
+	agent := ts.CreateTestAgent(project, "Test Agent", "claude-code")
+	client := ts.AuthenticatedClient(user)
+
+	sessionID := "test-session-id-empty-chat"
+	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
+		"id":          sessionID,
+		"messages":    []map[string]interface{}{},
+		"workspaceId": workspace.ID,
+		"agentId":     agent.ID,
+	})
+	defer resp.Body.Close()
+
+	AssertStatus(t, resp, http.StatusOK)
+
+	var chatResult map[string]interface{}
+	ParseJSON(t, resp, &chatResult)
+	if chatResult["sessionId"] != sessionID {
+		t.Fatalf("Expected sessionId %q, got %v", sessionID, chatResult["sessionId"])
+	}
+	if chatResult["threadId"] != sessionID {
+		t.Fatalf("Expected default threadId %q, got %v", sessionID, chatResult["threadId"])
+	}
+	if chatResult["workspaceId"] != workspace.ID {
+		t.Fatalf("Expected workspaceId %q, got %v", workspace.ID, chatResult["workspaceId"])
+	}
+	if chatResult["messageId"] != nil {
+		t.Fatalf("Expected empty messageId for empty chat submission, got %v", chatResult["messageId"])
+	}
+
+	sessionResp := client.Get("/api/projects/" + project.ID + "/sessions/" + sessionID)
+	defer sessionResp.Body.Close()
+	AssertStatus(t, sessionResp, http.StatusOK)
+
+	var sessionResult map[string]interface{}
+	ParseJSON(t, sessionResp, &sessionResult)
+	if sessionResult["name"] != "" {
+		t.Fatalf("expected empty session name for empty chat submission, got %v", sessionResult["name"])
 	}
 }
 
@@ -234,7 +291,7 @@ func TestCreateSession_ViaChatWithAgent(t *testing.T) {
 	AssertStatus(t, resp, http.StatusOK)
 
 	// Verify session was created with agent by listing sessions
-	listResp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	listResp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer listResp.Body.Close()
 
 	var result struct {
@@ -283,7 +340,7 @@ func TestCreateSession_NameFromLongPrompt(t *testing.T) {
 	AssertStatus(t, resp, http.StatusOK)
 
 	// Verify session name matches the full prompt
-	listResp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	listResp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer listResp.Body.Close()
 
 	var result struct {
@@ -381,7 +438,7 @@ func TestDeleteSession(t *testing.T) {
 	}
 }
 
-func TestListSessionsByWorkspace_WithData(t *testing.T) {
+func TestListSessionsByProject_WithData(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -392,7 +449,7 @@ func TestListSessionsByWorkspace_WithData(t *testing.T) {
 	ts.CreateTestSession(workspace, "Session 3")
 	client := ts.AuthenticatedClient(user)
 
-	resp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	resp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer resp.Body.Close()
 
 	AssertStatus(t, resp, http.StatusOK)
@@ -688,7 +745,7 @@ func TestListSessions_IncludesCommitStatus(t *testing.T) {
 	}
 
 	// List sessions and verify commit status is included
-	resp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	resp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer resp.Body.Close()
 
 	AssertStatus(t, resp, http.StatusOK)

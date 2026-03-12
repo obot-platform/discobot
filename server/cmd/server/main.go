@@ -778,17 +778,6 @@ func main() {
 					},
 				})
 
-				// Sessions within workspace
-				wsReg.Register(r, routes.Route{
-					Method: "GET", Pattern: "/{workspaceId}/sessions",
-					Handler: h.ListSessionsByWorkspace,
-					Meta: routes.Meta{
-						Group:       "Sessions",
-						Description: "List sessions",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					},
-				})
-
 				// Git operations
 				wsReg.Register(r, routes.Route{
 					Method: "GET", Pattern: "/{workspaceId}/git/status",
@@ -922,6 +911,16 @@ func main() {
 			// Sessions (direct access)
 			r.Route("/sessions", func(r chi.Router) {
 				sessReg := projReg.WithPrefix("/sessions")
+
+				sessReg.Register(r, routes.Route{
+					Method: "GET", Pattern: "/",
+					Handler: h.ListSessions,
+					Meta: routes.Meta{
+						Group:       "Sessions",
+						Description: "List sessions",
+						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
+					},
+				})
 
 				sessReg.Register(r, routes.Route{
 					Method: "POST", Pattern: "/",
@@ -1157,6 +1156,16 @@ func main() {
 					})
 
 					sidReg.Register(r, routes.Route{
+						Method: "GET", Pattern: "/threads/{threadId}/messages",
+						Handler: h.ListThreadMessages,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "List messages for a specific session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
 						Method: "PUT", Pattern: "/threads/{threadId}",
 						Handler: h.UpdateThread,
 						Meta: routes.Meta{
@@ -1185,6 +1194,57 @@ func main() {
 							Group:       "Threads",
 							Description: "Delete session thread",
 							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "POST", Pattern: "/threads/{threadId}/chat",
+						Handler: h.Chat,
+						Meta: routes.Meta{
+							Group:       "Chat",
+							Description: "Start chat for a specific session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+							Body:        map[string]any{"sessionId": "abc123", "threadId": "thread-1", "messages": []map[string]any{{"role": "user", "content": "Hello"}}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "GET", Pattern: "/threads/{threadId}/stream",
+						Handler: h.ChatStream,
+						Meta: routes.Meta{
+							Group:       "Chat",
+							Description: "Resume chat stream for a specific session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}, {Name: "replay", In: "query", Example: "true"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "POST", Pattern: "/threads/{threadId}/cancel",
+						Handler: h.ChatCancel,
+						Meta: routes.Meta{
+							Group:       "Chat",
+							Description: "Cancel chat completion for a specific session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "GET", Pattern: "/threads/{threadId}/question/{questionId}",
+						Handler: h.ChatQuestion,
+						Meta: routes.Meta{
+							Group:       "Chat",
+							Description: "Get pending AskUserQuestion for a specific session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}, {Name: "questionId", Example: "tool-use-id"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "POST", Pattern: "/threads/{threadId}/answer/{questionId}",
+						Handler: h.ChatAnswer,
+						Meta: routes.Meta{
+							Group:       "Chat",
+							Description: "Submit answers to a pending AskUserQuestion for a specific session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}, {Name: "questionId", Example: "tool-use-id"}},
 						},
 					})
 
@@ -1630,13 +1690,15 @@ func main() {
 				})
 			})
 
+			// TODO: Remove these legacy session-scoped chat routes after all clients
+			// migrate to the thread-scoped /sessions/{sessionId}/threads/{threadId}/... APIs.
 			// Chat endpoint
 			projReg.Register(r, routes.Route{
 				Method: "POST", Pattern: "/chat",
 				Handler: h.Chat,
 				Meta: routes.Meta{
 					Group:       "Chat",
-					Description: "AI Chat (streaming)",
+					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/chat instead",
 					Params:      []routes.Param{{Name: "projectId", Example: "local"}},
 					Body:        map[string]any{"messages": []map[string]any{{"role": "user", "content": "Hello"}}},
 				},
@@ -1648,7 +1710,7 @@ func main() {
 				Handler: h.ChatStream,
 				Meta: routes.Meta{
 					Group:       "Chat",
-					Description: "Resume in-progress chat stream (SSE)",
+					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/stream instead",
 					Params: []routes.Param{
 						{Name: "projectId", Example: "local"},
 						{Name: "sessionId", Example: "abc123"},
@@ -1663,7 +1725,7 @@ func main() {
 				Handler: h.ChatCancel,
 				Meta: routes.Meta{
 					Group:       "Chat",
-					Description: "Cancel in-progress chat completion",
+					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/cancel instead",
 					Params: []routes.Param{
 						{Name: "projectId", Example: "local"},
 						{Name: "sessionId", Example: "abc123"},
@@ -1677,7 +1739,7 @@ func main() {
 				Handler: h.ChatQuestion,
 				Meta: routes.Meta{
 					Group:       "Chat",
-					Description: "Get pending AskUserQuestion by ID",
+					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/question/{questionId} instead",
 					Params: []routes.Param{
 						{Name: "projectId", Example: "local"},
 						{Name: "sessionId", Example: "abc123"},
@@ -1692,7 +1754,7 @@ func main() {
 				Handler: h.ChatAnswer,
 				Meta: routes.Meta{
 					Group:       "Chat",
-					Description: "Submit answers to a pending AskUserQuestion",
+					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/answer/{questionId} instead",
 					Params: []routes.Param{
 						{Name: "projectId", Example: "local"},
 						{Name: "sessionId", Example: "abc123"},

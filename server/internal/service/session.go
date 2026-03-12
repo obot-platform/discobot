@@ -110,7 +110,22 @@ func NewSessionService(s *store.Store, gitSvc *GitService, sandboxProv sandbox.P
 	}
 }
 
+// ListSessionsByProject returns all sessions for a project.
+func (s *SessionService) ListSessionsByProject(ctx context.Context, projectID string) ([]*Session, error) {
+	dbSessions, err := s.store.ListSessionsByProject(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	sessions := make([]*Session, len(dbSessions))
+	for i, sess := range dbSessions {
+		sessions[i] = s.mapSession(sess)
+	}
+	return sessions, nil
+}
+
 // ListSessionsByWorkspace returns all sessions for a workspace.
+// Deprecated: prefer ListSessionsByProject for project-scoped session listing.
 func (s *SessionService) ListSessionsByWorkspace(ctx context.Context, workspaceID string) ([]*Session, error) {
 	dbSessions, err := s.store.ListSessionsByWorkspace(ctx, workspaceID)
 	if err != nil {
@@ -1119,7 +1134,7 @@ func (s *SessionService) sendCommitPrompt(ctx context.Context, projectID string,
 		modelID = *sess.Model
 	}
 
-	streamCh, err := client.SendMessages(ctx, messages, modelID, nil)
+	streamCh, err := client.SendMessages(ctx, sess.ID, messages, modelID, nil)
 	if err != nil {
 		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed to send commit message to agent: %v", err))
 		return nil
@@ -1170,7 +1185,7 @@ func (s *SessionService) sendRebasePrompt(ctx context.Context, projectID string,
 		modelID = *sess.Model
 	}
 
-	streamCh, err := client.SendMessages(ctx, messages, modelID, nil)
+	streamCh, err := client.SendMessages(ctx, sess.ID, messages, modelID, nil)
 	if err != nil {
 		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed to send rebase message to agent: %v", err))
 		return nil

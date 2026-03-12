@@ -42,6 +42,32 @@ func setupChatTestStore(t *testing.T) *store.Store {
 	return store.New(db, nil)
 }
 
+// seedWorkspaceAndAgent creates a workspace and agent in the store for testing.
+func seedWorkspaceAndAgent(t *testing.T, s *store.Store) {
+	t.Helper()
+	ctx := context.Background()
+
+	workspace := &model.Workspace{
+		ID:         "test-workspace",
+		ProjectID:  testProjectID,
+		Path:       "/workspace",
+		SourceType: "local",
+		Status:     "ready",
+	}
+	if err := s.CreateWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	agent := &model.Agent{
+		ID:        "test-agent",
+		ProjectID: testProjectID,
+		AgentType: "claude-code",
+	}
+	if err := s.CreateAgent(ctx, agent); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+}
+
 // seedSession creates a workspace and session in the store for testing.
 func seedSession(t *testing.T, s *store.Store, sessionID string) {
 	t.Helper()
@@ -143,25 +169,76 @@ func TestChat_GetSessionByID_UnexpectedError(t *testing.T) {
 	}
 }
 
+func TestChat_EmptyMessages_CreatesSessionWithoutSendingToSandbox(t *testing.T) {
+	s := setupChatTestStore(t)
+	provider := mocksandbox.NewProvider()
+	seedWorkspaceAndAgent(t, s)
+
+	getCalled := false
+	provider.GetFunc = func(_ context.Context, _ string) (*sandbox.Sandbox, error) {
+		getCalled = true
+		t.Fatalf("sandbox should not be contacted for empty chat submissions")
+		return nil, nil
+	}
+
+	h := newChatTestHandler(t, s, provider)
+
+	req := makeChatRequest(context.Background(), t, ChatRequest{
+		ID:          "session-empty-create",
+		Messages:    json.RawMessage(`[]`),
+		WorkspaceID: "test-workspace",
+		AgentID:     "test-agent",
+	})
+	w := httptest.NewRecorder()
+
+	h.Chat(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d; body: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+	var response ChatResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected JSON response, got error: %v; body: %s", err, w.Body.String())
+	}
+	if response.SessionID != "session-empty-create" {
+		t.Fatalf("expected session ID in response, got %q", response.SessionID)
+	}
+	if response.WorkspaceID != "test-workspace" {
+		t.Fatalf("expected workspace ID in response, got %q", response.WorkspaceID)
+	}
+	if response.ThreadID != "session-empty-create" {
+		t.Fatalf("expected default thread ID to match session ID, got %q", response.ThreadID)
+	}
+	if response.MessageID != "" {
+		t.Fatalf("expected empty message ID for empty submission, got %q", response.MessageID)
+	}
+	if getCalled {
+		t.Fatal("sandbox should not be contacted for empty chat submissions")
+	}
+
+	sess, err := s.GetSessionByID(context.Background(), "session-empty-create")
+	if err != nil {
+		t.Fatalf("expected session to be created: %v", err)
+	}
+	if sess.Name != "" {
+		t.Fatalf("expected empty session name, got %q", sess.Name)
+	}
+}
+
 // TestChat_ClientDisconnect_DoesNotCancelSandbox verifies that when a client
-// disconnects (cancels the request context) while the sandbox is being set up,
-// the sandbox operation still receives a non-cancelled context. This ensures
-// the chat request is always delivered to the sandbox; the only way to cancel
-// a chat is via the explicit cancel endpoint.
+// disconnects after chat initiation, the background sandbox request still uses
+// a non-cancelled context.
 func TestChat_ClientDisconnect_DoesNotCancelSandbox(t *testing.T) {
 	s := setupChatTestStore(t)
 	provider := mocksandbox.NewProvider()
 	sessionID := "session-ctx-test"
 
-	// Seed a session so we skip the NewSession path and go straight to SendToSandbox
 	seedSession(t, s, sessionID)
 
-	// Create the sandbox upfront so ensureSandboxReady's provider.Get will find it
 	ctx := context.Background()
-	workspacePath := "/workspace"
 	_, err := provider.Create(ctx, sessionID, sandbox.CreateOptions{
 		SharedSecret:  "test-secret",
-		WorkspacePath: workspacePath,
+		WorkspacePath: "/workspace",
 	})
 	if err != nil {
 		t.Fatalf("failed to create sandbox: %v", err)
@@ -170,44 +247,38 @@ func TestChat_ClientDisconnect_DoesNotCancelSandbox(t *testing.T) {
 		t.Fatalf("failed to start sandbox: %v", err)
 	}
 
-	// Track what happens inside provider.Get — this is the call that would fail
-	// if the request context cancellation leaked into the sandbox operations.
-	// We check the context state INSIDE the mock (not after handler exit, since
-	// the handler's defer calls streamCancel which would cancel it later).
 	var (
 		mu                  sync.Mutex
-		getCalled           = make(chan struct{}, 1)
-		proceedAfterGet     = make(chan struct{})
+		postCalled          = make(chan struct{}, 1)
+		proceedAfterPost    = make(chan struct{})
 		contextWasCancelled bool
 		contextChecked      bool
 	)
 
-	provider.GetFunc = func(ctx context.Context, id string) (*sandbox.Sandbox, error) {
-		// Signal that Get was called so the test can cancel the request context
-		select {
-		case getCalled <- struct{}{}:
-		default:
+	provider.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/chat") && r.Method == "POST" {
+			select {
+			case postCalled <- struct{}{}:
+			default:
+			}
+
+			<-proceedAfterPost
+
+			mu.Lock()
+			contextWasCancelled = r.Context().Err() != nil
+			contextChecked = true
+			mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"status":"started"}`))
+			return
 		}
-
-		// Block until the test tells us to proceed (after request context is cancelled)
-		<-proceedAfterGet
-
-		// Check context state NOW, while still inside the sandbox operation.
-		// After the handler exits, its defer will call streamCancel(), so we
-		// must capture the state here to test the right thing.
-		mu.Lock()
-		contextWasCancelled = ctx.Err() != nil
-		contextChecked = true
-		mu.Unlock()
-
-		// Return the sandbox
-		provider.GetFunc = nil // Reset so subsequent calls use default behavior
-		return provider.Get(ctx, id)
-	}
+		http.NotFound(w, r)
+	})
 
 	h := newChatTestHandler(t, s, provider)
 
-	// Create a cancellable request context (simulates client disconnect)
 	reqCtx, cancelReq := context.WithCancel(context.Background())
 	req := makeChatRequest(reqCtx, t, ChatRequest{
 		ID:       sessionID,
@@ -215,57 +286,39 @@ func TestChat_ClientDisconnect_DoesNotCancelSandbox(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	// Run the handler in a goroutine since it blocks
-	handlerDone := make(chan struct{})
-	go func() {
-		defer close(handlerDone)
-		h.Chat(w, req)
-	}()
+	h.Chat(w, req)
 
-	// Wait for provider.Get to be called (handler is now inside SendToSandbox)
 	select {
-	case <-getCalled:
+	case <-postCalled:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for provider.Get to be called")
+		t.Fatal("timed out waiting for sandbox POST /chat request")
 	}
 
-	// Cancel the request context — this simulates the client disconnecting
 	cancelReq()
-
-	// Give a moment for the cancellation to propagate
 	time.Sleep(10 * time.Millisecond)
+	close(proceedAfterPost)
 
-	// Let the mock provider.Get proceed
-	close(proceedAfterGet)
-
-	// Wait for the handler to finish
-	select {
-	case <-handlerDone:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for handler to finish")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		wasChecked := contextChecked
+		wasCancelled := contextWasCancelled
+		mu.Unlock()
+		if wasChecked {
+			if wasCancelled {
+				t.Error("context passed to sandbox request was cancelled; client disconnect should not cancel sandbox operations")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
-	// The key assertion: the context passed to provider.Get must NOT have been
-	// cancelled at the time of the call, even though the request context was
-	// cancelled before Get returned.
-	mu.Lock()
-	wasCancelled := contextWasCancelled
-	wasChecked := contextChecked
-	mu.Unlock()
-
-	if !wasChecked {
-		t.Fatal("provider.Get was never called")
-	}
-	if wasCancelled {
-		t.Error("context passed to sandbox provider was cancelled during the call; " +
-			"client disconnect should not cancel sandbox operations")
-	}
+	t.Fatal("sandbox request context was never checked")
 }
 
-// TestChat_ClientDisconnect_StatusRemainsRunning verifies that when a client
-// disconnects before the completion finishes, the session status is NOT reset
-// to "ready" — it stays "running" because the sandbox is still processing.
-func TestChat_ClientDisconnect_StatusRemainsRunning(t *testing.T) {
+// TestChat_StartsCompletion_StatusBecomesRunning verifies that a normal chat
+// request starts the sandbox completion and marks the session as running.
+func TestChat_StartsCompletion_StatusBecomesRunning(t *testing.T) {
 	s := setupChatTestStore(t)
 	provider := mocksandbox.NewProvider()
 	sessionID := "session-status-test"
@@ -285,79 +338,67 @@ func TestChat_ClientDisconnect_StatusRemainsRunning(t *testing.T) {
 		t.Fatalf("failed to start sandbox: %v", err)
 	}
 
-	// Use a custom HTTP handler that streams SSE slowly so the handler
-	// is in the streaming loop when we cancel the request context.
-	sseStarted := make(chan struct{})
-	provider.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/chat") && r.Method == "POST" {
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/chat/stream") && r.Method == "GET" {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
-			// Signal that SSE streaming has started
-			close(sseStarted)
-			// Block until request context is done (simulates a long-running completion)
-			<-r.Context().Done()
-			return
-		}
-		http.NotFound(w, r)
-	})
-
 	h := newChatTestHandler(t, s, provider)
 
-	reqCtx, cancelReq := context.WithCancel(context.Background())
-	req := makeChatRequest(reqCtx, t, ChatRequest{
+	req := makeChatRequest(context.Background(), t, ChatRequest{
 		ID:       sessionID,
-		Messages: json.RawMessage(`[{"role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+		Messages: json.RawMessage(`[{"id":"msg-1","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 	})
 	w := httptest.NewRecorder()
 
-	handlerDone := make(chan struct{})
-	go func() {
-		defer close(handlerDone)
-		h.Chat(w, req)
-	}()
+	h.Chat(w, req)
 
-	// Wait for the handler to reach the SSE streaming phase
-	select {
-	case <-sseStarted:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for SSE stream to start")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d; body: %s", w.Code, w.Body.String())
 	}
 
-	// Cancel the request — simulates client disconnect mid-stream
-	cancelReq()
-
-	// Wait for handler to exit
-	select {
-	case <-handlerDone:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for handler to finish")
+	var response ChatResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected JSON response, got error: %v; body: %s", err, w.Body.String())
+	}
+	if response.SessionID != sessionID {
+		t.Fatalf("expected session ID %q, got %q", sessionID, response.SessionID)
+	}
+	if response.ThreadID != sessionID {
+		t.Fatalf("expected default thread ID %q, got %q", sessionID, response.ThreadID)
+	}
+	if response.WorkspaceID != "test-workspace" {
+		t.Fatalf("expected workspace ID %q, got %q", "test-workspace", response.WorkspaceID)
+	}
+	if response.MessageID != "msg-1" {
+		t.Fatalf("expected message ID %q, got %q", "msg-1", response.MessageID)
 	}
 
-	// Check that session status is still "running", NOT "ready"
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		session, err := s.GetSessionByID(context.Background(), sessionID)
+		if err != nil {
+			t.Fatalf("failed to get session: %v", err)
+		}
+		if session.Status == model.SessionStatusRunning {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	session, err := s.GetSessionByID(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("failed to get session: %v", err)
 	}
 	if session.Status != model.SessionStatusRunning {
-		t.Errorf("expected session status %q after client disconnect, got %q",
+		t.Errorf("expected session status %q after chat start, got %q",
 			model.SessionStatusRunning, session.Status)
 	}
 }
 
-// TestChat_CompletionFinishes_StatusResetsToReady verifies that when a completion
-// finishes normally (DONE signal), the session status is reset to "ready".
-func TestChat_CompletionFinishes_StatusResetsToReady(t *testing.T) {
+func TestChat_UsesExplicitThreadID(t *testing.T) {
 	s := setupChatTestStore(t)
 	provider := mocksandbox.NewProvider()
-	sessionID := "session-done-test"
+	sessionID := "session-explicit-thread"
+	threadID := "thread-custom-1"
 
 	seedSession(t, s, sessionID)
 
-	// Create and start the sandbox
 	ctx := context.Background()
 	_, err := provider.Create(ctx, sessionID, sandbox.CreateOptions{
 		SharedSecret:  "test-secret",
@@ -370,35 +411,105 @@ func TestChat_CompletionFinishes_StatusResetsToReady(t *testing.T) {
 		t.Fatalf("failed to start sandbox: %v", err)
 	}
 
-	// Default mock handler sends [DONE] immediately, which is what we want
-	h := newChatTestHandler(t, s, provider)
+	pathCh := make(chan string, 1)
+	provider.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/chat") {
+			select {
+			case pathCh <- r.URL.Path:
+			default:
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"status":"started"}`))
+			return
+		}
+		http.NotFound(w, r)
+	})
 
+	h := newChatTestHandler(t, s, provider)
 	req := makeChatRequest(context.Background(), t, ChatRequest{
-		ID:       sessionID,
-		Messages: json.RawMessage(`[{"role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+		SessionID: sessionID,
+		ThreadID:  threadID,
+		Messages:  json.RawMessage(`[{"id":"msg-thread","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 	})
 	w := httptest.NewRecorder()
 
 	h.Chat(w, req)
 
-	// Verify we got a 200 with SSE content
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+	var response ChatResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected JSON response, got error: %v; body: %s", err, w.Body.String())
+	}
+	if response.SessionID != sessionID {
+		t.Fatalf("expected session ID %q, got %q", sessionID, response.SessionID)
+	}
+	if response.ThreadID != threadID {
+		t.Fatalf("expected thread ID %q, got %q", threadID, response.ThreadID)
+	}
+
+	select {
+	case path := <-pathCh:
+		expected := "/threads/" + threadID + "/chat"
+		if path != expected {
+			t.Fatalf("expected sandbox chat path %q, got %q", expected, path)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for sandbox POST /chat request")
+	}
+}
+
+// TestChat_ReturnsJSONResponse verifies that chat initiation returns JSON
+// metadata instead of proxying the SSE stream body.
+func TestChat_ReturnsJSONResponse(t *testing.T) {
+	s := setupChatTestStore(t)
+	provider := mocksandbox.NewProvider()
+	sessionID := "session-json-response-test"
+
+	seedSession(t, s, sessionID)
+
+	ctx := context.Background()
+	_, err := provider.Create(ctx, sessionID, sandbox.CreateOptions{
+		SharedSecret:  "test-secret",
+		WorkspacePath: "/workspace",
+	})
+	if err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+	if err := provider.Start(ctx, sessionID); err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+
+	h := newChatTestHandler(t, s, provider)
+
+	req := makeChatRequest(context.Background(), t, ChatRequest{
+		ID:       sessionID,
+		Messages: json.RawMessage(`[{"id":"msg-json","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+	})
+	w := httptest.NewRecorder()
+
+	h.Chat(w, req)
+
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d; body: %s", w.Code, w.Body.String())
 	}
 
-	// Check that session status was reset to "ready" after completion
-	session, err := s.GetSessionByID(context.Background(), sessionID)
-	if err != nil {
-		t.Fatalf("failed to get session: %v", err)
+	var response ChatResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected JSON response, got error: %v; body: %s", err, w.Body.String())
 	}
-	if session.Status != model.SessionStatusReady {
-		t.Errorf("expected session status %q after completion, got %q",
-			model.SessionStatusReady, session.Status)
+	if response.SessionID != sessionID {
+		t.Fatalf("expected session ID %q, got %q", sessionID, response.SessionID)
 	}
-
-	// Verify the response body contains [DONE]
-	body := w.Body.String()
-	if !bytes.Contains([]byte(body), []byte("data: [DONE]")) {
-		t.Errorf("expected response to contain 'data: [DONE]', got: %s", body)
+	if response.ThreadID != sessionID {
+		t.Fatalf("expected default thread ID %q, got %q", sessionID, response.ThreadID)
+	}
+	if response.MessageID != "msg-json" {
+		t.Fatalf("expected message ID %q, got %q", "msg-json", response.MessageID)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte("data: [DONE]")) {
+		t.Fatalf("expected JSON response instead of SSE body, got: %s", w.Body.String())
 	}
 }

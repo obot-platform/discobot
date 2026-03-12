@@ -192,7 +192,7 @@ func TestSessionDisplayName_InList(t *testing.T) {
 	AssertStatus(t, updateResp, http.StatusOK)
 
 	// List sessions and verify displayName is included
-	listResp := client.Get("/api/projects/" + project.ID + "/workspaces/" + workspace.ID + "/sessions")
+	listResp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer listResp.Body.Close()
 	AssertStatus(t, listResp, http.StatusOK)
 

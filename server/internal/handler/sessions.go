@@ -98,11 +98,11 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, map[string]any{"messages": messages})
 }
 
-// ListSessionsByWorkspace returns all sessions for a workspace.
-func (h *Handler) ListSessionsByWorkspace(w http.ResponseWriter, r *http.Request) {
-	workspaceID := chi.URLParam(r, "workspaceId")
+// ListSessions returns all sessions for a project.
+func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	projectID := middleware.GetProjectID(r.Context())
 
-	sessions, err := h.sessionService.ListSessionsByWorkspace(r.Context(), workspaceID)
+	sessions, err := h.sessionService.ListSessionsByProject(r.Context(), projectID)
 	if err != nil {
 		h.Error(w, http.StatusInternalServerError, "Failed to list sessions")
 		return

@@ -98,10 +98,17 @@ func isSandboxUnavailableError(err error) bool {
 		strings.Contains(errStr, "No such container")
 }
 
+// StartChat sends messages to the sandbox and returns completion metadata.
+func (c *SessionClient) StartChat(ctx context.Context, threadID string, messages json.RawMessage, model string, opts *RequestOptions) (*sandboxapi.ChatStartedResponse, error) {
+	return withReconciliation(ctx, c, func() (*sandboxapi.ChatStartedResponse, error) {
+		return c.inner.StartChat(ctx, c.sessionID, threadID, messages, model, opts)
+	})
+}
+
 // SendMessages sends messages to the sandbox.
-func (c *SessionClient) SendMessages(ctx context.Context, messages json.RawMessage, model string, opts *RequestOptions) (<-chan SSELine, error) {
+func (c *SessionClient) SendMessages(ctx context.Context, threadID string, messages json.RawMessage, model string, opts *RequestOptions) (<-chan SSELine, error) {
 	ch, err := withReconciliation(ctx, c, func() (<-chan SSELine, error) {
-		return c.inner.SendMessages(ctx, c.sessionID, messages, model, opts)
+		return c.inner.SendMessages(ctx, c.sessionID, threadID, messages, model, opts)
 	})
 	if err != nil {
 		return nil, err
@@ -110,9 +117,9 @@ func (c *SessionClient) SendMessages(ctx context.Context, messages json.RawMessa
 }
 
 // GetStream returns a channel of SSE events for an in-progress completion.
-func (c *SessionClient) GetStream(ctx context.Context, opts *RequestOptions, replay bool) (<-chan SSELine, error) {
+func (c *SessionClient) GetStream(ctx context.Context, threadID string, opts *RequestOptions, replay bool) (<-chan SSELine, error) {
 	ch, err := withReconciliation(ctx, c, func() (<-chan SSELine, error) {
-		return c.inner.GetStream(ctx, c.sessionID, opts, replay)
+		return c.inner.GetStream(ctx, c.sessionID, threadID, opts, replay)
 	})
 	if err != nil {
 		return nil, err
@@ -123,7 +130,14 @@ func (c *SessionClient) GetStream(ctx context.Context, opts *RequestOptions, rep
 // GetMessages retrieves message history from the sandbox.
 func (c *SessionClient) GetMessages(ctx context.Context, opts *RequestOptions) ([]sandboxapi.UIMessage, error) {
 	return withReconciliation(ctx, c, func() ([]sandboxapi.UIMessage, error) {
-		return c.inner.GetMessages(ctx, c.sessionID, opts)
+		return c.inner.GetMessages(ctx, c.sessionID, c.sessionID, opts)
+	})
+}
+
+// GetThreadMessages retrieves message history for a specific thread from the sandbox.
+func (c *SessionClient) GetThreadMessages(ctx context.Context, threadID string, opts *RequestOptions) ([]sandboxapi.UIMessage, error) {
+	return withReconciliation(ctx, c, func() ([]sandboxapi.UIMessage, error) {
+		return c.inner.GetMessages(ctx, c.sessionID, threadID, opts)
 	})
 }
 
@@ -170,24 +184,24 @@ func (c *SessionClient) GetChatStatus(ctx context.Context) (*sandboxapi.ChatStat
 }
 
 // CancelCompletion cancels an in-progress completion in the sandbox.
-func (c *SessionClient) CancelCompletion(ctx context.Context) (*CancelCompletionResponse, error) {
+func (c *SessionClient) CancelCompletion(ctx context.Context, threadID string) (*CancelCompletionResponse, error) {
 	return withReconciliation(ctx, c, func() (*CancelCompletionResponse, error) {
-		return c.inner.CancelCompletion(ctx, c.sessionID)
+		return c.inner.CancelCompletion(ctx, c.sessionID, threadID)
 	})
 }
 
 // GetQuestion returns the pending AskUserQuestion, or nil question if none is waiting.
 // When toolUseID is non-empty, queries for a specific question by approval ID.
-func (c *SessionClient) GetQuestion(ctx context.Context, toolUseID string) (*sandboxapi.PendingQuestionResponse, error) {
+func (c *SessionClient) GetQuestion(ctx context.Context, threadID string, toolUseID string) (*sandboxapi.PendingQuestionResponse, error) {
 	return withReconciliation(ctx, c, func() (*sandboxapi.PendingQuestionResponse, error) {
-		return c.inner.GetQuestion(ctx, c.sessionID, toolUseID)
+		return c.inner.GetQuestion(ctx, c.sessionID, threadID, toolUseID)
 	})
 }
 
 // AnswerQuestion submits the user's answer to a pending AskUserQuestion.
-func (c *SessionClient) AnswerQuestion(ctx context.Context, req *sandboxapi.AnswerQuestionRequest) (*sandboxapi.AnswerQuestionResponse, error) {
+func (c *SessionClient) AnswerQuestion(ctx context.Context, threadID string, req *sandboxapi.AnswerQuestionRequest) (*sandboxapi.AnswerQuestionResponse, error) {
 	return withReconciliation(ctx, c, func() (*sandboxapi.AnswerQuestionResponse, error) {
-		return c.inner.AnswerQuestion(ctx, c.sessionID, req)
+		return c.inner.AnswerQuestion(ctx, c.sessionID, threadID, req)
 	})
 }
 

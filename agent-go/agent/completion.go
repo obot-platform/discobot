@@ -275,22 +275,6 @@ func (cm *CompletionManager) activeCompletionLeafID(threadID string) string {
 	return comp.leafMsg
 }
 
-// MessagesJSON returns the conversation history as marshaled JSON.
-func (cm *CompletionManager) MessagesJSON(threadID, leafID string) (json.RawMessage, error) {
-	msgs, err := cm.Messages(threadID, leafID)
-	if err != nil {
-		return nil, err
-	}
-	if msgs == nil {
-		return json.RawMessage("[]"), nil
-	}
-	data, err := json.Marshal(msgs)
-	if err != nil {
-		return nil, fmt.Errorf("marshal messages: %w", err)
-	}
-	return data, nil
-}
-
 // ListModels returns available models from the provider.
 func (cm *CompletionManager) ListModels(ctx context.Context) ([]providers.ModelInfo, error) {
 	return cm.agent.ListModels(ctx)

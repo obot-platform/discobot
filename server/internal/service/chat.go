@@ -201,15 +201,13 @@ func (c *ChatService) ValidateSessionResources(ctx context.Context, projectID st
 	return nil
 }
 
-// SendToSandbox sends messages to the sandbox and returns a channel of raw SSE lines.
-// The sandbox handles message storage - we just proxy the stream without parsing.
-// Both messages and responses are passed through as raw data.
-// Credentials for the project are automatically included in the request header.
-// Git user configuration is automatically included in request headers (cached on first use).
-// If the sandbox is not running or doesn't exist, it will be reconciled on-demand.
-// reasoning can be "enabled", "disabled", or "" for default behavior.
-// mode can be "plan" for planning mode, or "" for default (build mode).
-func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (<-chan SSELine, error) {
+type preparedChatRequest struct {
+	client  *SessionClient
+	modelID string
+	opts    *RequestOptions
+}
+
+func (c *ChatService) prepareChatRequest(ctx context.Context, projectID, sessionID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (*preparedChatRequest, error) {
 	// Validate session belongs to project and get session for model
 	session, err := c.GetSession(ctx, projectID, sessionID)
 	if err != nil {
@@ -274,14 +272,6 @@ func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID st
 		return nil, err
 	}
 
-	// Set session status to running before starting chat
-	// UpdateStatus now automatically publishes SSE event
-	if _, err := c.sessionService.UpdateStatus(ctx, projectID, sessionID, model.SessionStatusRunning, nil); err != nil {
-		log.Printf("Warning: failed to update session status to running for %s: %v", sessionID, err)
-	}
-	// (in the handler) to ensure the agent API has received the request
-	// before we start polling for status.
-
 	opts := &RequestOptions{
 		Reasoning: effectiveReasoning,
 		Mode:      effectiveMode,
@@ -294,9 +284,49 @@ func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID st
 		modelID = *session.Model
 	}
 
-	innerCh, err := client.SendMessages(ctx, messages, modelID, opts)
+	return &preparedChatRequest{
+		client:  client,
+		modelID: modelID,
+		opts:    opts,
+	}, nil
+}
+
+// StartChat sends messages to the sandbox and returns completion metadata without opening a stream.
+func (c *ChatService) StartChat(ctx context.Context, projectID, sessionID, threadID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (*sandboxapi.ChatStartedResponse, error) {
+	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, messages, requestModel, reasoning, mode)
 	if err != nil {
 		return nil, err
+	}
+	started, err := prepared.client.StartChat(ctx, threadID, messages, prepared.modelID, prepared.opts)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.sessionService.UpdateStatus(ctx, projectID, sessionID, model.SessionStatusRunning, nil); err != nil {
+		log.Printf("Warning: failed to update session status to running for %s: %v", sessionID, err)
+	}
+	return started, nil
+}
+
+// SendToSandbox sends messages to the sandbox and returns a channel of raw SSE lines.
+// The sandbox handles message storage - we just proxy the stream without parsing.
+// Both messages and responses are passed through as raw data.
+// Credentials for the project are automatically included in the request header.
+// Git user configuration is automatically included in request headers (cached on first use).
+// If the sandbox is not running or doesn't exist, it will be reconciled on-demand.
+// reasoning can be "enabled", "disabled", or "" for default behavior.
+// mode can be "plan" for planning mode, or "" for default (build mode).
+func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID, threadID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (<-chan SSELine, error) {
+	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, messages, requestModel, reasoning, mode)
+	if err != nil {
+		return nil, err
+	}
+
+	innerCh, err := prepared.client.SendMessages(ctx, threadID, messages, prepared.modelID, prepared.opts)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.sessionService.UpdateStatus(ctx, projectID, sessionID, model.SessionStatusRunning, nil); err != nil {
+		log.Printf("Warning: failed to update session status to running for %s: %v", sessionID, err)
 	}
 
 	// Wrap the inner channel to intercept SSE events that carry session metadata updates.
@@ -370,7 +400,7 @@ func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID st
 // If no completion is in progress, returns an empty closed channel.
 // This is used by the resume endpoint to catch up on events.
 // The sandbox is automatically reconciled if not running.
-func (c *ChatService) GetStream(ctx context.Context, projectID, sessionID string, replay bool) (<-chan SSELine, error) {
+func (c *ChatService) GetStream(ctx context.Context, projectID, sessionID, threadID string, replay bool, lastEventID string) (<-chan SSELine, error) {
 	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
 		return nil, err
 	}
@@ -382,7 +412,7 @@ func (c *ChatService) GetStream(ctx context.Context, projectID, sessionID string
 		return nil, err
 	}
 
-	return client.GetStream(ctx, nil, replay)
+	return client.GetStream(ctx, threadID, &RequestOptions{LastEventID: lastEventID}, replay)
 }
 
 // GetMessages returns all messages for a session by querying the sandbox.
@@ -401,6 +431,24 @@ func (c *ChatService) GetMessages(ctx context.Context, projectID, sessionID stri
 	}
 
 	return client.GetMessages(ctx, nil)
+}
+
+// GetThreadMessages returns all messages for a specific thread by querying the sandbox.
+// The sandbox is automatically reconciled if not running.
+// Returns an error if the sandbox cannot be reached after reconciliation.
+func (c *ChatService) GetThreadMessages(ctx context.Context, projectID, sessionID, threadID string) ([]sandboxapi.UIMessage, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.GetThreadMessages(ctx, threadID, nil)
 }
 
 // ListThreads retrieves all threads for a session from the sandbox agent.
@@ -486,7 +534,7 @@ func (c *ChatService) DeleteThread(ctx context.Context, projectID, sessionID, th
 // CancelCompletion cancels an in-progress chat completion in the sandbox.
 // Returns ErrNoActiveCompletion if no completion is active.
 // The sandbox is automatically reconciled if not running.
-func (c *ChatService) CancelCompletion(ctx context.Context, projectID, sessionID string) (*CancelCompletionResponse, error) {
+func (c *ChatService) CancelCompletion(ctx context.Context, projectID, sessionID, threadID string) (*CancelCompletionResponse, error) {
 	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
 		return nil, err
 	}
@@ -497,7 +545,7 @@ func (c *ChatService) CancelCompletion(ctx context.Context, projectID, sessionID
 	if err != nil {
 		return nil, err
 	}
-	return client.CancelCompletion(ctx)
+	return client.CancelCompletion(ctx, threadID)
 }
 
 // ============================================================================
@@ -507,7 +555,7 @@ func (c *ChatService) CancelCompletion(ctx context.Context, projectID, sessionID
 // GetQuestion returns the current pending AskUserQuestion from the sandbox.
 // When toolUseID is non-empty, queries for a specific question by approval ID.
 // Returns nil question if no question is waiting.
-func (c *ChatService) GetQuestion(ctx context.Context, projectID, sessionID, toolUseID string) (*sandboxapi.PendingQuestionResponse, error) {
+func (c *ChatService) GetQuestion(ctx context.Context, projectID, sessionID, threadID, toolUseID string) (*sandboxapi.PendingQuestionResponse, error) {
 	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
 		return nil, err
 	}
@@ -518,11 +566,11 @@ func (c *ChatService) GetQuestion(ctx context.Context, projectID, sessionID, too
 	if err != nil {
 		return nil, err
 	}
-	return client.GetQuestion(ctx, toolUseID)
+	return client.GetQuestion(ctx, threadID, toolUseID)
 }
 
 // AnswerQuestion submits answers to a pending AskUserQuestion.
-func (c *ChatService) AnswerQuestion(ctx context.Context, projectID, sessionID string, req *sandboxapi.AnswerQuestionRequest) (*sandboxapi.AnswerQuestionResponse, error) {
+func (c *ChatService) AnswerQuestion(ctx context.Context, projectID, sessionID, threadID string, req *sandboxapi.AnswerQuestionRequest) (*sandboxapi.AnswerQuestionResponse, error) {
 	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
 		return nil, err
 	}
@@ -533,7 +581,7 @@ func (c *ChatService) AnswerQuestion(ctx context.Context, projectID, sessionID s
 	if err != nil {
 		return nil, err
 	}
-	return client.AnswerQuestion(ctx, req)
+	return client.AnswerQuestion(ctx, threadID, req)
 }
 
 // ============================================================================
