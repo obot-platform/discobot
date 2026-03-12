@@ -1,17 +1,23 @@
 import type { SessionData } from "$lib/shell-types";
-import type { Getter, Setter } from "$lib/session/runtime/modules/module-context";
-import type { SessionHooksModule } from "$lib/session/runtime/session-runtime.types";
 
-type CreateSessionHooksModuleArgs = {
-	getSessionId: Getter<string | null>;
-	getSessionDataById: Getter<Record<string, SessionData>>;
-	setSessionDataById: Setter<Record<string, SessionData>>;
-	getStatus: Getter<NonNullable<SessionData["hooksStatus"]>>;
-	getOutputById: Getter<Record<string, string>>;
+export type SessionHooksService = {
+	status: NonNullable<SessionData["hooksStatus"]>;
+	outputById: Record<string, string>;
+	rerun: (hookId: string) => void;
+};
+
+type CreateSessionHooksServiceArgs = {
+	getSessionId: () => string | null;
+	getSessionDataById: () => Record<string, SessionData>;
+	setSessionDataById: (value: Record<string, SessionData>) => void;
+	getStatus: () => NonNullable<SessionData["hooksStatus"]>;
+	getOutputById: () => Record<string, string>;
 	nowIsoString: () => string;
 };
 
-export function createSessionHooksModule(args: CreateSessionHooksModuleArgs): SessionHooksModule {
+export function createSessionHooksService(
+	args: CreateSessionHooksServiceArgs,
+): SessionHooksService {
 	const rerun = (hookId: string) => {
 		const sessionId = args.getSessionId();
 		if (!sessionId) {

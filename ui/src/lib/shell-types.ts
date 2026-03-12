@@ -13,7 +13,7 @@ export type WindowControlsSide = "left" | "right";
 export type AsyncStatus = "idle" | "loading" | "ready" | "error";
 export type WorkspaceSourceType = "local" | "git";
 export type WorkspaceStatus = "ready" | "loading" | "error";
-export type SessionRuntimeStatus = SessionStatus;
+export type SessionStatusValue = SessionStatus;
 export type ConversationRole = "user" | "assistant";
 export type SessionFileState = "active" | "edited" | "linked";
 export type PlanEntryStatus = "pending" | "in_progress" | "completed";
@@ -46,7 +46,7 @@ export type SessionSummary = {
 	id: string;
 	name: string;
 	isRecent: boolean;
-	status: SessionRuntimeStatus;
+	status: SessionStatusValue;
 };
 
 export type WorkspaceSummary = {
@@ -112,7 +112,7 @@ export type SessionFile = {
 export type SessionDetail = {
 	id: string;
 	name: string;
-	status: SessionRuntimeStatus;
+	status: SessionStatusValue;
 	baseBranch: string;
 	baseCommit: string;
 	references: SessionReferences;

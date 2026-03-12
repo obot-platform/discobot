@@ -20,10 +20,11 @@
 	} from "$lib/components/ui/dropdown-menu";
 	import { Input } from "$lib/components/ui/input";
 	import { Label } from "$lib/components/ui/label";
+	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import type {
-		SessionEnvSetsModule,
-		ThreadEnvSetsModule,
-	} from "$lib/session/runtime/session-runtime.types";
+		SessionEnvSetsService,
+		ThreadEnvSetsService,
+	} from "$lib/session/services";
 
 	type EnvVarRow = {
 		id: string;
@@ -32,24 +33,24 @@
 	};
 
 	type Props = {
-		sessionEnvSets: SessionEnvSetsModule;
-		threadEnvSets: ThreadEnvSetsModule;
+		sessionEnvSets: SessionEnvSetsService;
+		threadEnvSets: ThreadEnvSetsService;
 	};
 
 	let { sessionEnvSets, threadEnvSets }: Props = $props();
 
-	let envSetDialogOpen = $state(false);
-	let envSetEditorMode = $state<"list" | "create" | "edit">("list");
-	let editingEnvSetId = $state<string | null>(null);
+	const session = useSessionContext();
+	const sessionView = session.ui;
+
 	let envSetNameDraft = $state("");
 	let envVarRows = $state<EnvVarRow[]>([]);
 	let showEnvVarValues = $state(false);
 
-	function envSetVariableCount(envSet: SessionEnvSetsModule["list"][number]) {
+	function envSetVariableCount(envSet: SessionEnvSetsService["list"][number]) {
 		return Object.keys(envSet.envVars).length;
 	}
 
-	function envSetPreview(envSet: SessionEnvSetsModule["list"][number]) {
+	function envSetPreview(envSet: SessionEnvSetsService["list"][number]) {
 		const keys = Object.keys(envSet.envVars).slice(0, 2);
 		if (keys.length === 0) {
 			return "No variables";
@@ -78,21 +79,17 @@
 	}
 
 	function resetEnvSetEditor() {
-		envSetEditorMode = "list";
-		editingEnvSetId = null;
 		envSetNameDraft = "";
 		envVarRows = [];
 		showEnvVarValues = false;
 	}
 
 	function openEnvSetManager() {
-		envSetDialogOpen = true;
-		envSetEditorMode = "list";
+		sessionView.openEnvSetManager();
 	}
 
 	function startEnvSetCreate() {
-		envSetEditorMode = "create";
-		editingEnvSetId = null;
+		sessionView.startEnvSetCreate();
 		envSetNameDraft = "";
 		envVarRows = [makeEnvVarRow()];
 		showEnvVarValues = false;
@@ -104,8 +101,7 @@
 			return;
 		}
 
-		envSetEditorMode = "edit";
-		editingEnvSetId = envSet.id;
+		sessionView.startEnvSetEdit(envSet.id);
 		envSetNameDraft = envSet.name;
 		envVarRows = Object.entries(envSet.envVars).map(([key, value]) => makeEnvVarRow(key, value));
 		showEnvVarValues = false;
@@ -142,22 +138,25 @@
 		}
 
 		const envVars = envVarsFromRows();
-		if (envSetEditorMode === "create") {
+		if (sessionView.envSetEditorMode === "create") {
 			sessionEnvSets.create(trimmedName, envVars);
 			resetEnvSetEditor();
+			sessionView.closeEnvSetManager();
 			return;
 		}
 
-		if (envSetEditorMode === "edit" && editingEnvSetId) {
-			sessionEnvSets.update(editingEnvSetId, trimmedName, envVars);
+		if (sessionView.envSetEditorMode === "edit" && sessionView.editingEnvSetId) {
+			sessionEnvSets.update(sessionView.editingEnvSetId, trimmedName, envVars);
 			resetEnvSetEditor();
+			sessionView.closeEnvSetManager();
 		}
 	}
 
 	function removeEnvSet(envSetId: string) {
 		sessionEnvSets.remove(envSetId);
-		if (editingEnvSetId === envSetId) {
+		if (sessionView.editingEnvSetId === envSetId) {
 			resetEnvSetEditor();
+			sessionView.closeEnvSetManager();
 		}
 	}
 
@@ -186,7 +185,7 @@
 	}
 
 	$effect(() => {
-		if (!envSetDialogOpen) {
+		if (!sessionView.envSetDialogOpen) {
 			resetEnvSetEditor();
 		}
 	});
@@ -232,21 +231,21 @@
 	</DropdownMenuContent>
 </DropdownMenu>
 
-<Dialog.Root bind:open={envSetDialogOpen}>
+<Dialog.Root bind:open={sessionView.envSetDialogOpen}>
 	<Dialog.Content class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
 				<LayersIcon class="size-4" />
-				{#if envSetEditorMode === "create"}
+				{#if sessionView.envSetEditorMode === "create"}
 					Create env set
-				{:else if envSetEditorMode === "edit"}
+				{:else if sessionView.envSetEditorMode === "edit"}
 					Edit env set
 				{:else}
 					Manage env sets
 				{/if}
 			</Dialog.Title>
 			<Dialog.Description>
-				{#if envSetEditorMode === "list"}
+				{#if sessionView.envSetEditorMode === "list"}
 					Choose env sets for this session and manage reusable variable groups.
 				{:else}
 					Names and variables are mock-backed through session context.
@@ -254,7 +253,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{#if envSetEditorMode === "list"}
+		{#if sessionView.envSetEditorMode === "list"}
 			<div class="flex items-center justify-between gap-2">
 				<div class="text-sm text-muted-foreground">
 					Active in this session: {activeEnvSetCount()} / {totalEnvSetCount()}
@@ -399,7 +398,16 @@
 			</div>
 
 			<Dialog.Footer class="mt-3">
-				<Button variant="ghost" size="sm" onclick={resetEnvSetEditor}>Cancel</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={() => {
+						resetEnvSetEditor();
+						sessionView.closeEnvSetManager();
+					}}
+				>
+					Cancel
+				</Button>
 				<Button
 					variant="default"
 					size="sm"

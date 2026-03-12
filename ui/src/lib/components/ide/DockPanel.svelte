@@ -5,32 +5,30 @@
 	import ServicePanel from "$lib/components/ide/ServicePanel.svelte";
 	import TerminalPanel from "$lib/components/ide/TerminalPanel.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
-	import { useThreadContext } from "$lib/context/thread-context.svelte";
 
 	const session = useSessionContext();
-	const thread = useThreadContext();
-	const threadUi = thread.ui;
-	const sessionFiles = $derived.by(() => session.files);
-	const sessionFileContents = $derived.by(() => session.fileContents);
-	const sessionActiveService = $derived.by(() => session.activeService);
+	const sessionView = session.ui;
+	const sessionFiles = $derived.by(() => session.files.list);
+	const sessionFileContents = $derived.by(() => session.files.contents);
+	const sessionActiveService = $derived.by(() => session.services.active);
 </script>
 
 <div class="h-full overflow-auto bg-background p-3">
-	{#if threadUi.centerPanel === "terminal"}
-		<TerminalPanel onClose={threadUi.openChat} />
-	{:else if threadUi.centerPanel === "desktop"}
-		<DesktopPanel onClose={threadUi.openChat} />
-	{:else if threadUi.centerPanel === "files"}
+	{#if sessionView.activeView.kind === "terminal"}
+		<TerminalPanel onClose={sessionView.openChat} />
+	{:else if sessionView.activeView.kind === "desktop"}
+		<DesktopPanel onClose={sessionView.openChat} />
+	{:else if sessionView.activeView.kind === "file"}
 		<FilesPanel
 			fileContents={sessionFileContents}
 			files={sessionFiles}
-			onClose={threadUi.openChat}
-			onSelectFile={threadUi.openFiles}
-			selectedFile={threadUi.selectedFile}
+			onClose={sessionView.openChat}
+			onSelectFile={session.files.open}
+			selectedFile={session.files.selected}
 		/>
-	{:else if threadUi.centerPanel === "diff-review"}
-		<DiffReviewPanel onClose={threadUi.openChat} />
+	{:else if sessionView.activeView.kind === "diff-review"}
+		<DiffReviewPanel onClose={sessionView.openChat} />
 	{:else if sessionActiveService}
-		<ServicePanel service={sessionActiveService} onClose={threadUi.openChat} />
+		<ServicePanel service={sessionActiveService} onClose={sessionView.openChat} />
 	{/if}
 </div>

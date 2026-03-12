@@ -1,28 +1,53 @@
-import { getContext, hasContext, setContext } from "svelte";
+import { getSessionContextIfPresent, useSessionContext } from "$lib/context/session-context.svelte";
+import { getPlanEntries } from "$lib/session/domains/session-domain.helpers";
+import type { ThreadContextValue } from "$lib/session/session-context.types";
 
-import type { ThreadRuntime } from "$lib/session/runtime/session-runtime.types";
-
-const THREAD_CONTEXT_KEY = Symbol.for("discobot-ui-thread-context");
-
-type ThreadContextGetter = () => ThreadRuntime;
-
-export function setThreadContext(getThreadRuntime: ThreadContextGetter): ThreadRuntime {
-	setContext(THREAD_CONTEXT_KEY, getThreadRuntime);
-	return getThreadRuntime();
+function toThreadContextValue(): ThreadContextValue {
+	const session = useSessionContext();
+	return {
+		get threadId() {
+			return session.threads.selectedId;
+		},
+		get thread() {
+			return session.threads.selected;
+		},
+		get conversation() {
+			return session.conversation.messages;
+		},
+		get planEntries() {
+			return getPlanEntries(session.conversation.messages);
+		},
+		get editorFiles() {
+			return session.files.list;
+		},
+		get fileContents() {
+			return session.files.contents;
+		},
+		get activeEnvSetIds() {
+			return session.envSets.activeIds;
+		},
+		get activeEnvSets() {
+			return session.envSets.active;
+		},
+		envSets: {
+			get activeIds() {
+				return session.envSets.activeIds;
+			},
+			get active() {
+				return session.envSets.active;
+			},
+			toggle: session.envSets.toggle,
+		},
+	};
 }
 
-export function useThreadContext(): ThreadRuntime {
-	const context = getContext<ThreadContextGetter | undefined>(THREAD_CONTEXT_KEY);
-	if (!context) {
-		throw new Error("useThreadContext must be used within ThreadContext provider");
-	}
-	return context();
+export function useThreadContext(): ThreadContextValue {
+	return toThreadContextValue();
 }
 
-export function getThreadContextIfPresent(): ThreadRuntime | undefined {
-	if (!hasContext(THREAD_CONTEXT_KEY)) {
+export function getThreadContextIfPresent(): ThreadContextValue | undefined {
+	if (!getSessionContextIfPresent()) {
 		return undefined;
 	}
-	const context = getContext<ThreadContextGetter | undefined>(THREAD_CONTEXT_KEY);
-	return context?.();
+	return toThreadContextValue();
 }

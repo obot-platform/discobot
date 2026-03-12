@@ -1,13 +1,11 @@
 <script lang="ts">
-	import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
-	import CircleIcon from "@lucide/svelte/icons/circle";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
-	import Loader2Icon from "@lucide/svelte/icons/loader-2";
 	import MoonIcon from "@lucide/svelte/icons/moon";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import SunIcon from "@lucide/svelte/icons/sun";
 	import DiscobotBrand from "$lib/components/ide/DiscobotBrand.svelte";
+	import SessionStatus from "$lib/components/ide/SessionStatus.svelte";
 	import SettingsDialog from "$lib/components/ide/SettingsDialog.svelte";
 	import {
 		AlertDialog,
@@ -32,9 +30,13 @@
 	import { Input } from "$lib/components/ui/input";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
-	import type { SessionRuntimeStatus } from "$lib/shell-types";
 
 	const app = useAppContext();
+	const environment = app.environment;
+	const preferences = app.preferences;
+	const sessions = app.sessions;
+	const ui = app.ui;
+	const updates = app.updates;
 	const session = useSessionContext();
 	let renameDialogOpen = $state(false);
 	let renameSessionId = $state<string | null>(null);
@@ -44,66 +46,20 @@
 	let deleteSessionId = $state<string | null>(null);
 	let deletingSession = $state(false);
 
-	function normalizedStatus(status: SessionRuntimeStatus): string {
-		return status.toLowerCase();
-	}
-
-	function statusLabel(status: SessionRuntimeStatus): string {
-		return status
-			.replace(/_/g, " ")
-			.replace(/\b\w/g, (char) => char.toUpperCase());
-	}
-
-	function statusTone(status: SessionRuntimeStatus): string {
-		switch (normalizedStatus(status)) {
-			case "error":
-				return "text-destructive";
-			case "ready":
-				return "text-green-500";
-			case "running":
-				return "text-blue-500";
-			case "initializing":
-			case "reinitializing":
-			case "cloning":
-			case "pulling_image":
-			case "creating_sandbox":
-				return "text-yellow-500";
-			case "removing":
-				return "text-orange-500";
-			default:
-				return "text-muted-foreground";
-		}
-	}
-
-	function isSpinningStatus(status: SessionRuntimeStatus): boolean {
-		switch (normalizedStatus(status)) {
-			case "running":
-			case "initializing":
-			case "reinitializing":
-			case "cloning":
-			case "pulling_image":
-			case "creating_sandbox":
-			case "removing":
-				return true;
-			default:
-				return false;
-		}
-	}
-
 	function nonRecentSessions() {
-		return app.sessions.filter((sessionItem) => !sessionItem.isRecent);
+		return sessions.list.filter((sessionItem) => !sessionItem.isRecent);
 	}
 
 	function sessionById(sessionId: string) {
-		return app.sessions.find((sessionItem) => sessionItem.id === sessionId) ?? null;
+		return sessions.list.find((sessionItem) => sessionItem.id === sessionId) ?? null;
 	}
 
 	function handleSelectSession(sessionId: string) {
-		app.selectSession(sessionId);
+		sessions.select(sessionId);
 	}
 
 	function handleStartNewSession() {
-		app.startNewSession();
+		sessions.startNew();
 	}
 
 	function openRenameDialog(sessionId: string) {
@@ -129,7 +85,7 @@
 		}
 
 		renamingSession = true;
-		const renamed = await app.renameSession(renameSessionId, renameDraft);
+		const renamed = await sessions.rename(renameSessionId, renameDraft);
 		renamingSession = false;
 		if (renamed) {
 			closeRenameDialog();
@@ -163,7 +119,7 @@
 		}
 
 		deletingSession = true;
-		const deleted = await app.deleteSession(deleteSessionId);
+		const deleted = await sessions.remove(deleteSessionId);
 		deletingSession = false;
 		if (deleted) {
 			closeDeleteDialog();
@@ -178,11 +134,11 @@
 	}
 
 	function showMacSpacer(): boolean {
-		return app.isTauri && app.windowControlsSide === "left";
+		return environment.isTauri && environment.windowControlsSide === "left";
 	}
 
 	function showWindowsLinuxControls(): boolean {
-		return app.isTauri && app.windowControlsSide === "right";
+		return environment.isTauri && environment.windowControlsSide === "right";
 	}
 </script>
 
@@ -200,7 +156,7 @@
 			<DropdownMenuTrigger class="tauri-no-drag">
 				<Button variant="ghost" size="sm" class="h-8 gap-1.5">
 					<span class="max-w-[14rem] truncate">
-						{session.current?.name ?? app.selectedSession?.name ?? "No session"}
+						{session.current?.name ?? sessions.selected?.name ?? "No session"}
 					</span>
 					<ChevronDownIcon class="size-3.5 opacity-70" />
 				</Button>
@@ -211,32 +167,24 @@
 				<DropdownMenuLabel class="text-xs uppercase tracking-[0.16em] text-muted-foreground">
 					Recent sessions
 				</DropdownMenuLabel>
-				{#if app.recentSessions.length === 0}
+				{#if sessions.recent.length === 0}
 					<DropdownMenuItem disabled class="text-muted-foreground">
 						No recent sessions
 					</DropdownMenuItem>
 				{:else}
-					{#each app.recentSessions as sessionItem}
+					{#each sessions.recent as sessionItem}
 						<DropdownMenu>
 							<DropdownMenuItem
 								onclick={() => handleSelectSession(sessionItem.id)}
-								class={`group h-8 justify-between gap-3 ${app.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
+								class={`group h-8 justify-between gap-3 ${ui.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
 							>
 								<span class="truncate">{sessionItem.name}</span>
 								<span class="relative inline-flex size-4 items-center justify-center">
-									<span
-										class={`inline-flex items-center transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0 ${statusTone(sessionItem.status)}`}
-										title={statusLabel(sessionItem.status)}
-										aria-label={statusLabel(sessionItem.status)}
-									>
-										{#if isSpinningStatus(sessionItem.status)}
-											<Loader2Icon class="size-3.5 animate-spin" />
-										{:else if normalizedStatus(sessionItem.status) === "ready"}
-											<CircleCheckIcon class="size-3.5" />
-										{:else}
-											<CircleIcon class="size-2.5 fill-current" />
-										{/if}
-									</span>
+									<SessionStatus
+										status={sessionItem.status}
+										showLabel={false}
+										class="transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0"
+									/>
 									<DropdownMenuTrigger class="tauri-no-drag absolute inset-0">
 										<Button
 											variant="ghost"
@@ -271,23 +219,15 @@
 					<DropdownMenu>
 						<DropdownMenuItem
 							onclick={() => handleSelectSession(sessionItem.id)}
-							class={`group h-8 justify-between gap-3 ${app.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
+							class={`group h-8 justify-between gap-3 ${ui.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
 						>
 							<span class="truncate">{sessionItem.name}</span>
 							<span class="relative inline-flex size-4 items-center justify-center">
-								<span
-									class={`inline-flex items-center transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0 ${statusTone(sessionItem.status)}`}
-									title={statusLabel(sessionItem.status)}
-									aria-label={statusLabel(sessionItem.status)}
-								>
-									{#if isSpinningStatus(sessionItem.status)}
-										<Loader2Icon class="size-3.5 animate-spin" />
-									{:else if normalizedStatus(sessionItem.status) === "ready"}
-										<CircleCheckIcon class="size-3.5" />
-									{:else}
-										<CircleIcon class="size-2.5 fill-current" />
-									{/if}
-								</span>
+								<SessionStatus
+									status={sessionItem.status}
+									showLabel={false}
+									class="transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0"
+								/>
 								<DropdownMenuTrigger class="tauri-no-drag absolute inset-0">
 									<Button
 										variant="ghost"
@@ -317,12 +257,12 @@
 		</DropdownMenu>
 
 		<div class="tauri-no-drag flex flex-wrap items-center gap-1">
-			{#each app.workflowActions as action, index (action + index)}
+			{#each environment.workflowActions as action, index (action + index)}
 				<Button
 					variant="ghost"
 					size="xs"
 					class="h-7 px-2 text-xs"
-					disabled={!app.selectedSessionId}
+					disabled={!ui.selectedSessionId}
 				>
 					{action}
 				</Button>
@@ -334,15 +274,15 @@
 		<Button
 			variant="ghost"
 			size="icon-sm"
-			onclick={app.toggleTheme}
+			onclick={preferences.toggleTheme}
 			aria-label={
-				app.resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+				preferences.resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"
 			}
 			title={
-				app.resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+				preferences.resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"
 			}
 		>
-			{#if app.resolvedTheme === "dark"}
+			{#if preferences.resolvedTheme === "dark"}
 				<SunIcon class="size-4" />
 			{:else}
 				<MoonIcon class="size-4" />
@@ -351,13 +291,13 @@
 		<Button
 			variant="ghost"
 			size="icon-sm"
-			onclick={app.openSettingsDialog}
+			onclick={() => ui.openSettings()}
 			aria-label="Settings"
 			title="Settings"
 			class="relative"
 		>
 			<SettingsIcon class="size-4" />
-			{#if app.showUpdateBadge}
+			{#if updates.showBadge}
 				<span class="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500"></span>
 			{/if}
 		</Button>

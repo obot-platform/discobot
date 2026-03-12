@@ -4,7 +4,6 @@
 	import { Button } from "$lib/components/ui/button";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
-	import { useThreadContext } from "$lib/context/thread-context.svelte";
 
 	type Props = {
 		threadsOpen: boolean;
@@ -14,54 +13,26 @@
 	let { threadsOpen, onToggleThreads }: Props = $props();
 
 	const app = useAppContext();
+	const preferences = app.preferences;
 	const session = useSessionContext();
-	const thread = useThreadContext();
-	const threadUi = thread.ui;
-	const sessionServices = $derived.by(() => session.services);
+	const sessionView = session.ui;
+	const sessionServices = $derived.by(() => session.services.list);
 
 	function preferredIdeLabel() {
-		return app.ideOptions.find((option) => option.id === app.preferredIde)?.label ?? "Cursor";
+		return preferences.ideOptions.find((option) => option.id === preferences.preferredIde)?.label ?? "Cursor";
 	}
 
 	function isActiveService(serviceId: string) {
-		return threadUi.centerPanel === `service:${serviceId}`;
+		return sessionView.activeServiceId === serviceId;
 	}
 
 	const diffStats = $derived.by(() => {
-		const changedFiles = (session.current?.files ?? []).filter((file) => file.type === "file");
-		let additions = 0;
-		let modifications = 0;
-		let deletions = 0;
-
-		for (const file of changedFiles) {
-			if (file.status === "added") {
-				additions += 1;
-				continue;
-			}
-
-			if (file.status === "deleted") {
-				deletions += 1;
-				continue;
-			}
-
-			if (file.status === "modified" || file.status === "renamed" || file.changed) {
-				modifications += 1;
-			}
-		}
-
-		if (additions === 0 && modifications === 0 && deletions === 0) {
-			return {
-				additions: 12,
-				modifications: 4,
-				deletions: 3,
-			};
-		}
-
-		return {
-			additions,
-			modifications,
-			deletions,
-		};
+		const stats = session.files.diffStats;
+		const files = session.files.diff;
+		const additions = stats.additions;
+		const deletions = stats.deletions;
+		const modifications = files.filter((file) => file.status === "modified" || file.status === "renamed").length;
+		return { additions, modifications, deletions };
 	});
 </script>
 
@@ -83,30 +54,30 @@
 
 	<div class="justify-self-center inline-flex rounded-md border border-border bg-background p-0.5">
 		<Button
-			variant={threadUi.centerPanel === "terminal" ? "secondary" : "ghost"}
+			variant={sessionView.activeView.kind === "terminal" ? "secondary" : "ghost"}
 			size="xs"
-			onclick={threadUi.openTerminal}
+			onclick={sessionView.openTerminal}
 		>
 			Terminal
 		</Button>
 		<Button
-			variant={threadUi.centerPanel === "desktop" ? "secondary" : "ghost"}
+			variant={sessionView.activeView.kind === "desktop" ? "secondary" : "ghost"}
 			size="xs"
-			onclick={threadUi.openDesktop}
+			onclick={sessionView.openDesktop}
 		>
 			Desktop
 		</Button>
 		<Button
-			variant={threadUi.centerPanel === "files" ? "secondary" : "ghost"}
+			variant={sessionView.activeView.kind === "file" ? "secondary" : "ghost"}
 			size="xs"
-			onclick={() => threadUi.openFiles()}
+			onclick={() => void session.files.open()}
 		>
 			Files
 		</Button>
 		<Button
-			variant={threadUi.centerPanel === "diff-review" ? "secondary" : "ghost"}
+			variant={sessionView.activeView.kind === "diff-review" ? "secondary" : "ghost"}
 			size="xs"
-			onclick={threadUi.openDiffReview}
+			onclick={sessionView.openDiffReview}
 			class="gap-1"
 		>
 			<span class="text-green-500">+{diffStats.additions}</span>
@@ -117,7 +88,7 @@
 			<Button
 				variant={isActiveService(service.id) ? "secondary" : "ghost"}
 				size="xs"
-				onclick={() => threadUi.openService(service.id)}
+				onclick={() => session.services.open(service.id)}
 			>
 				{service.label}
 			</Button>
@@ -132,26 +103,26 @@
 			<Button
 				variant="outline"
 				size="xs"
-				onclick={threadUi.toggleIdeMenu}
+				onclick={sessionView.toggleIdeMenu}
 				class="rounded-l-none px-2"
 				aria-label="Select preferred IDE"
 			>
 				<ChevronDownIcon class="size-3.5" />
 			</Button>
-			{#if threadUi.ideMenuOpen}
+			{#if sessionView.ideMenuOpen}
 				<div class="absolute right-0 top-full z-50 mt-2 min-w-[11rem] rounded-md border border-border bg-popover p-1 shadow-md">
 					<p class="px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
 						Preferred IDE
 					</p>
-					{#each app.ideOptions as option}
+					{#each preferences.ideOptions as option}
 						<Button
-							variant={app.preferredIde === option.id ? "secondary" : "ghost"}
+							variant={preferences.preferredIde === option.id ? "secondary" : "ghost"}
 							size="sm"
-							onclick={() => app.setPreferredIde(option.id)}
+							onclick={() => preferences.setPreferredIde(option.id)}
 							class="w-full justify-between"
 						>
 							<span>{option.label}</span>
-							{#if app.preferredIde === option.id}
+							{#if preferences.preferredIde === option.id}
 								<span class="text-xs font-medium">Default</span>
 							{/if}
 						</Button>

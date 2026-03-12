@@ -6,6 +6,7 @@
 	import XCircleIcon from "@lucide/svelte/icons/x-circle";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
+	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import type { HooksStatus } from "$lib/shell-types";
 
 	type Props = {
@@ -17,8 +18,8 @@
 
 	let { expanded, hooksStatus, outputById, onRerunHook }: Props = $props();
 
-	let hookDialogOpen = $state(false);
-	let selectedHookId = $state<string | null>(null);
+	const session = useSessionContext();
+	const sessionView = session.ui;
 
 	function pendingHookSet() {
 		return new Set(hooksStatus.pendingHookIds);
@@ -74,22 +75,21 @@
 	}
 
 	function openHookDialog(hookId: string) {
-		selectedHookId = hookId;
-		hookDialogOpen = true;
+		sessionView.openHookDialog(hookId);
 	}
 
 	const selectedHookData = $derived.by(() => {
-		if (!selectedHookId) {
+		if (!sessionView.selectedHookId) {
 			return null;
 		}
-		return hooksStatus.hooks.find((hook) => hook.hookId === selectedHookId) ?? null;
+		return hooksStatus.hooks.find((hook) => hook.hookId === sessionView.selectedHookId) ?? null;
 	});
 
 	function selectedHookOutput() {
-		if (!selectedHookId) {
+		if (!sessionView.selectedHookId) {
 			return "";
 		}
-		return outputById[selectedHookId] ?? "No output available";
+		return outputById[sessionView.selectedHookId] ?? "No output available";
 	}
 
 	function formatRelativeTime(isoString?: string) {
@@ -115,12 +115,6 @@
 		}
 		return date.toLocaleDateString();
 	}
-
-	$effect(() => {
-		if (!hookDialogOpen) {
-			selectedHookId = null;
-		}
-	});
 </script>
 
 {#if expanded && hooksStatus.hooks.length > 0}
@@ -177,7 +171,7 @@
 	</div>
 {/if}
 
-<Dialog.Root bind:open={hookDialogOpen}>
+<Dialog.Root bind:open={sessionView.hookDialogOpen}>
 	{#if selectedHookData}
 		{@const hook = selectedHookData}
 		<Dialog.Content class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">

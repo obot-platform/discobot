@@ -3,12 +3,13 @@
 	import { useAppContext } from "$lib/context/app-context.svelte";
 
 	const app = useAppContext();
+	const ui = app.ui;
 </script>
 
 <svelte:head>
 	<title>Discobot UI</title>
 </svelte:head>
 
-{#key app.selectedSessionId}
+{#key ui.selectedSessionId}
 	<SessionWorkspace />
 {/key}

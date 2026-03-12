@@ -25,26 +25,15 @@
 	let { onClose }: Props = $props();
 	const session = useSessionContext();
 
-	function fallbackStatus(index: number): DiffStatus {
-		if (index === 0) return "modified";
-		if (index === 1) return "added";
-		return "deleted";
-	}
-
-	function statusForFile(path: string, index: number): DiffStatus {
-		const fileEntry = (session.current?.files ?? []).find(
-			(file) => file.type === "file" && file.id === path,
-		);
-		if (fileEntry?.status === "added") return "added";
-		if (fileEntry?.status === "deleted") return "deleted";
-		if (fileEntry?.status === "modified" || fileEntry?.status === "renamed" || fileEntry?.changed) {
-			return "modified";
-		}
-		return fallbackStatus(index);
+	function statusForFile(path: string): DiffStatus {
+		const diffEntry = session.files.diff.find((file) => file.path === path);
+		if (diffEntry?.status === "added") return "added";
+		if (diffEntry?.status === "deleted") return "deleted";
+		return "modified";
 	}
 
 	function sourceLinesForFile(path: string): string[] {
-		const source = session.fileContents[path] ?? "";
+		const source = session.files.contents[path] ?? "";
 		const lines = source
 			.split("\n")
 			.map((line) => line.replace(/\t/g, "  "))
@@ -106,22 +95,12 @@
 	}
 
 	const reviewFiles = $derived.by(() =>
-		session.files
+		session.files.diff
 			.slice(0, 4)
-			.map((path, index) =>
-				buildPreview(path, statusForFile(path, index), sourceLinesForFile(path)),
-			),
+			.map((file) => buildPreview(file.path, statusForFile(file.path), sourceLinesForFile(file.path))),
 	);
 
-	const totals = $derived.by(() =>
-		reviewFiles.reduce(
-			(summary, file) => ({
-				additions: summary.additions + file.additions,
-				deletions: summary.deletions + file.deletions,
-			}),
-			{ additions: 0, deletions: 0 },
-		),
-	);
+	const totals = $derived.by(() => session.files.diffStats);
 </script>
 
 <div class="space-y-3">

@@ -8,50 +8,45 @@
 	import { setSessionContext } from "$lib/context/session-context.svelte";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { IsMobile } from "$lib/hooks/is-mobile.svelte.js";
-	import { envSets, sessionDataById } from "$lib/mock-shell-data";
 
 	const app = useAppContext();
+	const ui = app.ui;
 	const isMobile = new IsMobile(1024);
 	const THREADS_LAYOUT_STORAGE_KEY = "paneforge:discobot-ui-threads-layout";
-	let desktopThreadsOpen = $state(false);
-	let mobileThreadsOpen = $state(false);
 	let desktopThreadsPane = $state<PaneAPI | null>(null);
 	let desktopThreadsInitialized = $state(false);
 
-	const runtimeBundle = setSessionContext({
-		sessionDataById,
-		envSets,
-		selectedSessionId: app.selectedSessionId ?? undefined,
-	});
+	const session = setSessionContext();
+	const sessionView = session.ui;
 
 	function threadsOpen() {
-		return isMobile.current ? mobileThreadsOpen : desktopThreadsOpen;
+		return isMobile.current ? sessionView.mobileThreadsOpen : sessionView.desktopThreadsOpen;
 	}
 
 	function toggleThreads() {
 		if (isMobile.current) {
-			mobileThreadsOpen = !mobileThreadsOpen;
+			sessionView.mobileThreadsOpen = !sessionView.mobileThreadsOpen;
 			return;
 		}
 
 		if (!desktopThreadsPane) {
-			desktopThreadsOpen = !desktopThreadsOpen;
+			sessionView.desktopThreadsOpen = !sessionView.desktopThreadsOpen;
 			return;
 		}
 
 		if (desktopThreadsPane.isCollapsed()) {
 			desktopThreadsPane.expand();
-			desktopThreadsOpen = true;
+			sessionView.desktopThreadsOpen = true;
 			return;
 		}
 
 		desktopThreadsPane.collapse();
-		desktopThreadsOpen = false;
+		sessionView.desktopThreadsOpen = false;
 	}
 
 	function handleThreadSelect() {
 		if (isMobile.current) {
-			mobileThreadsOpen = false;
+			sessionView.mobileThreadsOpen = false;
 		}
 	}
 
@@ -67,35 +62,33 @@
 		desktopThreadsInitialized = true;
 
 		if (hasSavedThreadsLayout()) {
-			desktopThreadsOpen = !desktopThreadsPane.isCollapsed();
+			sessionView.desktopThreadsOpen = !desktopThreadsPane.isCollapsed();
 			return;
 		}
 
 		desktopThreadsPane.collapse();
-		desktopThreadsOpen = false;
+		sessionView.desktopThreadsOpen = false;
 	});
 </script>
 
 <div class="h-screen flex flex-col bg-background text-foreground">
 	<AppHeader />
 
-	{#if !app.selectedSessionId}
+	{#if !ui.selectedSessionId}
 		<ThreadWorkspace
-			threadRuntime={runtimeBundle.thread}
 			mainClass="flex min-h-0 flex-1 flex-col overflow-hidden"
 			mode="conversation-only"
 		/>
 	{:else}
 		<div class="flex min-h-0 flex-1 overflow-hidden">
 			{#if isMobile.current}
-				<Sheet.Root bind:open={mobileThreadsOpen}>
+				<Sheet.Root bind:open={sessionView.mobileThreadsOpen}>
 					<Sheet.Content side="left" class="w-64 max-w-none p-0 [&>button]:hidden">
 						<ThreadSidebar onThreadSelect={handleThreadSelect} />
 					</Sheet.Content>
 				</Sheet.Root>
 
 				<ThreadWorkspace
-					threadRuntime={runtimeBundle.thread}
 					mainClass="flex min-h-0 flex-1 flex-col overflow-hidden"
 					threadsOpen={threadsOpen()}
 					onToggleThreads={toggleThreads}
@@ -114,10 +107,10 @@
 						collapsible
 						collapsedSize={0}
 						onCollapse={() => {
-							desktopThreadsOpen = false;
+							sessionView.desktopThreadsOpen = false;
 						}}
 						onExpand={() => {
-							desktopThreadsOpen = true;
+							sessionView.desktopThreadsOpen = true;
 						}}
 					>
 						<ThreadSidebar />
@@ -125,7 +118,6 @@
 					<Resizable.Handle />
 					<Resizable.Pane minSize={45} class="min-h-0">
 						<ThreadWorkspace
-							threadRuntime={runtimeBundle.thread}
 							mainClass="flex h-full min-h-0 flex-col overflow-hidden"
 							threadsOpen={threadsOpen()}
 							onToggleThreads={toggleThreads}

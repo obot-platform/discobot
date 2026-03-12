@@ -1,29 +1,38 @@
 import type { EnvSetWithVars, SessionData } from "$lib/shell-types";
-import type { Getter, Setter } from "$lib/session/runtime/modules/module-context";
-import type {
-	SessionEnvSetsModule,
-	ThreadEnvSetsModule,
-} from "$lib/session/runtime/session-runtime.types";
+import { getActiveEnvSets } from "$lib/session/store/session-store.helpers";
 
-type SessionEnvSetsModuleArgs = {
-	getSessionDataById: Getter<Record<string, SessionData>>;
-	setSessionDataById: Setter<Record<string, SessionData>>;
-	getList: Getter<EnvSetWithVars[]>;
-	setList: Setter<EnvSetWithVars[]>;
+export type SessionEnvSetsService = {
+	list: EnvSetWithVars[];
+	create: (name: string, envVars: Record<string, string>) => void;
+	update: (envSetId: string, name: string, envVars: Record<string, string>) => void;
+	remove: (envSetId: string) => void;
+};
+
+export type ThreadEnvSetsService = {
+	activeIds: string[];
+	active: EnvSetWithVars[];
+	toggle: (envSetId: string) => void;
+};
+
+type SessionEnvSetsServiceArgs = {
+	getSessionDataById: () => Record<string, SessionData>;
+	setSessionDataById: (value: Record<string, SessionData>) => void;
+	getList: () => EnvSetWithVars[];
+	setList: (value: EnvSetWithVars[]) => void;
 	createEnvSetId: () => string;
 	nowIsoString: () => string;
 };
 
-type ThreadEnvSetsModuleArgs = {
-	getSessionId: Getter<string | null>;
-	getSessionDataById: Getter<Record<string, SessionData>>;
-	setSessionDataById: Setter<Record<string, SessionData>>;
-	getList: Getter<EnvSetWithVars[]>;
+type ThreadEnvSetsServiceArgs = {
+	getSessionId: () => string | null;
+	getSessionDataById: () => Record<string, SessionData>;
+	setSessionDataById: (value: Record<string, SessionData>) => void;
+	getList: () => EnvSetWithVars[];
 };
 
-export function createSessionEnvSetsModule(
-	args: SessionEnvSetsModuleArgs,
-): SessionEnvSetsModule {
+export function createSessionEnvSetsService(
+	args: SessionEnvSetsServiceArgs,
+): SessionEnvSetsService {
 	const create = (name: string, envVars: Record<string, string>) => {
 		const trimmedName = name.trim();
 		if (!trimmedName) {
@@ -98,21 +107,15 @@ export function createSessionEnvSetsModule(
 	};
 }
 
-export function createThreadEnvSetsModule(args: ThreadEnvSetsModuleArgs): ThreadEnvSetsModule {
+export function createThreadEnvSetsService(
+	args: ThreadEnvSetsServiceArgs,
+): ThreadEnvSetsService {
 	const getActiveIds = () => {
 		const sessionId = args.getSessionId();
 		if (!sessionId) {
 			return [];
 		}
 		return args.getSessionDataById()[sessionId]?.activeEnvSetIds ?? [];
-	};
-
-	const getActive = () => {
-		const activeIds = getActiveIds();
-		const list = args.getList();
-		return activeIds
-			.map((id) => list.find((envSet) => envSet.id === id))
-			.filter((envSet) => !!envSet);
 	};
 
 	const toggle = (envSetId: string) => {
@@ -147,7 +150,7 @@ export function createThreadEnvSetsModule(args: ThreadEnvSetsModuleArgs): Thread
 			return getActiveIds();
 		},
 		get active() {
-			return getActive();
+			return getActiveEnvSets(args.getList(), getActiveIds());
 		},
 		toggle,
 	};

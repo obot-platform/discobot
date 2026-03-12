@@ -1,20 +1,46 @@
 import type { SessionData } from "$lib/shell-types";
-import type { Getter, Setter } from "$lib/session/runtime/modules/module-context";
-import type { SessionThreadsModule } from "$lib/session/runtime/session-runtime.types";
 
-type CreateSessionThreadsModuleArgs = {
-	getSessionId: Getter<string | null>;
-	getSessionDataById: Getter<Record<string, SessionData>>;
-	setSessionDataById: Setter<Record<string, SessionData>>;
-	getList: Getter<SessionData["threads"]>;
-	getSelectedId: Getter<string | null>;
-	setSelectedId: Setter<string | null>;
+export type SessionThreadsService = {
+	list: SessionData["threads"];
+	selectedId: string | null;
+	selected: SessionData["threads"][number] | null;
+	select: (threadId: string) => void;
+	create: (name?: string) => void;
+	rename: (threadId: string, nextName: string) => void;
+	remove: (threadId: string) => void;
+};
+
+type CreateSessionThreadServiceArgs = {
+	getSessionId: () => string | null;
+	getSessionDataById: () => Record<string, SessionData>;
+	setSessionDataById: (value: Record<string, SessionData>) => void;
+	getList: () => SessionData["threads"];
+	getSelectedId: () => string | null;
+	setSelectedId: (value: string | null) => void;
 	createThreadId: () => string;
 };
 
-export function createSessionThreadsModule(
-	args: CreateSessionThreadsModuleArgs,
-): SessionThreadsModule {
+export function getNextSelectedThreadId(
+	threads: SessionData["threads"],
+	removedThreadId: string,
+	currentSelectedId: string | null,
+): string | null {
+	const removedIndex = threads.findIndex((thread) => thread.id === removedThreadId);
+	if (removedIndex === -1) {
+		return currentSelectedId;
+	}
+
+	const remainingThreads = threads.filter((thread) => thread.id !== removedThreadId);
+	if (currentSelectedId !== removedThreadId) {
+		return currentSelectedId;
+	}
+
+	return remainingThreads[removedIndex]?.id ?? remainingThreads[removedIndex - 1]?.id ?? null;
+}
+
+export function createSessionThreadService(
+	args: CreateSessionThreadServiceArgs,
+): SessionThreadsService {
 	const select = (threadId: string) => {
 		if (args.getList().some((thread) => thread.id === threadId)) {
 			args.setSelectedId(threadId);
@@ -84,27 +110,23 @@ export function createSessionThreadsModule(
 			return;
 		}
 
-		const removedIndex = currentSession.threads.findIndex((thread) => thread.id === threadId);
-		if (removedIndex === -1) {
+		const nextSelectedId = getNextSelectedThreadId(
+			currentSession.threads,
+			threadId,
+			args.getSelectedId(),
+		);
+		if (nextSelectedId === args.getSelectedId() && !currentSession.threads.some((thread) => thread.id === threadId)) {
 			return;
 		}
 
-		const remainingThreads = currentSession.threads.filter((thread) => thread.id !== threadId);
 		args.setSessionDataById({
 			...sessionDataById,
 			[sessionId]: {
 				...currentSession,
-				threads: remainingThreads,
+				threads: currentSession.threads.filter((thread) => thread.id !== threadId),
 			},
 		});
-
-		if (args.getSelectedId() !== threadId) {
-			return;
-		}
-
-		args.setSelectedId(
-			remainingThreads[removedIndex]?.id ?? remainingThreads[removedIndex - 1]?.id ?? null,
-		);
+		args.setSelectedId(nextSelectedId);
 	};
 
 	return {

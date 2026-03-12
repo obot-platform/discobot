@@ -2,11 +2,10 @@
 	import ConversationPane from "$lib/components/ide/ConversationPane.svelte";
 	import DockPanel from "$lib/components/ide/DockPanel.svelte";
 	import SessionToolbar from "$lib/components/ide/SessionToolbar.svelte";
-	import { setThreadContext } from "$lib/context/thread-context.svelte";
-	import type { ThreadRuntime } from "$lib/session/runtime/session-runtime.types";
+	import { useSessionContext } from "$lib/context/session-context.svelte";
+	import { isChatView } from "$lib/session/view/create-session-view-state.svelte";
 
 	type Props = {
-		threadRuntime: ThreadRuntime;
 		mainClass: string;
 		threadsOpen?: boolean;
 		onToggleThreads?: () => void;
@@ -16,7 +15,7 @@
 	const props: Props = $props();
 	const noop = () => {};
 
-	const thread = setThreadContext(() => props.threadRuntime);
+	const session = useSessionContext();
 </script>
 
 <main class={props.mainClass}>
@@ -28,7 +27,7 @@
 	{/if}
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
-		{#if (props.mode ?? "full") === "conversation-only" || thread.ui.centerPanel === "chat"}
+		{#if (props.mode ?? "full") === "conversation-only" || isChatView(session.ui.activeView)}
 			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 				<ConversationPane />
 			</div>

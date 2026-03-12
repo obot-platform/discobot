@@ -33,6 +33,10 @@
 	import type { ThemeMode } from "$lib/theme";
 
 	const app = useAppContext();
+	const models = app.models;
+	const preferences = app.preferences;
+	const ui = app.ui;
+	const updates = app.updates;
 	const themeModes: ThemeMode[] = ["light", "dark", "system"];
 
 	function formatBytes(bytes: number): string {
@@ -43,19 +47,19 @@
 	}
 
 	const updateProgress = $derived.by(() => {
-		if (!app.totalBytes || app.totalBytes <= 0) {
+		if (!updates.totalBytes || updates.totalBytes <= 0) {
 			return 0;
 		}
-		return Math.min(100, Math.round((app.downloadedBytes / app.totalBytes) * 100));
+		return Math.min(100, Math.round((updates.downloadedBytes / updates.totalBytes) * 100));
 	});
 
 	const activeThemeName = $derived.by(
-		() => app.availableThemes.find((themeOption) => themeOption.id === app.colorScheme)?.name ?? "Default",
+		() => preferences.availableThemes.find((themeOption) => themeOption.id === preferences.colorScheme)?.name ?? "Default",
 	);
 
 </script>
 
-<Dialog.Root bind:open={app.settingsDialogOpen}>
+<Dialog.Root bind:open={ui.settingsDialog.open}>
 	<Dialog.Content class="sm:max-w-2xl">
 		<Dialog.Header>
 			<Dialog.Title>Settings</Dialog.Title>
@@ -64,7 +68,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<Tabs bind:value={app.settingsDialogTab} class="mt-1">
+		<Tabs bind:value={ui.settingsDialog.tab} class="mt-1">
 			<TabsList class="grid w-full grid-cols-4">
 				<TabsTrigger value="appearance">Appearance</TabsTrigger>
 				<TabsTrigger value="chat">Chat</TabsTrigger>
@@ -85,16 +89,16 @@
 										<ItemContent>
 											<ItemTitle>Mode</ItemTitle>
 											<ItemDescription>
-												Resolved mode: {app.resolvedTheme}
+												Resolved mode: {preferences.resolvedTheme}
 											</ItemDescription>
 										</ItemContent>
 										<ItemActions class="ml-auto justify-end">
 											<ToggleGroup
 												type="single"
-												value={app.theme}
+												value={preferences.theme}
 												onValueChange={(value) => {
 													if (value === "light" || value === "dark" || value === "system") {
-														app.setTheme(value);
+														preferences.setTheme(value);
 													}
 												}}
 												variant="outline"
@@ -123,15 +127,15 @@
 											<Label for="settings-theme" class="sr-only">Theme</Label>
 											<NativeSelect
 												id="settings-theme"
-												value={app.colorScheme}
+												value={preferences.colorScheme}
 												onchange={(event) => {
-													app.setColorScheme(
+													preferences.setColorScheme(
 														(event.currentTarget as HTMLSelectElement).value as ThemeColorScheme,
 													);
 												}}
 												class="w-full"
 											>
-												{#each app.availableThemes as themeOption (themeOption.mode + themeOption.id)}
+												{#each preferences.availableThemes as themeOption (themeOption.mode + themeOption.id)}
 													<option value={themeOption.id}>{themeOption.name}</option>
 												{/each}
 											</NativeSelect>
@@ -159,15 +163,15 @@
 											<Label for="settings-default-model" class="sr-only">Default model</Label>
 											<NativeSelect
 												id="settings-default-model"
-												value={app.defaultModel || "__auto__"}
+												value={preferences.defaultModel || "__auto__"}
 												onchange={(event) => {
 													const next = (event.currentTarget as HTMLSelectElement).value;
-													app.setDefaultModel(next === "__auto__" ? "" : next);
+													preferences.setDefaultModel(next === "__auto__" ? "" : next);
 												}}
 												class="w-full"
 											>
 												<option value="__auto__">Auto-select</option>
-												{#each app.models as model (model.id)}
+												{#each models.list as model (model.id)}
 													<option value={model.id}>{model.name}</option>
 												{/each}
 											</NativeSelect>
@@ -184,9 +188,9 @@
 										<ItemActions>
 											<Switch
 												id="settings-chat-width"
-												checked={app.chatWidthMode === "full"}
+												checked={preferences.chatWidthMode === "full"}
 												onCheckedChange={(checked) => {
-													app.setChatWidthMode(checked === true ? "full" : "constrained");
+													preferences.setChatWidthMode(checked === true ? "full" : "constrained");
 												}}
 											/>
 										</ItemActions>
@@ -206,57 +210,57 @@
 										variant="ghost"
 										size="xs"
 										onclick={() => {
-											void app.checkForUpdate();
+											void updates.check();
 										}}
-										disabled={app.updateStatus === "checking" || app.updateStatus === "downloading" || app.updateStatus === "installing"}
+										disabled={updates.status === "checking" || updates.status === "downloading" || updates.status === "installing"}
 									>
-										<RefreshCwIcon class={`size-3.5 ${app.updateStatus === "checking" ? "animate-spin" : ""}`} />
+										<RefreshCwIcon class={`size-3.5 ${updates.status === "checking" ? "animate-spin" : ""}`} />
 										Check
 									</Button>
 								</CardAction>
 							</CardHeader>
 							<CardContent class="space-y-3">
-								{#if app.updateStatus === "ready" && !app.isUpdateIgnored}
+								{#if updates.status === "ready" && !updates.isIgnored}
 									<div class="rounded-md border border-border bg-background p-3">
 										<p class="text-sm text-muted-foreground">
-											Version {app.availableVersion} is ready to install.
+											Version {updates.availableVersion} is ready to install.
 										</p>
 										<div class="mt-3 flex items-center gap-2">
-											<Button variant="default" size="xs" onclick={() => void app.installAndRelaunch()}>
+											<Button variant="default" size="xs" onclick={() => void updates.installAndRelaunch()}>
 												Restart to update
 											</Button>
-											<Button variant="outline" size="xs" onclick={app.ignoreVersion}>Ignore</Button>
+											<Button variant="outline" size="xs" onclick={updates.ignore}>Ignore</Button>
 										</div>
 									</div>
-								{:else if app.updateStatus === "ready" && app.isUpdateIgnored}
+								{:else if updates.status === "ready" && updates.isIgnored}
 									<div class="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
-										Version {app.availableVersion} available (ignored).
+										Version {updates.availableVersion} available (ignored).
 									</div>
-								{:else if app.updateStatus === "checking"}
+								{:else if updates.status === "checking"}
 									<div class="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
 										Checking for updates...
 									</div>
-								{:else if app.updateStatus === "downloading"}
+								{:else if updates.status === "downloading"}
 									<div class="space-y-2 rounded-md border border-border bg-background p-3">
 										<div class="flex items-center justify-between text-xs text-muted-foreground">
 											<span>Downloading update...</span>
 											<span>
-												{#if app.totalBytes !== null}
-													{formatBytes(app.downloadedBytes)} / {formatBytes(app.totalBytes)}
+												{#if updates.totalBytes !== null}
+													{formatBytes(updates.downloadedBytes)} / {formatBytes(updates.totalBytes)}
 												{:else}
-													{formatBytes(app.downloadedBytes)}
+													{formatBytes(updates.downloadedBytes)}
 												{/if}
 											</span>
 										</div>
 										<Progress value={updateProgress} />
 									</div>
-								{:else if app.updateStatus === "installing"}
+								{:else if updates.status === "installing"}
 									<div class="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
 										Installing update...
 									</div>
-								{:else if app.updateStatus === "error"}
+								{:else if updates.status === "error"}
 									<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-										Update failed: {app.updateError}
+										Update failed: {updates.error}
 									</div>
 								{:else}
 									<div class="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
@@ -288,13 +292,13 @@
 				<Button
 					variant="outline"
 					size="icon-sm"
-					onclick={app.openSupportInfoDialog}
+					onclick={ui.openSupportInfo}
 					title="Support information"
 					aria-label="Support information"
 				>
 					<InfoIcon class="size-4" />
 				</Button>
-				<Button variant="default" size="sm" onclick={app.closeSettingsDialog}>Done</Button>
+				<Button variant="default" size="sm" onclick={ui.closeSettings}>Done</Button>
 			</div>
 		</Dialog.Footer>
 	</Dialog.Content>

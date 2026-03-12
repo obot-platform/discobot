@@ -9,7 +9,6 @@
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import { onDestroy } from "svelte";
-	import { api } from "$lib/api-client";
 	import type {
 		AuthProvider,
 		CredentialAuthType,
@@ -85,6 +84,8 @@
 	];
 
 	const app = useAppContext();
+	const credentialsApi = app.credentials;
+	const ui = app.ui;
 	let providersById = $state<Record<string, AuthProvider>>({});
 	let credentials = $state<SupportedCredential[]>([]);
 	let loading = $state(false);
@@ -235,14 +236,11 @@
 		loading = true;
 		errorMessage = null;
 		try {
-			const [authProviderResponse, credentialResponse] = await Promise.all([
-				api.getAuthProviders(),
-				api.getCredentials(),
-			]);
+			await credentialsApi.refresh();
 			providersById = Object.fromEntries(
-				authProviderResponse.authProviders.map((provider) => [provider.id, provider]),
+				credentialsApi.providers.map((provider) => [provider.id, provider]),
 			);
-			credentials = normalizeCredentials(credentialResponse.credentials);
+			credentials = normalizeCredentials(credentialsApi.list);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : "Failed to load credentials";
 		} finally {
@@ -310,11 +308,7 @@
 		submitting = true;
 		errorMessage = null;
 		try {
-			await api.createCredential({
-				provider: selectedProvider,
-				authType: "api_key",
-				apiKey: trimmedKey,
-			});
+			await credentialsApi.create(selectedProvider, trimmedKey);
 			await loadCredentialsData();
 			resetEditor();
 		} catch (error) {
@@ -328,7 +322,7 @@
 		deletingProvider = credential.backendProvider;
 		errorMessage = null;
 		try {
-			await api.deleteCredential(credential.backendProvider);
+			await credentialsApi.remove(credential.backendProvider);
 			await loadCredentialsData();
 			if (editingCredentialId === credential.id) {
 				resetEditor();
@@ -344,7 +338,7 @@
 		oauthBusy = true;
 		oauthError = null;
 		try {
-			const response = await api.anthropicAuthorize();
+			const response = await credentialsApi.anthropicAuthorize();
 			oauthFlow = "anthropic";
 			oauthAuthUrl = response.url;
 			oauthVerifier = response.verifier;
@@ -372,7 +366,7 @@
 		oauthBusy = true;
 		oauthError = null;
 		try {
-			const result = await api.anthropicExchange({
+			const result = await credentialsApi.anthropicExchange({
 				code: trimmedCode,
 				verifier: isDirectToken ? "" : (oauthVerifier ?? ""),
 			});
@@ -393,7 +387,7 @@
 		oauthBusy = true;
 		oauthError = null;
 		try {
-			const response = await api.codexAuthorize();
+			const response = await credentialsApi.codexAuthorize();
 			oauthFlow = "openai";
 			oauthAuthUrl = response.url;
 			oauthVerifier = response.verifier;
@@ -446,7 +440,7 @@
 		oauthBusy = true;
 		oauthError = null;
 		try {
-			const result = await api.codexExchange({ code, verifier: oauthVerifier });
+			const result = await credentialsApi.codexExchange({ code, verifier: oauthVerifier });
 			if (!result.success) {
 				oauthError = result.error ?? "OpenAI OAuth failed";
 				return;
@@ -478,7 +472,7 @@
 		}
 
 		try {
-			const result = await api.githubPoll({
+			const result = await credentialsApi.githubPoll({
 				deviceCode: githubDeviceInfo.deviceCode,
 				domain: githubDeviceInfo.domain,
 			});
@@ -515,7 +509,7 @@
 		oauthBusy = true;
 		oauthError = null;
 		try {
-			const response = await api.githubDeviceCode();
+			const response = await credentialsApi.githubDeviceCode();
 			oauthFlow = "github-git";
 			githubDeviceInfo = response;
 			await openUrl(response.verificationUri);
@@ -554,7 +548,7 @@
 	}
 
 	$effect(() => {
-		if (!app.settingsDialogOpen) {
+		if (!ui.settingsDialog.open) {
 			resetEditor();
 			return;
 		}
@@ -562,11 +556,11 @@
 	});
 
 	$effect(() => {
-		if (!app.settingsDialogOpen || app.credentialFlowIntent !== "github-git") {
+		if (!ui.settingsDialog.open || ui.credentialFlowIntent !== "github-git") {
 			return;
 		}
 
-		app.credentialFlowIntent = null;
+		ui.credentialFlowIntent = null;
 		mode = "create";
 		editingCredentialId = null;
 		selectedProvider = "github-git";
