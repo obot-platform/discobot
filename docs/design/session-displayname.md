@@ -60,7 +60,7 @@ export interface UpdateSessionRequest {
 
 ### Creating a Session
 
-Sessions are created implicitly via the `/api/projects/{projectId}/chat` endpoint. If the request includes no prompt (`messages: []`, `null`, or omitted), the session is still created but its derived `name` remains empty until the first real user message:
+Sessions are created implicitly via the `/api/projects/{projectId}/chat` endpoint. If the request includes no prompt (`messages: []`, `null`, or omitted), the session is still created but its derived `name` remains empty until the first real user message. In the UI, one way this happens is the new-session composer `+` affordance, which creates a blank session without adding a user message:
 
 ```json
 POST /api/projects/{projectId}/chat

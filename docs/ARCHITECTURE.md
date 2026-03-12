@@ -334,7 +334,7 @@ See [agent/docs/design/proxy-integration.md](../agent/docs/design/proxy-integrat
 
 ### Credential Encryption
 
-AI provider credentials (API keys, OAuth tokens) are encrypted using AES-256-GCM before storage. The encryption key is configured via `ENCRYPTION_KEY` environment variable.
+AI provider credentials (API keys, OAuth tokens) are encrypted using AES-256-GCM before storage. The encryption key is configured via `ENCRYPTION_KEY` environment variable. At session startup, decrypted credential values are injected into the sandbox environment for the active project, including tool credentials such as `TAVILY_API_KEY` and `DISCOBOT_TOKEN`.
 
 ### Multi-tenancy
 

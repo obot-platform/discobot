@@ -102,6 +102,8 @@ Project → Workspace (git repo or local folder) → Session (chat thread + cont
 
 ### Frontend Patterns
 
+- `./ui` is the current UI and should be used for active frontend work.
+- `./components` and `./lib` are the old React UI, are slated for deletion, and do not need to be maintained unless a task explicitly targets them.
 - **Data fetching**: SWR hooks in `lib/hooks/` with optimistic mutations
 - **API client**: `lib/api-client.ts` — all calls go through `getApiBase()` (`/api/projects/local/...`)
 - **Types**: All shared interfaces in `lib/api-types.ts`
@@ -111,6 +113,8 @@ Project → Workspace (git repo or local folder) → Session (chat thread + cont
 - **React Compiler**: Enabled via babel plugin — run `/vercel-react-best-practices` skill when working on React code
 
 ### Adding Features
+
+For active UI work, prefer `./ui`. The steps below apply to the legacy React UI only and generally should be ignored unless the task explicitly targets that code.
 
 1. Define types in `lib/api-types.ts`
 2. Add Go handler/service/store in `server/internal/`

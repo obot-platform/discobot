@@ -136,10 +136,27 @@ Chat input with features:
 
 Features:
 - Multi-line input with shift+enter
-- Submit on enter
+- Submit on enter when the textarea contains non-whitespace text
 - File attachment button
 - Disabled state when loading
 - Prompt history with pin functionality
+
+### Empty Session Creation
+
+The composer has two different empty-input behaviors for brand-new sessions:
+
+- **Blank + Enter**: ignored
+- **Blank + submit button click**: creates an empty session only when the button is acting as the `+` affordance for a new session
+
+That create-only path:
+
+1. Uses the already-generated `sessionId`
+2. POSTs to `/api/chat` with `sessionId`, `workspaceId`, `agentId`, and `messages: []`
+3. Lets the backend create the session without sending anything to the sandbox
+4. Does **not** insert a synthetic user message into the local message list
+5. Does **not** add anything to prompt history
+
+Once a session already exists or is being resumed, empty submits are blocked for both Enter and button clicks.
 
 ## Prompt History
 
