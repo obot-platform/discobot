@@ -64,6 +64,7 @@ After setup, the filesystem is configured as:
 | System Path | Source | Description |
 |-------------|--------|-------------|
 | `/home/discobot` | AgentFS mount | COW overlay of `/.data/discobot` |
+| `/nix` | Image directory | Writable Nix store root owned by `discobot` |
 | `/workspace` | Symlink | Points to `/home/discobot/workspace` |
 
 The AgentFS mount provides copy-on-write semantics - reads come from the base layer (`/.data/discobot`), writes are captured in the SQLite database.

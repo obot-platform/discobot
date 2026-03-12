@@ -85,6 +85,7 @@ The agent automatically mounts the following well-known cache directories:
 - `/home/discobot/.npm` - npm cache
 - `/home/discobot/.pnpm-store` - pnpm store
 - `/home/discobot/.yarn` - yarn cache
+- `/nix` - Nix store for single-user installs
 
 ### Python
 - `/home/discobot/.local/share/uv` - uv data directory

@@ -124,10 +124,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 # Create discobot user (UID 1000)
 # Handle case where UID 1000 might already be taken by another user
+# Pre-create /nix so discobot can perform a single-user Nix install without root.
 RUN (useradd -m -s /bin/bash -u 1000 discobot 2>/dev/null \
     || (userdel -r $(getent passwd 1000 | cut -d: -f1) 2>/dev/null; useradd -m -s /bin/bash -u 1000 discobot) \
     || useradd -m -s /bin/bash discobot) \
-    && usermod -aG systemd-journal discobot
+    && usermod -aG systemd-journal discobot \
+    && mkdir -m 0755 /nix \
+    && chown discobot:discobot /nix
 
 # Explicitly deny sudo access for discobot user
 RUN echo 'discobot ALL=(ALL) !ALL' > /etc/sudoers.d/discobot-deny \

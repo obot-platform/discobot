@@ -1304,8 +1304,8 @@ func wellKnownCachePaths() []string {
 		// PHP
 		"/home/discobot/.composer/cache",
 
-		// Bun
-		"/home/discobot/.bun/install/cache",
+		// Nix store for single-user installs (writable for discobot via cache mount perms)
+		"/nix",
 
 		// System package cache (apt)
 		"/var/cache/apt",
@@ -1384,7 +1384,7 @@ func isValidCachePath(path string) bool {
 	return true
 }
 
-// mountCacheDirectories bind-mounts cache directories from /.data/cache to /home/discobot/*.
+// mountCacheDirectories bind-mounts cache directories from /.data/cache to their runtime paths.
 // This is called after the overlay filesystem is mounted, so cache mounts sit on top of the overlay.
 func mountCacheDirectories() error {
 	// Check if CACHE_ENABLED environment variable is set

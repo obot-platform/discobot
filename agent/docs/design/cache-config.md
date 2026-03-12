@@ -56,6 +56,7 @@ The agent automatically mounts these cache directories without configuration:
 - `/home/discobot/.pnpm-store` - pnpm store
 - `/home/discobot/.yarn` - yarn cache
 - `/home/discobot/.bun/install/cache` - Bun install cache
+- `/nix` - Nix store for single-user installs
 
 ### Language-Specific
 - **Python**: `.local/share/uv` 

@@ -344,6 +344,8 @@ Responsible for:
 │  ├── .npm/                      (bind mount from cache vol) │
 │  └── workspace/                 (COW of /.data/discobot/ws)  │
 │                                                             │
+│  /nix                            (writable Nix store root)   │
+│                                                             │
 │  /workspace -> /home/discobot/workspace (symlink)            │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
