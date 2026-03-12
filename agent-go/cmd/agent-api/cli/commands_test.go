@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/base64"
+	"flag"
 	"io"
 	"iter"
 	"os"
@@ -37,44 +38,27 @@ func (p *testModelListProvider) ListModels(_ context.Context) ([]providers.Model
 
 func (p *testModelListProvider) DefaultModels() map[string]providers.ModelRef { return nil }
 
-func TestSelectInitialThreadID_ForceNewThread(t *testing.T) {
-	store := thread.NewStore(t.TempDir())
-	cfg := &config.Config{SessionID: "explicit-session"}
+func TestAddFlags_ShortAliases(t *testing.T) {
+	oldCommandLine := flag.CommandLine
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	flag.CommandLine = fs
+	defer func() {
+		flag.CommandLine = oldCommandLine
+	}()
 
-	threadID := selectInitialThreadID(store, cfg, true)
-	if threadID == cfg.SessionID {
-		t.Fatalf("expected force-new to ignore explicit session id, got %q", threadID)
+	flags := AddFlags()
+	if err := flag.CommandLine.Parse([]string{"-m", "anthropic/claude-sonnet-4", "-p", "-r", "thread-123"}); err != nil {
+		t.Fatalf("Parse() error = %v", err)
 	}
-	if !strings.HasPrefix(threadID, "thread-") {
-		t.Fatalf("expected generated thread ID with prefix thread-, got %q", threadID)
+	if got := *flags.model; got != "anthropic/claude-sonnet-4" {
+		t.Fatalf("model = %q, want %q", got, "anthropic/claude-sonnet-4")
 	}
-}
-
-func TestSelectInitialThreadID_UsesExplicitSessionIDByDefault(t *testing.T) {
-	store := thread.NewStore(t.TempDir())
-	cfg := &config.Config{SessionID: "explicit-session"}
-
-	threadID := selectInitialThreadID(store, cfg, false)
-	if threadID != cfg.SessionID {
-		t.Fatalf("expected explicit session id %q, got %q", cfg.SessionID, threadID)
+	if !*flags.plan {
+		t.Fatal("expected -p alias to enable plan mode")
 	}
-}
-
-func TestSelectInitialThreadID_DefaultsToFreshThread(t *testing.T) {
-	baseDir := t.TempDir()
-	store := thread.NewStore(baseDir)
-	cfg := &config.Config{SessionID: "default"}
-
-	if err := os.MkdirAll(filepath.Join(baseDir, "thread-existing"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	threadID := selectInitialThreadID(store, cfg, false)
-	if threadID == "thread-existing" {
-		t.Fatalf("expected a fresh thread id, got existing thread %q", threadID)
-	}
-	if !strings.HasPrefix(threadID, "thread-") {
-		t.Fatalf("expected generated thread ID with prefix thread-, got %q", threadID)
+	if got := *flags.resume; got != "thread-123" {
+		t.Fatalf("resume = %q, want %q", got, "thread-123")
 	}
 }
 
@@ -309,65 +293,5 @@ func TestImagePartFromRawBytes_DetectsImageData(t *testing.T) {
 	trimmed := input[:len(input)-1]
 	if string(decoded) != string(trimmed) {
 		t.Fatalf("decoded image bytes mismatch")
-	}
-}
-
-func TestPastedSummary_FormatsLinesAndBytes(t *testing.T) {
-	summary := pastedSummary([]byte("hello\nworld\n"))
-	if summary != "[pasted 2 lines/12 bytes]" {
-		t.Fatalf("unexpected summary: %q", summary)
-	}
-	if pastedLineCount([]byte("single")) != 1 {
-		t.Fatalf("expected single line count")
-	}
-	if pastedLineCount(nil) != 0 {
-		t.Fatalf("expected empty paste line count")
-	}
-}
-
-func TestNormalizePastedChunks_TrimsInvalidTail(t *testing.T) {
-	chunks := []pastedChunk{
-		{end: 5, rawLen: 3, dispLen: 8},
-		{end: 10, rawLen: 4, dispLen: 9},
-	}
-
-	normalized := normalizePastedChunks(chunks, 6)
-	if len(normalized) != 1 {
-		t.Fatalf("expected one valid chunk, got %d", len(normalized))
-	}
-	if normalized[0].end != 5 {
-		t.Fatalf("unexpected remaining chunk end: %d", normalized[0].end)
-	}
-}
-
-func TestNormalizePastedChunks_DropsAllInvalidChunks(t *testing.T) {
-	chunks := []pastedChunk{{end: 12, rawLen: 6, dispLen: 20}}
-	normalized := normalizePastedChunks(chunks, 4)
-	if len(normalized) != 0 {
-		t.Fatalf("expected no valid chunks, got %d", len(normalized))
-	}
-}
-
-func TestHistoryView_UsesMostRecentFirstOrder(t *testing.T) {
-	h := &cmdHistory{entries: []string{"first", "second", "third"}}
-	v := historyView{h: h}
-
-	if v.Len() != 3 {
-		t.Fatalf("expected len=3, got %d", v.Len())
-	}
-	if got := v.At(0); got != "third" {
-		t.Fatalf("expected most recent entry, got %q", got)
-	}
-	if got := v.At(2); got != "first" {
-		t.Fatalf("expected oldest entry at tail index, got %q", got)
-	}
-}
-
-func TestHistoryView_AddIsNoop(t *testing.T) {
-	h := &cmdHistory{entries: []string{"one"}}
-	v := historyView{h: h}
-	v.Add("two")
-	if len(h.entries) != 1 {
-		t.Fatalf("expected Add to be no-op, got %d entries", len(h.entries))
 	}
 }

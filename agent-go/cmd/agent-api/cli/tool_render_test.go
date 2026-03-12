@@ -87,3 +87,158 @@ func TestRenderChunk_ToolOutputErrorPrintsToolOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderChunk_ToolInputDoesNotStartWithBlankLine(t *testing.T) {
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stderrReader.Close()
+
+	oldStderr := os.Stderr
+	oldNoColor := noColor
+	os.Stderr = stderrWriter
+	noColor = true
+	defer func() {
+		os.Stderr = oldStderr
+		noColor = oldNoColor
+	}()
+
+	renderChunk(message.ToolInputAvailableChunk{
+		ToolCallID: "tool-call-12345678",
+		ToolName:   "Bash",
+		Input:      json.RawMessage(`{"command":"pwd"}`),
+	}, nil, newToolRenderState())
+
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(stderrReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := string(output)
+	if strings.HasPrefix(out, "\n") {
+		t.Fatalf("expected tool input to avoid a leading blank line, got %q", out)
+	}
+	if !strings.Contains(out, "→ [Bash(12345678)]") {
+		t.Fatalf("expected tool input summary in output, got %q", out)
+	}
+}
+
+func TestSectionNeedsGap(t *testing.T) {
+	tests := []struct {
+		from sectionKind
+		to   sectionKind
+		want bool
+	}{
+		// tool → tool: never a gap
+		{skTool, skTool, false},
+		// same section continuation: no gap
+		{skText, skText, false},
+		{skReasoning, skReasoning, false},
+		// start of turn: gap only for text/reasoning
+		{skNone, skTool, false},
+		{skNone, skText, true},
+		{skNone, skReasoning, true},
+		// tool ↔ text/reasoning: gap
+		{skTool, skText, true},
+		{skTool, skReasoning, true},
+		{skReasoning, skTool, true},
+		{skReasoning, skText, true},
+		{skText, skTool, true},
+		{skText, skReasoning, true},
+	}
+
+	for _, tt := range tests {
+		got := sectionNeedsGap(tt.from, tt.to)
+		if got != tt.want {
+			t.Errorf("sectionNeedsGap(%v, %v) = %v, want %v", tt.from, tt.to, got, tt.want)
+		}
+	}
+}
+
+func TestToolInputSummary_SpecialTools(t *testing.T) {
+	tests := []struct {
+		name     string
+		toolName string
+		input    json.RawMessage
+		want     string
+	}{
+		{
+			name:     "glob shows pattern first",
+			toolName: "Glob",
+			input:    json.RawMessage(`{"path":"/repo","pattern":"**/*.go"}`),
+			want:     "pattern: **/*.go path: /repo",
+		},
+		{
+			name:     "grep shows pattern",
+			toolName: "Grep",
+			input:    json.RawMessage(`{"path":"/repo","pattern":"TODO","glob":"*.go"}`),
+			want:     "pattern: TODO path: /repo glob: *.go",
+		},
+		{
+			name:     "websearch shows query",
+			toolName: "WebSearch",
+			input:    json.RawMessage(`{"query":"golang context docs"}`),
+			want:     "query: golang context docs",
+		},
+		{
+			name:     "webfetch shows url",
+			toolName: "WebFetch",
+			input:    json.RawMessage(`{"url":"https://example.com/docs","prompt":"summarize"}`),
+			want:     "url: https://example.com/docs",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toolInputSummary(tt.toolName, tt.input); got != tt.want {
+				t.Fatalf("toolInputSummary() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderChunk_ToolInputShowsGlobPattern(t *testing.T) {
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stderrReader.Close()
+
+	oldStderr := os.Stderr
+	oldNoColor := noColor
+	os.Stderr = stderrWriter
+	noColor = true
+	defer func() {
+		os.Stderr = oldStderr
+		noColor = oldNoColor
+	}()
+
+	renderChunk(message.ToolInputAvailableChunk{
+		ToolCallID: "tool-call-12345678",
+		ToolName:   "Glob",
+		Input:      json.RawMessage(`{"path":"/repo","pattern":"**/*.go"}`),
+	}, nil, newToolRenderState())
+
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(stderrReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := string(output)
+	for _, want := range []string{
+		"→ [Glob(12345678)]",
+		"pattern: **/*.go",
+		"path: /repo",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, out)
+		}
+	}
+}

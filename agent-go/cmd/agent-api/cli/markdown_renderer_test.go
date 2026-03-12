@@ -72,10 +72,31 @@ func TestMarkdownRenderer_FlushForBoundaryFlushesPendingTail(t *testing.T) {
 	if got := out.String(); got != "" {
 		t.Fatalf("expected tail buffering before boundary flush, got %q", got)
 	}
+	if !r.AtLineStart() {
+		t.Fatalf("expected buffered tail to keep renderer at line start")
+	}
 
 	r.FlushForBoundary()
 	if got := out.String(); got != "**bold" {
 		t.Fatalf("expected boundary flush to emit pending text, got %q", got)
+	}
+	if r.AtLineStart() {
+		t.Fatalf("expected flushed inline text to leave renderer mid-line")
+	}
+}
+
+func TestMarkdownRenderer_AtLineStartTracksNewlines(t *testing.T) {
+	var out bytes.Buffer
+	r := newMarkdownRenderer(&out, true, false)
+
+	r.WriteText("hello")
+	if r.AtLineStart() {
+		t.Fatalf("expected plain text to leave renderer mid-line")
+	}
+
+	r.WriteText("\n")
+	if !r.AtLineStart() {
+		t.Fatalf("expected newline-terminated text to leave renderer at line start")
 	}
 }
 

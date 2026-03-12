@@ -13,6 +13,7 @@ type markdownRenderer struct {
 	out          io.Writer
 	enableFormat bool
 	enableColor  bool
+	atLineStart  bool
 
 	pending string
 
@@ -29,6 +30,7 @@ func newMarkdownRenderer(out io.Writer, enableFormat, enableColor bool) *markdow
 		out:          out,
 		enableFormat: enableFormat,
 		enableColor:  enableColor,
+		atLineStart:  true,
 	}
 }
 
@@ -79,6 +81,13 @@ func (r *markdownRenderer) Finish() {
 		r.inFence = false
 		r.fenceDelimiter = ""
 	}
+}
+
+func (r *markdownRenderer) AtLineStart() bool {
+	if r == nil {
+		return true
+	}
+	return r.atLineStart
 }
 
 func (r *markdownRenderer) consumeCompleteLine(line string) {
@@ -341,4 +350,5 @@ func (r *markdownRenderer) write(text string) {
 		return
 	}
 	_, _ = fmt.Fprint(r.out, text)
+	r.atLineStart = strings.HasSuffix(text, "\n") || strings.HasSuffix(text, "\r")
 }

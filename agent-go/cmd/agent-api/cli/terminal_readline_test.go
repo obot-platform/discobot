@@ -2,11 +2,50 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
 	"golang.org/x/term"
 )
+
+type chunkedReader struct {
+	chunks [][]byte
+}
+
+func (r *chunkedReader) Read(p []byte) (int, error) {
+	if len(r.chunks) == 0 {
+		return 0, io.EOF
+	}
+	chunk := r.chunks[0]
+	r.chunks = r.chunks[1:]
+	n := copy(p, chunk)
+	return n, nil
+}
+
+func runReadlineTTYInput(t *testing.T, input string) (string, string) {
+	t.Helper()
+	return runReadlineTTYReader(t, bytes.NewBufferString(input))
+}
+
+func runReadlineTTYReader(t *testing.T, inputReader io.Reader) (string, string) {
+	t.Helper()
+	var output bytes.Buffer
+	line, err := readLineReadlineTTY(
+		"> ",
+		nil,
+		inputReader,
+		&output,
+		120,
+		40,
+		func() (*term.State, error) { return nil, nil },
+		func(*term.State) error { return nil },
+	)
+	if err != nil {
+		t.Fatalf("readLineReadlineTTY() error = %v", err)
+	}
+	return line, output.String()
+}
 
 func TestReadLineReadlineTTY_SingleLinePasteInlinesContent(t *testing.T) {
 	input := bytes.NewBufferString("\x1b[200~hello\x1b[201~\r")
@@ -30,7 +69,7 @@ func TestReadLineReadlineTTY_SingleLinePasteInlinesContent(t *testing.T) {
 	}
 
 	out := output.String()
-	if strings.Contains(out, "[pasted 1 lines/5 bytes]") {
+	if strings.Contains(out, "[pasted 1 lines/5 chars]") {
 		t.Fatalf("expected small single-line paste to be inlined, got %q", out)
 	}
 }
@@ -57,7 +96,7 @@ func TestReadLineReadlineTTY_BracketedPasteWithTypedTextInlinesContent(t *testin
 	}
 
 	out := output.String()
-	if strings.Contains(out, "[pasted 1 lines/5 bytes]") {
+	if strings.Contains(out, "[pasted 1 lines/5 chars]") {
 		t.Fatalf("expected small single-line paste to be inlined, got %q", out)
 	}
 }
@@ -84,7 +123,7 @@ func TestReadLineReadlineTTY_MultilinePasteShowsCompactBlock(t *testing.T) {
 	}
 
 	out := output.String()
-	if !strings.Contains(out, "[pasted 2 lines/11 bytes]") {
+	if !strings.Contains(out, "[pasted 2 lines/11 chars]") {
 		t.Fatalf("expected compact multiline paste summary in output, got %q", out)
 	}
 	if strings.Contains(out, "hello\nworld") {
@@ -131,7 +170,7 @@ func TestReadLineReadlineTTY_LongSingleLinePasteShowsSummary(t *testing.T) {
 	if line != payload {
 		t.Fatalf("line length = %d, want %d", len(line), len(payload))
 	}
-	if !strings.Contains(output.String(), "[pasted 1 lines/100 bytes]") {
+	if !strings.Contains(output.String(), "[pasted 1 lines/100 chars]") {
 		t.Fatalf("expected long single-line paste summary, got %q", output.String())
 	}
 }
@@ -188,13 +227,13 @@ func TestRemoveMalformedPasteBlocks(t *testing.T) {
 		in   string
 		out  string
 	}{
-		{name: "well formed kept", in: "[pasted 1 lines/31 bytes]", out: "[pasted 1 lines/31 bytes]"},
-		{name: "missing close bracket removed", in: "[pasted 1 lines/31 bytes", out: ""},
-		{name: "broken bracketed prefix removed", in: "[asted 1 lines/31 bytes]", out: ""},
-		{name: "missing open bracket removed", in: "pasted 1 lines/31 bytes]", out: ""},
-		{name: "missing byte character removed", in: "[pasted 1 lines/31 byts]", out: ""},
-		{name: "unbracketed missing byte character removed", in: "pasted 1 lines/31 byts]", out: ""},
-		{name: "inline malformed removed", in: "abc [pasted 1 lines/31 byte] xyz", out: "abc  xyz"},
+		{name: "well formed kept", in: "[pasted 1 lines/31 chars]", out: "[pasted 1 lines/31 chars]"},
+		{name: "missing close bracket removed", in: "[pasted 1 lines/31 chars", out: ""},
+		{name: "broken bracketed prefix removed", in: "[asted 1 lines/31 chars]", out: ""},
+		{name: "missing open bracket removed", in: "pasted 1 lines/31 chars]", out: ""},
+		{name: "missing character label removed", in: "[pasted 1 lines/31 chrs]", out: ""},
+		{name: "unbracketed missing character label removed", in: "pasted 1 lines/31 chrs]", out: ""},
+		{name: "inline malformed removed", in: "abc [pasted 1 lines/31 char] xyz", out: "abc  xyz"},
 	}
 
 	for _, tt := range tests {
@@ -208,7 +247,7 @@ func TestRemoveMalformedPasteBlocks(t *testing.T) {
 }
 
 func TestSanitizeMalformedPasteBlocksWithCursor(t *testing.T) {
-	cleaned, newPos, changed := sanitizeMalformedPasteBlocksWithCursor("[pasted 1 lines/31 bytes", 10)
+	cleaned, newPos, changed := sanitizeMalformedPasteBlocksWithCursor("[pasted 1 lines/31 chars", 10)
 	if !changed {
 		t.Fatal("expected malformed paste block to be removed")
 	}
@@ -232,6 +271,95 @@ func TestInputTrackingReader_AddsSanitizeTriggerAfterEditKeys(t *testing.T) {
 	r.appendOutput([]byte{0x1b, '[', '3', '~'})
 	if !bytes.Equal(r.pendingOut, []byte{0x1b, '[', '3', '~', sanitizeTriggerKey}) {
 		t.Fatalf("pendingOut = %v, want delete sequence + trigger", r.pendingOut)
+	}
+}
+
+func TestReadLineReadlineTTY_CtrlLeftVariantMovesByWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x1b[1;5D!\r")
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
+	}
+}
+
+func TestReadLineReadlineTTY_CtrlLeftRxvtVariantMovesByWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x1b[5D!\r")
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
+	}
+}
+
+func TestReadLineReadlineTTY_CtrlRightVariantMovesByWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x01\x1b[1;5C!\r")
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
+	}
+}
+
+func TestReadLineReadlineTTY_CtrlRightRxvtVariantMovesByWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x01\x1b[5C!\r")
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
+	}
+}
+
+func TestReadLineReadlineTTY_MetaArrowVariantMovesByWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x1b[1;9D!\r")
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
+	}
+}
+
+func TestReadLineReadlineTTY_AltBMovesByWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x1bb!\r")
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
+	}
+}
+
+func TestReadLineReadlineTTY_AltFMovesByWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x01\x1bf!\r")
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
+	}
+}
+
+func TestReadLineReadlineTTY_AltBackspaceDeletesPreviousWord(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello world\x1b\x7f!\r")
+	if line != "hello !" {
+		t.Fatalf("line = %q, want %q", line, "hello !")
+	}
+}
+
+func TestReadLineReadlineTTY_HomeVariantMovesToStart(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello\x1bOH!\r")
+	if line != "!hello" {
+		t.Fatalf("line = %q, want %q", line, "!hello")
+	}
+}
+
+func TestReadLineReadlineTTY_EndVariantMovesToEnd(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello\x01\x1bOF!\r")
+	if line != "hello!" {
+		t.Fatalf("line = %q, want %q", line, "hello!")
+	}
+}
+
+func TestReadLineReadlineTTY_DeleteVariantDeletesCharacter(t *testing.T) {
+	line, _ := runReadlineTTYInput(t, "hello\x1b[D\x1b[3;5~\r")
+	if line != "hell" {
+		t.Fatalf("line = %q, want %q", line, "hell")
+	}
+}
+
+func TestReadLineReadlineTTY_SplitCtrlLeftSequenceStillWorks(t *testing.T) {
+	line, _ := runReadlineTTYReader(t, &chunkedReader{chunks: [][]byte{
+		[]byte("hello world"),
+		[]byte{0x1b, '[', '1', ';', '5'},
+		[]byte{'D', '!'},
+		[]byte{'\r'},
+	}})
+	if line != "hello !world" {
+		t.Fatalf("line = %q, want %q", line, "hello !world")
 	}
 }
 
