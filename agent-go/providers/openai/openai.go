@@ -9,6 +9,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -18,9 +19,16 @@ import (
 	"github.com/obot-platform/discobot/agent-go/providers/transport"
 )
 
+// configUseWebSocket is the Config key that opts the provider into WebSocket
+// mode. Set to "true" to enable. WebSocket mode is also enabled automatically
+// when base_url begins with "wss://" or "ws://". The default OpenAI base URL
+// is `wss://api.openai.com/v1`, so WebSocket mode is the default transport;
+// specify an explicit `https://...` base_url to force HTTP SSE instead.
+const configUseWebSocket = "use_websocket"
+
 const (
 	providerID            = "openai"
-	defaultBaseURL        = "https://api.openai.com/v1"
+	defaultBaseURL        = "wss://api.openai.com/v1"
 	missingToolOutputText = "interrupted by transient system failure"
 )
 
@@ -28,12 +36,17 @@ func init() {
 	providers.Register(providerID, New)
 }
 
-// Provider implements providers.Provider using the OpenAI Responses API
-// (POST /v1/responses).
+// Provider implements providers.Provider using the OpenAI Responses API.
+// It supports both HTTP SSE streaming (POST /v1/responses) and a persistent
+// WebSocket connection (wss://…/v1/responses). WebSocket mode is enabled when
+// the "use_websocket" config key is "true" or the base_url uses a ws(s)://
+// scheme; it maintains a pool of per-session connections that reuse server-side
+// cached state and make repeated tool-call loops ~40 % faster.
 type Provider struct {
 	apiKey  string
 	baseURL string
 	client  *http.Client
+	ws      *wsPool // non-nil when WebSocket mode is enabled
 }
 
 // New creates a new OpenAI Responses API provider.
@@ -44,13 +57,33 @@ func New(cfg providers.Config) (providers.Provider, error) {
 	}
 	baseURL := cfg.BaseURL()
 	if baseURL == "" {
+		baseURL = os.Getenv("OPENAI_API_BASE")
+	}
+	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
-	return &Provider{
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	// Detect WebSocket mode: explicit flag or ws(s):// scheme on base_url.
+	useWS := cfg[configUseWebSocket] == "true" ||
+		strings.HasPrefix(baseURL, "wss://") ||
+		strings.HasPrefix(baseURL, "ws://")
+
+	// Normalise base_url to http(s) so REST endpoints (CountTokens, ListModels)
+	// work regardless of which scheme the caller provided.
+	httpBaseURL := baseURL
+	httpBaseURL = strings.Replace(httpBaseURL, "wss://", "https://", 1)
+	httpBaseURL = strings.Replace(httpBaseURL, "ws://", "http://", 1)
+
+	p := &Provider{
 		apiKey:  apiKey,
-		baseURL: strings.TrimRight(baseURL, "/"),
+		baseURL: httpBaseURL,
 		client:  transport.NewClient(10 * time.Minute),
-	}, nil
+	}
+	if useWS {
+		p.ws = newWSPool(apiKey, httpBaseURL)
+	}
+	return p, nil
 }
 
 func (p *Provider) ID() string { return providerID }
@@ -66,7 +99,6 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 		body := map[string]any{
 			"model":      req.Model.ModelID,
 			"input":      inputItems,
-			"stream":     true,
 			"store":      false,
 			"truncation": "disabled",
 		}
@@ -97,6 +129,14 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 			}
 			body["include"] = []string{"reasoning.encrypted_content"}
 		}
+
+		if p.ws != nil {
+			p.completeViaWebSocket(ctx, body, lastAssistantID(req.Messages), yield)
+			return
+		}
+
+		// HTTP SSE path.
+		body["stream"] = true
 
 		jsonBody, err := json.Marshal(body)
 		if err != nil {
@@ -1127,10 +1167,10 @@ func handleStreamError(data []byte, yield func(message.ProviderMessageChunk, err
 	if msg == "" {
 		msg = string(data)
 	}
-	if event.Error.Code != "" {
-		return yield(nil, fmt.Errorf("openai: stream error: %s (code: %s)", msg, event.Error.Code))
-	}
-	return yield(nil, fmt.Errorf("openai: stream error: %s", msg))
+	return yield(nil, &openAIStreamError{
+		message: msg,
+		code:    event.Error.Code,
+	})
 }
 
 // --- Usage conversion ---

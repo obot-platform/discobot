@@ -3,6 +3,7 @@ package thread
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -75,17 +76,31 @@ func computeBudget(cfg *TurnConfig) tokenBudget {
 
 // isContextLengthExceeded reports whether err is a context-window overflow
 // error from any provider (e.g. "context_length_exceeded", "context window",
-// "maximum context length").
+// "maximum context length", Anthropic's "prompt is too long").
 func isContextLengthExceeded(err error) bool {
 	if err == nil {
 		return false
 	}
-	s := err.Error()
+	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "context_length_exceeded") ||
 		strings.Contains(s, "context window") ||
 		strings.Contains(s, "maximum context length") ||
 		strings.Contains(s, "exceeds the context") ||
-		strings.Contains(s, "too many tokens")
+		strings.Contains(s, "too many tokens") ||
+		strings.Contains(s, "prompt is too long")
+}
+
+func isContextCancellation(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "context canceled") ||
+		strings.Contains(s, "context cancelled") ||
+		strings.Contains(s, "deadline exceeded")
 }
 
 // maybeCompact checks if the conversation history approaches the context
@@ -446,9 +461,14 @@ func generateSummary(
 		if err == nil {
 			return text, nil
 		}
-
-		if len(messages) <= 1 {
+		if ctx.Err() != nil || isContextCancellation(err) {
+			return "", fmt.Errorf("compaction: summarize canceled: %w", err)
+		}
+		if !isContextLengthExceeded(err) {
 			return "", fmt.Errorf("compaction: cannot summarize: %w", err)
+		}
+		if len(messages) <= 1 {
+			return "", fmt.Errorf("compaction: cannot summarize even a single message: %w", err)
 		}
 
 		log.Printf("compaction: summary of %d messages failed (%v), splitting", len(messages), err)
@@ -465,6 +485,15 @@ func generateSummary(
 			subText, subErr = doSummaryCall(ctx, provider, cfg, messages[:n], budget)
 			if subErr == nil {
 				break
+			}
+			if ctx.Err() != nil || isContextCancellation(subErr) {
+				return "", fmt.Errorf("compaction: sub-summary canceled: %w", subErr)
+			}
+			if !isContextLengthExceeded(subErr) {
+				return "", fmt.Errorf("compaction: cannot summarize prefix of %d messages: %w", n, subErr)
+			}
+			if n == 1 {
+				return "", fmt.Errorf("compaction: cannot summarize even a single message: %w", subErr)
 			}
 			log.Printf("compaction: sub-summary of %d messages failed (%v), halving batch", n, subErr)
 			n = safeSplitPoint(messages, n/2)

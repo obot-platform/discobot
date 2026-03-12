@@ -111,3 +111,52 @@ func TestWebFetch_UsesTavilyWhenApiKeySet(t *testing.T) {
 		t.Fatalf("expected Tavily content in output, got: %q", textOut.Value)
 	}
 }
+
+func TestWebFetch_UsesDiscobotProxyWhenTokenSet(t *testing.T) {
+	t.Setenv("DISCOBOT_TOKEN", "discobot-token")
+	t.Setenv("TAVILY_API_KEY", "test-key")
+
+	calledProxy := false
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledProxy = true
+		if r.URL.Path != "/v1/tavily/extract" {
+			t.Fatalf("expected /v1/tavily/extract, got %s", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Discobot-Id"); got != "discobot-token" {
+			t.Fatalf("expected X-Discobot-Id header, got %q", got)
+		}
+
+		var req tavilyExtractRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if req.APIKey != "" {
+			t.Fatalf("expected no api_key in proxy request, got %q", req.APIKey)
+		}
+		if len(req.URLs) != 1 || req.URLs[0] != "https://example.com/proxy" {
+			t.Fatalf("unexpected urls payload: %+v", req.URLs)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"url":"https://example.com/proxy","raw_content":"from discobot proxy"}]}`))
+	}))
+	defer proxy.Close()
+	t.Setenv("DISCOBOT_SERVICES_URL", proxy.URL)
+
+	e := New(t.TempDir(), t.TempDir(), t.Name())
+	out := runWebFetch(t, e, map[string]string{
+		"url":    "https://example.com/proxy",
+		"prompt": "extract",
+	})
+
+	if !calledProxy {
+		t.Fatal("expected Discobot proxy endpoint to be called")
+	}
+	textOut, ok := out.(message.TextOutput)
+	if !ok {
+		t.Fatalf("expected TextOutput, got %T", out)
+	}
+	if !strings.Contains(textOut.Value, "from discobot proxy") {
+		t.Fatalf("expected Discobot proxy content in output, got: %q", textOut.Value)
+	}
+}

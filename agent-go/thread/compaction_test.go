@@ -77,6 +77,48 @@ func charBasedTokenCount(req providers.CountTokensRequest) (providers.CountToken
 
 // --- Tests ---
 
+func TestIsContextLengthExceeded(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "openai context length exceeded",
+			err:  fmt.Errorf("openai: API error 400: context_length_exceeded"),
+			want: true,
+		},
+		{
+			name: "anthropic prompt too long",
+			err:  fmt.Errorf("anthropic: API error 400: invalid_request_error: prompt is too long: 289539 tokens > 200000 maximum"),
+			want: true,
+		},
+		{
+			name: "case insensitive maximum context length",
+			err:  fmt.Errorf("Maximum Context Length exceeded"),
+			want: true,
+		},
+		{
+			name: "unrelated error",
+			err:  fmt.Errorf("anthropic: API error 400: invalid_request_error: Your credit balance is too low"),
+			want: false,
+		},
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isContextLengthExceeded(tt.err); got != tt.want {
+				t.Fatalf("isContextLengthExceeded(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestComputeBudget(t *testing.T) {
 	t.Run("with MaxOutputTokens", func(t *testing.T) {
 		cfg := &TurnConfig{ContextWindow: 10000, MaxOutputTokens: 2000}
@@ -998,6 +1040,83 @@ func (f *failFirstCallProvider) DefaultModels() map[string]providers.ModelRef {
 }
 func (f *failFirstCallProvider) ListModels(ctx context.Context) ([]providers.ModelInfo, error) {
 	return f.inner.ListModels(ctx)
+}
+
+type erroringCompactionProvider struct {
+	callCount int
+	errFn     func(context.Context, int, providers.CompleteRequest) error
+}
+
+func (p *erroringCompactionProvider) ID() string { return "mock" }
+
+func (p *erroringCompactionProvider) Complete(ctx context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
+	p.callCount++
+	call := p.callCount
+	return func(yield func(message.ProviderMessageChunk, error) bool) {
+		yield(nil, p.errFn(ctx, call, req))
+	}
+}
+
+func (p *erroringCompactionProvider) CountTokens(context.Context, providers.CountTokensRequest) (providers.CountTokensResponse, error) {
+	return providers.CountTokensResponse{}, nil
+}
+
+func (p *erroringCompactionProvider) DefaultModels() map[string]providers.ModelRef { return nil }
+
+func (p *erroringCompactionProvider) ListModels(context.Context) ([]providers.ModelInfo, error) {
+	return nil, nil
+}
+
+func TestGenerateSummary_CanceledContextStopsImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	prov := &erroringCompactionProvider{
+		errFn: func(_ context.Context, _ int, _ providers.CompleteRequest) error {
+			cancel()
+			return context.Canceled
+		},
+	}
+
+	msgs := []message.Message{
+		{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello"}}},
+		{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "hi"}}},
+	}
+
+	_, err := generateSummary(ctx, prov, &TurnConfig{Model: "test"}, msgs, tokenBudget{InputLimit: 400, SummaryMaxTokens: 80})
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+	if !isContextCancellation(err) {
+		t.Fatalf("expected cancellation error, got %v", err)
+	}
+	if prov.callCount != 1 {
+		t.Fatalf("expected 1 summary attempt, got %d", prov.callCount)
+	}
+}
+
+func TestGenerateSummary_StopsAtSingleMessage(t *testing.T) {
+	prov := &erroringCompactionProvider{
+		errFn: func(_ context.Context, _ int, _ providers.CompleteRequest) error {
+			return fmt.Errorf("openai: stream error: context_length_exceeded")
+		},
+	}
+
+	msgs := []message.Message{
+		{Role: "user", Parts: []message.Part{message.TextPart{Text: "one"}}},
+		{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "two"}}},
+		{Role: "user", Parts: []message.Part{message.TextPart{Text: "three"}}},
+		{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "four"}}},
+	}
+
+	_, err := generateSummary(context.Background(), prov, &TurnConfig{Model: "test"}, msgs, tokenBudget{InputLimit: 400, SummaryMaxTokens: 80})
+	if err == nil {
+		t.Fatal("expected compaction failure")
+	}
+	if !strings.Contains(err.Error(), "cannot summarize even a single message") {
+		t.Fatalf("expected single-message failure, got %v", err)
+	}
+	if prov.callCount != 3 {
+		t.Fatalf("expected 3 summary attempts (4 → 2 → 1), got %d", prov.callCount)
+	}
 }
 
 func TestMaybeCompact_CountTokensFails(t *testing.T) {

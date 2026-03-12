@@ -229,7 +229,7 @@ func buildRgArgs(input grepInput, searchPath string) []string {
 	}
 
 	// Pattern.
-	args = append(args, input.Pattern)
+	args = append(args, "--regexp", input.Pattern)
 
 	// Search path.
 	args = append(args, searchPath)

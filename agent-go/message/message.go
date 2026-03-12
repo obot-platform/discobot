@@ -15,6 +15,12 @@ type Message struct {
 	// empty for provider-constructed messages.
 	ID string `json:"id,omitempty"`
 
+	// ProviderResponseID stores the provider's opaque response/message ID in the
+	// internal storage format. It is not projected to the UI or provider wire
+	// format, which lets the thread layer keep a stable UI message ID while still
+	// preserving provider-native IDs for follow-up turns.
+	ProviderResponseID string `json:"providerResponseId,omitempty"`
+
 	// Role is "system", "user", "assistant", or "tool".
 	Role string `json:"role"`
 
@@ -50,21 +56,23 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(struct {
-		ID              string            `json:"id,omitempty"`
-		Role            string            `json:"role"`
-		Parts           []json.RawMessage `json:"parts"`
-		ProviderOptions json.RawMessage   `json:"providerOptions,omitempty"`
-		Metadata        json.RawMessage   `json:"metadata,omitempty"`
-		CreatedAt       *time.Time        `json:"createdAt,omitempty"`
-		Synthetic       bool              `json:"synthetic,omitempty"`
+		ID                 string            `json:"id,omitempty"`
+		ProviderResponseID string            `json:"providerResponseId,omitempty"`
+		Role               string            `json:"role"`
+		Parts              []json.RawMessage `json:"parts"`
+		ProviderOptions    json.RawMessage   `json:"providerOptions,omitempty"`
+		Metadata           json.RawMessage   `json:"metadata,omitempty"`
+		CreatedAt          *time.Time        `json:"createdAt,omitempty"`
+		Synthetic          bool              `json:"synthetic,omitempty"`
 	}{
-		ID:              m.ID,
-		Role:            m.Role,
-		Parts:           parts,
-		ProviderOptions: m.ProviderOptions,
-		Metadata:        m.Metadata,
-		CreatedAt:       m.CreatedAt,
-		Synthetic:       m.Synthetic,
+		ID:                 m.ID,
+		ProviderResponseID: m.ProviderResponseID,
+		Role:               m.Role,
+		Parts:              parts,
+		ProviderOptions:    m.ProviderOptions,
+		Metadata:           m.Metadata,
+		CreatedAt:          m.CreatedAt,
+		Synthetic:          m.Synthetic,
 	})
 }
 
@@ -73,20 +81,22 @@ func (m Message) MarshalJSON() ([]byte, error) {
 // Also handles the provider format where system content is a plain string.
 func (m *Message) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		ID              string          `json:"id,omitempty"`
-		Role            string          `json:"role"`
-		Parts           json.RawMessage `json:"parts"`
-		Content         json.RawMessage `json:"content"`
-		ProviderOptions json.RawMessage `json:"providerOptions,omitempty"`
-		Metadata        json.RawMessage `json:"metadata,omitempty"`
-		CreatedAt       *time.Time      `json:"createdAt,omitempty"`
-		Synthetic       bool            `json:"synthetic,omitempty"`
+		ID                 string          `json:"id,omitempty"`
+		ProviderResponseID string          `json:"providerResponseId,omitempty"`
+		Role               string          `json:"role"`
+		Parts              json.RawMessage `json:"parts"`
+		Content            json.RawMessage `json:"content"`
+		ProviderOptions    json.RawMessage `json:"providerOptions,omitempty"`
+		Metadata           json.RawMessage `json:"metadata,omitempty"`
+		CreatedAt          *time.Time      `json:"createdAt,omitempty"`
+		Synthetic          bool            `json:"synthetic,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("unmarshal Message: %w", err)
 	}
 
 	m.ID = raw.ID
+	m.ProviderResponseID = raw.ProviderResponseID
 	m.Role = raw.Role
 	m.ProviderOptions = raw.ProviderOptions
 	m.Metadata = raw.Metadata

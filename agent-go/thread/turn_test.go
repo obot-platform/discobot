@@ -3118,6 +3118,12 @@ func TestRunTurn_MessageIDFromStartChunk(t *testing.T) {
 	if msg.Message.Role != "assistant" {
 		t.Errorf("expected role=assistant, got %s", msg.Message.Role)
 	}
+	if msg.Message.ID != startChunk.MessageID {
+		t.Errorf("expected persisted assistant message ID %q, got %q", startChunk.MessageID, msg.Message.ID)
+	}
+	if msg.Message.ProviderResponseID != "provider-msg-123" {
+		t.Errorf("expected provider response ID %q, got %q", "provider-msg-123", msg.Message.ProviderResponseID)
+	}
 }
 
 // --- P2: Async Interrupted Fallback + FindLeaf Store Tests ---

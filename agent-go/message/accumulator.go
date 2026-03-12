@@ -219,6 +219,7 @@ func (a *ChunkAccumulator) Message() Message {
 	msg := Message{Role: "assistant", Parts: parts}
 	if a.respMeta != nil && a.respMeta.ID != "" {
 		msg.ID = a.respMeta.ID
+		msg.ProviderResponseID = a.respMeta.ID
 	}
 	return msg
 }

@@ -3,13 +3,17 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"iter"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 	_ "github.com/obot-platform/discobot/agent-go/providers/anthropic"
+	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
 const anthropicTestModel = "claude-haiku-4-5-20251001"
@@ -38,6 +42,43 @@ func anthropicProvider(t *testing.T) providers.Provider {
 // support token counting or extended thinking.
 func isOAuthOnly() bool {
 	return os.Getenv("ANTHROPIC_API_KEY") == "" && os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != ""
+}
+
+type anthropicCountTokensErrorProvider struct {
+	inner            providers.Provider
+	countTokensErr   error
+	countTokensCalls int
+	completeCalls    int
+}
+
+func (p *anthropicCountTokensErrorProvider) ID() string { return p.inner.ID() }
+
+func (p *anthropicCountTokensErrorProvider) Complete(ctx context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
+	p.completeCalls++
+	return p.inner.Complete(ctx, req)
+}
+
+func (p *anthropicCountTokensErrorProvider) CountTokens(_ context.Context, _ providers.CountTokensRequest) (providers.CountTokensResponse, error) {
+	p.countTokensCalls++
+	return providers.CountTokensResponse{}, p.countTokensErr
+}
+
+func (p *anthropicCountTokensErrorProvider) DefaultModels() map[string]providers.ModelRef {
+	return p.inner.DefaultModels()
+}
+
+func (p *anthropicCountTokensErrorProvider) ListModels(ctx context.Context) ([]providers.ModelInfo, error) {
+	return p.inner.ListModels(ctx)
+}
+
+func isAnthropicBillingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "credit balance is too low") ||
+		strings.Contains(s, "plans & billing") ||
+		strings.Contains(s, "purchase credits")
 }
 
 func TestAnthropic_SimpleTextCompletion(t *testing.T) {
@@ -374,6 +415,89 @@ func TestAnthropic_CountTokensWithTools(t *testing.T) {
 	if withTools.TotalTokens <= withoutTools.TotalTokens {
 		t.Errorf("expected tool definitions to add tokens: without=%d, with=%d",
 			withoutTools.TotalTokens, withTools.TotalTokens)
+	}
+}
+
+// TestAnthropic_RunTurn_EmergencyCompactionAfterCountTokensFailure verifies the
+// production failure path where CountTokens fails, RunTurn falls back to full
+// history, Anthropic rejects the next completion with "prompt is too long", and
+// the agent recovers via emergency compaction.
+func TestAnthropic_RunTurn_EmergencyCompactionAfterCountTokensFailure(t *testing.T) {
+	realProvider := anthropicProvider(t)
+	provider := &anthropicCountTokensErrorProvider{
+		inner:          realProvider,
+		countTokensErr: fmt.Errorf(`anthropic: API error 400: {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_test_count_tokens_failed"}`),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+
+	store := thread.NewStore(t.TempDir())
+	threadID := "anthropic-emergency-compaction"
+	leafID := seedSystemMessage(t, store, threadID,
+		"You are a terse assistant. Ignore earlier filler history and reply to the latest user message with exactly 'ok'.")
+
+	largeText := strings.Repeat("a ", 6000)
+	for i := 0; i < 40; i++ {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		msgID := fmt.Sprintf("msg-%02d", i)
+		if err := store.SaveMessage(threadID, thread.StoredMessage{
+			ID:       msgID,
+			ParentID: leafID,
+			Message: message.Message{
+				Role:  role,
+				Parts: []message.Part{message.TextPart{Text: largeText}},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		leafID = msgID
+	}
+
+	var chunks []message.MessageChunk
+	for chunk, err := range thread.RunTurn(ctx, provider, &testToolExecutor{}, store, threadID, leafID, thread.TurnConfig{
+		ProviderID:      "anthropic",
+		Model:           anthropicTestModel,
+		UserParts:       []message.Part{message.TextPart{Text: "Reply with only ok."}},
+		MaxTokens:       intPtr(16),
+		ContextWindow:   200_000,
+		MaxOutputTokens: 8_192,
+	}) {
+		if err != nil {
+			if isAnthropicBillingError(err) {
+				t.Skipf("Anthropic account billing/credits blocked live emergency-compaction test: %v", err)
+			}
+			t.Fatalf("unexpected turn error: %v", err)
+		}
+		if chunk != nil {
+			chunks = append(chunks, chunk)
+		}
+	}
+
+	if provider.countTokensCalls == 0 {
+		t.Fatal("expected CountTokens to be attempted before emergency compaction")
+	}
+	if provider.completeCalls < 3 {
+		t.Fatalf("expected at least 3 completion calls (initial failure, compaction, retry), got %d", provider.completeCalls)
+	}
+
+	record, err := store.LoadCompaction(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record == nil {
+		t.Fatal("expected emergency compaction record to be saved")
+	}
+	if record.SummaryText == "" {
+		t.Fatal("expected saved compaction summary text")
+	}
+
+	text := strings.ToLower(extractText(chunks))
+	if !strings.Contains(text, "ok") {
+		t.Fatalf("expected final response to contain 'ok', got %q", text)
 	}
 }
 

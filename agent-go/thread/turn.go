@@ -1073,7 +1073,8 @@ func runCompletion(
 	acc.Close()
 	assistantMsg := acc.Message()
 
-	// Override message ID so it matches the StartChunk we already emitted.
+	// Override the public/UI message ID so it matches the StartChunk we already
+	// emitted. Provider-native response IDs remain on assistantMsg.ProviderResponseID.
 	if msgIDOverride != "" {
 		assistantMsg.ID = msgIDOverride
 	}

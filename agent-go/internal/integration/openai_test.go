@@ -3,9 +3,14 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/coder/websocket"
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
@@ -25,6 +30,351 @@ func openaiProvider(t *testing.T) providers.Provider {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func openaiWebSocketProvider(t *testing.T) providers.Provider {
+	t.Helper()
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("OPENAI_API_KEY not set")
+	}
+	p, err := providers.New("openai", providers.Config{
+		"api_key":       apiKey,
+		"use_websocket": "true",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestOpenAI_WebSocketSimpleTextCompletion(t *testing.T) {
+	t.Parallel()
+	p := openaiWebSocketProvider(t)
+
+	req := providers.CompleteRequest{
+		Model: providers.ModelRef{ProviderID: "openai", ModelID: testModel},
+		Messages: []message.Message{
+			{Role: "system", Parts: []message.Part{
+				message.TextPart{Text: "Reply with only the word 'pong'. Nothing else."},
+			}},
+			{Role: "user", Parts: []message.Part{
+				message.TextPart{Text: "ping"},
+			}},
+		},
+	}
+
+	var gotText strings.Builder
+	var gotStreamStart, gotFinish bool
+	var responseID string
+	var usage message.Usage
+
+	for chunk, err := range p.Complete(context.Background(), req) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch c := chunk.(type) {
+		case message.StreamStartChunk:
+			gotStreamStart = true
+		case message.ResponseMetadataChunk:
+			responseID = c.ID
+		case message.TextDeltaChunk:
+			gotText.WriteString(c.Delta)
+		case message.FinishChunk:
+			gotFinish = true
+			usage = c.Usage
+		}
+	}
+
+	if !gotStreamStart {
+		t.Error("expected StreamStartChunk")
+	}
+	if responseID == "" {
+		t.Error("expected non-empty response ID in ResponseMetadataChunk")
+	}
+	if !gotFinish {
+		t.Error("expected FinishChunk")
+	}
+	text := strings.TrimSpace(strings.ToLower(gotText.String()))
+	if !strings.Contains(text, "pong") {
+		t.Errorf("expected response to contain 'pong', got %q", gotText.String())
+	}
+	if usage.InputTokens.Total == 0 {
+		t.Error("expected non-zero input tokens")
+	}
+	if usage.OutputTokens.Total == 0 {
+		t.Error("expected non-zero output tokens")
+	}
+}
+
+func TestOpenAI_WebSocketToolCallRoundTrip(t *testing.T) {
+	t.Parallel()
+	p := openaiWebSocketProvider(t)
+
+	toolDef := providers.ToolDefinition{
+		Name:        "get_temperature",
+		Description: "Get current temperature for a city",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}`),
+	}
+
+	systemMsg := message.Message{Role: "system", Parts: []message.Part{
+		message.TextPart{Text: "You must use the get_temperature tool. After receiving the result, state the temperature in one short sentence."},
+	}}
+	userMsg := message.Message{Role: "user", Parts: []message.Part{
+		message.TextPart{Text: "What is the temperature in London?"},
+	}}
+
+	turn1Req := providers.CompleteRequest{
+		Model:    providers.ModelRef{ProviderID: "openai", ModelID: testModel},
+		Messages: []message.Message{systemMsg, userMsg},
+		Tools:    []providers.ToolDefinition{toolDef},
+	}
+
+	acc := message.NewChunkAccumulator()
+	var finishReason1 string
+	for chunk, err := range p.Complete(context.Background(), turn1Req) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if chunk != nil {
+			acc.Push(chunk)
+		}
+		if c, ok := chunk.(message.FinishChunk); ok {
+			finishReason1 = c.FinishReason.Unified
+		}
+	}
+	acc.Close()
+	assistantMsg := acc.Message()
+
+	if finishReason1 != "tool-calls" {
+		t.Fatalf("expected first turn finish reason 'tool-calls', got %q", finishReason1)
+	}
+	if assistantMsg.ID == "" {
+		t.Fatal("expected first turn assistant message to carry OpenAI response ID")
+	}
+
+	var toolCall message.ToolCallPart
+	for _, part := range assistantMsg.Parts {
+		if tc, ok := part.(message.ToolCallPart); ok {
+			toolCall = tc
+			break
+		}
+	}
+	if toolCall.ToolCallID == "" {
+		t.Fatal("expected first turn assistant message to contain a tool call")
+	}
+
+	turn2Req := providers.CompleteRequest{
+		Model: providers.ModelRef{ProviderID: "openai", ModelID: testModel},
+		Messages: []message.Message{
+			systemMsg,
+			userMsg,
+			assistantMsg,
+			{Role: "tool", Parts: []message.Part{
+				message.ToolResultPart{
+					ToolCallID: toolCall.ToolCallID,
+					ToolName:   toolCall.ToolName,
+					Output:     message.TextOutput{Value: "18 degrees Celsius"},
+				},
+			}},
+		},
+		Tools: []providers.ToolDefinition{toolDef},
+	}
+
+	var gotText strings.Builder
+	var finishReason2 string
+	for chunk, err := range p.Complete(context.Background(), turn2Req) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch c := chunk.(type) {
+		case message.TextDeltaChunk:
+			gotText.WriteString(c.Delta)
+		case message.FinishChunk:
+			finishReason2 = c.FinishReason.Unified
+		}
+	}
+
+	if finishReason2 != "stop" {
+		t.Errorf("expected second turn finish reason 'stop', got %q", finishReason2)
+	}
+	response := strings.ToLower(gotText.String())
+	if !strings.Contains(response, "18") {
+		t.Errorf("expected second turn response to mention '18', got %q", gotText.String())
+	}
+}
+
+func TestOpenAI_WebSocketReconnectAfterStalePooledConnDropsPreviousResponseID(t *testing.T) {
+	t.Parallel()
+
+	sendEvents := func(ctx context.Context, t *testing.T, conn *websocket.Conn, events []map[string]any) {
+		t.Helper()
+		for _, ev := range events {
+			data, err := json.Marshal(ev)
+			if err != nil {
+				t.Fatalf("marshal event: %v", err)
+			}
+			if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+				t.Fatalf("write event: %v", err)
+			}
+		}
+	}
+
+	textCompletion := func(id, text string) []map[string]any {
+		return []map[string]any{
+			{"type": "response.created", "response": map[string]any{"id": id, "model": testModel}},
+			{"type": "response.output_item.added", "item": map[string]any{"id": "msg_" + id, "type": "message"}},
+			{"type": "response.content_part.added", "part": map[string]any{"type": "output_text"}, "item_id": "msg_" + id},
+			{"type": "response.output_text.delta", "item_id": "msg_" + id, "delta": text},
+			{"type": "response.output_text.done", "item_id": "msg_" + id},
+			{"type": "response.output_item.done", "item": map[string]any{"id": "msg_" + id, "type": "message"}},
+			{"type": "response.completed", "response": map[string]any{
+				"status": "completed",
+				"output": []any{map[string]any{"type": "message"}},
+				"usage": map[string]any{
+					"input_tokens":          1,
+					"input_tokens_details":  map[string]any{"cached_tokens": 0},
+					"output_tokens":         1,
+					"output_tokens_details": map[string]any{"reasoning_tokens": 0},
+				},
+			}},
+		}
+	}
+
+	var (
+		mu              sync.Mutex
+		connCount       int
+		retryReqPrevID  string
+		fallbackReqPrev string
+	)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("websocket accept: %v", err)
+			return
+		}
+		defer conn.CloseNow()
+
+		mu.Lock()
+		connCount++
+		currentConn := connCount
+		mu.Unlock()
+
+		switch currentConn {
+		case 1:
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				t.Errorf("conn 1 turn 1 read: %v", err)
+				return
+			}
+			sendEvents(r.Context(), t, conn, textCompletion("resp_1", "first"))
+
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				t.Errorf("conn 1 turn 2 read: %v", err)
+				return
+			}
+			if err := conn.Close(websocket.StatusInternalError, "keepalive ping timeout"); err != nil {
+				t.Errorf("conn 1 close: %v", err)
+			}
+		case 2:
+			_, data, err := conn.Read(r.Context())
+			if err != nil {
+				t.Errorf("conn 2 read: %v", err)
+				return
+			}
+			var req map[string]any
+			if err := json.Unmarshal(data, &req); err != nil {
+				t.Errorf("conn 2 decode: %v", err)
+				return
+			}
+			retryReqPrevID, _ = req["previous_response_id"].(string)
+			if err := conn.Write(r.Context(), websocket.MessageText, []byte(`{"type":"error","error":{"message":"Previous response with id 'resp_1' not found.","code":"previous_response_not_found"}}`)); err != nil {
+				t.Errorf("conn 2 write: %v", err)
+			}
+		case 3:
+			_, data, err := conn.Read(r.Context())
+			if err != nil {
+				t.Errorf("conn 3 read: %v", err)
+				return
+			}
+			var req map[string]any
+			if err := json.Unmarshal(data, &req); err != nil {
+				t.Errorf("conn 3 decode: %v", err)
+				return
+			}
+			fallbackReqPrev, _ = req["previous_response_id"].(string)
+			sendEvents(r.Context(), t, conn, textCompletion("resp_2", "recovered"))
+		default:
+			t.Errorf("unexpected connection %d", currentConn)
+		}
+	}))
+	defer ts.Close()
+
+	p, err := providers.New("openai", providers.Config{
+		"api_key":       "test-key",
+		"use_websocket": "true",
+		"base_url":      ts.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstReq := providers.CompleteRequest{
+		Model: providers.ModelRef{ProviderID: "openai", ModelID: testModel},
+		Messages: []message.Message{
+			{Role: "system", Parts: []message.Part{message.TextPart{Text: "Reply with one word."}}},
+			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Say first"}}},
+		},
+	}
+
+	acc := message.NewChunkAccumulator()
+	for chunk, err := range p.Complete(context.Background(), firstReq) {
+		if err != nil {
+			t.Fatalf("first turn: %v", err)
+		}
+		if chunk != nil {
+			acc.Push(chunk)
+		}
+	}
+	acc.Close()
+	assistantMsg := acc.Message()
+	if assistantMsg.ID == "" {
+		t.Fatal("expected first turn assistant message ID")
+	}
+
+	secondReq := providers.CompleteRequest{
+		Model: providers.ModelRef{ProviderID: "openai", ModelID: testModel},
+		Messages: []message.Message{
+			firstReq.Messages[0],
+			firstReq.Messages[1],
+			assistantMsg,
+			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Now say recovered"}}},
+		},
+	}
+
+	var gotText strings.Builder
+	for chunk, err := range p.Complete(context.Background(), secondReq) {
+		if err != nil {
+			t.Fatalf("second turn should recover, got %v", err)
+		}
+		if delta, ok := chunk.(message.TextDeltaChunk); ok {
+			gotText.WriteString(delta.Delta)
+		}
+	}
+
+	if retryReqPrevID != assistantMsg.ID {
+		t.Fatalf("expected retry to preserve previous_response_id=%q, got %q", assistantMsg.ID, retryReqPrevID)
+	}
+	if fallbackReqPrev != "" {
+		t.Fatalf("expected fallback retry to drop previous_response_id, got %q", fallbackReqPrev)
+	}
+	if strings.TrimSpace(gotText.String()) != "recovered" {
+		t.Fatalf("expected recovered final text, got %q", gotText.String())
+	}
 }
 
 func TestOpenAI_SimpleTextCompletion(t *testing.T) {
