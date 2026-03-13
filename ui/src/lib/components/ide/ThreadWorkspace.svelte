@@ -18,7 +18,7 @@
 
 	const session = useSessionContext();
 	// threadId is stable at mount time because SessionWorkspace wraps us in {#key session.threads.selectedId}
-	setThreadContext(session.threads.selectedId ?? "");
+	setThreadContext(session.threads.selectedId ?? session.sessionId)
 
 	const showDock = $derived(
 		(props.mode ?? "full") === "full" && !isChatView(session.ui.activeView),
