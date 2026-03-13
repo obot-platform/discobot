@@ -74,10 +74,6 @@ export function writeStorage(key: string, value: string | null) {
 	window.localStorage.setItem(key, value);
 }
 
-export function formatErrorMessage(error: unknown, fallback: string): string {
-	return error instanceof Error ? error.message : fallback;
-}
-
 export async function delay(ms: number) {
 	await new Promise((resolve) => window.setTimeout(resolve, ms));
 }

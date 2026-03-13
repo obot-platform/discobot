@@ -1,21 +1,22 @@
 import { generateId } from "ai";
 import { createMutation, createQuery, queryOptions } from "@tanstack/svelte-query";
 import type { QueryClient } from "@tanstack/svelte-query";
+import { SvelteMap } from "svelte/reactivity";
 
 import { api } from "$lib/api-client";
-import { formatErrorMessage, toSessionSummaries } from "$lib/app/app-helpers";
+import { toSessionSummaries } from "$lib/app/app-helpers";
 import type { AppSessions } from "$lib/app/app-context.types";
-import { getNextSelectedSessionId } from "$lib/app/domains/app-sessions.helpers";
+import {
+	getNextSelectedSessionId,
+	getReconciledSelectedSessionId,
+} from "$lib/app/domains/app-sessions.helpers";
 import { appQueryKeys } from "$lib/app/query/app-query-keys";
-import type { AppStore } from "$lib/app/store/app-store.svelte";
-import type { AppViewState } from "$lib/app/view/create-app-view-state.svelte";
 import type { Session } from "$lib/api-types";
+import type { SessionContextValue } from "$lib/session/session-context.types";
 
 type CreateAppSessionsDomainArgs = {
-	store: AppStore;
-	view: AppViewState;
 	queryClient: QueryClient;
-	setResolvedWorkspaceId: (workspaceId: string | null) => void;
+	initialSelectedSessionId?: string;
 };
 
 function sessionsQueryOptions() {
@@ -30,14 +31,27 @@ function sessionsQueryOptions() {
 }
 
 export function createAppSessionsDomain(args: CreateAppSessionsDomainArgs): AppSessions {
+	let currentSelectedSessionId = $state<string | null>(args.initialSelectedSessionId ?? null);
+	let pendingSessionId = $state<string>(generateId());
+
 	const sessionsQuery = createQuery(() => sessionsQueryOptions());
 
 	const sessions = $derived.by(() => sessionsQuery.data ?? []);
 	const list = $derived.by(() => toSessionSummaries(sessionsQuery.data ?? []));
 	const recent = $derived.by(() => list.filter((session) => session.isRecent));
 	const selected = $derived.by(
-		() => list.find((session) => session.id === args.view.selectedSessionId) ?? null,
+		() => list.find((session) => session.id === currentSelectedSessionId) ?? null,
 	);
+
+	const sessionContexts = new SvelteMap<string, SessionContextValue>();
+
+	$effect(() => {
+		const next = getReconciledSelectedSessionId(list, currentSelectedSessionId);
+		if (next === null && currentSelectedSessionId !== null) {
+			pendingSessionId = generateId();
+		}
+		currentSelectedSessionId = next;
+	});
 
 	const renameMutation = createMutation(() => ({
 		mutationFn: async ({
@@ -53,10 +67,6 @@ export function createAppSessionsDomain(args: CreateAppSessionsDomainArgs): AppS
 					session.id === updatedSession.id ? updatedSession : session,
 				),
 			);
-			args.store.errorMessage = undefined;
-		},
-		onError: (error) => {
-			args.store.errorMessage = formatErrorMessage(error, "Failed to rename session");
 		},
 	}));
 
@@ -69,43 +79,34 @@ export function createAppSessionsDomain(args: CreateAppSessionsDomainArgs): AppS
 			args.queryClient.setQueryData<Session[]>(appQueryKeys.sessions(), (previous) =>
 				(previous ?? []).filter((session) => session.id !== sessionId),
 			);
-			args.view.reconcileSelectedSession(
+			const next = getReconciledSelectedSessionId(
 				list,
-				getNextSelectedSessionId(list, sessionId, args.view.selectedSessionId),
+				getNextSelectedSessionId(list, sessionId, currentSelectedSessionId),
 			);
-			args.store.errorMessage = undefined;
-		},
-		onError: (error) => {
-			args.store.errorMessage = formatErrorMessage(error, "Failed to delete session");
+			if (next === null && currentSelectedSessionId !== null) {
+				pendingSessionId = generateId();
+			}
+			currentSelectedSessionId = next;
 		},
 	}));
 
 	const createMutationResult = createMutation(() => ({
 		mutationFn: async (workspaceId?: string) => {
-			if (workspaceId) {
-				args.setResolvedWorkspaceId(workspaceId);
-			}
-
 			return api.createSession({
 				id: generateId(),
 				...(workspaceId ? { workspaceId } : {}),
 			});
 		},
 		onSuccess: async (created) => {
-			args.view.selectedSessionId = created.id;
-			args.store.errorMessage = undefined;
+			currentSelectedSessionId = created.id;
 			await args.queryClient.invalidateQueries({ queryKey: appQueryKeys.sessions() });
-		},
-		onError: (error) => {
-			args.store.errorMessage = formatErrorMessage(error, "Failed to create session");
 		},
 	}));
 
-	$effect(() => {
-		args.view.reconcileSelectedSession(list, args.view.selectedSessionId);
-	});
-
 	return {
+		get sessions() {
+			return sessions;
+		},
 		get list() {
 			return list;
 		},
@@ -113,16 +114,28 @@ export function createAppSessionsDomain(args: CreateAppSessionsDomainArgs): AppS
 			return recent;
 		},
 		get selectedId() {
-			return args.view.selectedSessionId;
+			return currentSelectedSessionId;
+		},
+		get pendingId() {
+			return pendingSessionId;
 		},
 		get selected() {
 			return selected;
 		},
-		select: args.view.selectSession,
-		startNew: args.view.startNewSession,
+		sessionContexts,
+		select: (sessionId: string) => {
+			const found = sessions.find((s) => s.id === sessionId);
+			if (!found) {
+				throw new Error(`Session "${sessionId}" not found`);
+			}
+			currentSelectedSessionId = sessionId;
+		},
+		startNew: () => {
+			pendingSessionId = generateId();
+			currentSelectedSessionId = null;
+		},
 		refresh: async () => {
 			await sessionsQuery.refetch();
-			args.store.errorMessage = undefined;
 		},
 		create: async (workspaceId) => {
 			const created = await createMutationResult.mutateAsync(workspaceId);

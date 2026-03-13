@@ -22,8 +22,6 @@ import type {
 	ThreadSummary,
 } from "$lib/shell-types";
 
-export type SessionContextBootstrap = void;
-
 export type SessionFilesDomain = {
 	list: string[];
 	searchable: string[];
@@ -63,8 +61,32 @@ export type SessionConversationDomain = {
 	refresh: () => Promise<void>;
 };
 
+export type ThreadContextValue = {
+	threadId: string;
+	thread: ThreadSummary | null;
+	messages: ChatMessage[];
+	planEntries: PlanEntry[];
+	status: AsyncStatus | "streaming";
+	error: string | null;
+	submit: (payload: {
+		text: string;
+		mode: "build" | "plan";
+		modelId: string | null;
+		reasoning: boolean;
+	}) => Promise<void>;
+	cancel: () => Promise<void>;
+	refresh: () => Promise<void>;
+	dispose: () => void;
+	editorFiles: string[];
+	fileContents: Record<string, string>;
+	activeEnvSetIds: string[];
+	activeEnvSets: EnvSetWithVars[];
+	envSets: ThreadEnvSetsService;
+};
+
 export type SessionContextValue = {
-	sessionId: string | null;
+	sessionId: string;
+	isPending: boolean;
 	current: Session | null;
 	queryClient: QueryClient;
 	cache: SessionQueryCache;
@@ -74,18 +96,7 @@ export type SessionContextValue = {
 	hooks: SessionHooksService;
 	files: SessionFilesDomain;
 	services: SessionServicesDomain;
-	conversation: SessionConversationDomain;
+	threadContexts: Map<string, ThreadContextValue>;
+	updateCurrent: (updater: (session: Session) => Session) => void;
 	dispose: () => void;
-};
-
-export type ThreadContextValue = {
-	threadId: string | null;
-	thread: ThreadSummary | null;
-	conversation: ChatMessage[];
-	planEntries: PlanEntry[];
-	editorFiles: string[];
-	fileContents: Record<string, string>;
-	activeEnvSetIds: string[];
-	activeEnvSets: EnvSetWithVars[];
-	envSets: ThreadEnvSetsService;
 };

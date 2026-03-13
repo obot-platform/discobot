@@ -1,56 +1,44 @@
-import { createQuery, queryOptions } from "@tanstack/svelte-query";
-import { getContext, hasContext, setContext } from "svelte";
+import { getContext, setContext } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
 
-import { api } from "$lib/api-client";
-import { appQueryKeys } from "$lib/app/query/app-query-keys";
 import { useAppContext } from "$lib/context/app-context.svelte";
+import { appQueryKeys } from "$lib/app/query/app-query-keys";
 import { getQueryClient } from "$lib/query/query-client";
 import { createSessionQueryCache } from "$lib/session/cache/query-cache.svelte";
-import { createSessionConversationDomain } from "$lib/session/domains/session-conversation.svelte";
 import { createSessionEnvSetsDomain } from "$lib/session/domains/session-env-sets.svelte";
 import { createSessionFilesDomain } from "$lib/session/domains/session-files.svelte";
 import { createSessionHooksDomain } from "$lib/session/domains/session-hooks.svelte";
 import { createSessionServicesDomain } from "$lib/session/domains/session-services.svelte";
 import { createSessionThreadsDomain } from "$lib/session/domains/session-threads.svelte";
-import type {
-	SessionContextBootstrap,
-	SessionContextValue,
-} from "$lib/session/session-context.types";
+import type { SessionContextValue, ThreadContextValue } from "$lib/session/session-context.types";
 import { createSessionViewState } from "$lib/session/view/create-session-view-state.svelte";
 import type { Session } from "$lib/api-types";
 
 const SESSION_CONTEXT_KEY = Symbol.for("discobot-ui-session-context");
 
-function createSessionContext(_bootstrap?: SessionContextBootstrap): SessionContextValue {
+function createSessionContext(sessionId: string): SessionContextValue {
 	const app = useAppContext();
 	const queryClient = getQueryClient();
-	const sessionsQuery = createQuery(() =>
-		queryOptions({
-			queryKey: appQueryKeys.sessions(),
-			queryFn: async () => {
-				const { sessions } = await api.getSessions();
-				return sessions;
-			},
-			initialData: () => queryClient.getQueryData<Session[]>(appQueryKeys.sessions()) ?? [],
-		}),
-	);
 
 	const current = $derived.by(() => {
-		const selectedSessionId = app.ui.selectedSessionId;
-		if (!selectedSessionId) {
-			return null;
-		}
-		return (sessionsQuery.data ?? []).find((session) => session.id === selectedSessionId) ?? null;
+		return app.sessions.sessions.find((s) => s.id === sessionId) ?? null;
 	});
-	const getCurrentSession = () => current;
-	const getCurrentSessionId = () => getCurrentSession()?.id ?? null;
+
+	const isPending = $derived.by(() => current === null);
+
+	const cache = createSessionQueryCache(queryClient, sessionId);
+
+	function updateCurrent(updater: (session: Session) => Session) {
+		queryClient.setQueryData<Session[]>(appQueryKeys.sessions(), (previous) =>
+			(previous ?? []).map((candidate) =>
+				candidate.id === sessionId ? updater(candidate) : candidate,
+			),
+		);
+	}
 
 	const ui = createSessionViewState({
-		getFiles: () => filesDomain?.list ?? [],
+		getFiles: () => filesDomain.list,
 	});
-
-	let cache = $state(createSessionQueryCache(queryClient, getCurrentSessionId() ?? "session"));
-	let previousSessionId = $state<string | null>(getCurrentSessionId());
 
 	const filesDomain = createSessionFilesDomain({
 		queryClient,
@@ -59,18 +47,6 @@ function createSessionContext(_bootstrap?: SessionContextBootstrap): SessionCont
 		getSelectedFile: () => ui.selectedFile,
 		openFile: ui.openFile,
 	});
-
-	function updateSession(updater: (session: Session) => Session) {
-		const session = current;
-		if (!session) {
-			return;
-		}
-		queryClient.setQueryData<Session[]>(appQueryKeys.sessions(), (previous) =>
-			(previous ?? []).map((candidate) =>
-				candidate.id === session.id ? updater(candidate) : candidate,
-			),
-		);
-	}
 
 	const threads = createSessionThreadsDomain({
 		queryClient,
@@ -86,7 +62,7 @@ function createSessionContext(_bootstrap?: SessionContextBootstrap): SessionCont
 		queryClient,
 		getSession: () => current,
 		key: (domain, ...parts) => cache.key(domain, ...parts),
-		updateSession,
+		updateSession: updateCurrent,
 	});
 
 	const hooks = createSessionHooksDomain({
@@ -103,39 +79,7 @@ function createSessionContext(_bootstrap?: SessionContextBootstrap): SessionCont
 		openService: ui.openService,
 	});
 
-	const conversation = createSessionConversationDomain({
-		queryClient,
-		getSession: () => current,
-		getThreadId: () => threads.selectedId,
-		key: (domain, ...parts) => cache.key(domain, ...parts),
-		updateSession,
-		afterTurn: async () => {
-			await Promise.all([
-				filesDomain.refresh(),
-				services.refresh(),
-				envSets.refresh(),
-				hooks.refresh(),
-			]);
-			await queryClient.invalidateQueries({ queryKey: appQueryKeys.sessions() });
-		},
-	});
-
-	$effect(() => {
-		const nextSessionId = current?.id ?? null;
-		if (nextSessionId === previousSessionId) {
-			return;
-		}
-
-		if (previousSessionId) {
-			const previousCache = createSessionQueryCache(queryClient, previousSessionId);
-			void previousCache.cancelAll();
-			previousCache.removeAll();
-		}
-
-		cache = createSessionQueryCache(queryClient, nextSessionId ?? "session");
-		previousSessionId = nextSessionId;
-		ui.resetForSession(null, "");
-	});
+	const threadContexts = new SvelteMap<string, ThreadContextValue>();
 
 	$effect(() => {
 		if (ui.activeView.kind !== "file") {
@@ -146,32 +90,40 @@ function createSessionContext(_bootstrap?: SessionContextBootstrap): SessionCont
 
 	return {
 		get sessionId() {
-			return current?.id ?? null;
+			return sessionId;
+		},
+		get isPending() {
+			return isPending;
 		},
 		get current() {
 			return current;
 		},
 		queryClient,
-		get cache() {
-			return cache;
-		},
+		cache,
 		ui,
 		threads,
 		envSets,
 		hooks,
 		files: filesDomain,
 		services,
-		conversation,
+		threadContexts,
+		updateCurrent,
 		dispose: () => {
-			conversation.dispose();
 			void cache.cancelAll();
 			cache.removeAll();
 		},
 	};
 }
 
-export function setSessionContext(bootstrap?: SessionContextBootstrap): SessionContextValue {
-	const context = createSessionContext(bootstrap);
+export function setSessionContext(): SessionContextValue {
+	const app = useAppContext();
+	const sessionId = app.sessions.selectedId ?? app.sessions.pendingId;
+
+	let context = app.sessions.sessionContexts.get(sessionId);
+	if (!context) {
+		context = createSessionContext(sessionId);
+		app.sessions.sessionContexts.set(sessionId, context);
+	}
 	setContext(SESSION_CONTEXT_KEY, context);
 	return context;
 }
@@ -185,8 +137,5 @@ export function useSessionContext(): SessionContextValue {
 }
 
 export function getSessionContextIfPresent(): SessionContextValue | undefined {
-	if (!hasContext(SESSION_CONTEXT_KEY)) {
-		return undefined;
-	}
 	return getContext<SessionContextValue | undefined>(SESSION_CONTEXT_KEY);
 }

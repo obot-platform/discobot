@@ -11,3 +11,17 @@ export function getNextSelectedSessionId(
 	}
 	return remainingSessions[0]?.id ?? null;
 }
+
+export function getReconciledSelectedSessionId(
+	sessions: SessionSummary[],
+	currentSelectedId: string | null,
+	preferredId?: string | null,
+): string | null {
+	if (preferredId && sessions.some((session) => session.id === preferredId)) {
+		return preferredId;
+	}
+	if (currentSelectedId && sessions.some((session) => session.id === currentSelectedId)) {
+		return currentSelectedId;
+	}
+	return null;
+}

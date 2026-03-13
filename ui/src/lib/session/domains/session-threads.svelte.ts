@@ -20,29 +20,16 @@ type CreateSessionThreadsDomainArgs = {
 	setSelectedId: (threadId: string | null) => void;
 };
 
-function threadsQueryOptions(args: CreateSessionThreadsDomainArgs, sessionId: string) {
-	return queryOptions({
-		queryKey: args.key(THREADS_DOMAIN),
-		queryFn: async () => {
-			const { threads } = await api.getThreads(sessionId);
-			return threads;
-		},
-		initialData: [],
-	});
-}
-
 export function createSessionThreadsDomain(
 	args: CreateSessionThreadsDomainArgs,
-): SessionThreadsService & { refresh: () => Promise<void> } {
+): SessionThreadsService {
 	const threadsQuery = createQuery(() => {
-		const sessionId = args.getSession()?.id;
+		const session = args.getSession();
 		return queryOptions({
 			queryKey: args.key(THREADS_DOMAIN),
+			enabled: !!session?.id,
 			queryFn: async () => {
-				if (!sessionId) {
-					return [];
-				}
-				const { threads } = await api.getThreads(sessionId);
+				const { threads } = await api.getThreads(session!.id);
 				return threads;
 			},
 			initialData: [],
@@ -190,13 +177,6 @@ export function createSessionThreadsDomain(
 				return;
 			}
 			void removeThreadMutation.mutateAsync(threadId);
-		},
-		refresh: async () => {
-			const sessionId = args.getSession()?.id;
-			if (!sessionId) {
-				return;
-			}
-			await args.queryClient.fetchQuery(threadsQueryOptions(args, sessionId));
 		},
 	};
 }

@@ -15,7 +15,7 @@ const CONVERSATION_DOMAIN = "conversation";
 type CreateSessionConversationDomainArgs = {
 	queryClient: QueryClient;
 	getSession: () => Session | null;
-	getThreadId: () => string | null;
+	threadId: string;
 	key: (...parts: string[]) => readonly unknown[];
 	updateSession: (updater: (session: Session) => Session) => void;
 	afterTurn?: () => Promise<void>;
@@ -28,11 +28,11 @@ function normalizeModelId(modelId: string | null): string | undefined {
 	return modelId.endsWith(":thinking") ? modelId.slice(0, -":thinking".length) : modelId;
 }
 
-function messagesQueryOptions(args: CreateSessionConversationDomainArgs, sessionId: string, threadId: string) {
+function messagesQueryOptions(args: CreateSessionConversationDomainArgs, sessionId: string) {
 	return queryOptions({
-		queryKey: args.key(CONVERSATION_DOMAIN, threadId),
+		queryKey: args.key(CONVERSATION_DOMAIN, args.threadId),
 		queryFn: async () => {
-			const { messages } = await api.getThreadMessages(sessionId, threadId);
+			const { messages } = await api.getThreadMessages(sessionId, args.threadId);
 			return messages;
 		},
 		initialData: [],
@@ -50,14 +50,13 @@ export function createSessionConversationDomain(
 
 	const messagesQuery = createQuery(() => {
 		const sessionId = args.getSession()?.id;
-		const threadId = args.getThreadId();
 		return queryOptions({
-			queryKey: args.key(CONVERSATION_DOMAIN, threadId ?? "default"),
+			queryKey: args.key(CONVERSATION_DOMAIN, args.threadId),
 			queryFn: async () => {
-				if (!sessionId || !threadId) {
+				if (!sessionId) {
 					return [];
 				}
-				const { messages } = await api.getThreadMessages(sessionId, threadId);
+				const { messages } = await api.getThreadMessages(sessionId, args.threadId);
 				return messages;
 			},
 			initialData: [],
@@ -69,7 +68,7 @@ export function createSessionConversationDomain(
 		if (streamStatus === "streaming") {
 			return "streaming" as const;
 		}
-		if (!args.getSession() || !args.getThreadId()) {
+		if (!args.getSession()) {
 			return "idle" as const;
 		}
 		if (messagesQuery.isPending) {
@@ -89,21 +88,14 @@ export function createSessionConversationDomain(
 
 	const streamState = createChatStreamState({
 		getMessages: () => {
-			const threadId = args.getThreadId();
-			if (!threadId) {
-				return [];
-			}
 			return (
-				args.queryClient.getQueryData<ChatMessage[]>(args.key(CONVERSATION_DOMAIN, threadId)) ??
-				[]
+				args.queryClient.getQueryData<ChatMessage[]>(
+					args.key(CONVERSATION_DOMAIN, args.threadId),
+				) ?? []
 			);
 		},
 		setMessages: (nextMessages) => {
-			const threadId = args.getThreadId();
-			if (!threadId) {
-				return;
-			}
-			args.queryClient.setQueryData(args.key(CONVERSATION_DOMAIN, threadId), nextMessages);
+			args.queryClient.setQueryData(args.key(CONVERSATION_DOMAIN, args.threadId), nextMessages);
 		},
 		setMode: (mode) => {
 			const session = args.getSession();
@@ -137,19 +129,19 @@ export function createSessionConversationDomain(
 		streamStatus = null;
 	}
 
-	function streamKey(sessionId: string, threadId: string) {
-		return `${sessionId}:${threadId}`;
+	function streamKey(sessionId: string) {
+		return `${sessionId}:${args.threadId}`;
 	}
 
-	function buildStreamUrl(sessionId: string, threadId: string, replay: boolean) {
-		const baseUrl = api.getThreadChatStreamUrl(sessionId, threadId);
+	function buildStreamUrl(sessionId: string, replay: boolean) {
+		const baseUrl = api.getThreadChatStreamUrl(sessionId, args.threadId);
 		if (!replay) {
 			return baseUrl;
 		}
 		return `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}replay=true`;
 	}
 
-	function startStream(sessionId: string, threadId: string, replay: boolean) {
+	function startStream(sessionId: string, replay: boolean) {
 		if (typeof window === "undefined") {
 			return;
 		}
@@ -157,8 +149,8 @@ export function createSessionConversationDomain(
 		closeStream();
 		streamError = null;
 		streamStatus = "streaming";
-		activeStreamKey = streamKey(sessionId, threadId);
-		const source = new EventSource(buildStreamUrl(sessionId, threadId, replay));
+		activeStreamKey = streamKey(sessionId);
+		const source = new EventSource(buildStreamUrl(sessionId, replay));
 		activeSource = source;
 		unbindStream = bindChatStreamEventSource(source, streamState, {
 			onError: (error) => {
@@ -182,8 +174,7 @@ export function createSessionConversationDomain(
 
 	$effect(() => {
 		const session = args.getSession();
-		const threadId = args.getThreadId();
-		if (!session || !threadId) {
+		if (!session) {
 			closeStream();
 			streamError = null;
 			return;
@@ -193,12 +184,12 @@ export function createSessionConversationDomain(
 			return;
 		}
 
-		const nextStreamKey = streamKey(session.id, threadId);
+		const nextStreamKey = streamKey(session.id);
 		if (activeStreamKey === nextStreamKey) {
 			return;
 		}
 
-		startStream(session.id, threadId, true);
+		startStream(session.id, true);
 	});
 
 	return {
@@ -213,9 +204,7 @@ export function createSessionConversationDomain(
 		},
 		submit: async ({ text, mode, modelId, reasoning }) => {
 			const trimmedText = text.trim();
-			const session = args.getSession();
-			const threadId = args.getThreadId();
-			if (!trimmedText || !session || !threadId) {
+			if (!trimmedText) {
 				return;
 			}
 
@@ -224,8 +213,14 @@ export function createSessionConversationDomain(
 			const nextReasoning = reasoning ? "enabled" : "disabled";
 			const nextMode = mode === "plan" ? "plan" : "";
 			const userMessage = createUserMessage(trimmedText);
+			const session = args.getSession();
+
+			if (!session) {
+				return;
+			}
+
 			const nextMessages = [...messages, userMessage];
-			args.queryClient.setQueryData(args.key(CONVERSATION_DOMAIN, threadId), nextMessages);
+			args.queryClient.setQueryData(args.key(CONVERSATION_DOMAIN, args.threadId), nextMessages);
 			args.updateSession((currentSession) => ({
 				...currentSession,
 				model: nextModel,
@@ -236,13 +231,13 @@ export function createSessionConversationDomain(
 			try {
 				await api.startChat({
 					sessionId: session.id,
-					threadId,
+					threadId: args.threadId,
 					messages: nextMessages,
 					...(nextModel ? { model: nextModel } : {}),
 					reasoning: nextReasoning,
 					mode: nextMode,
 				});
-				startStream(session.id, threadId, false);
+				startStream(session.id, false);
 			} catch (error) {
 				streamError = error instanceof Error ? error.message : "Failed to start chat";
 				await messagesQuery.refetch();
@@ -251,21 +246,19 @@ export function createSessionConversationDomain(
 		},
 		cancel: async () => {
 			const session = args.getSession();
-			const threadId = args.getThreadId();
-			if (!session || !threadId) {
+			if (!session) {
 				return;
 			}
-			await api.cancelThreadChat(session.id, threadId);
+			await api.cancelThreadChat(session.id, args.threadId);
 			closeStream();
 			await messagesQuery.refetch();
 		},
 		refresh: async () => {
 			const session = args.getSession();
-			const threadId = args.getThreadId();
-			if (!session || !threadId) {
+			if (!session) {
 				return;
 			}
-			await args.queryClient.fetchQuery(messagesQueryOptions(args, session.id, threadId));
+			await args.queryClient.fetchQuery(messagesQueryOptions(args, session.id));
 		},
 		dispose: closeStream,
 	};

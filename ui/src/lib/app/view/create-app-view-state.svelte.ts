@@ -1,43 +1,14 @@
-import type { SettingsDialogTab } from "$lib/app/app-context.types";
+import type { AppUI, SettingsDialogTab } from "$lib/app/app-context.types";
 import { getDefaultSettingsTab } from "$lib/app/app-helpers";
-import type { SessionSummary } from "$lib/shell-types";
 
-export type AppViewState = {
-	selectedSessionId: string | null;
-	settingsDialogTab: SettingsDialogTab;
-	credentialFlowIntent: "github-git" | null;
-	settingsDialogOpen: boolean;
+export type AppViewState = AppUI & {
 	credentialsDialogOpen: boolean;
-	supportInfoDialogOpen: boolean;
-	selectSession: (sessionId: string) => void;
-	startNewSession: () => void;
-	reconcileSelectedSession: (sessions: SessionSummary[], preferredId?: string | null) => void;
-	openSettingsDialog: () => void;
 	openSettingsDialogAt: (tab: SettingsDialogTab) => void;
-	closeSettingsDialog: () => void;
 	openCredentialsDialog: () => void;
-	openGitHubCredentialFlow: () => void;
 	closeCredentialsDialog: () => void;
-	openSupportInfoDialog: () => void;
-	closeSupportInfoDialog: () => void;
 };
 
-export function getReconciledSelectedSessionId(
-	sessions: SessionSummary[],
-	currentSelectedId: string | null,
-	preferredId?: string | null,
-): string | null {
-	if (preferredId && sessions.some((session) => session.id === preferredId)) {
-		return preferredId;
-	}
-	if (currentSelectedId && sessions.some((session) => session.id === currentSelectedId)) {
-		return currentSelectedId;
-	}
-	return null;
-}
-
-export function createAppViewState(selectedSessionId?: string): AppViewState {
-	let currentSelectedSessionId = $state<string | null>(selectedSessionId ?? null);
+export function createAppViewState(): AppViewState {
 	let settingsDialogTab = $state<SettingsDialogTab>(getDefaultSettingsTab());
 	let credentialFlowIntent = $state<"github-git" | null>(null);
 	let settingsDialogOpen = $state(false);
@@ -51,36 +22,27 @@ export function createAppViewState(selectedSessionId?: string): AppViewState {
 		settingsDialogOpen = true;
 	};
 
-	return {
-		get selectedSessionId() {
-			return currentSelectedSessionId;
+	const settingsDialog = {
+		get open() {
+			return settingsDialogOpen;
 		},
-		set selectedSessionId(value) {
-			currentSelectedSessionId = value;
+		set open(value: boolean) {
+			settingsDialogOpen = value;
 		},
-		get settingsDialogTab() {
+		get tab() {
 			return settingsDialogTab;
 		},
-		set settingsDialogTab(value) {
+		set tab(value: SettingsDialogTab) {
 			settingsDialogTab = value;
 		},
+	};
+
+	return {
 		get credentialFlowIntent() {
 			return credentialFlowIntent;
 		},
 		set credentialFlowIntent(value) {
 			credentialFlowIntent = value;
-		},
-		get settingsDialogOpen() {
-			return settingsDialogOpen;
-		},
-		set settingsDialogOpen(value) {
-			settingsDialogOpen = value;
-		},
-		get credentialsDialogOpen() {
-			return credentialsDialogOpen;
-		},
-		set credentialsDialogOpen(value) {
-			credentialsDialogOpen = value;
 		},
 		get supportInfoDialogOpen() {
 			return supportInfoDialogOpen;
@@ -88,47 +50,41 @@ export function createAppViewState(selectedSessionId?: string): AppViewState {
 		set supportInfoDialogOpen(value) {
 			supportInfoDialogOpen = value;
 		},
-		selectSession: (sessionId) => {
-			currentSelectedSessionId = sessionId;
+		get credentialsDialogOpen() {
+			return credentialsDialogOpen;
 		},
-		startNewSession: () => {
-			currentSelectedSessionId = null;
+		set credentialsDialogOpen(value) {
+			credentialsDialogOpen = value;
 		},
-		reconcileSelectedSession: (sessions, preferredId) => {
-			currentSelectedSessionId = getReconciledSelectedSessionId(
-				sessions,
-				currentSelectedSessionId,
-				preferredId,
-			);
-		},
-		openSettingsDialog: () => {
+		settingsDialog,
+		openSettings: (tab?: SettingsDialogTab) => {
 			credentialFlowIntent = null;
-			openSettingsDialogAt(getDefaultSettingsTab());
+			openSettingsDialogAt(tab ?? getDefaultSettingsTab());
 		},
-		openSettingsDialogAt,
-		closeSettingsDialog: () => {
+		closeSettings: () => {
 			settingsDialogOpen = false;
 			settingsDialogTab = getDefaultSettingsTab();
 			credentialFlowIntent = null;
-		},
-		openCredentialsDialog: () => {
-			credentialsDialogOpen = true;
-			openSettingsDialogAt("credentials");
 		},
 		openGitHubCredentialFlow: () => {
 			credentialFlowIntent = "github-git";
 			openSettingsDialogAt("credentials");
 		},
-		closeCredentialsDialog: () => {
-			credentialsDialogOpen = false;
-		},
-		openSupportInfoDialog: () => {
+		openSupportInfo: () => {
 			settingsDialogOpen = false;
 			credentialsDialogOpen = false;
 			supportInfoDialogOpen = true;
 		},
-		closeSupportInfoDialog: () => {
+		closeSupportInfo: () => {
 			supportInfoDialogOpen = false;
+		},
+		openSettingsDialogAt,
+		openCredentialsDialog: () => {
+			credentialsDialogOpen = true;
+			openSettingsDialogAt("credentials");
+		},
+		closeCredentialsDialog: () => {
+			credentialsDialogOpen = false;
 		},
 	};
 }

@@ -22,27 +22,19 @@ export type WorkspaceSelectorState = {
 	workspaceSourceIsValid: boolean;
 	workspaceValidationMessage: string | null;
 	validatingWorkspaceSource: boolean;
-	creatingSessionSetup: boolean;
 	setupMessage: string | null;
 };
 
-export type WorkspaceReadyResult = {
+export type WorkspaceSelectionResult = {
 	ready: boolean;
 	workspaceId: string | null;
+	workspaceType: "local" | "git" | null;
+	workspacePath: string | null;
 };
 
 export type WorkspaceSelectorHandle = {
-	ensureWorkspaceReady: () => Promise<WorkspaceReadyResult>;
-	ensureSessionReady: () => Promise<boolean>;
+	getWorkspaceSelection: () => Promise<WorkspaceSelectionResult>;
 	resetForNewSession: () => void;
-};
-
-export type ConversationComposerSubmitPayload = {
-	text: string;
-	attachments: ComposerAttachment[];
-	mode: ComposerMode;
-	modelId: string | null;
-	reasoning: boolean;
 };
 
 export type ConversationComposerTextareaHandle = {

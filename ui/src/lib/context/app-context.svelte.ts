@@ -1,16 +1,19 @@
 import { getContext, hasContext, setContext } from "svelte";
 
-import type { AppContext, AppContextBootstrap, SettingsDialogTab } from "$lib/app/app-context.types";
+import { api } from "$lib/api-client";
+import type {
+	AppChatRequest,
+	AppContext,
+	AppContextBootstrap,
+} from "$lib/app/app-context.types";
 import { createAppCredentialsDomain } from "$lib/app/domains/app-credentials.svelte";
+import { createAppEnvironmentDomain } from "$lib/app/domains/app-environment";
 import { createAppModelsDomain } from "$lib/app/domains/app-models.svelte";
+import { createAppPreferencesDomain } from "$lib/app/domains/app-preferences.svelte";
 import { createAppSessionsDomain } from "$lib/app/domains/app-sessions.svelte";
 import { createAppSupportInfoDomain } from "$lib/app/domains/app-support-info.svelte";
+import { createAppUpdatesDomain } from "$lib/app/domains/app-updates.svelte";
 import { createAppWorkspacesDomain } from "$lib/app/domains/app-workspaces.svelte";
-import {
-	createAppPreferencesService,
-	createAppUpdateService,
-} from "$lib/app/services";
-import { createAppStore } from "$lib/app/store/app-store.svelte";
 import { createAppViewState } from "$lib/app/view/create-app-view-state.svelte";
 import { getQueryClient } from "$lib/query/query-client";
 
@@ -27,148 +30,76 @@ const APP_CONTEXT_KEY = Symbol.for("discobot-ui-app-context");
 
 function createAppContext(bootstrap: AppContextBootstrap): AppContext {
 	const queryClient = getQueryClient();
-	const store = createAppStore(bootstrap);
-	const view = createAppViewState(bootstrap.selectedSessionId);
 
-	const preferencesService = createAppPreferencesService({ store });
-	const updateService = createAppUpdateService({ store });
+	const ui = createAppViewState();
+	const preferences = createAppPreferencesDomain({ bootstrap });
+	const environment = createAppEnvironmentDomain({ bootstrap });
+	const updates = createAppUpdatesDomain();
 	const workspaces = createAppWorkspacesDomain({ queryClient });
 	const models = createAppModelsDomain();
 	const supportInfo = createAppSupportInfoDomain();
 	const credentials = createAppCredentialsDomain({ queryClient });
 	const sessions = createAppSessionsDomain({
-		store,
-		view,
 		queryClient,
-		setResolvedWorkspaceId: workspaces.select,
+		initialSelectedSessionId: bootstrap.selectedSessionId,
 	});
 
-	const ui = {
-		get selectedSessionId() {
-			return view.selectedSessionId;
-		},
-		set selectedSessionId(value: string | null) {
-			view.selectedSessionId = value;
-		},
-		get credentialFlowIntent() {
-			return view.credentialFlowIntent;
-		},
-		set credentialFlowIntent(value: "github-git" | null) {
-			view.credentialFlowIntent = value;
-		},
-		get supportInfoDialogOpen() {
-			return view.supportInfoDialogOpen;
-		},
-		set supportInfoDialogOpen(value: boolean) {
-			view.supportInfoDialogOpen = value;
-		},
-		settingsDialog: {
-			get open() {
-				return view.settingsDialogOpen;
-			},
-			set open(value: boolean) {
-				view.settingsDialogOpen = value;
-			},
-			get tab() {
-				return view.settingsDialogTab;
-			},
-			set tab(value) {
-				view.settingsDialogTab = value;
-			},
-		},
-		openSettings: (tab?: SettingsDialogTab) => {
-			if (tab) {
-				view.openSettingsDialogAt(tab);
-				return;
+	void sessions.refresh();
+	void workspaces.refresh();
+	void models.refresh();
+
+	const findWorkspaceBySourceAndPath = (path: string, sourceType: "local" | "git") => {
+		const normalizedPath = path.trim();
+		if (!normalizedPath) {
+			return null;
+		}
+
+		return workspaces.list.find((workspace) => {
+			return workspace.sourceType === sourceType && workspace.path.trim() === normalizedPath;
+		}) ?? null;
+	};
+
+	const chat = async ({
+		sessionId,
+		threadId,
+		workspaceId,
+		workspaceType,
+		workspacePath,
+		...rest
+	}: AppChatRequest) => {
+		const resolvedSessionId = sessionId ?? sessions.pendingId;
+		let resolvedWorkspaceId = workspaceId ?? undefined;
+
+		if (!resolvedWorkspaceId && resolvedSessionId === sessions.pendingId && workspaceType && workspacePath) {
+			const normalizedWorkspacePath = workspacePath.trim();
+			if (normalizedWorkspacePath) {
+				let workspace = findWorkspaceBySourceAndPath(normalizedWorkspacePath, workspaceType);
+				if (!workspace) {
+					await workspaces.refresh();
+					workspace = findWorkspaceBySourceAndPath(normalizedWorkspacePath, workspaceType);
+				}
+
+				if (!workspace) {
+					workspace = await workspaces.create({
+						path: normalizedWorkspacePath,
+						sourceType: workspaceType,
+					});
+				}
+
+				resolvedWorkspaceId = workspace.id;
 			}
-			view.openSettingsDialog();
-		},
-		closeSettings: view.closeSettingsDialog,
-		openGitHubCredentialFlow: view.openGitHubCredentialFlow,
-		openSupportInfo: view.openSupportInfoDialog,
-		closeSupportInfo: view.closeSupportInfoDialog,
-	};
+		}
 
-	const preferences = {
-		get theme() {
-			return store.theme;
-		},
-		get resolvedTheme() {
-			return store.resolvedTheme;
-		},
-		get colorScheme() {
-			return store.colorScheme;
-		},
-		get availableThemes() {
-			return store.availableThemes;
-		},
-		get preferredIde() {
-			return store.preferredIde;
-		},
-		get ideOptions() {
-			return store.ideOptions;
-		},
-		get chatWidthMode() {
-			return store.chatWidthMode;
-		},
-		get defaultModel() {
-			return store.defaultModel;
-		},
-		setTheme: preferencesService.setTheme,
-		setColorScheme: preferencesService.setColorScheme,
-		toggleTheme: preferencesService.toggleTheme,
-		setPreferredIde: preferencesService.setPreferredIde,
-		setChatWidthMode: preferencesService.setChatWidthMode,
-		setDefaultModel: preferencesService.setDefaultModel,
-	};
+		const response = await api.startChat({
+			...rest,
+			sessionId: resolvedSessionId,
+			...(threadId ? { threadId } : {}),
+			...(resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}),
+		});
 
-	const environment = {
-		apiBase: store.apiBase,
-		isTauri: store.isTauri,
-		windowControlsSide: store.windowControlsSide,
-		windowControls: store.windowControls,
-		workflowActions: store.workflowActions,
+		await sessions.refresh();
+		return response;
 	};
-
-	const updates = {
-		get status() {
-			return store.updateStatus;
-		},
-		get availableVersion() {
-			return store.availableVersion;
-		},
-		get error() {
-			return store.updateError;
-		},
-		get downloadedBytes() {
-			return store.downloadedBytes;
-		},
-		get totalBytes() {
-			return store.totalBytes;
-		},
-		get isIgnored() {
-			return store.isUpdateIgnored;
-		},
-		get showBadge() {
-			return store.showUpdateBadge;
-		},
-		check: updateService.checkForUpdate,
-		installAndRelaunch: updateService.installAndRelaunch,
-		ignore: updateService.ignoreVersion,
-	};
-
-	try {
-		store.status = "loading";
-		preferencesService.initialize();
-		store.status = "ready";
-		void sessions.refresh();
-		void workspaces.refresh();
-		void models.refresh();
-	} catch (error) {
-		store.status = "error";
-		store.errorMessage =
-			error instanceof Error ? error.message : "Failed to initialize app context";
-	}
 
 	return {
 		ui,
@@ -179,6 +110,7 @@ function createAppContext(bootstrap: AppContextBootstrap): AppContext {
 		models,
 		credentials,
 		supportInfo,
+		chat,
 		updates,
 	};
 }

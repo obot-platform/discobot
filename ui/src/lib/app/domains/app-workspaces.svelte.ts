@@ -23,13 +23,8 @@ function workspacesQueryOptions() {
 export function createAppWorkspacesDomain(
 	args: CreateAppWorkspacesDomainArgs,
 ): AppWorkspaces {
-	let selectedId = $state<string | null>(null);
-
 	const workspacesQuery = createQuery(() => workspacesQueryOptions());
 	const list = $derived.by(() => workspacesQuery.data ?? []);
-	const selected = $derived.by(
-		() => list.find((workspace) => workspace.id === selectedId) ?? null,
-	);
 	const status = $derived.by(() => {
 		if (workspacesQuery.isPending) {
 			return "loading" as const;
@@ -56,19 +51,6 @@ export function createAppWorkspacesDomain(
 		},
 	}));
 
-	$effect(() => {
-		if (list.length === 0) {
-			selectedId = null;
-			return;
-		}
-
-		if (selectedId && list.some((workspace) => workspace.id === selectedId)) {
-			return;
-		}
-
-		selectedId = list.find((workspace) => workspace.status === "ready")?.id ?? list[0]?.id ?? null;
-	});
-
 	return {
 		get list() {
 			return list;
@@ -76,17 +58,8 @@ export function createAppWorkspacesDomain(
 		get status() {
 			return status;
 		},
-		get selectedId() {
-			return selectedId;
-		},
-		get selected() {
-			return selected;
-		},
 		get: (workspaceId: string) =>
 			list.find((workspace) => workspace.id === workspaceId) ?? null,
-		select: (workspaceId: string | null) => {
-			selectedId = workspaceId;
-		},
 		refresh: async () => {
 			await workspacesQuery.refetch();
 		},

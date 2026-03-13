@@ -1,8 +1,6 @@
 <script lang="ts">
 	import ConversationFileMentionDropdown from "$lib/components/ide/ConversationFileMentionDropdown.svelte";
-	import { shouldSubmitComposerOnEnter } from "$lib/components/ide/conversation-composer.helpers";
 	import { InputGroupTextarea } from "$lib/components/ui/input-group";
-	import { useSessionContext } from "$lib/context/session-context.svelte";
 
 	type FileMentionDropdownHandle = {
 		handleInput: (value: string, cursor: number) => void;
@@ -11,6 +9,8 @@
 	};
 
 	type Props = {
+		draft: string;
+		onDraftChange: (value: string) => void;
 		sessionFiles: string[];
 		attachmentCount: number;
 		onAddFiles: (files: File[] | FileList) => void;
@@ -18,15 +18,23 @@
 		onSubmit: () => void | Promise<void>;
 	};
 
-	let { sessionFiles, attachmentCount, onAddFiles, onRemoveLastAttachment, onSubmit }: Props =
-		$props();
-
-	const session = useSessionContext();
-	const sessionView = session.ui;
+	let {
+		draft,
+		onDraftChange,
+		sessionFiles,
+		attachmentCount,
+		onAddFiles,
+		onRemoveLastAttachment,
+		onSubmit,
+	}: Props = $props();
 
 	let isComposing = $state(false);
 	let fileMentionDropdownRef = $state<FileMentionDropdownHandle | null>(null);
 	let fileMentionTextareaRef = $state<HTMLTextAreaElement | null>(null);
+
+	function shouldSubmitComposerOnEnter(draft: string): boolean {
+		return draft.trim().length > 0;
+	}
 
 	function handleTextareaKeydown(event: KeyboardEvent) {
 		if (fileMentionDropdownRef?.handleKeydown(event)) {
@@ -37,7 +45,7 @@
 			if (isComposing || event.isComposing || event.shiftKey) {
 				return;
 			}
-			if (!shouldSubmitComposerOnEnter(sessionView.composerDraft)) {
+			if (!shouldSubmitComposerOnEnter(draft)) {
 				return;
 			}
 			event.preventDefault();
@@ -45,7 +53,7 @@
 			return;
 		}
 
-		if (event.key === "Backspace" && sessionView.composerDraft.length === 0 && attachmentCount > 0) {
+		if (event.key === "Backspace" && draft.length === 0 && attachmentCount > 0) {
 			event.preventDefault();
 			onRemoveLastAttachment();
 		}
@@ -53,8 +61,11 @@
 
 	function handleTextareaInput(event: Event) {
 		const textarea = event.currentTarget as HTMLTextAreaElement;
-		sessionView.setComposerDraft(textarea.value);
-		fileMentionDropdownRef?.handleInput(textarea.value, textarea.selectionStart ?? textarea.value.length);
+		onDraftChange(textarea.value);
+		fileMentionDropdownRef?.handleInput(
+			textarea.value,
+			textarea.selectionStart ?? textarea.value.length,
+		);
 	}
 
 	function handleTextareaPaste(event: ClipboardEvent) {
@@ -89,14 +100,14 @@
 	bind:this={fileMentionDropdownRef}
 	files={sessionFiles}
 	textareaRef={fileMentionTextareaRef}
-	onDraftChange={(value) => sessionView.setComposerDraft(value)}
+	onDraftChange={(value) => onDraftChange(value)}
 />
 
 <InputGroupTextarea
 	bind:ref={fileMentionTextareaRef}
 	rows={2}
 	class="field-sizing-content max-h-48 min-h-16 transition-all"
-	value={sessionView.composerDraft}
+	value={draft}
 	placeholder="Type a message..."
 	oncompositionstart={() => {
 		isComposing = true;

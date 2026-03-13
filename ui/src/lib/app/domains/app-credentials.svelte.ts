@@ -80,6 +80,7 @@ export function createAppCredentialsDomain(
 					return next;
 				},
 			);
+			void args.queryClient.invalidateQueries({ queryKey: appQueryKeys.models() });
 		},
 	}));
 
@@ -93,6 +94,7 @@ export function createAppCredentialsDomain(
 				appQueryKeys.credentials(),
 				(previous) => (previous ?? []).filter((credential) => credential.provider !== provider),
 			);
+			void args.queryClient.invalidateQueries({ queryKey: appQueryKeys.models() });
 		},
 	}));
 
@@ -122,12 +124,14 @@ export function createAppCredentialsDomain(
 		refreshCredential: async (provider: string) => {
 			const response = await api.refreshCredential(provider);
 			await credentialsQuery.refetch();
+			void args.queryClient.invalidateQueries({ queryKey: appQueryKeys.models() });
 			return response;
 		},
 		anthropicAuthorize: (): Promise<OAuthAuthorizeResponse> => api.anthropicAuthorize(),
 		anthropicExchange: async (data: OAuthExchangeRequest) => {
 			const response = await api.anthropicExchange(data);
 			await credentialsQuery.refetch();
+			void args.queryClient.invalidateQueries({ queryKey: appQueryKeys.models() });
 			return response;
 		},
 		githubDeviceCode: (data?: GitHubDeviceCodeRequest): Promise<GitHubDeviceCodeResponse> =>
@@ -136,6 +140,7 @@ export function createAppCredentialsDomain(
 			const response = await api.githubPoll(data);
 			if (response.status === "success") {
 				await credentialsQuery.refetch();
+				void args.queryClient.invalidateQueries({ queryKey: appQueryKeys.models() });
 			}
 			return response;
 		},
@@ -143,6 +148,7 @@ export function createAppCredentialsDomain(
 		codexExchange: async (data: CodexExchangeRequest) => {
 			const response = await api.codexExchange(data);
 			await credentialsQuery.refetch();
+			void args.queryClient.invalidateQueries({ queryKey: appQueryKeys.models() });
 			return response;
 		},
 	};

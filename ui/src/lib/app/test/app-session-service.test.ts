@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { getNextSelectedSessionId } from "../domains/app-sessions.helpers";
-import type { SessionSummary } from "../../shell-types";
+import type { SessionSummary } from "$lib/shell-types";
 
 const sessions: SessionSummary[] = [
 	{ id: "session-1", name: "One", isRecent: true, status: "ready" },

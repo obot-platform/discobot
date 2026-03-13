@@ -7,5 +7,6 @@ export default defineConfig({
 	plugins: [sveltekit(), tailwindcss(), devtoolsJson()],
 	server: { port: 3100, strictPort: true },
 	preview: { port: 3100, strictPort: true },
-	clearScreen: false
+	clearScreen: false,
+	build: { chunkSizeWarningLimit: 3000 },
 });

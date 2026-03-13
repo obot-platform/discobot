@@ -74,57 +74,60 @@
 <div class="h-screen flex flex-col bg-background text-foreground">
 	<AppHeader />
 
-	{#if !ui.selectedSessionId}
-		<ThreadWorkspace
-			mainClass="flex min-h-0 flex-1 flex-col overflow-hidden"
-			mode="conversation-only"
-		/>
-	{:else}
-		<div class="flex min-h-0 flex-1 overflow-hidden">
-			{#if isMobile.current}
+	<div class="flex min-h-0 flex-1 overflow-hidden">
+		{#if isMobile.current}
+			{#if !session.isPending}
 				<Sheet.Root bind:open={sessionView.mobileThreadsOpen}>
 					<Sheet.Content side="left" class="w-64 max-w-none p-0 [&>button]:hidden">
 						<ThreadSidebar onThreadSelect={handleThreadSelect} />
 					</Sheet.Content>
 				</Sheet.Root>
+			{/if}
 
+			{#key session.threads.selectedId ?? session.sessionId}
 				<ThreadWorkspace
 					mainClass="flex min-h-0 flex-1 flex-col overflow-hidden"
-					threadsOpen={threadsOpen()}
-					onToggleThreads={toggleThreads}
+					threadsOpen={session.isPending ? false : threadsOpen()}
+					onToggleThreads={session.isPending ? undefined : toggleThreads}
+					mode={session.isPending ? "conversation-only" : undefined}
 				/>
-			{:else}
-				<Resizable.PaneGroup
-					direction="horizontal"
-					autoSaveId="discobot-ui-threads-layout"
-					class="min-h-0 flex-1"
+			{/key}
+		{:else}
+			<Resizable.PaneGroup
+				direction="horizontal"
+				autoSaveId="discobot-ui-threads-layout"
+				class="min-h-0 flex-1"
+			>
+				<Resizable.Pane
+					bind:this={desktopThreadsPane}
+					defaultSize={16}
+					minSize={10}
+					maxSize={35}
+					collapsible
+					collapsedSize={0}
+					onCollapse={() => {
+						sessionView.desktopThreadsOpen = false;
+					}}
+					onExpand={() => {
+						sessionView.desktopThreadsOpen = true;
+					}}
 				>
-					<Resizable.Pane
-						bind:this={desktopThreadsPane}
-						defaultSize={16}
-						minSize={10}
-						maxSize={35}
-						collapsible
-						collapsedSize={0}
-						onCollapse={() => {
-							sessionView.desktopThreadsOpen = false;
-						}}
-						onExpand={() => {
-							sessionView.desktopThreadsOpen = true;
-						}}
-					>
+					{#if !session.isPending}
 						<ThreadSidebar />
-					</Resizable.Pane>
-					<Resizable.Handle />
-					<Resizable.Pane minSize={45} class="min-h-0">
+					{/if}
+				</Resizable.Pane>
+				<Resizable.Handle />
+				<Resizable.Pane minSize={45} class="min-h-0">
+					{#key session.threads.selectedId ?? session.sessionId}
 						<ThreadWorkspace
 							mainClass="flex h-full min-h-0 flex-col overflow-hidden"
-							threadsOpen={threadsOpen()}
-							onToggleThreads={toggleThreads}
+							threadsOpen={session.isPending ? false : threadsOpen()}
+							onToggleThreads={session.isPending ? undefined : toggleThreads}
+							mode={session.isPending ? "conversation-only" : undefined}
 						/>
-					</Resizable.Pane>
-				</Resizable.PaneGroup>
-			{/if}
-		</div>
-	{/if}
+					{/key}
+				</Resizable.Pane>
+			</Resizable.PaneGroup>
+		{/if}
+	</div>
 </div>

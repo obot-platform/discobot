@@ -15,11 +15,15 @@ import type {
 	OAuthExchangeResponse,
 	OAuthRefreshResponse,
 	CredentialAuthType,
+	Session,
+	StartChatRequest,
+	StartChatResponse,
 	SupportInfoResponse,
 	ThemeColorScheme,
 	Workspace,
 	WorkspaceValidationResult,
 } from "$lib/api-types";
+import type { SessionContextValue } from "$lib/session/session-context.types";
 import type {
 	AsyncStatus,
 	IdeOption,
@@ -57,7 +61,6 @@ export type AppContextBootstrap = {
 };
 
 export type AppUI = {
-	selectedSessionId: string | null;
 	credentialFlowIntent: "github-git" | null;
 	supportInfoDialogOpen: boolean;
 	settingsDialog: {
@@ -97,10 +100,13 @@ export type AppEnvironment = {
 };
 
 export type AppSessions = {
+	sessions: Session[];
 	list: SessionSummary[];
 	recent: SessionSummary[];
 	selectedId: string | null;
+	pendingId: string;
 	selected: SessionSummary | null;
+	sessionContexts: Map<string, SessionContextValue>;
 	select: (sessionId: string) => void;
 	startNew: () => void;
 	refresh: () => Promise<void>;
@@ -112,13 +118,18 @@ export type AppSessions = {
 export type AppWorkspaces = {
 	list: Workspace[];
 	status: AsyncStatus;
-	selectedId: string | null;
-	selected: Workspace | null;
 	get: (workspaceId: string) => Workspace | null;
-	select: (workspaceId: string | null) => void;
 	refresh: () => Promise<void>;
 	validate: (path: string, sourceType: "local" | "git") => Promise<WorkspaceValidationResult>;
 	create: (data: CreateWorkspaceRequest) => Promise<Workspace>;
+};
+
+export type AppChatRequest = Omit<StartChatRequest, "sessionId" | "threadId" | "workspaceId"> & {
+	sessionId?: string | null;
+	threadId?: string | null;
+	workspaceId?: string | null;
+	workspaceType?: CreateWorkspaceRequest["sourceType"] | null;
+	workspacePath?: string | null;
 };
 
 export type AppModels = {
@@ -172,5 +183,6 @@ export type AppContext = {
 	models: AppModels;
 	credentials: AppCredentials;
 	supportInfo: AppSupportInfo;
+	chat: (data: AppChatRequest) => Promise<StartChatResponse>;
 	updates: AppUpdates;
 };

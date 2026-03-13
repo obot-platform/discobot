@@ -4,6 +4,7 @@ export type SessionHooksService = {
 	status: NonNullable<SessionData["hooksStatus"]>;
 	outputById: Record<string, string>;
 	rerun: (hookId: string) => void;
+	refresh: () => Promise<void>;
 };
 
 type CreateSessionHooksServiceArgs = {
@@ -115,5 +116,8 @@ export function createSessionHooksService(
 			return args.getOutputById();
 		},
 		rerun,
+		refresh: async () => {
+			// No-op: this service doesn't own query state; use the domain-level refresh instead.
+		},
 	};
 }

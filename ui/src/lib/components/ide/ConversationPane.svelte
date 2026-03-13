@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { useAppContext } from "$lib/context/app-context.svelte";
-	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { useThreadContext } from "$lib/context/thread-context.svelte";
 	import ConversationComposer from "$lib/components/ide/ConversationComposer.svelte";
 	import { Message, MessageContent, MessageResponse } from "$lib/components/ai/message";
@@ -14,9 +13,8 @@
 
 	const app = useAppContext();
 	const preferences = app.preferences;
-	const session = useSessionContext();
 	const thread = useThreadContext();
-	const conversationMessages = $derived.by(() => thread.conversation);
+	const conversationMessages = $derived.by(() => thread.messages);
 	const hasMessages = $derived.by(() => conversationMessages.length > 0);
 
 </script>
@@ -40,7 +38,7 @@
 								{#if reasoning.length > 0}
 									<Reasoning
 										defaultOpen={false}
-										isStreaming={session.conversation.status === "streaming"}
+										isStreaming={thread.status === "streaming"}
 									>
 										<ReasoningTrigger />
 										<ReasoningContent text={reasoning} />

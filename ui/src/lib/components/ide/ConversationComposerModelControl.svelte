@@ -20,15 +20,15 @@
 		reasoning: boolean;
 	};
 
-	type Props = {
-		value?: string | null;
-		reasoning?: boolean;
-	};
+type Props = {
+	value?: string | null;
+	onSelect?: (value: string | null) => void;
+};
 
 	const app = useAppContext();
 	const models = app.models;
 
-	let { value = $bindable<string | null>(null), reasoning = $bindable(false) }: Props = $props();
+let { value = null, onSelect = () => {} }: Props = $props();
 
 	const modelVariants = $derived.by(() => {
 		const modelByName: Record<string, ModelInfo> = {};
@@ -123,9 +123,6 @@
 		() => modelVariants.find((variant) => variant.id === value) ?? null,
 	);
 
-	$effect(() => {
-		reasoning = selectedModelVariant?.reasoning ?? false;
-	});
 </script>
 
 <DropdownMenu>
@@ -151,7 +148,7 @@
 	<DropdownMenuContent align="start" class="max-h-[24rem] w-80 overflow-y-auto">
 		<DropdownMenuItem
 			onclick={() => {
-				value = null;
+				onSelect(null);
 			}}
 			class="justify-between"
 		>
@@ -175,7 +172,7 @@
 			{#each variants as variant (variant.id)}
 				<DropdownMenuItem
 					onclick={() => {
-						value = variant.id;
+						onSelect(variant.id);
 					}}
 					class="justify-between gap-3"
 				>

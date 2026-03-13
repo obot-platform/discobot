@@ -17,9 +17,10 @@
 		description: string;
 	};
 
-	type Props = {
-		value?: ComposerMode;
-	};
+type Props = {
+	value?: ComposerMode;
+	onSelect?: (value: ComposerMode) => void;
+};
 
 	const modeOptions: ModeOption[] = [
 		{
@@ -34,7 +35,7 @@
 		},
 	];
 
-	let { value = $bindable<ComposerMode>("build") }: Props = $props();
+let { value = "build", onSelect = () => {} }: Props = $props();
 
 	const selectedModeOption = $derived.by(
 		() => modeOptions.find((modeOption) => modeOption.id === value) ?? modeOptions[0],
@@ -60,7 +61,7 @@
 		{#each modeOptions as modeOption (modeOption.id)}
 			<DropdownMenuItem
 				onclick={() => {
-					value = modeOption.id;
+					onSelect(modeOption.id);
 				}}
 				class="justify-between gap-3"
 			>

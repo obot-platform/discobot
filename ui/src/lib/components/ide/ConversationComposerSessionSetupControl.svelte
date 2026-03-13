@@ -1,18 +1,15 @@
 <script lang="ts">
+	import ConversationComposerSessionSetupStatus from "$lib/components/ide/ConversationComposerSessionSetupStatus.svelte";
 	import ConversationWorkspaceSelector from "$lib/components/ide/ConversationWorkspaceSelector.svelte";
-	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import type {
-		WorkspaceReadyResult,
+		WorkspaceSelectionResult,
 		WorkspaceSelectorHandle,
 		WorkspaceSelectorState,
 	} from "$lib/components/ide/conversation-composer.types";
 
 	type Props = {
-		selectorState?: WorkspaceSelectorState;
 		disabled?: boolean;
 	};
-
-	const session = useSessionContext();
 
 	const defaultState: WorkspaceSelectorState = {
 		selectedWorkspaceOption: "new-workspace",
@@ -24,41 +21,38 @@
 		workspaceSourceIsValid: true,
 		workspaceValidationMessage: null,
 		validatingWorkspaceSource: false,
-		creatingSessionSetup: false,
 		setupMessage: null,
 	};
 
-	let {
-		selectorState = $bindable<WorkspaceSelectorState>(defaultState),
-		disabled = $bindable(false),
-	}: Props = $props();
+	let { disabled = $bindable(false) }: Props = $props();
 
+	let selectorState = $state<WorkspaceSelectorState>(defaultState);
 	let workspaceSelectorRef = $state<WorkspaceSelectorHandle | null>(null);
 
 	$effect(() => {
-		disabled =
-			selectorState.creatingSessionSetup ||
-			(!session.current && selectorState.requiresSourceInput && !selectorState.workspaceSourceIsValid);
+		disabled = selectorState.requiresSourceInput && !selectorState.workspaceSourceIsValid;
 	});
 
 	export function resetForNewSession() {
 		workspaceSelectorRef?.resetForNewSession();
 	}
 
-	export async function ensureWorkspaceReady(): Promise<WorkspaceReadyResult> {
-		return workspaceSelectorRef?.ensureWorkspaceReady() ?? { ready: false, workspaceId: null };
-	}
-
-	export async function ensureSessionReady(): Promise<boolean> {
-		return workspaceSelectorRef?.ensureSessionReady() ?? false;
+	export async function getWorkspaceSelection(): Promise<WorkspaceSelectionResult> {
+		return workspaceSelectorRef?.getWorkspaceSelection() ?? {
+			ready: false,
+			workspaceId: null,
+			workspaceType: null,
+			workspacePath: null,
+		};
 	}
 </script>
 
-{#if !session.current}
+<ConversationComposerSessionSetupStatus state={selectorState} />
+<div class="mb-2 flex items-center gap-1.5">
 	<ConversationWorkspaceSelector
 		bind:this={workspaceSelectorRef}
 		onStateChange={(nextState) => {
 			selectorState = nextState;
 		}}
 	/>
-{/if}
+</div>

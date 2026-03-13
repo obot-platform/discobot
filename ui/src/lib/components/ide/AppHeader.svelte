@@ -176,7 +176,7 @@
 						<DropdownMenu>
 							<DropdownMenuItem
 								onclick={() => handleSelectSession(sessionItem.id)}
-								class={`group h-8 justify-between gap-3 ${ui.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
+								class={`group h-8 justify-between gap-3 ${sessions.selectedId === sessionItem.id ? "bg-accent" : ""}`}
 							>
 								<span class="truncate">{sessionItem.name}</span>
 								<span class="relative inline-flex size-4 items-center justify-center">
@@ -219,7 +219,7 @@
 					<DropdownMenu>
 						<DropdownMenuItem
 							onclick={() => handleSelectSession(sessionItem.id)}
-							class={`group h-8 justify-between gap-3 ${ui.selectedSessionId === sessionItem.id ? "bg-accent" : ""}`}
+							class={`group h-8 justify-between gap-3 ${sessions.selectedId === sessionItem.id ? "bg-accent" : ""}`}
 						>
 							<span class="truncate">{sessionItem.name}</span>
 							<span class="relative inline-flex size-4 items-center justify-center">
@@ -262,7 +262,7 @@
 					variant="ghost"
 					size="xs"
 					class="h-7 px-2 text-xs"
-					disabled={!ui.selectedSessionId}
+					disabled={!sessions.selectedId}
 				>
 					{action}
 				</Button>
