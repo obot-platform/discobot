@@ -8,6 +8,7 @@ import (
 	"github.com/obot-platform/discobot/agent-go/message"
 )
 
+
 // ModelTaskType identifies the intended use of a model within a provider's
 // default model map.
 type ModelTaskType = string
@@ -36,10 +37,6 @@ type Provider interface {
 	// cancelled, or an error occurs. After an error is yielded, no
 	// further chunks are produced.
 	Complete(ctx context.Context, req CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error]
-
-	// CountTokens counts the number of tokens in the given messages
-	// for the specified model. This is used for context window management.
-	CountTokens(ctx context.Context, req CountTokensRequest) (CountTokensResponse, error)
 
 	// ListModels returns the models available from this provider
 	// with the current configuration/credentials.
@@ -99,16 +96,4 @@ type CompleteRequest struct {
 	// ProviderOptions is an opaque JSON blob for provider-specific parameters
 	// that don't fit the common fields.
 	ProviderOptions json.RawMessage `json:"providerOptions,omitempty"`
-}
-
-// CountTokensRequest is the input to Provider.CountTokens.
-type CountTokensRequest struct {
-	Model    ModelRef          `json:"model"`
-	Messages []message.Message `json:"messages"`
-	Tools    []ToolDefinition  `json:"tools,omitempty"`
-}
-
-// CountTokensResponse is the output of Provider.CountTokens.
-type CountTokensResponse struct {
-	TotalTokens int `json:"totalTokens"`
 }

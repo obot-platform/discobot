@@ -14,12 +14,11 @@ import (
 
 // --- Compaction-aware mock provider ---
 
-// compactionMockProvider extends mockProvider with configurable CountTokens.
+// compactionMockProvider is a mock provider for compaction tests.
 type compactionMockProvider struct {
-	responses    [][]message.ProviderMessageChunk
-	callIndex    int
-	requests     []providers.CompleteRequest
-	tokenCountFn func(providers.CountTokensRequest) (providers.CountTokensResponse, error)
+	responses [][]message.ProviderMessageChunk
+	callIndex int
+	requests  []providers.CompleteRequest
 }
 
 func (m *compactionMockProvider) ID() string { return "mock" }
@@ -41,38 +40,9 @@ func (m *compactionMockProvider) Complete(_ context.Context, req providers.Compl
 	}
 }
 
-func (m *compactionMockProvider) CountTokens(_ context.Context, req providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	if m.tokenCountFn != nil {
-		return m.tokenCountFn(req)
-	}
-	return providers.CountTokensResponse{}, nil
-}
-
 func (m *compactionMockProvider) DefaultModels() map[string]providers.ModelRef { return nil }
 func (m *compactionMockProvider) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
 	return nil, nil
-}
-
-// --- Helper: count characters as pseudo-tokens (1 char ≈ 1 token) ---
-
-func charBasedTokenCount(req providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	total := 0
-	for _, msg := range req.Messages {
-		for _, part := range msg.Parts {
-			switch p := part.(type) {
-			case message.TextPart:
-				total += len(p.Text)
-			case message.ToolCallPart:
-				total += len(p.ToolName) + len(p.Input) + 20
-			case message.ToolResultPart:
-				total += 50 // rough estimate
-			}
-		}
-	}
-	for _, tool := range req.Tools {
-		total += len(tool.Name) + 20
-	}
-	return providers.CountTokensResponse{TotalTokens: total}, nil
 }
 
 // --- Tests ---
@@ -449,9 +419,9 @@ func TestMaybeCompact_NoCompactionNeeded(t *testing.T) {
 	cfg := &TurnConfig{Model: "test", ContextWindow: 100000, MaxOutputTokens: 4000}
 	turnState := &TurnState{LeafMsgID: "msg2"}
 
-	prov := &compactionMockProvider{tokenCountFn: charBasedTokenCount}
+	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +452,7 @@ func TestMaybeCompact_SkipsWhenNoContextWindow(t *testing.T) {
 
 	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,15 +495,13 @@ func TestMaybeCompact_CompactionTriggered(t *testing.T) {
 
 	entries, _ := store.BuildHistoryWithIDs(threadID, prevID)
 
-	// Total chars ≈ 16 (system) + 10*100 = 1016.
-	// Set context window so CompactionTrigger < 1016.
-	// InputLimit = cw - cw/4 = cw * 3/4. CompactionTrigger = InputLimit * 80/100 = cw * 0.6.
-	// Need cw * 0.6 < 1016 → cw < 1694. Use 1600.
-	cfg := &TurnConfig{Model: "test", ContextWindow: 1600}
+	// Total tokens ≈ ceil(16/4) + 10*ceil(100/4) = 4 + 250 = 254.
+	// Set context window so CompactionTrigger (= cw * 0.75 * 0.80 = cw * 0.6) < 254.
+	// Need cw * 0.6 < 254 → cw < 424. Use 400.
+	cfg := &TurnConfig{Model: "test", ContextWindow: 400}
 	turnState := &TurnState{LeafMsgID: prevID}
 
 	prov := &compactionMockProvider{
-		tokenCountFn: charBasedTokenCount,
 		responses: [][]message.ProviderMessageChunk{
 			// Summary generation call.
 			{
@@ -546,7 +514,7 @@ func TestMaybeCompact_CompactionTriggered(t *testing.T) {
 		},
 	}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,9 +586,9 @@ func TestMaybeCompact_ExistingCompactionValid(t *testing.T) {
 	cfg := &TurnConfig{Model: "test", ContextWindow: 100000, MaxOutputTokens: 1000}
 	turnState := &TurnState{LeafMsgID: "msg5"}
 
-	prov := &compactionMockProvider{tokenCountFn: charBasedTokenCount}
+	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,15 +653,12 @@ func TestMaybeCompact_ReCompaction(t *testing.T) {
 	entries, _ := store.BuildHistoryWithIDs(threadID, prevID)
 
 	// Context window sized so the compacted version (summary + msg5-msg10 @ 480 chars each)
-	// exceeds InputLimit (triggering re-compaction), but messagesToSummarize fits within
-	// SummarizationLimit for a single summarisation call.
-	// compacted chars ≈ sys(3) + summary(155) + 6*480 = 3038. InputLimit = 4000*0.75 = 3000 < 3038.
-	// messagesToSummarize candidate ≈ 155 + 6*480 + summaryRequestPrompt = 3348. SummarizationLimit = 3400.
-	cfg := &TurnConfig{Model: "test", ContextWindow: 4000}
+	// exceeds InputLimit (triggering re-compaction).
+	// compacted tokens ≈ sys(1) + summary(39) + 6*120 = 760. InputLimit = 900*0.75 = 675 < 760.
+	cfg := &TurnConfig{Model: "test", ContextWindow: 900}
 	turnState := &TurnState{LeafMsgID: prevID}
 
 	prov := &compactionMockProvider{
-		tokenCountFn: charBasedTokenCount,
 		responses: [][]message.ProviderMessageChunk{
 			// Fresh summary generation.
 			{
@@ -706,7 +671,7 @@ func TestMaybeCompact_ReCompaction(t *testing.T) {
 		},
 	}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -809,9 +774,9 @@ func TestMaybeCompact_SystemRemindersDontInflateCount(t *testing.T) {
 	cfg := &TurnConfig{Model: "test", ContextWindow: 1_000_000}
 	turnState := &TurnState{LeafMsgID: prevID}
 
-	prov := &compactionMockProvider{tokenCountFn: charBasedTokenCount}
+	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -864,13 +829,13 @@ func TestMaybeCompact_SystemRemindersFilteredFromSummaryInput(t *testing.T) {
 
 	entries, _ := store.BuildHistoryWithIDs(threadID, prevID)
 
-	// Context window sized so compaction is triggered but messagesToSummarize fits
-	// in a single summarisation call (SummarizationLimit = 1700 - 255 = 1445, candidate ≈ 1313).
-	cfg := &TurnConfig{Model: "test", ContextWindow: 1700}
+	// Context window sized so compaction is triggered.
+	// Total tokens ≈ sys(1) + 5*reminders(60) + 5*real(250) = 311.
+	// CompactionTrigger = 500*0.75*0.80 = 300 < 311.
+	cfg := &TurnConfig{Model: "test", ContextWindow: 500}
 	turnState := &TurnState{LeafMsgID: prevID}
 
 	prov := &compactionMockProvider{
-		tokenCountFn: charBasedTokenCount,
 		responses: [][]message.ProviderMessageChunk{
 			{
 				message.StreamStartChunk{},
@@ -882,7 +847,7 @@ func TestMaybeCompact_SystemRemindersFilteredFromSummaryInput(t *testing.T) {
 		},
 	}
 
-	_, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
+	_, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -962,7 +927,6 @@ func TestGenerateSummary_IterativeCompaction(t *testing.T) {
 	//   Call 2: first-half partial summary → succeeds.
 	//   Call 3: final summary on reduced list → succeeds.
 	prov := &compactionMockProvider{
-		tokenCountFn: charBasedTokenCount,
 		responses: [][]message.ProviderMessageChunk{
 			// Call 2: first half partial summary.
 			{
@@ -1032,9 +996,6 @@ func (f *failFirstCallProvider) Complete(ctx context.Context, req providers.Comp
 	}
 	return f.inner.Complete(ctx, req)
 }
-func (f *failFirstCallProvider) CountTokens(ctx context.Context, req providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	return f.inner.CountTokens(ctx, req)
-}
 func (f *failFirstCallProvider) DefaultModels() map[string]providers.ModelRef {
 	return f.inner.DefaultModels()
 }
@@ -1055,10 +1016,6 @@ func (p *erroringCompactionProvider) Complete(ctx context.Context, req providers
 	return func(yield func(message.ProviderMessageChunk, error) bool) {
 		yield(nil, p.errFn(ctx, call, req))
 	}
-}
-
-func (p *erroringCompactionProvider) CountTokens(context.Context, providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	return providers.CountTokensResponse{}, nil
 }
 
 func (p *erroringCompactionProvider) DefaultModels() map[string]providers.ModelRef { return nil }
@@ -1119,45 +1076,6 @@ func TestGenerateSummary_StopsAtSingleMessage(t *testing.T) {
 	}
 }
 
-func TestMaybeCompact_CountTokensFails(t *testing.T) {
-	store := NewStore(t.TempDir())
-	threadID := "thread1"
-
-	msgs := []StoredMessage{
-		{ID: "msg1", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "a"}}}},
-		{ID: "msg2", ParentID: "msg1", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "b"}}}},
-		{ID: "msg3", ParentID: "msg2", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "c"}}}},
-		{ID: "msg4", ParentID: "msg3", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "d"}}}},
-		{ID: "msg5", ParentID: "msg4", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "e"}}}},
-	}
-	for _, sm := range msgs {
-		if err := store.SaveMessage(threadID, sm); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	entries, _ := store.BuildHistoryWithIDs(threadID, "msg5")
-
-	cfg := &TurnConfig{Model: "test", ContextWindow: 100}
-	turnState := &TurnState{LeafMsgID: "msg5"}
-
-	// CountTokens always fails.
-	prov := &compactionMockProvider{
-		tokenCountFn: func(_ providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-			return providers.CountTokensResponse{}, fmt.Errorf("network error")
-		},
-	}
-
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries)
-
-	// Should fall back to full history.
-	if err == nil {
-		t.Error("expected error from CountTokens failure")
-	}
-	if len(result) != 5 {
-		t.Errorf("expected 5 messages (full history fallback), got %d", len(result))
-	}
-}
 
 func TestMakeSummaryMessage(t *testing.T) {
 	msg := makeSummaryMessage("User asked about Go.")
@@ -1224,7 +1142,6 @@ func TestRunTurn_WithCompaction(t *testing.T) {
 	}
 
 	prov := &compactionMockProvider{
-		tokenCountFn: charBasedTokenCount,
 		responses: [][]message.ProviderMessageChunk{
 			// Summary generation call.
 			{
@@ -1245,16 +1162,15 @@ func TestRunTurn_WithCompaction(t *testing.T) {
 		},
 	}
 
-	// Context window sized so compaction is triggered and messagesToSummarize
-	// fits in a single summarisation call.
-	// Total chars ≈ 10*200 + "new message"(11) = 2011. CompactionTrigger = 3000*0.6 = 1800 < 2011.
-	// SummarizationLimit = 3000 - 450 = 2550 > candidate(2011+313 = 2324).
+	// Context window sized so compaction is triggered.
+	// Total tokens ≈ 10*ceil(200/4) + ceil(11/4) = 500 + 3 = 503.
+	// CompactionTrigger = 700*0.75*0.80 = 420 < 503.
 	chunks := collectChunks(t, RunTurn(
 		context.Background(), prov, &mockExecutor{}, store,
 		threadID, prevID, TurnConfig{
 			Model:         "test-model",
 			UserParts:     []message.Part{message.TextPart{Text: "new message"}},
-			ContextWindow: 3000,
+			ContextWindow: 700,
 		},
 	))
 
@@ -1352,7 +1268,6 @@ func TestCrashRecovery_WithCompaction(t *testing.T) {
 	}
 
 	prov := &compactionMockProvider{
-		tokenCountFn: charBasedTokenCount,
 		responses: [][]message.ProviderMessageChunk{
 			{
 				message.StreamStartChunk{},
@@ -1422,7 +1337,6 @@ func TestRunTurn_EmergencyCompaction(t *testing.T) {
 	}
 
 	prov := &compactionMockProvider{
-		tokenCountFn: charBasedTokenCount,
 		responses: [][]message.ProviderMessageChunk{
 			// Call 1: main completion fails with context_length_exceeded.
 			// (Handled by failFirstCallProvider below.)
@@ -1556,5 +1470,172 @@ func TestForceCompactThread_NoConversationContent(t *testing.T) {
 	}
 	if record != nil {
 		t.Fatal("expected no compaction record")
+	}
+}
+
+// --- lastUsage-based compaction tests ---
+
+// makeUsage is a convenience helper for constructing a message.Usage literal.
+func makeUsage(inputTotal, outputTotal int) *message.Usage {
+	return &message.Usage{
+		InputTokens:  message.InputTokens{Total: inputTotal},
+		OutputTokens: message.OutputTokens{Total: outputTotal},
+	}
+}
+
+// TestCountTokens_UsesLastUsageWhenAvailable verifies that countTokens returns
+// a result dominated by lastUsage when it is non-nil and non-zero.
+func TestCountTokens_UsesLastUsageWhenAvailable(t *testing.T) {
+	usage := makeUsage(8000, 500) // 8500 total
+
+	// Conversation ending in an assistant message — no new messages to add.
+	msgs := []message.Message{
+		{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello world"}}},
+		{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "hi there"}}},
+	}
+	total := countTokens(msgs, usage)
+	// Result should be at least inputTotal+outputTotal.
+	if total < 8500 {
+		t.Errorf("expected total >= 8500 (usage sum), got %d", total)
+	}
+	// Without usage the same messages yield a tiny char-based count.
+	noUsageTotal := countTokens(msgs, nil)
+	if noUsageTotal >= 8500 {
+		t.Errorf("without usage, expected much smaller count, got %d", noUsageTotal)
+	}
+}
+
+// TestCountTokens_FallsBackToCharEstimateWhenUsageIsNil verifies that countTokens
+// returns a char-based estimate when lastUsage is nil.
+func TestCountTokens_FallsBackToCharEstimateWhenUsageIsNil(t *testing.T) {
+	msgs := []message.Message{
+		{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello"}}},
+	}
+	total := countTokens(msgs, nil)
+	// "hello" = 5 chars → ceil(5/4) = 2, but min is 1; either way > 0 and small.
+	if total <= 0 {
+		t.Errorf("expected positive count, got %d", total)
+	}
+	if total > 100 {
+		t.Errorf("expected small count for short message, got %d", total)
+	}
+}
+
+// TestCountTokens_FallsBackToCharEstimateWhenUsageIsZero verifies that a
+// zero-valued lastUsage falls back to char-based estimation (same as nil).
+func TestCountTokens_FallsBackToCharEstimateWhenUsageIsZero(t *testing.T) {
+	msgs := []message.Message{
+		{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello"}}},
+	}
+	withZero := countTokens(msgs, &message.Usage{})
+	withNil := countTokens(msgs, nil)
+	if withZero != withNil {
+		t.Errorf("zero usage should give same result as nil usage: got %d vs %d", withZero, withNil)
+	}
+}
+
+// TestMaybeCompact_TriggersCompactionFromLastUsage verifies that maybeCompact
+// triggers compaction when lastUsage reports total tokens above the threshold.
+func TestMaybeCompact_TriggersCompactionFromLastUsage(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-usage-compact"
+
+	// Build a conversation with enough real messages (> 4) to pass the minimum threshold.
+	entries := []HistoryEntry{
+		{ID: "sys", Message: message.Message{Role: "system", Parts: []message.Part{message.TextPart{Text: "sys"}}}},
+		{ID: "u1", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "msg1"}}}},
+		{ID: "a1", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "resp1"}}}},
+		{ID: "u2", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "msg2"}}}},
+		{ID: "a2", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "resp2"}}}},
+		{ID: "u3", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "msg3"}}}},
+	}
+	for _, e := range entries {
+		if err := store.SaveMessage(threadID, StoredMessage{ID: e.ID, Message: e.Message}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// ContextWindow=10000, MaxOutputTokens=2000 → InputLimit=8000, Trigger=6400
+	cfg := &TurnConfig{
+		ProviderID:      "mock",
+		Model:           "m",
+		ContextWindow:   10000,
+		MaxOutputTokens: 2000,
+	}
+	turnState := &TurnState{}
+
+	summaryResponse := []message.ProviderMessageChunk{
+		message.StreamStartChunk{},
+		message.TextStartChunk{ID: "s1"},
+		message.TextDeltaChunk{ID: "s1", Delta: "Summary from usage."},
+		message.TextEndChunk{ID: "s1"},
+		message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+	}
+	prov := &compactionMockProvider{
+		responses: [][]message.ProviderMessageChunk{summaryResponse},
+	}
+
+	// lastUsage reports 7000 total tokens — above the 6400 trigger.
+	lastUsage := makeUsage(6500, 500)
+
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, lastUsage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Result should be compacted: [system] + [summary].
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages (system + summary), got %d", len(result))
+	}
+	record, err := store.LoadCompaction(threadID)
+	if err != nil || record == nil {
+		t.Fatalf("expected compaction record, err=%v record=%v", err, record)
+	}
+	if record.SummaryText != "Summary from usage." {
+		t.Errorf("unexpected summary text %q", record.SummaryText)
+	}
+}
+
+// TestMaybeCompact_SkipsCompactionFromLastUsage verifies that maybeCompact
+// returns full history when lastUsage reports tokens below the threshold.
+func TestMaybeCompact_SkipsCompactionFromLastUsage(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-usage-no-compact"
+
+	entries := []HistoryEntry{
+		{ID: "sys", Message: message.Message{Role: "system", Parts: []message.Part{message.TextPart{Text: "sys"}}}},
+		{ID: "u1", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "msg1"}}}},
+		{ID: "a1", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "resp1"}}}},
+		{ID: "u2", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "msg2"}}}},
+		{ID: "a2", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "resp2"}}}},
+		{ID: "u3", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "msg3"}}}},
+	}
+	for _, e := range entries {
+		if err := store.SaveMessage(threadID, StoredMessage{ID: e.ID, Message: e.Message}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &TurnConfig{
+		ProviderID:      "mock",
+		Model:           "m",
+		ContextWindow:   10000,
+		MaxOutputTokens: 2000,
+	}
+	turnState := &TurnState{}
+
+	prov := &compactionMockProvider{}
+
+	// lastUsage reports only 2000 total tokens — well below the 6400 trigger.
+	lastUsage := makeUsage(1800, 200)
+
+	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, lastUsage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Full history returned — no compaction.
+	if len(result) != 6 {
+		t.Fatalf("expected 6 messages (full history), got %d", len(result))
 	}
 }

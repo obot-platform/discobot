@@ -12,8 +12,17 @@ import (
 	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
+func setTempHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return home
+}
+
 func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	dataDir := t.TempDir()
+	home := setTempHome(t)
 	e := New(t.TempDir(), dataDir, "thread-1")
 	toolCtx := &thread.ToolContext{ThreadID: "thread-1"}
 
@@ -45,7 +54,7 @@ func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	if filepath.Ext(planFile) != ".md" {
 		t.Fatalf("expected markdown plan file, got %q", planFile)
 	}
-	expectedPrefix := filepath.Join(dataDir, "plans", "thread-1") + string(filepath.Separator)
+	expectedPrefix := filepath.Join(home, ".discobot", "plans", "thread-1") + string(filepath.Separator)
 	if !strings.HasPrefix(planFile, expectedPrefix) {
 		t.Fatalf("expected plan file under %q, got %q", expectedPrefix, planFile)
 	}
@@ -56,8 +65,9 @@ func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 
 func TestExecuteExitPlanMode_AutoApprovesWhenPromptRequestNotPlan(t *testing.T) {
 	dataDir := t.TempDir()
+	home := setTempHome(t)
 	threadID := "thread-1"
-	planDir := filepath.Join(dataDir, "plans", threadID)
+	planDir := filepath.Join(home, ".discobot", "plans", threadID)
 	if err := os.MkdirAll(planDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -101,8 +111,9 @@ func TestExecuteExitPlanMode_AutoApprovesWhenPromptRequestNotPlan(t *testing.T) 
 
 func TestExecuteExitPlanMode_RequiresApprovalWhenPromptRequestPlan(t *testing.T) {
 	dataDir := t.TempDir()
+	home := setTempHome(t)
 	threadID := "thread-1"
-	planDir := filepath.Join(dataDir, "plans", threadID)
+	planDir := filepath.Join(home, ".discobot", "plans", threadID)
 	if err := os.MkdirAll(planDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -149,8 +160,9 @@ func TestExecuteExitPlanMode_RequiresApprovalWhenPromptRequestPlan(t *testing.T)
 
 func TestExecutePlanModeApplyPatch_AllowsPlanFileOnly(t *testing.T) {
 	dataDir := t.TempDir()
+	home := setTempHome(t)
 	e := New(t.TempDir(), dataDir, "thread-1")
-	planFile := filepath.Join(dataDir, "plans", "thread-1", "plan.md")
+	planFile := filepath.Join(home, ".discobot", "plans", "thread-1", "plan.md")
 	toolCtx := &thread.ToolContext{
 		ThreadID:     "thread-1",
 		PlanMode:     true,
@@ -191,9 +203,10 @@ func TestExecutePlanModeApplyPatch_AllowsPlanFileOnly(t *testing.T) {
 
 func TestExecutePlanModeApplyPatch_RejectsNonPlanFile(t *testing.T) {
 	dataDir := t.TempDir()
+	home := setTempHome(t)
 	cwd := t.TempDir()
 	e := New(cwd, dataDir, "thread-1")
-	planFile := filepath.Join(dataDir, "plans", "thread-1", "plan.md")
+	planFile := filepath.Join(home, ".discobot", "plans", "thread-1", "plan.md")
 	toolCtx := &thread.ToolContext{
 		ThreadID:     "thread-1",
 		PlanMode:     true,
@@ -229,8 +242,9 @@ func TestExecutePlanModeApplyPatch_RejectsNonPlanFile(t *testing.T) {
 
 func TestExecutePlanModeBlockedToolMessageMentionsApplyPatch(t *testing.T) {
 	dataDir := t.TempDir()
+	home := setTempHome(t)
 	e := New(t.TempDir(), dataDir, "thread-1")
-	planFile := filepath.Join(dataDir, "plans", "thread-1", "plan.md")
+	planFile := filepath.Join(home, ".discobot", "plans", "thread-1", "plan.md")
 	toolCtx := &thread.ToolContext{
 		ThreadID:     "thread-1",
 		PlanMode:     true,

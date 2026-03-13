@@ -218,57 +218,6 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 	}
 }
 
-func (p *Provider) CountTokens(ctx context.Context, req providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	system, msgs, err := convertMessages(req.Messages)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("anthropic: convert messages: %w", err)
-	}
-
-	body := map[string]any{
-		"model":    req.Model.ModelID,
-		"messages": msgs,
-	}
-	if system != "" {
-		body["system"] = system
-	}
-	if tools := convertTools(req.Tools); len(tools) > 0 {
-		body["tools"] = tools
-	}
-
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("anthropic: marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/messages/count_tokens", bytes.NewReader(jsonBody))
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("anthropic: create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	p.setAuthHeader(httpReq)
-	httpReq.Header.Set("anthropic-version", apiVersion)
-	httpReq.Header.Add("anthropic-beta", "token-counting-2024-11-01")
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("anthropic: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return providers.CountTokensResponse{}, fmt.Errorf("anthropic: API error %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var result struct {
-		InputTokens int `json:"input_tokens"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("anthropic: decode response: %w", err)
-	}
-	return providers.CountTokensResponse{TotalTokens: result.InputTokens}, nil
-}
-
 func (p *Provider) DefaultModels() map[string]providers.ModelRef {
 	return map[string]providers.ModelRef{
 		providers.ModelTaskChat: {ProviderID: providerID, ModelID: "claude-sonnet-4-6"},

@@ -103,9 +103,73 @@ func isContextCancellation(err error) bool {
 		strings.Contains(s, "deadline exceeded")
 }
 
+// countTokens returns an estimated token count for the conversation.
+//
+// When lastUsage is non-nil and non-zero, it represents exact token counts from
+// the most recent LLM response. The returned estimate is lastUsage.InputTokens.Total
+// + lastUsage.OutputTokens.Total (covering all context seen so far) plus a
+// character-based estimate of any messages appended after the last assistant turn
+// (typically tool results).
+//
+// When lastUsage is nil or its counts are all zero, all messages are estimated
+// with a 4-chars-per-token heuristic.
+func countTokens(messages []message.Message, lastUsage *message.Usage) int {
+	if lastUsage != nil && (lastUsage.InputTokens.Total > 0 || lastUsage.OutputTokens.Total > 0) {
+		newMessages := messagesAfterLastAssistant(messages)
+		return lastUsage.InputTokens.Total + lastUsage.OutputTokens.Total + estimateTokens(newMessages)
+	}
+	return estimateTokens(messages)
+}
+
+// messagesAfterLastAssistant returns messages that come after the last assistant
+// message in the slice. These are typically tool results added since the most
+// recent LLM response, and represent new input tokens not yet reflected in lastUsage.
+func messagesAfterLastAssistant(messages []message.Message) []message.Message {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			return messages[i+1:]
+		}
+	}
+	return messages
+}
+
+// estimateTokens returns a rough token count for a slice of messages using a
+// 4-chars-per-token heuristic applied to each part's text/data content.
+func estimateTokens(messages []message.Message) int {
+	total := 0
+	for _, msg := range messages {
+		for _, part := range msg.Parts {
+			switch p := part.(type) {
+			case message.TextPart:
+				total += (len(p.Text) + 3) / 4
+			case message.ReasoningPart:
+				total += (len(p.Text) + 3) / 4
+			case message.ToolCallPart:
+				total += (len(p.ToolName) + len(p.Input) + 3) / 4
+			case message.ToolResultPart:
+				b, _ := json.Marshal(p.Output)
+				total += (len(b) + 3) / 4
+			case message.ImagePart:
+				total += 256 // rough estimate for image tokens
+			case message.FilePart:
+				total += (len(p.Data) + 3) / 4
+			}
+		}
+	}
+	if total < 1 {
+		return 1
+	}
+	return total
+}
+
 // maybeCompact checks if the conversation history approaches the context
 // window limit and, if so, summarizes the entire conversation into a compact form.
 // Returns the (possibly compacted) history ready for the LLM call.
+//
+// When lastUsage is non-nil (token counts from the most recent LLM response),
+// it is used directly to gauge conversation size, with any new messages since
+// the last assistant turn added via character-based estimation. When lastUsage
+// is nil or zero, character-based estimation is used for the full history.
 //
 // Non-destructive: never modifies messages on disk. Persists a
 // CompactionRecord to {threadDir}/compaction.json for reuse.
@@ -117,6 +181,7 @@ func maybeCompact(
 	_ *TurnState,
 	cfg *TurnConfig,
 	historyEntries []HistoryEntry,
+	lastUsage *message.Usage,
 ) ([]message.Message, error) {
 	budget := computeBudget(cfg)
 	if budget.InputLimit == 0 {
@@ -142,16 +207,7 @@ func maybeCompact(
 	if existing != nil {
 		compacted := applyCompaction(existing, historyEntries)
 
-		tokenCount, err := provider.CountTokens(ctx, providers.CountTokensRequest{
-			Model:    providers.ModelRef{ProviderID: cfg.ProviderID, ModelID: cfg.Model},
-			Messages: compacted,
-			Tools:    cfg.Tools,
-		})
-		if err != nil {
-			return fullHistory, fmt.Errorf("count tokens: %w", err)
-		}
-
-		if tokenCount.TotalTokens <= budget.InputLimit {
+		if countTokens(compacted, lastUsage) <= budget.InputLimit {
 			return compacted, nil
 		}
 		// Existing compaction no longer fits — re-compact using it as the base
@@ -161,17 +217,8 @@ func maybeCompact(
 	}
 
 	// No existing compaction — count tokens on the full history.
-	tokenCount, err := provider.CountTokens(ctx, providers.CountTokensRequest{
-		Model:    providers.ModelRef{ProviderID: cfg.ProviderID, ModelID: cfg.Model},
-		Messages: fullHistory,
-		Tools:    cfg.Tools,
-	})
-	if err != nil {
-		return fullHistory, fmt.Errorf("count tokens: %w", err)
-	}
-
 	// Compact at 80% of input budget (CompactionTrigger).
-	if tokenCount.TotalTokens <= budget.CompactionTrigger {
+	if countTokens(fullHistory, lastUsage) <= budget.CompactionTrigger {
 		return fullHistory, nil
 	}
 
@@ -316,14 +363,8 @@ func performCompaction(
 
 	summaryMsg := makeSummaryMessage(summaryText)
 
-	// Measure summary token count.
-	summaryTokens := 0
-	if tc, err := provider.CountTokens(ctx, providers.CountTokensRequest{
-		Model:    providers.ModelRef{ProviderID: cfg.ProviderID, ModelID: cfg.Model},
-		Messages: []message.Message{summaryMsg},
-	}); err == nil {
-		summaryTokens = tc.TotalTokens
-	}
+	// Measure summary token count via character-based estimation.
+	summaryTokens := estimateTokens([]message.Message{summaryMsg})
 
 	// Persist compaction record.
 	record := CompactionRecord{

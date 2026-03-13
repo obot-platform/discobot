@@ -18,9 +18,6 @@ func (p *testProvider) ID() string { return p.id }
 func (p *testProvider) Complete(_ context.Context, _ CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
 	return func(_ func(message.ProviderMessageChunk, error) bool) {}
 }
-func (p *testProvider) CountTokens(_ context.Context, _ CountTokensRequest) (CountTokensResponse, error) {
-	return CountTokensResponse{}, nil
-}
 func (p *testProvider) DefaultModels() map[string]ModelRef { return nil }
 func (p *testProvider) ListModels(_ context.Context) ([]ModelInfo, error) {
 	return p.models, nil

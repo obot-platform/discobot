@@ -46,7 +46,7 @@ var planModeBlockedTools = map[string]bool{
 // Executor implements thread.ToolExecutor with native Go tool implementations.
 type Executor struct {
 	cwd             string // workspace root for file and shell operations
-	dataDir         string // root for persistent data (bash logs, etc.); separate from cwd
+	dataDir         string // root for persistent data (bash logs, spill files, etc.); separate from cwd
 	defaultThreadID string
 
 	// cwdMu guards currentCwd, which tracks the shell working directory
@@ -72,7 +72,7 @@ type Executor struct {
 }
 
 // New creates an Executor rooted at cwd.
-// dataDir is the root for persistent storage (bash logs, plan files, spill files, etc.);
+// dataDir is the root for persistent storage (bash logs, spill files, etc.);
 // it defaults to the user's home directory if empty.
 func New(cwd, dataDir, threadID string) *Executor {
 	if dataDir == "" {
@@ -222,8 +222,16 @@ var planNameNouns = []string{
 	"steps",
 }
 
+func (e *Executor) discobotDataDir() string {
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		return filepath.Join(home, ".discobot")
+	}
+	return e.dataDir
+}
+
 func (e *Executor) threadPlansDir(toolCtx *thread.ToolContext) string {
-	return filepath.Join(e.dataDir, "plans", contextThreadID(toolCtx, e.defaultThreadID))
+	return filepath.Join(e.discobotDataDir(), "plans", contextThreadID(toolCtx, e.defaultThreadID))
 }
 
 func (e *Executor) legacyPlanFilePath(toolCtx *thread.ToolContext) string {
@@ -261,6 +269,7 @@ func llmFriendlyPlanFileName() string {
 
 func (e *Executor) newPlanFilePath(toolCtx *thread.ToolContext) string {
 	dir := e.threadPlansDir(toolCtx)
+	_ = os.MkdirAll(dir, 0o755)
 	for range 10 {
 		candidate := filepath.Join(dir, llmFriendlyPlanFileName())
 		if _, err := os.Stat(candidate); os.IsNotExist(err) {

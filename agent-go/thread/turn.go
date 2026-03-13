@@ -232,6 +232,7 @@ func executeLoop(
 	toolCtx.PromptRequestPlanMode = cfg.PromptRequestPlanMode
 	var history []message.Message
 	var asyncHandles []pendingAsyncEntry
+	var lastUsage *message.Usage // usage from the most recent successful LLM step
 
 	for {
 		switch turnState.Phase {
@@ -251,7 +252,7 @@ func executeLoop(
 			}
 
 			// Apply compaction if context window info is available (from cfg or models.dev).
-			compacted, compactErr := maybeCompact(ctx, provider, store, threadID, turnState, cfg, historyEntries)
+			compacted, compactErr := maybeCompact(ctx, provider, store, threadID, turnState, cfg, historyEntries, lastUsage)
 			if compactErr != nil {
 				log.Printf("compaction: %v (using full history)", compactErr)
 				history = entriesToMessages(historyEntries)
@@ -270,13 +271,14 @@ func executeLoop(
 				assistantMsg = existingResult.AssistantMessage
 				toolCalls = extractToolCalls(assistantMsg)
 			} else {
+				var stepUsage message.Usage
 				var completionErr error
 				var ok bool
 				idOverride := ""
 				if stepIndex == 0 {
 					idOverride = turnState.AssistantMsgID
 				}
-				assistantMsg, toolCalls, ok, completionErr = runCompletion(ctx, provider, store, threadID, turnID, stepIndex, cfg, history, idOverride, yield)
+				assistantMsg, toolCalls, stepUsage, ok, completionErr = runCompletion(ctx, provider, store, threadID, turnID, stepIndex, cfg, history, idOverride, yield)
 				if !ok {
 					// If the provider rejected the input due to context length,
 					// attempt a one-shot emergency compaction and retry.
@@ -290,7 +292,7 @@ func executeLoop(
 							}
 							return false
 						}
-						assistantMsg, toolCalls, ok, completionErr = runCompletion(ctx, provider, store, threadID, turnID, stepIndex, cfg, forceCompacted, idOverride, yield)
+						assistantMsg, toolCalls, stepUsage, ok, completionErr = runCompletion(ctx, provider, store, threadID, turnID, stepIndex, cfg, forceCompacted, idOverride, yield)
 						if !ok {
 							if completionErr != nil && !yield(nil, completionErr) {
 								return false
@@ -300,6 +302,11 @@ func executeLoop(
 					} else {
 						return false
 					}
+				}
+				// Update lastUsage so the next step's maybeCompact can use the
+				// actual token counts from the model instead of calling CountTokens.
+				if stepUsage.InputTokens.Total > 0 || stepUsage.OutputTokens.Total > 0 {
+					lastUsage = &stepUsage
 				}
 			}
 
@@ -958,9 +965,10 @@ func waitForAsyncTasks(
 }
 
 // runCompletion calls the LLM provider and persists the result.
-// Returns the assistant message, extracted tool calls, whether to continue, and the stream error (if any).
-// When the stream error is a context_length_exceeded error, it is returned without being yielded
-// to the consumer so the caller can retry with compaction.
+// Returns the assistant message, extracted tool calls, token usage from the
+// response, whether to continue, and the stream error (if any).
+// When the stream error is a context_length_exceeded error, it is returned
+// without being yielded so the caller can retry with compaction.
 func runCompletion(
 	ctx context.Context,
 	provider providers.Provider,
@@ -972,7 +980,7 @@ func runCompletion(
 	history []message.Message,
 	msgIDOverride string,
 	yield func(message.MessageChunk, error) bool,
-) (message.Message, []message.ToolCallPart, bool, error) {
+) (message.Message, []message.ToolCallPart, message.Usage, bool, error) {
 	req := providers.CompleteRequest{
 		Model:           providers.ModelRef{ProviderID: cfg.ProviderID, ModelID: cfg.Model},
 		Messages:        history,
@@ -989,7 +997,7 @@ func runCompletion(
 	stepFile, err := store.CreateStepFile(threadID, turnID, stepIndex)
 	if err != nil {
 		yield(nil, fmt.Errorf("create step file: %w", err))
-		return message.Message{}, nil, false, nil
+		return message.Message{}, nil, message.Usage{}, false, nil
 	}
 
 	// Inject per-step log file paths so the transport writes raw request/
@@ -1023,7 +1031,7 @@ func runCompletion(
 				// Non-cancellation, non-retryable error — yield to consumer.
 				if !yield(nil, chunkErr) {
 					stepFile.Close()
-					return message.Message{}, nil, false, nil
+					return message.Message{}, nil, message.Usage{}, false, nil
 				}
 			}
 			break
@@ -1033,7 +1041,7 @@ func runCompletion(
 			streamErr = writeErr
 			if !yield(nil, fmt.Errorf("write chunk: %w", writeErr)) {
 				stepFile.Close()
-				return message.Message{}, nil, false, nil
+				return message.Message{}, nil, message.Usage{}, false, nil
 			}
 			break
 		}
@@ -1043,7 +1051,7 @@ func runCompletion(
 		for _, mc := range exp.Expand(chunk) {
 			if !yield(mc, nil) {
 				stepFile.Close()
-				return message.Message{}, nil, false, nil
+				return message.Message{}, nil, message.Usage{}, false, nil
 			}
 		}
 	}
@@ -1058,20 +1066,26 @@ func runCompletion(
 		if len(partialMsg.Parts) > 0 {
 			stepResult := StepResult{AssistantMessage: partialMsg}
 			_ = store.SaveStepResult(threadID, turnID, stepIndex, stepResult)
-			return partialMsg, nil, true, nil
+			return partialMsg, nil, message.Usage{}, true, nil
 		}
-		return message.Message{}, nil, false, nil
+		return message.Message{}, nil, message.Usage{}, false, nil
 	}
 
 	if streamErr != nil {
 		// Return the error to the caller. context_length_exceeded errors are
 		// returned without having been yielded so the caller can retry with
 		// compaction; all other errors have already been yielded above.
-		return message.Message{}, nil, false, streamErr
+		return message.Message{}, nil, message.Usage{}, false, streamErr
 	}
 
 	acc.Close()
 	assistantMsg := acc.Message()
+
+	// Extract usage reported by the provider for use in compaction heuristics.
+	var usage message.Usage
+	if finish := acc.FinishResult(); finish != nil {
+		usage = finish.Usage
+	}
 
 	// Override the public/UI message ID so it matches the StartChunk we already
 	// emitted. Provider-native response IDs remain on assistantMsg.ProviderResponseID.
@@ -1093,10 +1107,10 @@ func runCompletion(
 	}
 	if err := store.SaveStepResult(threadID, turnID, stepIndex, stepResult); err != nil {
 		yield(nil, fmt.Errorf("save step result: %w", err))
-		return message.Message{}, nil, false, nil
+		return message.Message{}, nil, message.Usage{}, false, nil
 	}
 
-	return assistantMsg, toolCalls, true, nil
+	return assistantMsg, toolCalls, usage, true, nil
 }
 
 func formatRetryMessage(event transport.RetryEvent) string {

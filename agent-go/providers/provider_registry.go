@@ -277,6 +277,22 @@ func (r *ProviderRegistry) configForProvider(id string) Config {
 		}
 	}
 
+	// Special case: CODEX_TOKEN configures the openai provider to use the
+	// ChatGPT Codex backend instead of api.openai.com. Takes priority over
+	// any other OpenAI credentials (OPENAI_API_KEY etc). The base URL is only
+	// overridden when OPENAI_API_BASE is not set, preserving any explicit user config.
+	if id == "openai" {
+		if codexToken := os.Getenv("CODEX_TOKEN"); codexToken != "" {
+			cfg["api_key"] = codexToken
+			if os.Getenv("OPENAI_API_BASE") == "" {
+				cfg["base_url"] = "wss://chatgpt.com/backend-api/codex"
+			}
+			if accountID := os.Getenv("CHATGPT_ACCOUNT_ID"); accountID != "" {
+				cfg["account_id"] = accountID
+			}
+		}
+	}
+
 	return cfg
 }
 

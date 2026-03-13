@@ -43,10 +43,11 @@ const wsReadLimit = 16 << 20
 // Idle pooled connections are evicted opportunistically on pool operations so
 // abandoned response chains do not keep sockets open indefinitely.
 type wsPool struct {
-	mu     sync.Mutex
-	byPrev map[string]*pooledConn // prevRespID → conn primed for the next request on this chain
-	apiKey string
-	wsURL  string
+	mu        sync.Mutex
+	byPrev    map[string]*pooledConn // prevRespID → conn primed for the next request on this chain
+	apiKey    string
+	accountID string
+	wsURL     string
 }
 
 // pooledConn holds a WebSocket connection together with its creation time for
@@ -165,10 +166,15 @@ func cloneWebSocketBody(body map[string]any) map[string]any {
 
 // dial opens a new authenticated WebSocket connection to the Responses API.
 func (pool *wsPool) dial(ctx context.Context) (*pooledConn, error) {
+	headers := http.Header{
+		"Authorization": {"Bearer " + pool.apiKey},
+	}
+	if pool.accountID != "" {
+		headers.Set("ChatGPT-Account-Id", pool.accountID)
+	}
+
 	conn, _, err := websocket.Dial(ctx, pool.wsURL, &websocket.DialOptions{
-		HTTPHeader: http.Header{
-			"Authorization": {"Bearer " + pool.apiKey},
-		},
+		HTTPHeader: headers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("openai: websocket dial: %w", err)

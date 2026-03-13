@@ -28,10 +28,6 @@ func (p *testModelListProvider) Complete(_ context.Context, _ providers.Complete
 	return func(func(message.ProviderMessageChunk, error) bool) {}
 }
 
-func (p *testModelListProvider) CountTokens(_ context.Context, _ providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	return providers.CountTokensResponse{}, nil
-}
-
 func (p *testModelListProvider) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
 	return p.models, nil
 }

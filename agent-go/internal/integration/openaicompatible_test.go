@@ -322,66 +322,6 @@ func TestOpenAICompat_MultiTurnConversation(t *testing.T) {
 	}
 }
 
-func TestOpenAICompat_CountTokens(t *testing.T) {
-	t.Parallel()
-	p, model := compatProvider(t)
-
-	resp, err := p.CountTokens(context.Background(), providers.CountTokensRequest{
-		Model: model,
-		Messages: []message.Message{
-			{Role: "user", Parts: []message.Part{
-				message.TextPart{Text: "Hello, world!"},
-			}},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.TotalTokens == 0 {
-		t.Error("expected non-zero token count")
-	}
-	if resp.TotalTokens > 50 {
-		t.Errorf("token count seems too high for 'Hello, world!': %d", resp.TotalTokens)
-	}
-}
-
-func TestOpenAICompat_CountTokensWithTools(t *testing.T) {
-	t.Parallel()
-	p, model := compatProvider(t)
-
-	withoutTools, err := p.CountTokens(context.Background(), providers.CountTokensRequest{
-		Model: model,
-		Messages: []message.Message{
-			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hello"}}},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	withTools, err := p.CountTokens(context.Background(), providers.CountTokensRequest{
-		Model: model,
-		Messages: []message.Message{
-			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hello"}}},
-		},
-		Tools: []providers.ToolDefinition{
-			{
-				Name:        "search",
-				Description: "Search the web for information",
-				InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"The search query"}},"required":["query"],"additionalProperties":false}`),
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if withTools.TotalTokens <= withoutTools.TotalTokens {
-		t.Errorf("expected tool definitions to add tokens: without=%d, with=%d",
-			withoutTools.TotalTokens, withTools.TotalTokens)
-	}
-}
-
 func TestOpenAICompat_StreamLifecycle(t *testing.T) {
 	t.Parallel()
 	p, model := compatProvider(t)

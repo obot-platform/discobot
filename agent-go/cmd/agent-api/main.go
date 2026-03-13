@@ -8,6 +8,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -23,6 +24,15 @@ import (
 )
 
 func main() {
+	// Handle subcommands before flag parsing so they get clean args.
+	if len(os.Args) >= 2 && os.Args[1] == "login" {
+		if err := cli.RunLogin(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "login: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	serverMode := flag.Bool("server", false, "Run as HTTP API server (default: interactive terminal mode)")
 	flags := cli.AddFlags()
 	flag.Parse()

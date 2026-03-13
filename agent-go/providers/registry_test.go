@@ -20,10 +20,6 @@ func (p *mockProvider) Complete(_ context.Context, _ CompleteRequest) iter.Seq2[
 	return func(_ func(message.ProviderMessageChunk, error) bool) {}
 }
 
-func (p *mockProvider) CountTokens(_ context.Context, _ CountTokensRequest) (CountTokensResponse, error) {
-	return CountTokensResponse{}, nil
-}
-
 func (p *mockProvider) DefaultModels() map[string]ModelRef { return nil }
 func (p *mockProvider) ListModels(_ context.Context) ([]ModelInfo, error) {
 	return nil, nil

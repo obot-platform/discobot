@@ -28,7 +28,6 @@ type Provider struct { /* apiKey, baseURL, client */ }
 func New(cfg providers.Config) (providers.Provider, error) { ... }
 func (p *Provider) ID() string { return providerID }
 func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] { ... }
-func (p *Provider) CountTokens(ctx context.Context, req providers.CountTokensRequest) (providers.CountTokensResponse, error) { ... }
 func (p *Provider) ListModels(ctx context.Context) ([]providers.ModelInfo, error) { ... }
 ```
 
@@ -185,7 +184,7 @@ Set `Unified` to `"tool-calls"` when the response contains tool call output item
 
 ## Step 7: Data Storage
 
-Disable provider-side data retention. Most providers store request/response data by default for monitoring. Set `"store": false` (or equivalent) in the request body for both `Complete()` and `CountTokens()` to prevent this. This ensures user data is not persisted on the provider's servers.
+Disable provider-side data retention. Most providers store request/response data by default for monitoring. Set `"store": false` (or equivalent) in the request body for `Complete()` to prevent this. This ensures user data is not persisted on the provider's servers.
 
 ## Step 8: Handle `CompleteRequest` Parameters
 
@@ -200,13 +199,7 @@ Disable provider-side data retention. Most providers store request/response data
 | `req.Reasoning` | If `"enabled"`, activate provider's extended thinking/reasoning mode |
 | `req.ProviderOptions` | Opaque JSON — merge into request body if non-nil |
 
-## Step 9: `CountTokens()`
-
-If the provider has a token counting API, use it. Convert messages and tools the same way as `Complete()`, send to the counting endpoint, return `CountTokensResponse{TotalTokens: n}`.
-
-If no native API exists, estimate at ~4 chars/token from the serialized provider JSON.
-
-## Step 10: `ListModels()`
+## Step 9: `ListModels()`
 
 Return `[]providers.ModelInfo` for known models. Preferred approach: query the provider's models endpoint for live IDs, then enrich with metadata from the `modelsdev` package.
 
@@ -233,7 +226,7 @@ The `modelsdev` package embeds `models-dev-api.json` and provides:
 
 Do NOT set `ProviderID` — `ProviderRegistry` sets it automatically.
 
-## Step 11: Tests
+## Step 10: Tests
 
 **Canonical reference: `providers/openai/openai_test.go` (unit) and `internal/integration/openai_test.go` (integration).** Every new provider must have equivalent coverage. Mirror the OpenAI test structure, adapting assertions to the new provider's wire format.
 
@@ -290,11 +283,6 @@ Use `httptest.NewServer`. One subtest per behavioral variant:
 - Reasoning enabled: verify the provider-specific reasoning config field is sent (e.g., `reasoning_effort`, `thinking`, `include`)
 - API error (non-200): error is returned without panicking
 
-#### `TestCountTokens`
-- Correct endpoint called with correct body; `TotalTokens` is populated from the response
-- Tools are included in the counting request
-- API error is returned cleanly
-
 #### `TestListModels`
 - Models are fetched from the provider API and enriched with `modelsdev` metadata
 - API error is returned cleanly
@@ -325,8 +313,6 @@ Required tests (mirror `internal/integration/openai_test.go`):
 | `ToolCall` | Model calls the tool; finish reason is `"tool-calls"`; arguments are valid JSON |
 | `ToolCallRoundTrip` | Two-turn conversation: tool call then tool result → text response mentioning the result |
 | `MultiTurnConversation` | Model recalls information from an earlier turn |
-| `CountTokens` | Returns a plausible non-zero token count |
-| `CountTokensWithTools` | Token count increases when tool definitions are added |
 | `StreamLifecycle` | Chunks arrive in the required order: `stream-start → response-metadata → text-start → text-delta → text-end → finish` |
 | `ContextCancellation` | Cancelling the context terminates the iterator without a panic |
 | `ReasoningCompletion` | Reasoning chunks arrive before text; reasoning text is non-empty (skip if no reasoning model available) |

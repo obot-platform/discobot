@@ -156,59 +156,6 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 	}
 }
 
-// CountTokens estimates prompt token usage by making a non-streaming chat
-// completion with max_tokens=1 and reading back usage.prompt_tokens.
-// The Chat Completions API has no dedicated token-counting endpoint.
-func (p *Provider) CountTokens(ctx context.Context, req providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	msgs, err := convertMessages(req.Messages)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("%s: convert messages: %w", p.id, err)
-	}
-
-	body := map[string]any{
-		"model":      req.Model.ModelID,
-		"messages":   msgs,
-		"max_tokens": 1,
-		"stream":     false,
-	}
-	if tools := convertTools(req.Tools); len(tools) > 0 {
-		body["tools"] = tools
-	}
-
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("%s: marshal request: %w", p.id, err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(jsonBody))
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("%s: create request: %w", p.id, err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("%s: request failed: %w", p.id, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return providers.CountTokensResponse{}, fmt.Errorf("%s: API error %d: %s", p.id, resp.StatusCode, string(bodyBytes))
-	}
-
-	var result struct {
-		Usage struct {
-			PromptTokens int `json:"prompt_tokens"`
-		} `json:"usage"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("%s: decode response: %w", p.id, err)
-	}
-	return providers.CountTokensResponse{TotalTokens: result.Usage.PromptTokens}, nil
-}
-
 // DefaultModels returns an empty map; openai-compatible providers don't have
 // a universal default model — each provider's defaults should be configured
 // via models.dev metadata or explicit user selection.

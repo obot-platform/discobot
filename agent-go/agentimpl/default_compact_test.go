@@ -28,10 +28,6 @@ func (m *compactCommandMockProvider) Complete(_ context.Context, _ providers.Com
 	}
 }
 
-func (m *compactCommandMockProvider) CountTokens(_ context.Context, _ providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	return providers.CountTokensResponse{TotalTokens: 1}, nil
-}
-
 func (m *compactCommandMockProvider) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
 	return nil, nil
 }

@@ -354,9 +354,9 @@ func TestReadLineReadlineTTY_DeleteVariantDeletesCharacter(t *testing.T) {
 func TestReadLineReadlineTTY_SplitCtrlLeftSequenceStillWorks(t *testing.T) {
 	line, _ := runReadlineTTYReader(t, &chunkedReader{chunks: [][]byte{
 		[]byte("hello world"),
-		[]byte{0x1b, '[', '1', ';', '5'},
-		[]byte{'D', '!'},
-		[]byte{'\r'},
+		{0x1b, '[', '1', ';', '5'},
+		{'D', '!'},
+		{'\r'},
 	}})
 	if line != "hello !world" {
 		t.Fatalf("line = %q, want %q", line, "hello !world")

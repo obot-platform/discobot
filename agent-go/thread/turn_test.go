@@ -40,10 +40,6 @@ func (m *mockProvider) Complete(_ context.Context, req providers.CompleteRequest
 	}
 }
 
-func (m *mockProvider) CountTokens(_ context.Context, _ providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	return providers.CountTokensResponse{}, nil
-}
-
 func (m *mockProvider) DefaultModels() map[string]providers.ModelRef { return nil }
 func (m *mockProvider) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
 	return nil, nil

@@ -390,6 +390,43 @@ func TestCompleteViaWebSocket_StreamsText(t *testing.T) {
 	}
 }
 
+func TestCompleteViaWebSocket_SendsCodexAccountHeader(t *testing.T) {
+	var receivedAccountID string
+	ts := wsTestServer(t, func(conn *websocket.Conn, r *http.Request) {
+		receivedAccountID = r.Header.Get("ChatGPT-Account-Id")
+		if _, _, err := conn.Read(r.Context()); err != nil {
+			t.Errorf("read request: %v", err)
+			return
+		}
+		sendWSEvents(r.Context(), t, conn, minimalWSCompletion("resp_codex"))
+	})
+	defer ts.Close()
+
+	p := &Provider{
+		apiKey:    "test-key",
+		baseURL:   ts.URL,
+		client:    ts.Client(),
+		accountID: "acct_123",
+		isCodex:   true,
+		ws:        newWSPool("test-key", ts.URL),
+	}
+	p.ws.accountID = p.accountID
+
+	req := providers.CompleteRequest{
+		Model:    providers.ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"},
+		Messages: []message.Message{{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hi"}}}},
+	}
+	for _, err := range p.Complete(context.Background(), req) {
+		if err != nil {
+			t.Fatalf("completion error: %v", err)
+		}
+	}
+
+	if receivedAccountID != "acct_123" {
+		t.Fatalf("expected ChatGPT-Account-Id %q, got %q", "acct_123", receivedAccountID)
+	}
+}
+
 func TestCompleteViaWebSocket_SendsStreamFalse(t *testing.T) {
 	// WebSocket requests must NOT include "stream":true — streaming is implicit.
 	ts := wsTestServer(t, func(conn *websocket.Conn, r *http.Request) {

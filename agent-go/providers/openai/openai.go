@@ -43,10 +43,25 @@ func init() {
 // scheme; it maintains a pool of per-session connections that reuse server-side
 // cached state and make repeated tool-call loops ~40 % faster.
 type Provider struct {
-	apiKey  string
-	baseURL string
-	client  *http.Client
-	ws      *wsPool // non-nil when WebSocket mode is enabled
+	apiKey    string
+	baseURL   string
+	client    *http.Client
+	ws        *wsPool // non-nil when WebSocket mode is enabled
+	accountID string  // ChatGPT account ID for the ChatGPT-Account-Id header (Codex only)
+	isCodex   bool    // true when targeting the ChatGPT Codex backend
+}
+
+// codexModels is the hardcoded list of models available via the ChatGPT Codex
+// backend. We skip the live /models API call when in Codex mode because that
+// endpoint is not available on chatgpt.com.
+var codexModels = []providers.ModelInfo{
+	{ID: "gpt-5.1-codex-max", DisplayName: "GPT-5.1 Codex Max", Reasoning: true},
+	{ID: "gpt-5.1-codex-mini", DisplayName: "GPT-5.1 Codex Mini", Reasoning: true},
+	{ID: "gpt-5.1-codex", DisplayName: "GPT-5.1 Codex", Reasoning: true},
+	{ID: "gpt-5.2", DisplayName: "GPT-5.2", Reasoning: true},
+	{ID: "gpt-5.2-codex", DisplayName: "GPT-5.2 Codex", Reasoning: true},
+	{ID: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex", Reasoning: true},
+	{ID: "gpt-5.4", DisplayName: "GPT-5.4", Reasoning: true},
 }
 
 // New creates a new OpenAI Responses API provider.
@@ -75,18 +90,39 @@ func New(cfg providers.Config) (providers.Provider, error) {
 	httpBaseURL = strings.Replace(httpBaseURL, "wss://", "https://", 1)
 	httpBaseURL = strings.Replace(httpBaseURL, "ws://", "http://", 1)
 
+	isCodex := strings.Contains(httpBaseURL, "chatgpt.com")
+
+	accountID := cfg["account_id"]
+	if accountID == "" {
+		accountID = os.Getenv("CHATGPT_ACCOUNT_ID")
+	}
+
 	p := &Provider{
-		apiKey:  apiKey,
-		baseURL: httpBaseURL,
-		client:  transport.NewClient(10 * time.Minute),
+		apiKey:    apiKey,
+		baseURL:   httpBaseURL,
+		client:    transport.NewClient(10 * time.Minute),
+		accountID: accountID,
+		isCodex:   isCodex,
 	}
 	if useWS {
 		p.ws = newWSPool(apiKey, httpBaseURL)
+		if isCodex && accountID != "" {
+			p.ws.accountID = accountID
+		}
 	}
 	return p, nil
 }
 
 func (p *Provider) ID() string { return providerID }
+
+// setAuthHeaders sets Authorization and, when in Codex mode with an account ID
+// configured, the ChatGPT-Account-Id header required for organisation subscriptions.
+func (p *Provider) setAuthHeaders(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	if p.isCodex && p.accountID != "" {
+		req.Header.Set("ChatGPT-Account-Id", p.accountID)
+	}
+}
 
 func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
 	return func(yield func(message.ProviderMessageChunk, error) bool) {
@@ -96,11 +132,20 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 			return
 		}
 
+		// Promote the first developer-role item to the top-level "instructions"
+		// field. The Responses API accepts instructions both ways; the Codex
+		// backend requires it at the top level, and the regular API is happy
+		// either way. This is safe for both HTTP SSE and WebSocket transports
+		// since they share the same body map.
+		instructions, remaining := extractInstructions(inputItems)
 		body := map[string]any{
-			"model":      req.Model.ModelID,
-			"input":      inputItems,
-			"store":      false,
-			"truncation": "disabled",
+			"model":        req.Model.ModelID,
+			"input":        remaining,
+			"instructions": instructions,
+			"store":        false,
+		}
+		if !p.isCodex {
+			body["truncation"] = "disabled"
 		}
 		if tools := convertTools(req.Tools); len(tools) > 0 {
 			body["tools"] = tools
@@ -150,7 +195,7 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 			return
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+		p.setAuthHeaders(httpReq)
 
 		resp, err := p.client.Do(httpReq)
 		if err != nil {
@@ -170,53 +215,6 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 	}
 }
 
-func (p *Provider) CountTokens(ctx context.Context, req providers.CountTokensRequest) (providers.CountTokensResponse, error) {
-	inputItems, err := convertMessagesWithCustomTools(req.Messages, customToolNames(req.Tools))
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("openai: convert messages: %w", err)
-	}
-
-	body := map[string]any{
-		"model": req.Model.ModelID,
-		"input": inputItems,
-	}
-	if tools := convertTools(req.Tools); len(tools) > 0 {
-		body["tools"] = tools
-	}
-
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("openai: marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/responses/input_tokens", bytes.NewReader(jsonBody))
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("openai: create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("openai: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return providers.CountTokensResponse{}, fmt.Errorf("openai: API error %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var result struct {
-		InputTokens int `json:"input_tokens"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return providers.CountTokensResponse{}, fmt.Errorf("openai: decode response: %w", err)
-	}
-
-	return providers.CountTokensResponse{TotalTokens: result.InputTokens}, nil
-}
-
 func (p *Provider) DefaultModels() map[string]providers.ModelRef {
 	return map[string]providers.ModelRef{
 		providers.ModelTaskChat: {ProviderID: providerID, ModelID: "gpt-5.4"},
@@ -224,12 +222,18 @@ func (p *Provider) DefaultModels() map[string]providers.ModelRef {
 }
 
 func (p *Provider) ListModels(ctx context.Context) ([]providers.ModelInfo, error) {
+	// When targeting the ChatGPT Codex backend the /models endpoint is not
+	// available, so return the known Codex model list directly.
+	if p.isCodex {
+		return codexModels, nil
+	}
+
 	// Fetch live model IDs from the OpenAI API.
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", p.baseURL+"/models", nil)
 	if err != nil {
 		return nil, fmt.Errorf("openai: create models request: %w", err)
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	p.setAuthHeaders(httpReq)
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
@@ -417,6 +421,46 @@ func toolOutputType(toolName string, customToolNames map[string]struct{}) string
 		return "custom_tool_call_output"
 	}
 	return "function_call_output"
+}
+
+// extractInstructions scans input items for the first developer-role message,
+// returns its text content as the instructions string, and returns the
+// remaining items with that message removed. This is required by the Codex
+// backend which mandates a top-level "instructions" field.
+func extractInstructions(items []json.RawMessage) (string, []json.RawMessage) {
+	type roleMsg struct {
+		Role    string `json:"role"`
+		Content any    `json:"content"`
+	}
+	remaining := make([]json.RawMessage, 0, len(items))
+	instructions := ""
+	found := false
+	for _, item := range items {
+		if !found {
+			var msg roleMsg
+			if err := json.Unmarshal(item, &msg); err == nil && msg.Role == "developer" {
+				switch v := msg.Content.(type) {
+				case string:
+					instructions = v
+				case []any:
+					// content array — join text parts
+					var parts []string
+					for _, part := range v {
+						if m, ok := part.(map[string]any); ok {
+							if t, ok := m["text"].(string); ok {
+								parts = append(parts, t)
+							}
+						}
+					}
+					instructions = strings.Join(parts, "\n")
+				}
+				found = true
+				continue // drop this item from input
+			}
+		}
+		remaining = append(remaining, item)
+	}
+	return instructions, remaining
 }
 
 // convertSystemMessage maps system → developer role (OpenAI convention).
