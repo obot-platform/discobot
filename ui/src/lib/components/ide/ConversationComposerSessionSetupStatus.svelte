@@ -1,43 +1,39 @@
 <script lang="ts">
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
-	import type { WorkspaceSelectorState } from "$lib/components/ide/conversation-composer.types";
-
-	type Props = {
-		state: WorkspaceSelectorState;
-	};
 
 	const app = useAppContext();
 	const ui = app.ui;
 	const workspaces = app.workspaces;
 	const session = useSessionContext();
-
-	let { state }: Props = $props();
 </script>
 
-{#if !session.current}
+{#if session.isPending}
 	<p class="mb-2 px-1 text-sm font-medium text-muted-foreground">Start a new session</p>
 	{#if workspaces.status === "loading"}
 		<p class="mb-2 px-1 text-xs text-muted-foreground">Loading workspaces...</p>
 	{/if}
-	{#if state.setupMessage}
-		<p class="mb-2 truncate px-1 text-xs text-destructive" title={state.setupMessage}>
-			{state.setupMessage}
-		</p>
-	{/if}
-	{#if state.workspaceValidationMessage}
+	{#if session.ui.pendingWorkspaceSetupMessage}
 		<p
-			class={`mb-2 truncate px-1 text-xs ${state.workspaceSourceIsValid ? "text-muted-foreground" : "text-destructive"}`}
-			title={state.workspaceValidationMessage}
+			class="mb-2 truncate px-1 text-xs text-destructive"
+			title={session.ui.pendingWorkspaceSetupMessage}
 		>
-			{state.workspaceValidationMessage}
+			{session.ui.pendingWorkspaceSetupMessage}
 		</p>
 	{/if}
-	{#if state.workspaceValidation?.authMessage}
-		<p class="mb-2 px-1 text-xs text-muted-foreground">
-			{state.workspaceValidation.authMessage}
+	{#if session.ui.pendingWorkspaceValidationMessage}
+		<p
+			class={`mb-2 truncate px-1 text-xs ${session.ui.pendingWorkspaceSourceIsValid ? "text-muted-foreground" : "text-destructive"}`}
+			title={session.ui.pendingWorkspaceValidationMessage}
+		>
+			{session.ui.pendingWorkspaceValidationMessage}
 		</p>
-		{#if state.workspaceValidation.authRequired && state.workspaceValidation.authProvider === "github-git"}
+	{/if}
+	{#if session.ui.pendingWorkspaceValidation?.authMessage}
+		<p class="mb-2 px-1 text-xs text-muted-foreground">
+			{session.ui.pendingWorkspaceValidation.authMessage}
+		</p>
+		{#if session.ui.pendingWorkspaceValidation.authRequired && session.ui.pendingWorkspaceValidation.authProvider === "github-git"}
 			<button
 				type="button"
 				class="mb-2 px-1 text-xs text-primary underline underline-offset-2 hover:text-primary/80"

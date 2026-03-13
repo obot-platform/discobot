@@ -7,12 +7,13 @@
 	import ConversationComposerModelControl from "$lib/components/ide/ConversationComposerModelControl.svelte";
 	import ConversationComposerModeControl from "$lib/components/ide/ConversationComposerModeControl.svelte";
 	import ConversationComposerQueueControl from "$lib/components/ide/ConversationComposerQueueControl.svelte";
-	import ConversationComposerSessionSetupControl from "$lib/components/ide/ConversationComposerSessionSetupControl.svelte";
+	import ConversationComposerSessionSetupStatus from "$lib/components/ide/ConversationComposerSessionSetupStatus.svelte";
 	import ConversationComposerSubmitButton from "$lib/components/ide/ConversationComposerSubmitButton.svelte";
 	import ConversationComposerTextarea from "$lib/components/ide/ConversationComposerTextarea.svelte";
 	import ConversationEnvSetsControl from "$lib/components/ide/ConversationEnvSetsControl.svelte";
 	import ConversationHooksPanel from "$lib/components/ide/ConversationHooksPanel.svelte";
 	import ConversationQueuePanel from "$lib/components/ide/ConversationQueuePanel.svelte";
+	import ConversationWorkspaceSelector from "$lib/components/ide/ConversationWorkspaceSelector.svelte";
 	import type {
 		ComposerAttachment,
 		ComposerMode,
@@ -39,7 +40,6 @@
 	let modelIdOverride = $state<string | null | undefined>(undefined);
 	let composerTextareaRef = $state<ConversationComposerTextareaHandle | null>(null);
 	let sessionSetupRef = $state<WorkspaceSelectorHandle | null>(null);
-	let sessionSetupDisabled = $state(false);
 	let pendingSubmitError = $state<string | null>(null);
 
 	function normalizeComposerMode(mode: string | null | undefined): ComposerMode {
@@ -89,6 +89,9 @@
 		() => (modelIdOverride !== undefined ? modelIdOverride : sessionModelId),
 	);
 	const effectiveReasoning = $derived.by(() => composerModelUsesReasoning(effectiveModelId));
+	const sessionSetupDisabled = $derived.by(
+		() => sessionView.pendingWorkspaceRequiresSourceInput && !sessionView.pendingWorkspaceSourceIsValid,
+	);
 
 	function handleModeSelect(nextMode: ComposerMode) {
 		modeOverride = nextMode === sessionMode ? undefined : nextMode;
@@ -227,6 +230,7 @@
 			clearComposerOverrides();
 			composerTextareaRef?.closeMentionDropdown();
 			clearAttachments();
+			sessionView.resetPendingWorkspaceSetup();
 		} catch (err) {
 			pendingSubmitError = err instanceof Error ? err.message : "Failed to start session";
 		}
@@ -247,10 +251,7 @@
 		{/if}
 
 		{#if session.isPending}
-			<ConversationComposerSessionSetupControl
-				bind:this={sessionSetupRef}
-				bind:disabled={sessionSetupDisabled}
-			/>
+			<ConversationComposerSessionSetupStatus />
 		{/if}
 
 		{#if pendingSubmitError}
@@ -292,7 +293,9 @@
 						</div>
 
 						<div class="tauri-no-drag flex items-center justify-end gap-2">
-							{#if !session.isPending}
+							{#if session.isPending}
+								<ConversationWorkspaceSelector bind:this={sessionSetupRef} />
+							{:else}
 								<ConversationComposerHooksControl bind:expanded={sessionView.hooksExpanded} />
 								<ConversationComposerQueueControl bind:expanded={sessionView.queueExpanded} />
 							{/if}

@@ -2,6 +2,7 @@ import { createQuery, queryOptions } from "@tanstack/svelte-query";
 import type { QueryClient } from "@tanstack/svelte-query";
 
 import { api } from "$lib/api-client";
+import { useAppContext } from "$lib/context/app-context.svelte";
 import type { ChatMessage, Session } from "$lib/api-types";
 import {
 	bindChatStreamEventSource,
@@ -42,6 +43,7 @@ function messagesQueryOptions(args: CreateSessionConversationDomainArgs, session
 export function createSessionConversationDomain(
 	args: CreateSessionConversationDomainArgs,
 ): SessionConversationDomain & { dispose: () => void } {
+	const app = useAppContext();
 	let streamError = $state<string | null>(null);
 	let streamStatus = $state<"idle" | "streaming" | null>(null);
 	let activeSource = $state<EventSource | null>(null);
@@ -229,7 +231,7 @@ export function createSessionConversationDomain(
 			}));
 
 			try {
-				await api.startChat({
+				await app.chat({
 					sessionId: session.id,
 					threadId: args.threadId,
 					messages: nextMessages,

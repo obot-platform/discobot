@@ -1,3 +1,4 @@
+import type { WorkspaceValidationResult } from "$lib/api-types";
 import type { EnvSetEditorMode, SessionActiveView } from "$lib/session/session-view.types";
 import { getDefaultActiveView, getSelectedFileFromView } from "$lib/session/session-view.types";
 
@@ -21,6 +22,16 @@ export type SessionViewState = {
 	envSetDialogOpen: boolean;
 	envSetEditorMode: EnvSetEditorMode;
 	editingEnvSetId: string | null;
+	pendingWorkspaceOption: string;
+	pendingWorkspaceBranch: string;
+	pendingWorkspaceSourceInput: string;
+	pendingWorkspaceValidation: WorkspaceValidationResult | null;
+	pendingWorkspaceValidating: boolean;
+	pendingWorkspaceSetupMessage: string | null;
+	pendingWorkspaceRequiresSourceInput: boolean;
+	pendingWorkspaceSourceType: "local" | "git";
+	pendingWorkspaceSourceIsValid: boolean;
+	pendingWorkspaceValidationMessage: string | null;
 	selectThread: (threadId: string | null) => void;
 	openChat: () => void;
 	openTerminal: () => void;
@@ -30,6 +41,13 @@ export type SessionViewState = {
 	openService: (serviceId: string) => void;
 	toggleIdeMenu: () => void;
 	setComposerDraft: (value: string) => void;
+	setPendingWorkspaceOption: (value: string) => void;
+	setPendingWorkspaceBranch: (value: string) => void;
+	setPendingWorkspaceSourceInput: (value: string) => void;
+	setPendingWorkspaceValidation: (value: WorkspaceValidationResult | null) => void;
+	setPendingWorkspaceValidating: (value: boolean) => void;
+	setPendingWorkspaceSetupMessage: (value: string | null) => void;
+	resetPendingWorkspaceSetup: () => void;
 	setDesktopThreadsOpen: (value: boolean) => void;
 	setMobileThreadsOpen: (value: boolean) => void;
 	setHooksExpanded: (value: boolean) => void;
@@ -58,6 +76,12 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 	let envSetDialogOpen = $state(false);
 	let envSetEditorMode = $state<EnvSetEditorMode>("list");
 	let editingEnvSetId = $state<string | null>(null);
+	let pendingWorkspaceOption = $state("new-workspace");
+	let pendingWorkspaceBranch = $state("");
+	let pendingWorkspaceSourceInput = $state("");
+	let pendingWorkspaceValidation = $state<WorkspaceValidationResult | null>(null);
+	let pendingWorkspaceValidating = $state(false);
+	let pendingWorkspaceSetupMessage = $state<string | null>(null);
 
 	const openChat = () => {
 		activeView = { kind: "chat" };
@@ -94,6 +118,15 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 		envSetDialogOpen = false;
 		envSetEditorMode = "list";
 		editingEnvSetId = null;
+	};
+
+	const resetPendingWorkspaceSetup = () => {
+		pendingWorkspaceOption = "new-workspace";
+		pendingWorkspaceBranch = "";
+		pendingWorkspaceSourceInput = "";
+		pendingWorkspaceValidation = null;
+		pendingWorkspaceValidating = false;
+		pendingWorkspaceSetupMessage = null;
 	};
 
 	return {
@@ -167,6 +200,75 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 		get editingEnvSetId() {
 			return editingEnvSetId;
 		},
+		get pendingWorkspaceOption() {
+			return pendingWorkspaceOption;
+		},
+		get pendingWorkspaceBranch() {
+			return pendingWorkspaceBranch;
+		},
+		get pendingWorkspaceSourceInput() {
+			return pendingWorkspaceSourceInput;
+		},
+		get pendingWorkspaceValidation() {
+			return pendingWorkspaceValidation;
+		},
+		get pendingWorkspaceValidating() {
+			return pendingWorkspaceValidating;
+		},
+		get pendingWorkspaceSetupMessage() {
+			return pendingWorkspaceSetupMessage;
+		},
+		get pendingWorkspaceRequiresSourceInput() {
+			return pendingWorkspaceOption === "local-directory" || pendingWorkspaceOption === "git-repo";
+		},
+		get pendingWorkspaceSourceType() {
+			return pendingWorkspaceOption === "git-repo" ? "git" : "local";
+		},
+		get pendingWorkspaceSourceIsValid() {
+			if (!(pendingWorkspaceOption === "local-directory" || pendingWorkspaceOption === "git-repo")) {
+				return true;
+			}
+
+			if (pendingWorkspaceSourceInput.trim().length === 0 || pendingWorkspaceValidating) {
+				return false;
+			}
+
+			return pendingWorkspaceValidation?.valid ?? false;
+		},
+		get pendingWorkspaceValidationMessage() {
+			if (!(pendingWorkspaceOption === "local-directory" || pendingWorkspaceOption === "git-repo")) {
+				return null;
+			}
+
+			if (pendingWorkspaceSourceInput.trim().length === 0) {
+				return null;
+			}
+
+			if (pendingWorkspaceValidating) {
+				return "Validating workspace...";
+			}
+
+			if (!pendingWorkspaceValidation) {
+				return null;
+			}
+
+			if (!pendingWorkspaceValidation.valid) {
+				return pendingWorkspaceValidation.error || "Enter a valid workspace path.";
+			}
+
+			switch (pendingWorkspaceValidation.classification) {
+				case "new":
+					return "A new directory will be created and initialized as a git repository.";
+				case "empty":
+					return "Empty directory is valid. It will be initialized as a git repository.";
+				case "existing_git":
+					return "Existing git repository detected.";
+				case "cloneable":
+					return "Repository is cloneable.";
+				default:
+					return null;
+			}
+		},
 		selectThread: (threadId) => {
 			selectedThreadId = threadId;
 		},
@@ -182,6 +284,25 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 		setComposerDraft: (value) => {
 			composerDraft = value;
 		},
+		setPendingWorkspaceOption: (value) => {
+			pendingWorkspaceOption = value;
+		},
+		setPendingWorkspaceBranch: (value) => {
+			pendingWorkspaceBranch = value;
+		},
+		setPendingWorkspaceSourceInput: (value) => {
+			pendingWorkspaceSourceInput = value;
+		},
+		setPendingWorkspaceValidation: (value) => {
+			pendingWorkspaceValidation = value;
+		},
+		setPendingWorkspaceValidating: (value) => {
+			pendingWorkspaceValidating = value;
+		},
+		setPendingWorkspaceSetupMessage: (value) => {
+			pendingWorkspaceSetupMessage = value;
+		},
+		resetPendingWorkspaceSetup,
 		setDesktopThreadsOpen: (value) => {
 			desktopThreadsOpen = value;
 		},
@@ -227,6 +348,7 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 			queueExpanded = false;
 			closeHookDialog();
 			closeEnvSetManager();
+			resetPendingWorkspaceSetup();
 		},
 	};
 }
