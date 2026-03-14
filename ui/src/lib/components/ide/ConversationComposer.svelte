@@ -252,6 +252,9 @@
 
 		{#if session.isPending}
 			<ConversationComposerSessionSetupStatus />
+			<div class="mb-2 flex w-full items-center gap-2 px-1 md:hidden">
+				<ConversationWorkspaceSelector bind:this={sessionSetupRef} fullWidth={true} />
+			</div>
 		{/if}
 
 		{#if pendingSubmitError}
@@ -294,7 +297,9 @@
 
 						<div class="tauri-no-drag flex items-center justify-end gap-2">
 							{#if session.isPending}
-								<ConversationWorkspaceSelector bind:this={sessionSetupRef} />
+								<div class="hidden md:contents">
+									<ConversationWorkspaceSelector />
+								</div>
 							{:else}
 								<ConversationComposerHooksControl bind:expanded={sessionView.hooksExpanded} />
 								<ConversationComposerQueueControl bind:expanded={sessionView.queueExpanded} />

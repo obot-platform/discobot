@@ -20,6 +20,8 @@
 	import { Input } from "$lib/components/ui/input";
 	import { NativeSelect } from "$lib/components/ui/native-select";
 
+	let { fullWidth = false }: { fullWidth?: boolean } = $props();
+
 	const workspaces = useAppContext().workspaces;
 	const session = useSessionContext();
 	const sessionView = session.ui;
@@ -28,6 +30,7 @@
 	let selectedWorkspaceSuggestionIndex = $state(-1);
 	let hasUserSelectedWorkspace = $state(false);
 	let hasInitializedSelection = $state(false);
+	let workspaceSelectRef = $state<HTMLSelectElement | null>(null);
 
 	let workspaceValidationDebounce: ReturnType<typeof setTimeout> | null = null;
 	let workspaceValidationRequestId = 0;
@@ -126,14 +129,42 @@
 		input?.focus();
 	}
 
-	function resetSourceInputState() {
+	function resetToWorkspaceDropdown() {
+		showWorkspaceSuggestions = false;
+		selectedWorkspaceSuggestionIndex = -1;
+		sessionView.setPendingWorkspaceOption("new-workspace");
+		sessionView.setPendingWorkspaceBranch("");
 		sessionView.setPendingWorkspaceSourceInput("");
+		sessionView.setPendingWorkspaceSetupMessage(null);
 		sessionView.setPendingWorkspaceValidation(null);
 		sessionView.setPendingWorkspaceValidating(false);
 		clearWorkspaceValidationDebounce();
 		clearWorkspaceSuggestionsCloseTimeout();
-		showWorkspaceSuggestions = false;
-		selectedWorkspaceSuggestionIndex = -1;
+	}
+
+	function openWorkspaceDropdown() {
+		const select = workspaceSelectRef as (HTMLSelectElement & { showPicker?: () => void }) | null;
+		if (!select || select.disabled) {
+			return;
+		}
+
+		select.focus();
+		if (typeof select.showPicker === "function") {
+			try {
+				select.showPicker();
+				return;
+			} catch {
+				// Fall back to a click when showPicker is unavailable.
+			}
+		}
+
+		select.click();
+	}
+
+	async function handleWorkspaceIconClick() {
+		resetToWorkspaceDropdown();
+		await tick();
+		openWorkspaceDropdown();
 	}
 
 	function handleWorkspaceOptionChange(nextOption: string) {
@@ -230,14 +261,7 @@
 
 		if (event.key === "Escape") {
 			event.preventDefault();
-			showWorkspaceSuggestions = false;
-			selectedWorkspaceSuggestionIndex = -1;
-			sessionView.setPendingWorkspaceOption("new-workspace");
-			sessionView.setPendingWorkspaceBranch("");
-			sessionView.setPendingWorkspaceSourceInput("");
-			sessionView.setPendingWorkspaceSetupMessage(null);
-			sessionView.setPendingWorkspaceValidation(null);
-			sessionView.setPendingWorkspaceValidating(false);
+			resetToWorkspaceDropdown();
 			return;
 		}
 
@@ -481,15 +505,25 @@
 	});
 </script>
 
-<div class="flex items-center gap-1.5">
+<div class="flex items-center gap-1.5 {fullWidth ? 'flex-1' : ''}">
 	{#if requiresSourceInput}
-		{#if workspaceSourceType === "local"}
-			<FolderIcon class="size-4 text-muted-foreground" />
-		{:else if isGithubRepoInput(sessionView.pendingWorkspaceSourceInput)}
-			<GithubIcon class="size-4 text-muted-foreground" />
-		{:else}
-			<GitCommitIcon class="size-4 text-muted-foreground" />
-		{/if}
+		<button
+			type="button"
+			class="-m-1 inline-flex items-center justify-center rounded-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			aria-label="Return to workspace dropdown"
+			title="Return to workspace dropdown"
+			onclick={() => {
+				void handleWorkspaceIconClick();
+			}}
+		>
+			{#if workspaceSourceType === "local"}
+				<FolderIcon class="size-4" />
+			{:else if isGithubRepoInput(sessionView.pendingWorkspaceSourceInput)}
+				<GithubIcon class="size-4" />
+			{:else}
+				<GitCommitIcon class="size-4" />
+			{/if}
+		</button>
 	{:else if sessionView.pendingWorkspaceOption === "local-directory"}
 		<FolderIcon class="size-4 text-muted-foreground" />
 	{:else if sessionView.pendingWorkspaceOption === "git-repo"}
@@ -507,10 +541,10 @@
 	{/if}
 
 	{#if requiresSourceInput}
-		<div class="relative">
+		<div class="relative {fullWidth ? 'flex-1' : ''}">
 			<Input
 				id="session-setup-source-inline"
-				class="h-8 w-[260px] text-xs"
+				class="h-8 {fullWidth ? 'w-full' : 'w-[320px]'} min-w-0 text-xs"
 				value={sessionView.pendingWorkspaceSourceInput}
 				placeholder={
 					workspaceSourceType === "local"
@@ -526,7 +560,7 @@
 			/>
 
 			{#if showWorkspaceSuggestions && workspaceSuggestions.length > 0}
-				<div class="absolute right-0 top-full z-50 mt-1 max-h-56 w-[260px] overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+				<div class="absolute right-0 top-full z-50 mt-1 max-h-56 {fullWidth ? 'w-full' : 'w-[320px]'} overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
 					{#each workspaceSuggestions as suggestion, index (suggestion.value)}
 						<button
 							type="button"
@@ -551,7 +585,8 @@
 	{:else}
 		<NativeSelect
 			id="session-setup-workspace-inline"
-			class="h-8 w-[240px] text-xs"
+			ref={workspaceSelectRef}
+			class="h-8 {fullWidth ? 'w-full' : 'w-[320px]'} min-w-0 text-xs"
 			value={sessionView.pendingWorkspaceOption}
 			disabled={loadingWorkspaces}
 			onchange={(event) => {

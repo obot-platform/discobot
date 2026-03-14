@@ -13,7 +13,7 @@
 </script>
 
 <div
-	class="group/native-select relative w-fit has-[select:disabled]:opacity-50"
+	class="group/native-select relative w-full has-[select:disabled]:opacity-50"
 	data-slot="native-select-wrapper"
 >
 	<select
