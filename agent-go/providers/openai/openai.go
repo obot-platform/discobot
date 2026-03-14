@@ -126,21 +126,17 @@ func (p *Provider) setAuthHeaders(req *http.Request) {
 
 func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
 	return func(yield func(message.ProviderMessageChunk, error) bool) {
-		inputItems, err := convertMessagesWithCustomTools(req.Messages, customToolNames(req.Tools))
+		customToolNameSet := customToolNames(req.Tools)
+		instructions, inputMessages := extractInstructionsFromMessages(req.Messages)
+		inputItems, err := convertMessagesWithCustomTools(inputMessages, customToolNameSet)
 		if err != nil {
 			yield(nil, fmt.Errorf("openai: convert messages: %w", err))
 			return
 		}
 
-		// Promote the first developer-role item to the top-level "instructions"
-		// field. The Responses API accepts instructions both ways; the Codex
-		// backend requires it at the top level, and the regular API is happy
-		// either way. This is safe for both HTTP SSE and WebSocket transports
-		// since they share the same body map.
-		instructions, remaining := extractInstructions(inputItems)
 		body := map[string]any{
 			"model":        req.Model.ModelID,
-			"input":        remaining,
+			"input":        inputItems,
 			"instructions": instructions,
 			"store":        false,
 		}
@@ -176,7 +172,16 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 		}
 
 		if p.ws != nil {
-			p.completeViaWebSocket(ctx, body, lastAssistantID(req.Messages), yield)
+			prevRespID := lastAssistantID(req.Messages)
+			incrementalBody := body
+			if prevRespID != "" {
+				incrementalBody, err = buildWebSocketIncrementalBody(body, req.Messages, customToolNameSet, prevRespID)
+				if err != nil {
+					yield(nil, fmt.Errorf("openai: build websocket incremental body: %w", err))
+					return
+				}
+			}
+			p.completeViaWebSocket(ctx, body, incrementalBody, prevRespID, yield)
 			return
 		}
 
@@ -213,6 +218,26 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 
 		parseSSEStream(resp.Body, yield)
 	}
+}
+
+func buildWebSocketIncrementalBody(baseBody map[string]any, msgs []message.Message, customToolNames map[string]struct{}, prevRespID string) (map[string]any, error) {
+	incrementalMsgs := messagesAfterAssistantID(msgs, prevRespID)
+	incrementalInstructions, incrementalInputMessages := extractInstructionsFromMessages(incrementalMsgs)
+	incrementalInput, err := convertMessagesWithCustomTools(incrementalInputMessages, customToolNames)
+	if err != nil {
+		return nil, fmt.Errorf("convert incremental messages: %w", err)
+	}
+
+	incrementalBody := cloneWebSocketBody(baseBody)
+	incrementalBody["input"] = incrementalInput
+	delete(incrementalBody, "tools")
+	if incrementalInstructions == "" {
+		delete(incrementalBody, "instructions")
+	} else {
+		incrementalBody["instructions"] = incrementalInstructions
+	}
+
+	return incrementalBody, nil
 }
 
 func (p *Provider) DefaultModels() map[string]providers.ModelRef {
@@ -423,44 +448,21 @@ func toolOutputType(toolName string, customToolNames map[string]struct{}) string
 	return "function_call_output"
 }
 
-// extractInstructions scans input items for the first developer-role message,
-// returns its text content as the instructions string, and returns the
-// remaining items with that message removed. This is required by the Codex
-// backend which mandates a top-level "instructions" field.
-func extractInstructions(items []json.RawMessage) (string, []json.RawMessage) {
-	type roleMsg struct {
-		Role    string `json:"role"`
-		Content any    `json:"content"`
-	}
-	remaining := make([]json.RawMessage, 0, len(items))
-	instructions := ""
-	found := false
-	for _, item := range items {
-		if !found {
-			var msg roleMsg
-			if err := json.Unmarshal(item, &msg); err == nil && msg.Role == "developer" {
-				switch v := msg.Content.(type) {
-				case string:
-					instructions = v
-				case []any:
-					// content array — join text parts
-					var parts []string
-					for _, part := range v {
-						if m, ok := part.(map[string]any); ok {
-							if t, ok := m["text"].(string); ok {
-								parts = append(parts, t)
-							}
-						}
-					}
-					instructions = strings.Join(parts, "\n")
-				}
-				found = true
-				continue // drop this item from input
-			}
+// extractInstructionsFromMessages removes the first system message from msgs and
+// returns its text as top-level instructions. We do this before converting
+// messages into JSON input items so we avoid extra JSON unmarshal passes.
+func extractInstructionsFromMessages(msgs []message.Message) (string, []message.Message) {
+	for i, msg := range msgs {
+		if msg.Role != "system" {
+			continue
 		}
-		remaining = append(remaining, item)
+		instructions := extractText(msg.Parts)
+		remaining := make([]message.Message, 0, len(msgs)-1)
+		remaining = append(remaining, msgs[:i]...)
+		remaining = append(remaining, msgs[i+1:]...)
+		return instructions, remaining
 	}
-	return instructions, remaining
+	return "", msgs
 }
 
 // convertSystemMessage maps system → developer role (OpenAI convention).

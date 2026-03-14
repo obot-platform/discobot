@@ -57,6 +57,39 @@ func TestProviderID(t *testing.T) {
 	}
 }
 
+func TestExtractInstructionsFromMessages(t *testing.T) {
+	t.Run("extracts first system message and removes it", func(t *testing.T) {
+		msgs := []message.Message{
+			{Role: "user", Parts: []message.Part{message.TextPart{Text: "u1"}}},
+			{Role: "system", Parts: []message.Part{message.TextPart{Text: "be concise"}}},
+			{Role: "user", Parts: []message.Part{message.TextPart{Text: "u2"}}},
+			{Role: "system", Parts: []message.Part{message.TextPart{Text: "ignored second system"}}},
+		}
+
+		instructions, remaining := extractInstructionsFromMessages(msgs)
+		if instructions != "be concise" {
+			t.Fatalf("expected first system instructions, got %q", instructions)
+		}
+		if len(remaining) != 3 {
+			t.Fatalf("expected 3 messages after removing first system, got %d", len(remaining))
+		}
+		if remaining[1].Role != "user" || remaining[1].Parts[0].(message.TextPart).Text != "u2" {
+			t.Fatalf("unexpected remaining messages ordering after extraction")
+		}
+	})
+
+	t.Run("returns original messages when no system exists", func(t *testing.T) {
+		msgs := []message.Message{{Role: "user", Parts: []message.Part{message.TextPart{Text: "u"}}}}
+		instructions, remaining := extractInstructionsFromMessages(msgs)
+		if instructions != "" {
+			t.Fatalf("expected empty instructions, got %q", instructions)
+		}
+		if len(remaining) != len(msgs) {
+			t.Fatalf("expected unchanged message count %d, got %d", len(msgs), len(remaining))
+		}
+	})
+}
+
 func TestConvertMessages(t *testing.T) {
 	t.Run("system message becomes developer", func(t *testing.T) {
 		msgs := []message.Message{

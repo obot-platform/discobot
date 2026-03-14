@@ -25,6 +25,16 @@ const wsMaxAge = 55 * time.Minute
 // sockets open indefinitely.
 const wsIdleTTL = 10 * time.Minute
 
+// wsRetryMaxRetries is the number of retry attempts after the first websocket
+// request attempt fails before streaming any chunks.
+const wsRetryMaxRetries = 3
+
+// wsRetryBaseDelay is the initial backoff before websocket retries.
+const wsRetryBaseDelay = 200 * time.Millisecond
+
+// wsRetryMaxDelay caps websocket retry backoff.
+const wsRetryMaxDelay = 5 * time.Second
+
 // wsReadLimit raises coder/websocket's default 32 KiB per-message cap so large
 // OpenAI response events (for example tool arguments, reasoning payloads, or
 // terminal response summaries) can be read without tripping ErrMessageTooBig.
@@ -208,6 +218,31 @@ func lastAssistantID(msgs []message.Message) string {
 	return ""
 }
 
+// messagesAfterAssistantID returns only the messages that came after the
+// assistant message identified by assistantRespID. If no matching assistant is
+// found, it falls back to the full message history so request reconstruction
+// remains correct.
+func messagesAfterAssistantID(msgs []message.Message, assistantRespID string) []message.Message {
+	if assistantRespID == "" {
+		return msgs
+	}
+
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != "assistant" {
+			continue
+		}
+		if openAIResponseID(msgs[i]) != assistantRespID {
+			continue
+		}
+		if i+1 >= len(msgs) {
+			return nil
+		}
+		return msgs[i+1:]
+	}
+
+	return msgs
+}
+
 // completeViaWebSocket sends a response.create event on a pooled (or fresh)
 // WebSocket connection and streams the response events through yield.
 //
@@ -216,10 +251,10 @@ func lastAssistantID(msgs []message.Message) string {
 // cached state, and the exact connection that produced that response is reused
 // from the pool. Parallel sessions are fully independent: each follows its own
 // chain of response IDs and therefore its own connection.
-func (p *Provider) completeViaWebSocket(ctx context.Context, body map[string]any, prevRespID string, yield func(message.ProviderMessageChunk, error) bool) {
+func (p *Provider) completeViaWebSocket(ctx context.Context, fullBody map[string]any, incrementalBody map[string]any, prevRespID string, yield func(message.ProviderMessageChunk, error) bool) {
 	// Retrieve the pooled connection for this response chain (if any).
 	pc := p.ws.checkout(prevRespID)
-	droppedPrevRespID := false
+	retryCount := 0
 
 	for {
 		usedFreshConn := false
@@ -239,7 +274,21 @@ func (p *Provider) completeViaWebSocket(ctx context.Context, body map[string]any
 			usedFreshConn = true
 		}
 
-		result := p.completeViaWebSocketAttempt(ctx, body, prevRespID, pc, yield)
+		attemptPrevRespID := prevRespID
+		requestBody := fullBody
+		if prevRespID != "" {
+			if usedFreshConn {
+				// OpenAI's previous_response_id cache is scoped to a specific WebSocket
+				// connection. On a fresh socket we must rebuild state from full history
+				// and omit previous_response_id.
+				attemptPrevRespID = ""
+				requestBody = fullBody
+			} else {
+				requestBody = incrementalBody
+			}
+		}
+
+		result := p.completeViaWebSocketAttempt(ctx, requestBody, attemptPrevRespID, pc, yield)
 		if result.clean {
 			// Return the connection to the pool keyed by the new response ID so the
 			// next request in this chain can reuse it.
@@ -256,25 +305,73 @@ func (p *Provider) completeViaWebSocket(ctx context.Context, body map[string]any
 			return
 		}
 
-		if !result.emitted && prevRespID != "" && !usedFreshConn {
-			// A reused pooled connection failed before streaming anything. Retry
-			// once on a fresh socket for the same response chain.
-			continue
+		if result.emitted {
+			// Error was already surfaced via stream callback after some output.
+			return
 		}
 
-		if !result.emitted && prevRespID != "" && !droppedPrevRespID && isPreviousResponseNotFoundError(result.err) {
-			// The server-side cache for this response chain is gone. Fall back to a
-			// fresh connection without previous_response_id so the full input
-			// history can rebuild state.
+		// A previous_response_id cache miss means this socket cannot continue that
+		// chain; retry from full history on a fresh socket.
+		if prevRespID != "" && isPreviousResponseNotFoundError(result.err) {
 			prevRespID = ""
-			droppedPrevRespID = true
-			continue
 		}
 
-		if !result.emitted {
+		if !shouldRetryWebSocketAttempt(ctx, result.err, retryCount) {
 			yield(nil, result.err)
+			return
 		}
-		return
+
+		retryCount++
+		prevRespID = ""
+		delay := wsRetryDelay(retryCount)
+		if !waitForWebSocketRetry(ctx, delay) {
+			yield(nil, ctx.Err())
+			return
+		}
+	}
+}
+
+func shouldRetryWebSocketAttempt(ctx context.Context, err error, retryCount int) bool {
+	if err == nil || retryCount >= wsRetryMaxRetries {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	return true
+}
+
+func wsRetryDelay(retryCount int) time.Duration {
+	if retryCount <= 0 {
+		return 0
+	}
+	delay := wsRetryBaseDelay
+	for i := 1; i < retryCount; i++ {
+		delay *= 2
+		if delay >= wsRetryMaxDelay {
+			return wsRetryMaxDelay
+		}
+	}
+	if delay > wsRetryMaxDelay {
+		return wsRetryMaxDelay
+	}
+	return delay
+}
+
+func waitForWebSocketRetry(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -284,6 +381,8 @@ func (p *Provider) completeViaWebSocketAttempt(ctx context.Context, body map[str
 	if prevRespID != "" {
 		reqBody["previous_response_id"] = prevRespID
 	}
+
+	delete(reqBody, "max_output_tokens")
 
 	msgBytes, err := json.Marshal(reqBody)
 	if err != nil {
