@@ -3,6 +3,8 @@
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import SunIcon from "@lucide/svelte/icons/sun";
 	import DiscobotBrand from "$lib/components/ide/DiscobotBrand.svelte";
+	import LeftWindowControls from "$lib/components/ide/LeftWindowControls.svelte";
+	import RightWindowControls from "$lib/components/ide/RightWindowControls.svelte";
 	import SettingsDialog from "$lib/components/ide/SettingsDialog.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { useAppContext } from "$lib/context/app-context.svelte";
@@ -28,7 +30,7 @@
 
 	<div class="relative flex min-w-0 items-center gap-2 px-3">
 		{#if showMacSpacer()}
-			<div class="w-14 shrink-0"></div>
+			<LeftWindowControls />
 		{/if}
 
 		<DiscobotBrand textSizeClass="text-sm" />
@@ -80,35 +82,7 @@
 		</Button>
 
 		{#if showWindowsLinuxControls()}
-			<div class="tauri-no-drag flex h-full items-stretch -mr-2">
-				<button
-					type="button"
-					class="tauri-no-drag flex h-full w-[46px] items-center justify-center bg-transparent text-foreground transition-colors duration-150 hover:bg-foreground/10"
-					aria-label="Minimize"
-				>
-					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-						<path d="M0 5H10" stroke="currentColor" stroke-width="1" />
-					</svg>
-				</button>
-				<button
-					type="button"
-					class="tauri-no-drag flex h-full w-[46px] items-center justify-center bg-transparent text-foreground transition-colors duration-150 hover:bg-foreground/10"
-					aria-label="Maximize"
-				>
-					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-						<rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" fill="none" />
-					</svg>
-				</button>
-				<button
-					type="button"
-					class="tauri-no-drag flex h-full w-[46px] items-center justify-center bg-transparent text-foreground transition-colors duration-150 hover:bg-[#e81123] hover:text-white"
-					aria-label="Close"
-				>
-					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-						<path d="M0 0L10 10M10 0L0 10" stroke="currentColor" stroke-width="1" />
-					</svg>
-				</button>
-			</div>
+			<RightWindowControls />
 		{/if}
 	</div>
 
