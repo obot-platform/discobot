@@ -4,7 +4,7 @@
 	import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import * as Collapsible from "$lib/components/ui/collapsible";
-	import SessionStatus from "$lib/components/ide/SessionStatus.svelte";
+	import SessionStatus from "$lib/components/app/parts/SessionStatus.svelte";
 	import {
 		AlertDialog,
 		AlertDialogAction,

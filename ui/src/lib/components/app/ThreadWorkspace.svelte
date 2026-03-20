@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import ConversationPane from "$lib/components/ide/ConversationPane.svelte";
-	import DockPanel from "$lib/components/ide/DockPanel.svelte";
-	import SessionToolbar from "$lib/components/ide/SessionToolbar.svelte";
+	import ConversationPane from "$lib/components/app/ConversationPane.svelte";
+	import DockPanel from "$lib/components/app/DockPanel.svelte";
+	import SessionToolbar from "$lib/components/app/SessionToolbar.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { setThreadContext } from "$lib/context/thread-context.svelte";
 	import { isChatView } from "$lib/session/view/create-session-view-state.svelte";

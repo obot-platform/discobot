@@ -11,7 +11,6 @@
 		DropdownMenuTrigger,
 	} from "$lib/components/ui/dropdown-menu";
 	import { InputGroupButton } from "$lib/components/ui/input-group";
-	import { useAppContext } from "$lib/context/app-context.svelte";
 
 	type ModelVariant = {
 		id: string;
@@ -23,17 +22,15 @@
 type Props = {
 	value?: string | null;
 	onSelect?: (value: string | null) => void;
+	models: ModelInfo[];
 };
 
-	const app = useAppContext();
-	const models = app.models;
-
-let { value = null, onSelect = () => {} }: Props = $props();
+	let { value = null, onSelect = () => {}, models }: Props = $props();
 
 	const modelVariants = $derived.by(() => {
 		const modelByName: Record<string, ModelInfo> = {};
 
-		for (const model of models.list) {
+		for (const model of models) {
 			const cleanName = model.name.replace(/\s*\(latest\)\s*/gi, "").trim();
 			const isLatest = /\(latest\)/i.test(model.name);
 			const existing = modelByName[cleanName];

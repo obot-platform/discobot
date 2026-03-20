@@ -3,23 +3,21 @@
 	import Loader2Icon from "@lucide/svelte/icons/loader-2";
 	import ZapIcon from "@lucide/svelte/icons/zap";
 	import { Button } from "$lib/components/ui/button";
-	import { useSessionContext } from "$lib/context/session-context.svelte";
+	import type { HooksStatus } from "$lib/shell-types";
 
 	type Props = {
 		expanded?: boolean;
+		hooksStatus: HooksStatus;
 	};
 
-	const session = useSessionContext();
-	const sessionHooks = session.hooks;
-
-	let { expanded = $bindable(false) }: Props = $props();
+	let { expanded = $bindable(false), hooksStatus }: Props = $props();
 
 	function hooks() {
-		return sessionHooks.status.hooks;
+		return hooksStatus.hooks;
 	}
 
 	function pendingHookSet() {
-		return new Set(sessionHooks.status.pendingHookIds);
+		return new Set(hooksStatus.pendingHookIds);
 	}
 
 	function isHookPending(hookId: string) {

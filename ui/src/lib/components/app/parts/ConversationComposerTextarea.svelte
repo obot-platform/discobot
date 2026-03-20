@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ConversationFileMentionDropdown from "$lib/components/ide/ConversationFileMentionDropdown.svelte";
+	import ConversationFileMentionDropdown from "$lib/components/app/parts/ConversationFileMentionDropdown.svelte";
 	import { InputGroupTextarea } from "$lib/components/ui/input-group";
 
 	type FileMentionDropdownHandle = {

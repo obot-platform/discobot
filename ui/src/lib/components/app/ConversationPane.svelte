@@ -1,35 +1,59 @@
-<script lang="ts">
+	<script lang="ts">
 	import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 	import { tick } from "svelte";
 	import type { ChatMessage } from "$lib/api-types";
+	import type { ChatWidthMode } from "$lib/app/app-context.types";
 	import { Loader } from "$lib/components/ai";
 	import { Message, MessageContent, MessageResponse } from "$lib/components/ai/message";
 	import { Reasoning, ReasoningContent, ReasoningTrigger } from "$lib/components/ai/reasoning";
 	import OptimizedToolRenderer from "$lib/components/ai/tool-renderers/OptimizedToolRenderer.svelte";
 	import type { DynamicToolPart } from "$lib/components/ai/types";
-	import ConversationComposer from "$lib/components/ide/ConversationComposer.svelte";
-	import LazyMount from "$lib/components/ide/LazyMount.svelte";
+	import ConversationComposer from "$lib/components/app/ConversationComposer.svelte";
+	import LazyMount from "$lib/components/app/parts/LazyMount.svelte";
 	import { Alert, AlertDescription } from "$lib/components/ui/alert";
 	import { Button } from "$lib/components/ui/button";
-	import { useAppContext } from "$lib/context/app-context.svelte";
-	import { useSessionContext } from "$lib/context/session-context.svelte";
-	import { useThreadContext } from "$lib/context/thread-context.svelte";
+	import { getAppContextIfPresent } from "$lib/context/app-context.svelte";
+	import { getSessionContextIfPresent } from "$lib/context/session-context.svelte";
+	import { getThreadContextIfPresent } from "$lib/context/thread-context.svelte";
+	import type { ThreadContextValue } from "$lib/session/session-context.types";
 
+	type ConversationPaneStatus = ThreadContextValue["status"];
 	type Props = {
-	contentTopPadding?: number;
-};
+		contentTopPadding?: number;
+		messages?: ChatMessage[];
+		status?: ConversationPaneStatus;
+		threadError?: string | null;
+		sessionError?: string | null;
+		chatWidthMode?: ChatWidthMode;
+		showComposer?: boolean;
+	};
 
 	const SCROLL_TO_BOTTOM_BUFFER = 64;
 	const USER_MESSAGE_PLACEHOLDER_HEIGHT = 96;
 	const ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT = 320;
 
-	let { contentTopPadding = 0 }: Props = $props();
+	let {
+		contentTopPadding = 0,
+		messages,
+		status,
+		threadError: threadErrorOverride = null,
+		sessionError: sessionErrorOverride = null,
+		chatWidthMode,
+		showComposer = true,
+	}: Props = $props();
 
-	const app = useAppContext();
-	const preferences = app.preferences;
-	const session = useSessionContext();
-	const thread = useThreadContext();
-	const conversationMessages = $derived.by(() => thread.messages);
+	const app = getAppContextIfPresent();
+	const session = getSessionContextIfPresent();
+	const thread = getThreadContextIfPresent();
+	const activeSessionId = $derived.by(
+		() => session?.sessionId ?? app?.sessions.selectedId ?? null,
+	);
+	const activeThreadId = $derived.by(() => thread?.threadId ?? null);
+	const conversationMessages = $derived.by(() => messages ?? thread?.messages ?? []);
+	const conversationStatus = $derived.by(() => status ?? thread?.status ?? "ready");
+	const effectiveChatWidthMode = $derived.by(
+		() => chatWidthMode ?? app?.preferences.chatWidthMode ?? "full",
+	);
 	const turnStartMessageId = $derived.by(() => {
 		for (let index = conversationMessages.length - 1; index >= 0; index -= 1) {
 			const message = conversationMessages[index];
@@ -40,10 +64,15 @@
 		return null;
 	});
 	const hasMessages = $derived.by(() => conversationMessages.length > 0);
-	const isLoading = $derived.by(() => thread.status === "loading");
-	const isStreaming = $derived.by(() => thread.status === "streaming");
-	const sessionError = $derived.by(() => session.current?.errorMessage ?? null);
-	const threadError = $derived.by(() => thread.error);
+	const isLoading = $derived.by(() => conversationStatus === "loading");
+	const isStreaming = $derived.by(() => conversationStatus === "streaming");
+	const sessionError = $derived.by(
+		() => sessionErrorOverride ?? session?.current?.errorMessage ?? null,
+	);
+	const threadError = $derived.by(() => threadErrorOverride ?? thread?.error ?? null);
+	const canShowComposer = $derived.by(
+		() => showComposer && Boolean(app) && Boolean(session) && Boolean(thread),
+	);
 
 	type MessagePart = ChatMessage["parts"][number];
 
@@ -62,8 +91,16 @@
 		return part.type === "reasoning";
 	}
 
-	function isDynamicToolPart(part: MessagePart): part is DynamicToolPart {
+	function isDynamicToolPart(
+		part: MessagePart,
+	): part is Extract<MessagePart, { type: "dynamic-tool" }> {
 		return part.type === "dynamic-tool";
+	}
+
+	function isStreamingMessage(message: ChatMessage): boolean {
+		return (
+			(message as { status?: string } | undefined)?.status === "streaming"
+		);
 	}
 
 	function isProvisionalUserMessage(
@@ -204,7 +241,7 @@
 		if (!viewport || conversationMessages.length === 0) {
 			return;
 		}
-		if (thread.status !== "ready" && thread.status !== "streaming") {
+		if (conversationStatus !== "ready" && conversationStatus !== "streaming") {
 			return;
 		}
 
@@ -265,7 +302,7 @@
 				<div bind:this={viewport} class="h-full overflow-auto p-4">
 					<div
 						bind:this={content}
-						class={`w-full space-y-4 ${preferences.chatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
+						class={`w-full space-y-4 ${effectiveChatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
 					>
 						{#each conversationMessages as message (message.id)}
 							<Message
@@ -276,17 +313,14 @@
 									<MessageContent>
 										{#each message.parts as part, index (`${message.id}-${index}`)}
 											{#if isReasoningPart(part) && part.text.length > 0}
-												<Reasoning
-													defaultOpen={false}
-													isStreaming={message.status === "streaming"}
-												>
+												<Reasoning defaultOpen={false} isStreaming={isStreamingMessage(message)}>
 													<ReasoningTrigger />
 													<ReasoningContent text={part.text} />
 												</Reasoning>
 											{:else if isTextPart(part) && part.text.length > 0}
 												<MessageResponse text={part.text} />
 											{:else if isDynamicToolPart(part)}
-												<OptimizedToolRenderer toolPart={part} />
+												<OptimizedToolRenderer toolPart={part as DynamicToolPart} sessionId={activeSessionId} threadId={activeThreadId} />
 											{/if}
 										{/each}
 									</MessageContent>
@@ -304,7 +338,7 @@
 								</LazyMount>
 							</Message>
 						{/if}
-						<div aria-hidden="true" style={`height: ${bottomSpacerHeight}px;`} />
+						<div aria-hidden="true" style={`height: ${bottomSpacerHeight}px;`}></div>
 					</div>
 				</div>
 				{#if !isNearBottom}
@@ -327,6 +361,8 @@
 			</div>
 		{/if}
 
-		<ConversationComposer />
+		{#if canShowComposer}
+			<ConversationComposer />
+		{/if}
 	</div>
 </div>

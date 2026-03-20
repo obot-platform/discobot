@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
-	import { useSessionContext } from "$lib/context/session-context.svelte";
+	import type { SessionDiffFileEntry, SessionDiffStats } from "$lib/api-types";
 
 	type Props = {
 		onClose: () => void;
+		diff: SessionDiffFileEntry[];
+		fileContents: Record<string, string>;
+		diffStats: SessionDiffStats;
 	};
 
 	type DiffStatus = "added" | "modified" | "deleted";
@@ -22,18 +25,17 @@
 		lines: DiffLine[];
 	};
 
-	let { onClose }: Props = $props();
-	const session = useSessionContext();
+	let { onClose, diff, fileContents, diffStats }: Props = $props();
 
 	function statusForFile(path: string): DiffStatus {
-		const diffEntry = session.files.diff.find((file) => file.path === path);
+		const diffEntry = diff.find((file) => file.path === path);
 		if (diffEntry?.status === "added") return "added";
 		if (diffEntry?.status === "deleted") return "deleted";
 		return "modified";
 	}
 
 	function sourceLinesForFile(path: string): string[] {
-		const source = session.files.contents[path] ?? "";
+		const source = fileContents[path] ?? "";
 		const lines = source
 			.split("\n")
 			.map((line) => line.replace(/\t/g, "  "))
@@ -95,12 +97,12 @@
 	}
 
 	const reviewFiles = $derived.by(() =>
-		session.files.diff
+		diff
 			.slice(0, 4)
 			.map((file) => buildPreview(file.path, statusForFile(file.path), sourceLinesForFile(file.path))),
 	);
 
-	const totals = $derived.by(() => session.files.diffStats);
+	const totals = $derived.by(() => diffStats);
 </script>
 
 <div class="space-y-3">

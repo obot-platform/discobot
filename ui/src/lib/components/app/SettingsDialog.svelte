@@ -26,8 +26,8 @@
 	import { Switch } from "$lib/components/ui/switch";
 	import { ToggleGroup, ToggleGroupItem } from "$lib/components/ui/toggle-group";
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from "$lib/components/ui/tabs";
-	import CredentialsManager from "$lib/components/ide/CredentialsManager.svelte";
-	import SupportInfoDialog from "$lib/components/ide/SupportInfoDialog.svelte";
+	import CredentialsManager from "$lib/components/app/CredentialsManager.svelte";
+	import SupportInfoDialog from "$lib/components/app/SupportInfoDialog.svelte";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import type { ThemeColorScheme } from "$lib/api-types";
 	import type { ThemeMode } from "$lib/theme";

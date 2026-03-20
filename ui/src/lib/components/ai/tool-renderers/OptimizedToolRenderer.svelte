@@ -6,9 +6,11 @@
 	type Props = {
 		toolPart: DynamicToolPart;
 		forceRaw?: boolean;
+		sessionId?: string | null;
+		threadId?: string | null;
 	};
 
-	let { toolPart, forceRaw = false }: Props = $props();
+	let { toolPart, forceRaw = false, sessionId, threadId }: Props = $props();
 
 	const renderedInput = $derived.by(() => toolPart.input);
 	const renderedOutput = $derived.by(() => toolPart.output);
@@ -17,7 +19,7 @@
 </script>
 
 {#if !forceRaw && Renderer}
-	<Renderer {toolPart} />
+	<Renderer {toolPart} {sessionId} {threadId} />
 {:else}
 	<ToolInput input={renderedInput} />
 	<ToolOutput output={renderedOutput} errorText={renderedError} />

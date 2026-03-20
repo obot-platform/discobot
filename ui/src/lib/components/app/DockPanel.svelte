@@ -1,15 +1,17 @@
 <script lang="ts">
-	import DesktopPanel from "$lib/components/ide/DesktopPanel.svelte";
-	import DiffReviewPanel from "$lib/components/ide/DiffReviewPanel.svelte";
-	import FilesPanel from "$lib/components/ide/FilesPanel.svelte";
-	import ServicePanel from "$lib/components/ide/ServicePanel.svelte";
-	import TerminalPanel from "$lib/components/ide/TerminalPanel.svelte";
+	import DesktopPanel from "$lib/components/app/parts/DesktopPanel.svelte";
+	import DiffReviewPanel from "$lib/components/app/parts/DiffReviewPanel.svelte";
+	import FilesPanel from "$lib/components/app/parts/FilesPanel.svelte";
+	import ServicePanel from "$lib/components/app/parts/ServicePanel.svelte";
+	import TerminalPanel from "$lib/components/app/parts/TerminalPanel.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 
 	const session = useSessionContext();
 	const sessionView = session.ui;
 	const sessionFiles = $derived.by(() => session.files.list);
 	const sessionFileContents = $derived.by(() => session.files.contents);
+	const sessionFileDiff = $derived.by(() => session.files.diff);
+	const sessionFileDiffStats = $derived.by(() => session.files.diffStats);
 	const sessionActiveService = $derived.by(() => session.services.active);
 </script>
 
@@ -27,7 +29,7 @@
 			selectedFile={session.files.selected}
 		/>
 	{:else if sessionView.activeView.kind === "diff-review"}
-		<DiffReviewPanel onClose={sessionView.openChat} />
+		<DiffReviewPanel onClose={sessionView.openChat} diff={sessionFileDiff} fileContents={sessionFileContents} diffStats={sessionFileDiffStats} />
 	{:else if sessionActiveService}
 		<ServicePanel service={sessionActiveService} onClose={sessionView.openChat} />
 	{/if}

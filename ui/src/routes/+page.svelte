@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SessionWorkspace from "$lib/components/ide/SessionWorkspace.svelte";
+	import SessionWorkspace from "$lib/components/app/SessionWorkspace.svelte";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 
 	const app = useAppContext();

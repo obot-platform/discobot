@@ -1,26 +1,21 @@
 <script lang="ts">
 	import CheckCircleIcon from "@lucide/svelte/icons/check-circle";
 	import { Button } from "$lib/components/ui/button";
-	import { useThreadContext } from "$lib/context/thread-context.svelte";
+	import type { PlanEntry } from "$lib/shell-types";
 
 	type Props = {
 		expanded?: boolean;
+		entries: PlanEntry[];
 	};
 
-	const thread = useThreadContext();
-
-	let { expanded = $bindable(false) }: Props = $props();
-
-	function queueEntries() {
-		return thread.planEntries;
-	}
+	let { expanded = $bindable(false), entries }: Props = $props();
 
 	function queueCompletedCount() {
-		return queueEntries().filter((entry) => entry.status === "completed").length;
+		return entries.filter((entry) => entry.status === "completed").length;
 	}
 
 	function queueTotalCount() {
-		return queueEntries().length;
+		return entries.length;
 	}
 </script>
 

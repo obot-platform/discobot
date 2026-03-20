@@ -6,7 +6,7 @@
 	import GithubIcon from "@lucide/svelte/icons/github";
 	import { onDestroy, onMount, tick } from "svelte";
 	import type { Workspace } from "$lib/api-types";
-	import type { WorkspaceSelectionResult } from "$lib/components/ide/conversation-composer.types";
+	import type { WorkspaceSelectionResult } from "$lib/components/app/conversation-composer.types";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import {

@@ -290,7 +290,7 @@
 
 	const demoStackTrace = `TypeError: Cannot read properties of undefined (reading 'name')
     at getSessionName (ui/src/lib/context/session-context.svelte.ts:142:18)
-    at renderConversationPane (ui/src/lib/components/ide/ConversationPane.svelte:512:9)
+    at renderConversationPane (ui/src/lib/components/app/ConversationPane.svelte:512:9)
     at processTicksAndRejections (node:internal/process/task_queues:95:5)`;
 
 	const demoImageDataUrl = `data:image/png;base64,${demoImage}`;

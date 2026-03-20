@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import type { PaneAPI } from "paneforge";
-	import AppHeader from "$lib/components/ide/AppHeader.svelte";
-	import StartupTasksBanner from "$lib/components/ide/StartupTasksBanner.svelte";
-	import ThreadWorkspace from "$lib/components/ide/ThreadWorkspace.svelte";
-	import SessionSidebar from "$lib/components/ide/SessionSidebar.svelte";
+	import AppHeader from "$lib/components/app/AppHeader.svelte";
+	import StartupTasksBanner from "$lib/components/app/parts/StartupTasksBanner.svelte";
+	import ThreadWorkspace from "$lib/components/app/ThreadWorkspace.svelte";
+	import SessionSidebar from "$lib/components/app/SessionSidebar.svelte";
 	import * as Resizable from "$lib/components/ui/resizable";
 	import * as Sheet from "$lib/components/ui/sheet";
 	import { setSessionContext } from "$lib/context/session-context.svelte";

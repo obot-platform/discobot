@@ -6,6 +6,7 @@
 		from: MessageRole;
 		class?: string;
 		children?: () => any;
+		"data-conversation-message-id"?: string;
 	};
 
 	let { from, class: className, children, ...restProps }: Props = $props();

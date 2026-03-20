@@ -1,26 +1,26 @@
 <script lang="ts">
 	import { generateId } from "ai";
 	import { InputGroup, InputGroupAddon } from "$lib/components/ui/input-group";
-	import ConversationComposerAttachmentButton from "$lib/components/ide/ConversationComposerAttachmentButton.svelte";
-	import ConversationComposerAttachments from "$lib/components/ide/ConversationComposerAttachments.svelte";
-	import ConversationComposerHooksControl from "$lib/components/ide/ConversationComposerHooksControl.svelte";
-	import ConversationComposerModelControl from "$lib/components/ide/ConversationComposerModelControl.svelte";
-	import ConversationComposerModeControl from "$lib/components/ide/ConversationComposerModeControl.svelte";
-	import ConversationComposerQueueControl from "$lib/components/ide/ConversationComposerQueueControl.svelte";
-	import ConversationComposerSessionSetupStatus from "$lib/components/ide/ConversationComposerSessionSetupStatus.svelte";
-	import ConversationComposerSubmitButton from "$lib/components/ide/ConversationComposerSubmitButton.svelte";
-	import ConversationComposerTextarea from "$lib/components/ide/ConversationComposerTextarea.svelte";
-	import ConversationEnvSetsControl from "$lib/components/ide/ConversationEnvSetsControl.svelte";
-	import ConversationHooksPanel from "$lib/components/ide/ConversationHooksPanel.svelte";
-	import ConversationQueuePanel from "$lib/components/ide/ConversationQueuePanel.svelte";
-	import ConversationWorkspaceSelector from "$lib/components/ide/ConversationWorkspaceSelector.svelte";
+	import ConversationComposerAttachmentButton from "$lib/components/app/parts/ConversationComposerAttachmentButton.svelte";
+	import ConversationComposerAttachments from "$lib/components/app/parts/ConversationComposerAttachments.svelte";
+	import ConversationComposerHooksControl from "$lib/components/app/parts/ConversationComposerHooksControl.svelte";
+	import ConversationComposerModelControl from "$lib/components/app/parts/ConversationComposerModelControl.svelte";
+	import ConversationComposerModeControl from "$lib/components/app/parts/ConversationComposerModeControl.svelte";
+	import ConversationComposerQueueControl from "$lib/components/app/parts/ConversationComposerQueueControl.svelte";
+	import ConversationComposerSessionSetupStatus from "$lib/components/app/ConversationComposerSessionSetupStatus.svelte";
+	import ConversationComposerSubmitButton from "$lib/components/app/parts/ConversationComposerSubmitButton.svelte";
+	import ConversationComposerTextarea from "$lib/components/app/parts/ConversationComposerTextarea.svelte";
+	import ConversationEnvSetsControl from "$lib/components/app/ConversationEnvSetsControl.svelte";
+	import ConversationHooksPanel from "$lib/components/app/ConversationHooksPanel.svelte";
+	import ConversationQueuePanel from "$lib/components/app/parts/ConversationQueuePanel.svelte";
+	import ConversationWorkspaceSelector from "$lib/components/app/ConversationWorkspaceSelector.svelte";
 	import type {
 		ComposerAttachment,
 		ComposerMode,
 		ConversationComposerTextareaHandle,
 		WorkspaceSelectionResult,
 		WorkspaceSelectorHandle,
-	} from "$lib/components/ide/conversation-composer.types";
+	} from "$lib/components/app/conversation-composer.types";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { useThreadContext } from "$lib/context/thread-context.svelte";
@@ -294,7 +294,7 @@
 									threadEnvSets={thread.envSets}
 								/>
 							{/if}
-							<ConversationComposerModelControl value={effectiveModelId} onSelect={handleModelSelect} />
+							<ConversationComposerModelControl value={effectiveModelId} onSelect={handleModelSelect} models={models.list} />
 						</div>
 
 						<div class="tauri-no-drag flex items-center justify-end gap-2">
@@ -303,8 +303,8 @@
 									<ConversationWorkspaceSelector />
 								</div>
 							{:else}
-								<ConversationComposerHooksControl bind:expanded={sessionView.hooksExpanded} />
-								<ConversationComposerQueueControl bind:expanded={sessionView.queueExpanded} />
+								<ConversationComposerHooksControl bind:expanded={sessionView.hooksExpanded} hooksStatus={sessionHooks.status} />
+								<ConversationComposerQueueControl bind:expanded={sessionView.queueExpanded} entries={thread.planEntries} />
 							{/if}
 							<ConversationComposerSubmitButton
 								status={submitStatus}

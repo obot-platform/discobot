@@ -2,10 +2,10 @@
 	import MoonIcon from "@lucide/svelte/icons/moon";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import SunIcon from "@lucide/svelte/icons/sun";
-	import DiscobotBrand from "$lib/components/ide/DiscobotBrand.svelte";
-	import LeftWindowControls from "$lib/components/ide/LeftWindowControls.svelte";
-	import RightWindowControls from "$lib/components/ide/RightWindowControls.svelte";
-	import SettingsDialog from "$lib/components/ide/SettingsDialog.svelte";
+	import DiscobotBrand from "$lib/components/app/parts/DiscobotBrand.svelte";
+	import LeftWindowControls from "$lib/components/app/parts/LeftWindowControls.svelte";
+	import RightWindowControls from "$lib/components/app/parts/RightWindowControls.svelte";
+	import SettingsDialog from "$lib/components/app/SettingsDialog.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 

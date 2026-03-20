@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from "$lib/utils";
-	import DiscobotLogo from "$lib/components/ide/DiscobotLogo.svelte";
+	import DiscobotLogo from "$lib/components/app/parts/DiscobotLogo.svelte";
 
 	type Props = {
 		class?: string;

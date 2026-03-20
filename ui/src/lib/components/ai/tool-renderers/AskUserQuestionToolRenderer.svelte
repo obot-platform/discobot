@@ -7,16 +7,10 @@
 		validateAskUserQuestionOutput,
 	} from "$lib/components/ai/tool-schemas/askuserquestion-schema";
 	import { api } from "$lib/api-client";
-	import { getAppContextIfPresent } from "$lib/context/app-context.svelte";
-	import { getSessionContextIfPresent } from "$lib/context/session-context.svelte";
-	import { getThreadContextIfPresent } from "$lib/context/thread-context.svelte";
 	import AskUserQuestionWizard from "./AskUserQuestionWizard.svelte";
 	import type { ToolRendererComponentProps } from "./types";
 
-	let { toolPart }: ToolRendererComponentProps = $props();
-	const sessionContext = getSessionContextIfPresent();
-	const appContext = getAppContextIfPresent();
-	const threadContext = getThreadContextIfPresent();
+	let { toolPart, sessionId = null, threadId = null }: ToolRendererComponentProps = $props();
 
 	type PendingQuestionLike = {
 		toolUseID: string;
@@ -58,10 +52,6 @@
 			toolPart.state === "input-available" ||
 			toolPart.state === "approval-requested",
 	);
-	const activeSessionId = $derived.by(
-		() => sessionContext?.sessionId ?? appContext?.sessions.selectedId ?? null,
-	);
-	const activeThreadId = $derived.by(() => threadContext?.threadId ?? null);
 	const approvalId = $derived.by(() => getApprovalId());
 	const inputValidation = $derived.by(() =>
 		validateAskUserQuestionInput(toolPart.input),
@@ -128,7 +118,7 @@
 			return;
 		}
 
-		if (!activeSessionId || !activeThreadId || !approvalId) {
+		if (!sessionId || !threadId || !approvalId) {
 			approvalStatus = "loading";
 			pendingQuestion = null;
 			return;
@@ -138,7 +128,7 @@
 		pendingQuestion = null;
 
 		let cancelled = false;
-		void fetchPendingQuestion(activeSessionId, activeThreadId, approvalId)
+		void fetchPendingQuestion(sessionId, threadId, approvalId)
 			.then((result) => {
 				if (cancelled) {
 					return;
@@ -171,20 +161,20 @@
 		localAnswers = answers;
 		approvalError = null;
 
-		if (!activeSessionId) {
+		if (!sessionId) {
 			approvalStatus = "answered";
 			pendingQuestion = null;
 			return;
 		}
 
 		try {
-			if (!activeThreadId) {
+			if (!threadId) {
 				approvalStatus = "pending";
 				approvalError = "Missing thread context";
 				return;
 			}
 
-			await api.submitThreadChatAnswer(activeSessionId, activeThreadId, {
+			await api.submitThreadChatAnswer(sessionId, threadId, {
 				toolUseID,
 				answers,
 			});
