@@ -356,7 +356,6 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 				r.Post("/codex/authorize", h.CodexAuthorize)
 				r.Post("/codex/exchange", h.CodexExchange)
 			})
-
 		})
 	})
 

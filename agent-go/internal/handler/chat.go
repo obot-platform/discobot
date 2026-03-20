@@ -469,5 +469,3 @@ func (h *Handler) PostAnswer(w http.ResponseWriter, r *http.Request) {
 
 	h.JSON(w, http.StatusOK, api.AnswerQuestionResponse{Success: true})
 }
-
-
