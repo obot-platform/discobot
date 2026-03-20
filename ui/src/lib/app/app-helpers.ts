@@ -11,6 +11,8 @@ export const PREFERRED_IDE_STORAGE_KEY = "preferred.ide";
 export const CHAT_WIDTH_MODE_STORAGE_KEY = "chat.width.mode";
 export const DEFAULT_MODEL_STORAGE_KEY = "chat.default.model";
 export const IGNORED_UPDATE_VERSION_STORAGE_KEY = "update.ignored.version";
+export const SIDEBAR_RECENT_OPEN_STORAGE_KEY = "sidebar.recent.open";
+export const SIDEBAR_ALL_OPEN_STORAGE_KEY = "sidebar.all.open";
 export const RECENT_SESSIONS_LIMIT = 4;
 
 export function detectWindowControlsSide(): WindowControlsSide {
@@ -59,6 +61,22 @@ export function readIgnoredUpdateVersion(): string | null {
 	}
 
 	return window.localStorage.getItem(IGNORED_UPDATE_VERSION_STORAGE_KEY);
+}
+
+export function readSidebarRecentOpen(): boolean {
+	if (typeof window === "undefined") {
+		return true;
+	}
+	const stored = window.localStorage.getItem(SIDEBAR_RECENT_OPEN_STORAGE_KEY);
+	return stored === null ? true : stored === "true";
+}
+
+export function readSidebarAllOpen(): boolean {
+	if (typeof window === "undefined") {
+		return true;
+	}
+	const stored = window.localStorage.getItem(SIDEBAR_ALL_OPEN_STORAGE_KEY);
+	return stored === null ? true : stored === "true";
 }
 
 export function writeStorage(key: string, value: string | null) {

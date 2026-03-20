@@ -2,9 +2,13 @@ import {
 	CHAT_WIDTH_MODE_STORAGE_KEY,
 	DEFAULT_MODEL_STORAGE_KEY,
 	PREFERRED_IDE_STORAGE_KEY,
+	SIDEBAR_ALL_OPEN_STORAGE_KEY,
+	SIDEBAR_RECENT_OPEN_STORAGE_KEY,
 	readChatWidthMode,
 	readDefaultModel,
 	readPreferredIde,
+	readSidebarAllOpen,
+	readSidebarRecentOpen,
 	writeStorage,
 } from "$lib/app/app-helpers";
 import type { AppContextBootstrap, AppPreferences, ChatWidthMode } from "$lib/app/app-context.types";
@@ -32,6 +36,8 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 	let preferredIde = $state<PreferredIde>(args.bootstrap.ideOptions[0]?.id ?? "cursor");
 	let chatWidthMode = $state<ChatWidthMode>("constrained");
 	let defaultModel = $state("");
+	let sidebarRecentOpen = $state(true);
+	let sidebarAllOpen = $state(true);
 
 	const availableThemes = $derived.by(() => getAvailableThemes(resolvedTheme));
 
@@ -56,6 +62,8 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 	preferredIde = readPreferredIde();
 	chatWidthMode = readChatWidthMode();
 	defaultModel = readDefaultModel();
+	sidebarRecentOpen = readSidebarRecentOpen();
+	sidebarAllOpen = readSidebarAllOpen();
 
 	if (typeof window !== "undefined") {
 		const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -88,6 +96,12 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 		get defaultModel() {
 			return defaultModel;
 		},
+		get sidebarRecentOpen() {
+			return sidebarRecentOpen;
+		},
+		get sidebarAllOpen() {
+			return sidebarAllOpen;
+		},
 		setTheme: (mode) => applyThemeState(mode),
 		setColorScheme: (scheme) => {
 			if (!availableThemes.some((t) => t.id === scheme)) return;
@@ -105,6 +119,14 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 		setDefaultModel: (modelId) => {
 			defaultModel = modelId;
 			writeStorage(DEFAULT_MODEL_STORAGE_KEY, modelId || null);
+		},
+		setSidebarRecentOpen: (value) => {
+			sidebarRecentOpen = value;
+			writeStorage(SIDEBAR_RECENT_OPEN_STORAGE_KEY, String(value));
+		},
+		setSidebarAllOpen: (value) => {
+			sidebarAllOpen = value;
+			writeStorage(SIDEBAR_ALL_OPEN_STORAGE_KEY, String(value));
 		},
 	};
 }

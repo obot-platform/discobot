@@ -89,12 +89,16 @@ export type AppPreferences = {
 	ideOptions: IdeOption[];
 	chatWidthMode: ChatWidthMode;
 	defaultModel: string;
+	sidebarRecentOpen: boolean;
+	sidebarAllOpen: boolean;
 	setTheme: (theme: ThemeMode) => void;
 	setColorScheme: (scheme: ThemeColorScheme) => void;
 	toggleTheme: () => void;
 	setPreferredIde: (ide: PreferredIde) => void;
 	setChatWidthMode: (mode: ChatWidthMode) => void;
 	setDefaultModel: (modelId: string) => void;
+	setSidebarRecentOpen: (value: boolean) => void;
+	setSidebarAllOpen: (value: boolean) => void;
 };
 
 export type AppEnvironment = {
