@@ -192,7 +192,6 @@ const (
 	SessionStatusPullingImage    = "pulling_image"    // Pulling runtime image
 	SessionStatusCreatingSandbox = "creating_sandbox" // Creating sandbox environment
 	SessionStatusReady           = "ready"            // Session is ready for use
-	SessionStatusRunning         = "running"          // Session has an active chat completion in progress
 	SessionStatusStopped         = "stopped"          // Sandbox is stopped, will restart on demand
 	SessionStatusError           = "error"            // Something failed during setup
 	SessionStatusRemoving        = "removing"         // Session is being deleted
@@ -231,9 +230,6 @@ type Session struct {
 	ErrorMessage    *string   `gorm:"column:error_message;type:text" json:"errorMessage,omitempty"`
 	WorkspacePath   *string   `gorm:"column:workspace_path;type:text" json:"workspacePath,omitempty"`
 	WorkspaceCommit *string   `gorm:"column:workspace_commit;type:text" json:"workspaceCommit,omitempty"`
-	Model           *string   `gorm:"column:model;type:text" json:"model,omitempty"`
-	Reasoning       *string   `gorm:"column:reasoning;type:text" json:"reasoning,omitempty"`
-	Mode            *string   `gorm:"column:mode;type:text" json:"mode,omitempty"`
 	ActiveEnvSetIDs []string  `gorm:"column:active_env_set_ids;serializer:json;type:text" json:"activeEnvSetIds,omitempty"`
 	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updatedAt"`

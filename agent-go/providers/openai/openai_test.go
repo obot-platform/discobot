@@ -1478,8 +1478,10 @@ func TestComplete_AutoReasoning(t *testing.T) {
 		if !ok {
 			t.Fatal("expected reasoning in request body")
 		}
-		if reasoning["effort"] != "high" {
-			t.Errorf("expected effort 'high', got %v", reasoning["effort"])
+		// gpt-5 has defaultReasonLevel="medium" in models.dev, so auto-detection
+		// should produce "medium" rather than falling back to the legacy "high".
+		if reasoning["effort"] != "medium" {
+			t.Errorf("expected effort 'medium', got %v", reasoning["effort"])
 		}
 		include, _ := gotBody["include"].([]any)
 		if len(include) == 0 || include[0] != "reasoning.encrypted_content" {

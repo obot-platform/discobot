@@ -98,7 +98,8 @@ Encrypted storage for AI provider authentication:
 - OAuth tokens:
   - Anthropic OAuth: `CLAUDE_CODE_OAUTH_TOKEN`
   - GitHub Copilot: `GITHUB_TOKEN`
-  - OpenAI Codex: `CODEX_API_KEY`
+  - OpenAI Codex: `CODEX_TOKEN`
+- Project-scoped credential UI metadata is served by `GET /api/projects/{projectId}/credentials/types`
 
 Credentials are encrypted with AES-256-GCM before storage.
 

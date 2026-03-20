@@ -403,9 +403,9 @@ func TestSessionRebasePayload_AllowDuplicates(t *testing.T) {
 	}
 }
 
-// TestUpdateStatus_ClearsCommitStatusOnRunning tests that when a session transitions to "running"
-// and its commit status is "completed", the commit status is cleared back to none.
-func TestUpdateStatus_ClearsCommitStatusOnRunning(t *testing.T) {
+// TestClearCompletedCommitStatus clears a completed commit state when the
+// session resumes active chat/editing work.
+func TestClearCompletedCommitStatus(t *testing.T) {
 	env := newTestEnv(t)
 	defer env.cleanup()
 
@@ -422,10 +422,9 @@ func TestUpdateStatus_ClearsCommitStatusOnRunning(t *testing.T) {
 
 	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, nil, env.eventBroker, nil)
 
-	// Transition session to running
-	_, err := sessionSvc.UpdateStatus(context.Background(), project.ID, session.ID, model.SessionStatusRunning, nil)
+	err := sessionSvc.ClearCompletedCommitStatus(context.Background(), project.ID, session.ID)
 	if err != nil {
-		t.Fatalf("UpdateStatus failed: %v", err)
+		t.Fatalf("ClearCompletedCommitStatus failed: %v", err)
 	}
 
 	// Verify commit status was cleared
@@ -443,9 +442,9 @@ func TestUpdateStatus_ClearsCommitStatusOnRunning(t *testing.T) {
 	}
 }
 
-// TestUpdateStatus_DoesNotClearCommitStatusWhenNotCompleted tests that commit status is
-// only cleared when it is "completed", not for other commit statuses.
-func TestUpdateStatus_DoesNotClearCommitStatusWhenNotCompleted(t *testing.T) {
+// TestClearCompletedCommitStatus_DoesNotChangeIncompleteState tests that commit
+// status is only cleared when it is "completed".
+func TestClearCompletedCommitStatus_DoesNotChangeIncompleteState(t *testing.T) {
 	env := newTestEnv(t)
 	defer env.cleanup()
 
@@ -461,10 +460,9 @@ func TestUpdateStatus_DoesNotClearCommitStatusWhenNotCompleted(t *testing.T) {
 
 	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, nil, env.eventBroker, nil)
 
-	// Transition session to running
-	_, err := sessionSvc.UpdateStatus(context.Background(), project.ID, session.ID, model.SessionStatusRunning, nil)
+	err := sessionSvc.ClearCompletedCommitStatus(context.Background(), project.ID, session.ID)
 	if err != nil {
-		t.Fatalf("UpdateStatus failed: %v", err)
+		t.Fatalf("ClearCompletedCommitStatus failed: %v", err)
 	}
 
 	// Verify commit status remains none (unchanged)

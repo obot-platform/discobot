@@ -57,12 +57,14 @@ type UserResponse struct {
 
 // ModelInfo represents a model from the Claude API.
 type ModelInfo struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	Provider    string `json:"provider"`
-	CreatedAt   string `json:"created_at"`
-	Type        string `json:"type"`
-	Reasoning   bool   `json:"reasoning"` // Whether this model supports extended thinking
+	ID               string   `json:"id"`
+	DisplayName      string   `json:"display_name"`
+	Provider         string   `json:"provider"`
+	CreatedAt        string   `json:"created_at"`
+	Type             string   `json:"type"`
+	Reasoning        bool     `json:"reasoning"` // Whether this model supports extended thinking
+	ReasoningLevels  []string `json:"reasoningLevels,omitempty"`
+	DefaultReasoning string   `json:"defaultReasoning,omitempty"`
 }
 
 // ModelsResponse is the GET /models response.
@@ -100,8 +102,12 @@ type ErrorResponse struct {
 
 // Thread represents a conversation thread persisted by the agent.
 type Thread struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Model     string `json:"model,omitempty"`     // full "providerId/modelId" ref
+	Reasoning string `json:"reasoning,omitempty"` // "enabled", "disabled", or ""
+	Mode      string `json:"mode,omitempty"`      // "plan" or ""
+	Pending   bool   `json:"pending,omitempty"`   // true when the thread exists in concept but the sandbox hasn't created it yet
 }
 
 // ListThreadsResponse is the GET /threads response.

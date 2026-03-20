@@ -10,8 +10,8 @@ import (
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
 	"github.com/obot-platform/discobot/agent-go/providers/transport"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 // TurnConfig holds the parameters for a single turn of the agent loop.
@@ -25,7 +25,7 @@ type TurnConfig struct {
 	MaxTokens             *int                       `json:"maxTokens,omitempty"`
 	Temperature           *float64                   `json:"temperature,omitempty"`
 	TopP                  *float64                   `json:"topP,omitempty"`
-	Reasoning             string                     `json:"reasoning,omitempty"`
+	Reasoning             providers.Reasoning        `json:"reasoning,omitempty"`
 	PromptRequestPlanMode bool                       `json:"promptRequestPlanMode,omitempty"`
 	ProviderOptions       json.RawMessage            `json:"providerOptions,omitempty"`
 	ContextWindow         int                        `json:"contextWindow,omitempty"`   // model context window in tokens
@@ -170,6 +170,14 @@ func ResumeTurn(
 			return
 		}
 
+		// If the turn was interrupted mid-stream, try to recover a complete
+		// tool call message from the persisted step file. If the already-streamed
+		// chunks contain tool calls we can proceed directly to tool execution
+		// without re-calling the provider.
+		if turnState.Phase == PhaseStreaming {
+			recoverStreamingStep(store, threadID, turnID, turnState)
+		}
+
 		// Replay all chunks from previously completed steps and the current
 		// step (if streaming already finished) so the consumer can reconstruct
 		// its in-memory state before the loop continues execution.
@@ -236,7 +244,7 @@ func executeLoop(
 
 	for {
 		switch turnState.Phase {
-		case PhaseStreaming, PhaseSaving:
+		case PhaseStreaming:
 			stepIndex := turnState.CurrentStep
 
 			// Stop if the caller imposed a step limit.
@@ -1136,9 +1144,9 @@ func formatRetryMessage(event transport.RetryEvent) string {
 // the model identifier in "providerID/modelID" format and the effective reasoning
 // setting, as expected by the server when it intercepts "start" SSE events.
 //
-// The reasoning field reflects what will actually be used: "enabled" when
-// cfg.Reasoning is "enabled" or when it's unset and the model supports reasoning
-// (matching the auto-detection logic in the providers). "disabled" otherwise.
+// The reasoning field reflects what will actually be used: "auto" when cfg.Reasoning
+// is "auto" or when it's unset and the model supports reasoning
+// (matching the auto-detection logic in the providers). "none" otherwise.
 func buildMessageMetadata(cfg TurnConfig) json.RawMessage {
 	if cfg.ProviderID == "" || cfg.Model == "" {
 		return nil
@@ -1146,7 +1154,7 @@ func buildMessageMetadata(cfg TurnConfig) json.RawMessage {
 	reasoning := effectiveReasoning(cfg)
 	data, err := json.Marshal(map[string]string{
 		"model":     cfg.ProviderID + "/" + cfg.Model,
-		"reasoning": reasoning,
+		"reasoning": string(reasoning),
 	})
 	if err != nil {
 		return nil
@@ -1156,17 +1164,23 @@ func buildMessageMetadata(cfg TurnConfig) json.RawMessage {
 
 // effectiveReasoning returns the reasoning setting that the provider will use
 // for this turn, matching the auto-detection logic inside the providers.
-func effectiveReasoning(cfg TurnConfig) string {
+func effectiveReasoning(cfg TurnConfig) providers.Reasoning {
 	switch cfg.Reasoning {
-	case "enabled":
-		return "enabled"
-	case "disabled":
-		return "disabled"
-	default: // "" → auto-detect from models.dev
-		if md := modelsdev.Lookup(cfg.ProviderID, cfg.Model); md != nil && md.Reasoning {
-			return "enabled"
+	case providers.ReasoningDisabled, providers.ReasoningNone:
+		return providers.ReasoningNone
+	case providers.ReasoningEmpty, providers.ReasoningDefault:
+		// Auto-detect from models.dev metadata.
+		if md := modelsdev.Lookup(cfg.ProviderID, cfg.Model); md != nil {
+			if md.DefaultReasonLevel != "" {
+				return providers.Reasoning(md.DefaultReasonLevel)
+			}
+			if md.Reasoning {
+				return providers.ReasoningAuto
+			}
 		}
-		return "disabled"
+		return providers.ReasoningNone
+	default:
+		return cfg.Reasoning
 	}
 }
 
@@ -1231,15 +1245,17 @@ func replayCompletedSteps(
 		}
 	}
 
-	// For the current step, replay only if we're past the streaming phase —
-	// meaning the LLM call completed but something after that caused the crash.
-	if turnState.Phase != PhaseStreaming {
-		if !replayStepLLMChunks(store, threadID, turnID, turnState.CurrentStep, yield) {
-			return false
-		}
-		if !replayStepToolResults(store, threadID, turnID, turnState.CurrentStep, yield) {
-			return false
-		}
+	// Always replay LLM chunks for the current step — replayStepLLMChunks is a
+	// no-op when the file doesn't exist, so this is safe when the crash happened
+	// before any streaming started. When Phase == PhaseStreaming this also covers
+	// the recovery case where recoverStreamingStep found completed chunks and saved
+	// a StepResult: executeLoop will use existingResult without re-streaming, so the
+	// client needs the chunks replayed here to see the message content.
+	if !replayStepLLMChunks(store, threadID, turnID, turnState.CurrentStep, yield) {
+		return false
+	}
+	if !replayStepToolResults(store, threadID, turnID, turnState.CurrentStep, yield) {
+		return false
 	}
 
 	// If paused for user approval, re-emit the approval request chunk so the
@@ -1296,6 +1312,43 @@ func replayStepToolResults(
 			}
 		}
 	}
+	return true
+}
+
+// recoverStreamingStep attempts to recover a turn that was interrupted while
+// the provider was streaming. It loads the persisted step chunks, accumulates
+// them into a message, and saves a StepResult so that executeLoop's existing
+// existingResult path handles the rest — transitioning to PhaseTools if there
+// are tool calls, or finishing the turn if not.
+//
+// Returns true if a StepResult was saved.
+func recoverStreamingStep(store *Store, threadID, turnID string, turnState *TurnState) bool {
+	stepIndex := turnState.CurrentStep
+
+	chunks, err := store.LoadStepChunks(threadID, turnID, stepIndex)
+	if err != nil || len(chunks) == 0 {
+		return false
+	}
+
+	acc := message.NewChunkAccumulator()
+	for _, chunk := range chunks {
+		acc.Push(chunk)
+	}
+	acc.Close()
+
+	partialMsg := acc.Message()
+
+	// For step 0 the StartChunk already bound the stream to AssistantMsgID,
+	// so we must use the same ID here (mirroring the msgIDOverride in runCompletion).
+	if stepIndex == 0 {
+		partialMsg.ID = turnState.AssistantMsgID
+	}
+
+	if err := store.SaveStepResult(threadID, turnID, stepIndex, StepResult{AssistantMessage: partialMsg}); err != nil {
+		log.Printf("turn: recover streaming step %d: save step result: %v", stepIndex, err)
+		return false
+	}
+
 	return true
 }
 

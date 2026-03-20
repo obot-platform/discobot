@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -212,13 +211,7 @@ func runTurnLoop(ctx context.Context, cancel context.CancelFunc, a *agentimpl.De
 // approval to the user, collects answers, and submits them.
 // Returns false if stdin was closed or an error occurred.
 func handlePendingQuestion(ctx context.Context, a *agentimpl.DefaultAgent, threadID string, pending *agent.PendingQuestion) bool {
-	var questions []api.AskUserQuestion
-	if err := json.Unmarshal(pending.Questions, &questions); err != nil {
-		fmt.Fprintf(os.Stderr, "\nError parsing questions: %v\n", err)
-		return false
-	}
-
-	answers := collectAnswers(ctx, questions)
+	answers := collectAnswers(ctx, pending.Questions)
 	if answers == nil {
 		return false // EOF or cancellation
 	}

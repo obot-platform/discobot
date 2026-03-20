@@ -214,6 +214,8 @@ func toolOutputDetail(toolName string, input json.RawMessage) string {
 		return writeOutputDetail(input)
 	case "edit":
 		return editOutputDetail(input)
+	case "apply_patch":
+		return applyPatchOutputDetail(input)
 	default:
 		return ""
 	}
@@ -250,6 +252,14 @@ func editOutputDetail(input json.RawMessage) string {
 		return ""
 	}
 	return "applied diff:\n" + renderLineDiff(payload.OldString, payload.NewString)
+}
+
+func applyPatchOutputDetail(input json.RawMessage) string {
+	changes := summarizeApplyPatchChanges(input)
+	if len(changes) == 0 {
+		return ""
+	}
+	return "patch files:\n" + strings.Join(changes, "\n")
 }
 
 func renderLineDiff(oldText, newText string) string {
@@ -343,6 +353,10 @@ func isExitPlanApproved(text string) bool {
 // toolInputSummary extracts a short human-readable summary from tool input JSON.
 // Returns "" if no suitable field is found.
 func toolInputSummary(toolName string, input json.RawMessage) string {
+	if strings.EqualFold(toolName, "apply_patch") {
+		return applyPatchInputSummary(input)
+	}
+
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(input, &obj); err != nil {
 		return ""
@@ -360,6 +374,89 @@ func toolInputSummary(toolName string, input json.RawMessage) string {
 	}
 
 	return summarizeToolFields(obj, []string{"command", "path", "old_path", "file_path", "url", "query", "pattern", "description"})
+}
+
+func applyPatchInputSummary(input json.RawMessage) string {
+	changes := summarizeApplyPatchChanges(input)
+	if len(changes) == 0 {
+		return ""
+	}
+	return abbreviate("files: "+strings.Join(changes, ", "), 120)
+}
+
+func summarizeApplyPatchChanges(input json.RawMessage) []string {
+	patch := extractApplyPatchInput(input)
+	if patch == "" {
+		return nil
+	}
+
+	lines := strings.Split(normalizeNewlines(patch), "\n")
+	changes := make([]string, 0)
+	seen := make(map[string]struct{})
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		change := ""
+
+		switch {
+		case strings.HasPrefix(line, "*** Add File: "):
+			path := strings.TrimSpace(strings.TrimPrefix(line, "*** Add File: "))
+			if path != "" {
+				change = "A " + path
+			}
+		case strings.HasPrefix(line, "*** Delete File: "):
+			path := strings.TrimSpace(strings.TrimPrefix(line, "*** Delete File: "))
+			if path != "" {
+				change = "D " + path
+			}
+		case strings.HasPrefix(line, "*** Update File: "):
+			path := strings.TrimSpace(strings.TrimPrefix(line, "*** Update File: "))
+			if path == "" {
+				continue
+			}
+			change = "M " + path
+			if i+1 < len(lines) {
+				moveLine := strings.TrimSpace(lines[i+1])
+				if strings.HasPrefix(moveLine, "*** Move to: ") {
+					movePath := strings.TrimSpace(strings.TrimPrefix(moveLine, "*** Move to: "))
+					if movePath != "" && movePath != path {
+						change = "M " + path + " -> " + movePath
+					}
+				}
+			}
+		}
+
+		if change == "" {
+			continue
+		}
+		if _, ok := seen[change]; ok {
+			continue
+		}
+		seen[change] = struct{}{}
+		changes = append(changes, change)
+	}
+
+	return changes
+}
+
+func extractApplyPatchInput(input json.RawMessage) string {
+	if len(input) == 0 {
+		return ""
+	}
+
+	var text string
+	if err := json.Unmarshal(input, &text); err == nil {
+		return text
+	}
+
+	var payload struct {
+		Input string `json:"input"`
+	}
+	if err := json.Unmarshal(input, &payload); err == nil {
+		return payload.Input
+	}
+
+	return strings.TrimSpace(string(input))
 }
 
 func summarizeToolFields(obj map[string]json.RawMessage, fields []string) string {

@@ -936,4 +936,3 @@ type toolCallCapture struct {
 	toolName  string
 	arguments string
 }
-

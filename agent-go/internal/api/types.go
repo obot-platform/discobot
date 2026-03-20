@@ -5,7 +5,9 @@
 //   - Go server sandbox types: server/internal/sandbox/sandboxapi/types.go
 package api //nolint:revive
 
-import "encoding/json"
+import (
+	"github.com/obot-platform/discobot/agent-go/message"
+)
 
 // ============================================================================
 // Request Types
@@ -13,10 +15,10 @@ import "encoding/json"
 
 // ChatRequest is the POST /threads/{id}/chat request body.
 type ChatRequest struct {
-	Messages  json.RawMessage `json:"messages"`
-	Model     string          `json:"model,omitempty"`
-	Reasoning string          `json:"reasoning,omitempty"` // "enabled", "disabled", or ""
-	Mode      string          `json:"mode,omitempty"`      // "plan" or ""
+	Messages  []message.UIMessage `json:"messages"`
+	Model     string              `json:"model,omitempty"`
+	Reasoning string              `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
+	Mode      string              `json:"mode,omitempty"`      // "plan" or ""
 }
 
 // WriteFileRequest is the POST /files/write request body.
@@ -72,8 +74,11 @@ type ErrorResponse struct {
 
 // Thread represents a single conversation thread.
 type Thread struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Model     string `json:"model,omitempty"`     // full "providerId/modelId" ref
+	Reasoning string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
+	Mode      string `json:"mode,omitempty"`      // "plan" or ""
 }
 
 // ListThreadsResponse is the GET /threads response.
@@ -128,17 +133,19 @@ type NoActiveCompletionResponse struct {
 
 // GetMessagesResponse is the GET /threads/{id}/messages response.
 type GetMessagesResponse struct {
-	Messages json.RawMessage `json:"messages"`
+	Messages []message.UIMessage `json:"messages"`
 }
 
 // ModelInfo represents a model from the AI provider's API.
 type ModelInfo struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	Provider    string `json:"provider"`
-	CreatedAt   string `json:"created_at"`
-	Type        string `json:"type"`
-	Reasoning   bool   `json:"reasoning"`
+	ID               string   `json:"id"`
+	DisplayName      string   `json:"display_name"`
+	Provider         string   `json:"provider"`
+	CreatedAt        string   `json:"created_at"`
+	Type             string   `json:"type"`
+	Reasoning        bool     `json:"reasoning"`
+	ReasoningLevels  []string `json:"reasoningLevels,omitempty"`
+	DefaultReasoning string   `json:"defaultReasoning,omitempty"`
 }
 
 // ModelsResponse is the GET /threads/{id}/models response.

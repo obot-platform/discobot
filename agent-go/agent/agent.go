@@ -2,9 +2,9 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"iter"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
@@ -40,7 +40,7 @@ type Command struct {
 // PendingQuestion represents an outstanding AskUserQuestion tool request.
 type PendingQuestion struct {
 	ToolCallID string
-	Questions  json.RawMessage
+	Questions  []api.AskUserQuestion
 }
 
 // Agent abstracts the underlying agent implementation.
@@ -65,8 +65,8 @@ type Agent interface {
 	Cancel(threadID string) bool
 
 	// Messages returns the conversation history for a thread as
-	// UI-projected JSON messages.
-	Messages(threadID, leafID string) ([]json.RawMessage, error)
+	// UI-projected messages.
+	Messages(threadID, leafID string) ([]message.UIMessage, error)
 
 	// ListModels returns available models from the underlying provider.
 	ListModels(ctx context.Context) ([]providers.ModelInfo, error)
@@ -96,6 +96,12 @@ type Agent interface {
 	// ListCommands returns all slash commands available to the user, including
 	// user-defined skills, legacy commands, and built-in commands.
 	ListCommands() ([]Command, error)
+
+	// IsLeaf reports whether msgID is a valid leaf in the thread's message tree.
+	// Implementations may use cached state (e.g. ActiveLeafID from thread config)
+	// before falling back to a full store scan.
+	// Returns false (no error) when msgID does not exist.
+	IsLeaf(threadID, msgID string) (bool, error)
 }
 
 // PromptRequest holds the parameters for a Prompt call.
@@ -103,8 +109,8 @@ type PromptRequest struct {
 	// LeafID is the parent message to branch from. Empty for new conversations.
 	LeafID string
 
-	// UserParts is the user message content.
-	UserParts []message.Part
+	// UserParts is the user message content in UI message format.
+	UserParts []message.UIPart
 
 	// Model overrides the default model for this request.
 	Model string

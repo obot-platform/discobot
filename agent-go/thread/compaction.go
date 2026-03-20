@@ -11,7 +11,7 @@ import (
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 // CompactionRecord is the on-disk record of a message history compaction.

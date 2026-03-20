@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/obot-platform/discobot/agent-go/message"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
 	"github.com/obot-platform/discobot/agent-go/thread"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 type readInput struct {

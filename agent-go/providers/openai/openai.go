@@ -15,8 +15,8 @@ import (
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
 	"github.com/obot-platform/discobot/agent-go/providers/transport"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 // configUseWebSocket is the Config key that opts the provider into WebSocket
@@ -28,12 +28,19 @@ const configUseWebSocket = "use_websocket"
 
 const (
 	providerID            = "openai"
-	defaultBaseURL        = "wss://api.openai.com/v1"
+	defaultBaseURL        = "https://api.openai.com/v1"
+	codexDefaultBaseURL   = "https://chatgpt.com/backend-api/codex"
+	codexProviderID       = "codex"
 	missingToolOutputText = "interrupted by transient system failure"
 )
 
 func init() {
-	providers.Register(providerID, New)
+	providers.Register(providerID, func(cfg providers.Config) (providers.Provider, error) {
+		return New(cfg, false, defaultBaseURL)
+	})
+	providers.Register(codexProviderID, func(cfg providers.Config) (providers.Provider, error) {
+		return New(cfg, true, codexDefaultBaseURL)
+	})
 }
 
 // Provider implements providers.Provider using the OpenAI Responses API.
@@ -55,27 +62,30 @@ type Provider struct {
 // backend. We skip the live /models API call when in Codex mode because that
 // endpoint is not available on chatgpt.com.
 var codexModels = []providers.ModelInfo{
-	{ID: "gpt-5.1-codex-max", DisplayName: "GPT-5.1 Codex Max", Reasoning: true},
-	{ID: "gpt-5.1-codex-mini", DisplayName: "GPT-5.1 Codex Mini", Reasoning: true},
-	{ID: "gpt-5.1-codex", DisplayName: "GPT-5.1 Codex", Reasoning: true},
-	{ID: "gpt-5.2", DisplayName: "GPT-5.2", Reasoning: true},
-	{ID: "gpt-5.2-codex", DisplayName: "GPT-5.2 Codex", Reasoning: true},
-	{ID: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex", Reasoning: true},
-	{ID: "gpt-5.4", DisplayName: "GPT-5.4", Reasoning: true},
+	{ID: "gpt-5.1-codex-max", DisplayName: "GPT-5.1 Codex Max", Reasoning: true, ReasoningLevels: []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh}, DefaultReasoning: providers.ReasoningMedium},
+	{ID: "gpt-5.1-codex-mini", DisplayName: "GPT-5.1 Codex Mini", Reasoning: true, ReasoningLevels: []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh}, DefaultReasoning: providers.ReasoningMedium},
+	{ID: "gpt-5.1-codex", DisplayName: "GPT-5.1 Codex", Reasoning: true, ReasoningLevels: []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh}, DefaultReasoning: providers.ReasoningMedium},
+	{ID: "gpt-5.2", DisplayName: "GPT-5.2", Reasoning: true, ReasoningLevels: []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh, providers.ReasoningXHigh}, DefaultReasoning: providers.ReasoningMedium},
+	{ID: "gpt-5.2-codex", DisplayName: "GPT-5.2 Codex", Reasoning: true, ReasoningLevels: []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh, providers.ReasoningXHigh}, DefaultReasoning: providers.ReasoningMedium},
+	{ID: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex", Reasoning: true, ReasoningLevels: []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh, providers.ReasoningXHigh}, DefaultReasoning: providers.ReasoningMedium},
+	{ID: "gpt-5.4", DisplayName: "GPT-5.4", Reasoning: true, ReasoningLevels: []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh, providers.ReasoningXHigh}, DefaultReasoning: providers.ReasoningMedium},
 }
 
 // New creates a new OpenAI Responses API provider.
-func New(cfg providers.Config) (providers.Provider, error) {
+func New(cfg providers.Config, isCodex bool, defaultURL string) (providers.Provider, error) {
 	apiKey := cfg.APIKey()
 	if apiKey == "" {
-		return nil, fmt.Errorf("openai: api_key is required")
+		apiKey = cfg.Token()
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("openai: api_key or auth_token is required")
 	}
 	baseURL := cfg.BaseURL()
 	if baseURL == "" {
 		baseURL = os.Getenv("OPENAI_API_BASE")
 	}
 	if baseURL == "" {
-		baseURL = defaultBaseURL
+		baseURL = defaultURL
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
 
@@ -89,8 +99,6 @@ func New(cfg providers.Config) (providers.Provider, error) {
 	httpBaseURL := baseURL
 	httpBaseURL = strings.Replace(httpBaseURL, "wss://", "https://", 1)
 	httpBaseURL = strings.Replace(httpBaseURL, "ws://", "http://", 1)
-
-	isCodex := strings.Contains(httpBaseURL, "chatgpt.com")
 
 	accountID := cfg["account_id"]
 	if accountID == "" {
@@ -155,17 +163,11 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 		if req.TopP != nil {
 			body["top_p"] = *req.TopP
 		}
-		// Determine effective reasoning: explicit "enabled"/"disabled", or auto-detect
-		// from model capability when unset (matching Claude CLI default behaviour).
-		effectiveReasoning := req.Reasoning
-		if effectiveReasoning == "" {
-			if md := modelsdev.Lookup(providerID, req.Model.ModelID); md != nil && md.Reasoning {
-				effectiveReasoning = "enabled"
-			}
-		}
-		if effectiveReasoning == "enabled" {
+		// Resolve the effective reasoning level and map to an OpenAI effort parameter.
+		// Returns "" if reasoning should be omitted.
+		if effort := resolveOpenAIEffort(req.Reasoning, req.Model.ModelID); effort != "" {
 			body["reasoning"] = map[string]any{
-				"effort":  "high",
+				"effort":  effort,
 				"summary": "detailed",
 			}
 			body["include"] = []string{"reasoning.encrypted_content"}
@@ -241,6 +243,11 @@ func buildWebSocketIncrementalBody(baseBody map[string]any, msgs []message.Messa
 }
 
 func (p *Provider) DefaultModels() map[string]providers.ModelRef {
+	if p.isCodex {
+		return map[string]providers.ModelRef{
+			providers.ModelTaskChat: {ProviderID: codexProviderID, ModelID: "gpt-5.4"},
+		}
+	}
 	return map[string]providers.ModelRef{
 		providers.ModelTaskChat: {ProviderID: providerID, ModelID: "gpt-5.4"},
 	}
@@ -288,8 +295,15 @@ func (p *Provider) ListModels(ctx context.Context) ([]providers.ModelInfo, error
 		if md := modelsdev.Lookup(providerID, m.ID); md != nil {
 			info.DisplayName = md.Name
 			info.Reasoning = md.Reasoning
+			info.ReasoningLevels = toReasoningSlice(md.ReasoningLevels)
+			info.DefaultReasoning = providers.Reasoning(md.DefaultReasonLevel)
 			info.ContextWindow = md.ContextWindow
 			info.MaxOutputTokens = md.MaxOutputTokens
+		} else if isReasoningModelID(m.ID) {
+			// Unknown model that looks like a reasoning model: use safe defaults.
+			info.Reasoning = true
+			info.ReasoningLevels = []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh}
+			info.DefaultReasoning = providers.ReasoningMedium
 		}
 		models = append(models, info)
 	}
@@ -1261,6 +1275,77 @@ func unifyFinishReason(status string, hasToolCalls bool) string {
 	default:
 		return "other"
 	}
+}
+
+// resolveOpenAIEffort maps a Reasoning request to an OpenAI effort string.
+// Returns "" if reasoning should be omitted entirely.
+func resolveOpenAIEffort(r providers.Reasoning, modelID string) string {
+	switch r {
+	case providers.ReasoningDisabled, providers.ReasoningNone:
+		return "" // omit reasoning block
+	case providers.ReasoningEmpty, providers.ReasoningDefault:
+		// Auto-detect from model metadata.
+		if md := modelsdev.Lookup(providerID, modelID); md != nil {
+			if md.DefaultReasonLevel != "" {
+				return openAIEffort(providers.Reasoning(md.DefaultReasonLevel))
+			}
+			if md.Reasoning {
+				return "high" // legacy: default to high
+			}
+		}
+		return ""
+	case providers.ReasoningLow:
+		return "low"
+	case providers.ReasoningMedium:
+		return "medium"
+	case providers.ReasoningHigh:
+		return "high"
+	case providers.ReasoningXHigh:
+		return "xhigh"
+	default: // auto, enabled → high
+		return "high"
+	}
+}
+
+// openAIEffort maps a Reasoning level to an OpenAI effort string.
+func openAIEffort(r providers.Reasoning) string {
+	switch r {
+	case providers.ReasoningLow:
+		return "low"
+	case providers.ReasoningMedium:
+		return "medium"
+	case providers.ReasoningHigh:
+		return "high"
+	case providers.ReasoningXHigh:
+		return "xhigh"
+	case providers.ReasoningEmpty, providers.ReasoningDisabled, providers.ReasoningNone:
+		return ""
+	default:
+		return "high"
+	}
+}
+
+// toReasoningSlice converts a []string from models.dev into []providers.Reasoning.
+func toReasoningSlice(ss []string) []providers.Reasoning {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]providers.Reasoning, len(ss))
+	for i, s := range ss {
+		out[i] = providers.Reasoning(s)
+	}
+	return out
+}
+
+// isReasoningModelID returns true for model IDs that are known OpenAI
+// reasoning model families (o1, o3, o4, gpt-5, codex variants).
+func isReasoningModelID(id string) bool {
+	for _, prefix := range []string{"o1", "o3", "o4", "gpt-5", "codex"} {
+		if id == prefix || strings.HasPrefix(id, prefix+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 // parseError converts a non-200 OpenAI API response into a descriptive error.

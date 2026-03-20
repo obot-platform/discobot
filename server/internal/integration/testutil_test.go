@@ -52,6 +52,18 @@ type TestServer struct {
 	T               *testing.T
 }
 
+func threadChatPath(projectID, sessionID, threadID string) string {
+	if threadID == "" {
+		threadID = sessionID
+	}
+	return fmt.Sprintf(
+		"/api/projects/%s/sessions/%s/threads/%s/chat",
+		projectID,
+		sessionID,
+		threadID,
+	)
+}
+
 // NewTestServer creates a new test server with in-memory SQLite or PostgreSQL
 func NewTestServer(t *testing.T) *TestServer {
 	t.Helper()
@@ -290,6 +302,7 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 
 			r.Route("/sessions", func(r chi.Router) {
 				r.Get("/", h.ListSessions)
+				r.Post("/{sessionId}/threads/{threadId}/chat", h.Chat)
 				r.Route("/{sessionId}", func(r chi.Router) {
 					r.Use(middleware.SessionBelongsToProject(s))
 					r.Get("/", h.GetSession)
@@ -310,7 +323,6 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 					r.Put("/threads/{threadId}", h.UpdateThread)
 					r.Patch("/threads/{threadId}", h.UpdateThread)
 					r.Delete("/threads/{threadId}", h.DeleteThread)
-					r.Post("/threads/{threadId}/chat", h.Chat)
 					r.Get("/threads/{threadId}/stream", h.ChatStream)
 					r.Post("/threads/{threadId}/cancel", h.ChatCancel)
 					r.Get("/threads/{threadId}/question/{questionId}", h.ChatQuestion)
@@ -345,9 +357,6 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 				r.Post("/codex/exchange", h.CodexExchange)
 			})
 
-			// AI Chat endpoints (streaming)
-			r.Post("/chat", h.Chat)
-			r.Get("/chat/{sessionId}/stream", h.ChatStream)
 		})
 	})
 

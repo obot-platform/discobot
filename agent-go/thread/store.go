@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobot/agent-go/message"
+	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
 // writeFileAtomic writes data to path atomically using a temp-file + rename.
@@ -547,6 +548,8 @@ type Config struct {
 	Name string `json:"name,omitempty"`
 	// Model is the full "providerId/modelId" ref (e.g. "anthropic/claude-sonnet-4-6").
 	Model string `json:"model,omitempty"`
+	// Reasoning is the extended thinking setting (e.g. "", "auto", "low", "medium", "high", "none").
+	Reasoning providers.Reasoning `json:"reasoning,omitempty"`
 	// CWD is the working directory associated with this thread.
 	CWD string `json:"cwd,omitempty"`
 	// PlanMode tracks whether this thread is currently in plan mode.
@@ -587,12 +590,13 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	}
 	// Use a raw struct for migration: old format had separate providerId + bare model.
 	var raw struct {
-		Name         string `json:"name"`
-		Model        string `json:"model"`
-		ProviderID   string `json:"providerId"`
-		CWD          string `json:"cwd"`
-		PlanMode     bool   `json:"planMode"`
-		ActiveLeafID string `json:"activeLeafId"`
+		Name         string              `json:"name"`
+		Model        string              `json:"model"`
+		ProviderID   string              `json:"providerId"`
+		Reasoning    providers.Reasoning `json:"reasoning"`
+		CWD          string              `json:"cwd"`
+		PlanMode     bool                `json:"planMode"`
+		ActiveLeafID string              `json:"activeLeafId"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Config{}, fmt.Errorf("unmarshal thread config: %w", err)
@@ -602,7 +606,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	if model != "" && !strings.Contains(model, "/") && raw.ProviderID != "" {
 		model = raw.ProviderID + "/" + model
 	}
-	return Config{Name: raw.Name, Model: model, CWD: raw.CWD, PlanMode: raw.PlanMode, ActiveLeafID: raw.ActiveLeafID}, nil
+	return Config{Name: raw.Name, Model: model, Reasoning: raw.Reasoning, CWD: raw.CWD, PlanMode: raw.PlanMode, ActiveLeafID: raw.ActiveLeafID}, nil
 }
 
 // FindLeaf returns the leaf message ID for a thread — the message that is not
@@ -656,4 +660,38 @@ func (s *Store) FindLeaf(threadID string) (string, error) {
 		}
 	}
 	return bestLeaf, nil
+}
+
+// IsLeaf reports whether msgID exists and is not a parent of any other message
+// (i.e. it is a leaf node in the message tree).
+// Returns false (no error) when msgID does not exist.
+func (s *Store) IsLeaf(threadID, msgID string) (bool, error) {
+	if _, err := s.LoadMessage(threadID, msgID); err != nil {
+		return false, nil // message not found → not a leaf
+	}
+
+	dir := s.messagesDir(threadID)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("read messages dir: %w", err)
+	}
+
+	for _, e := range entries {
+		name := e.Name()
+		if len(name) < 6 || name[len(name)-5:] != ".json" {
+			continue
+		}
+		id := name[:len(name)-5]
+		if id == msgID {
+			continue
+		}
+		msg, err := s.LoadMessage(threadID, id)
+		if err != nil {
+			continue
+		}
+		if msg.ParentID == msgID {
+			return false, nil // msgID has a child → not a leaf
+		}
+	}
+	return true, nil
 }

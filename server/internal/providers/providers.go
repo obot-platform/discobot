@@ -1,12 +1,10 @@
 package providers
 
 import (
-	"encoding/json"
-	"log"
 	"sort"
 	"sync"
 
-	"github.com/obot-platform/discobot/server/static"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 // Icon represents an icon with theme support
@@ -44,14 +42,6 @@ type AuthProvider struct {
 	Category                ProviderCategory `json:"category"`      // "llm" or "vcs"
 }
 
-// modelsDevProvider represents a provider from models.dev api.json
-type modelsDevProvider struct {
-	ID   string   `json:"id"`
-	Name string   `json:"name"`
-	Doc  string   `json:"doc,omitempty"`
-	Env  []string `json:"env,omitempty"`
-}
-
 // Cached auth providers
 var (
 	authProvidersOnce   sync.Once
@@ -69,7 +59,7 @@ var customAuthProviders = []AuthProvider{
 		Icons: []Icon{
 			{Src: "https://upload.wikimedia.org/wikipedia/commons/4/4d/OpenAI_Logo.svg", MimeType: "image/svg+xml", InvertDark: true},
 		},
-		Env: []string{"CODEX_API_KEY"},
+		Env: []string{"CODEX_TOKEN"},
 	},
 	{
 		ID:          "github-copilot",
@@ -129,30 +119,17 @@ func loadProviders() {
 		}
 		cachedAuthProviders = append(cachedAuthProviders, customAuthProviders...)
 
-		// Load models.dev data
-		data, err := static.Files.ReadFile("models-dev-api.json")
-		if err != nil {
-			log.Printf("Warning: Failed to load models-dev-api.json: %v", err)
-			return
-		}
-
-		var providers map[string]modelsDevProvider
-		if err := json.Unmarshal(data, &providers); err != nil {
-			log.Printf("Warning: Failed to parse models-dev-api.json: %v", err)
-			return
-		}
-
 		// Add providers from models.dev (skip any that are in custom list)
-		for id, p := range providers {
+		for _, p := range modelsdev.AllProviders() {
 			// Build env map for all providers
-			if len(p.Env) > 0 {
-				if _, exists := providerEnvMap[id]; !exists {
-					providerEnvMap[id] = p.Env
+			if len(p.EnvVars) > 0 {
+				if _, exists := providerEnvMap[p.ID]; !exists {
+					providerEnvMap[p.ID] = p.EnvVars
 				}
 			}
 
 			// Skip custom providers for the full provider list
-			if customIDs[id] {
+			if customIDs[p.ID] {
 				continue
 			}
 
@@ -161,18 +138,18 @@ func loadProviders() {
 				description = p.Name + " API access"
 			}
 			cachedAuthProviders = append(cachedAuthProviders, AuthProvider{
-				ID:          id,
+				ID:          p.ID,
 				Name:        p.Name,
 				Description: description,
 				Category:    CategoryLLM,
 				Icons: []Icon{
 					{
-						Src:        "https://models.dev/logos/" + id + ".svg",
+						Src:        "https://models.dev/logos/" + p.ID + ".svg",
 						MimeType:   "image/svg+xml",
 						InvertDark: true,
 					},
 				},
-				Env: p.Env,
+				Env: p.EnvVars,
 			})
 		}
 

@@ -15,13 +15,14 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobot/agent-go/agent"
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
 type streamTestAgent struct {
 	promptFn   func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
-	messagesFn func(threadID, leafID string) ([]json.RawMessage, error)
+	messagesFn func(threadID, leafID string) ([]message.UIMessage, error)
 }
 
 func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
@@ -32,7 +33,7 @@ func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent
 }
 
 func (m *streamTestAgent) Cancel(_ string) bool { return false }
-func (m *streamTestAgent) Messages(threadID, leafID string) ([]json.RawMessage, error) {
+func (m *streamTestAgent) Messages(threadID, leafID string) ([]message.UIMessage, error) {
 	if m.messagesFn != nil {
 		return m.messagesFn(threadID, leafID)
 	}
@@ -47,6 +48,7 @@ func (m *streamTestAgent) PendingQuestion(_ string) (*agent.PendingQuestion, err
 func (m *streamTestAgent) SubmitAnswer(_, _ string, _ map[string]string) error      { return nil }
 func (m *streamTestAgent) FinalResponse(_ string) (string, error)                   { return "", nil }
 func (m *streamTestAgent) ListCommands() ([]agent.Command, error)                   { return nil, nil }
+func (m *streamTestAgent) IsLeaf(_, _ string) (bool, error)                         { return true, nil }
 
 type sseFrame struct {
 	ID    string
@@ -64,6 +66,18 @@ func yieldChunksAndBlock(chunks ...message.MessageChunk) func(context.Context, s
 				}
 			}
 			<-ctx.Done()
+		}
+	}
+}
+
+func yieldChunksAndFinish(chunks ...message.MessageChunk) func(context.Context, string, agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	return func(_ context.Context, _ string, _ agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+		return func(yield func(message.MessageChunk, error) bool) {
+			for _, chunk := range chunks {
+				if !yield(chunk, nil) {
+					return
+				}
+			}
 		}
 	}
 }
@@ -136,8 +150,179 @@ func newStreamTestServer(t *testing.T, h *Handler) *httptest.Server {
 	return httptest.NewServer(r)
 }
 
+func newChatTestServer(t *testing.T, h *Handler) *httptest.Server {
+	t.Helper()
+	r := chi.NewRouter()
+	r.Post("/threads/{id}/chat", h.PostChat)
+	return httptest.NewServer(r)
+}
+
+func TestPostChat_RejectsEmptyMessages(t *testing.T) {
+	ma := &streamTestAgent{}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	ts := newChatTestServer(t, h)
+	defer ts.Close()
+
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPostChat_AcceptsSingleUserMessage(t *testing.T) {
+	reqCh := make(chan agent.PromptRequest, 1)
+	ma := &streamTestAgent{
+		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			reqCh <- req
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	ts := newChatTestServer(t, h)
+	defer ts.Close()
+
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "hi", State: "done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d", resp.StatusCode)
+	}
+
+	select {
+	case req := <-reqCh:
+		if len(req.UserParts) != 1 {
+			t.Fatalf("expected 1 user part, got %d", len(req.UserParts))
+		}
+		part, ok := req.UserParts[0].(message.UITextPart)
+		if !ok {
+			t.Fatalf("expected UITextPart, got %T", req.UserParts[0])
+		}
+		if part.Text != "hi" {
+			t.Fatalf("expected text %q, got %q", "hi", part.Text)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Prompt request")
+	}
+}
+
+func TestPostChat_AcceptsMultipleUserMessages(t *testing.T) {
+	reqCh := make(chan agent.PromptRequest, 1)
+	ma := &streamTestAgent{
+		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			reqCh <- req
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	ts := newChatTestServer(t, h)
+	defer ts.Close()
+
+	// Multiple user messages with no assistant: the last user message's parts
+	// are used as the prompt and no leaf validation is required.
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{
+		{ID: "msg-1", Role: "user", Parts: []message.UIPart{message.UITextPart{Text: "one", State: "done"}}},
+		{ID: "msg-2", Role: "user", Parts: []message.UIPart{message.UITextPart{Text: "two", State: "done"}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d", resp.StatusCode)
+	}
+
+	select {
+	case req := <-reqCh:
+		part, ok := req.UserParts[0].(message.UITextPart)
+		if !ok || part.Text != "two" {
+			t.Fatalf("expected last user message text %q, got %q", "two", part.Text)
+		}
+		if req.LeafID != "" {
+			t.Fatalf("expected empty LeafID, got %q", req.LeafID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Prompt request")
+	}
+}
+
+func TestPostChat_RejectsNoUserMessageAfterAssistant(t *testing.T) {
+	ma := &streamTestAgent{}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	ts := newChatTestServer(t, h)
+	defer ts.Close()
+
+	// A conversation that ends with an assistant message and no follow-up user
+	// message is invalid — there is nothing to prompt the agent with.
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-1",
+		Role:  "assistant",
+		Parts: []message.UIPart{message.UITextPart{Text: "hi", State: "done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", resp.StatusCode)
+	}
+
+	var got api.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error != "no user message found after the last assistant message" {
+		t.Fatalf("unexpected error %q", got.Error)
+	}
+}
+
 func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
-	historyMsg := json.RawMessage(`{"id":"hist-1","role":"user","parts":[{"type":"text","text":"old"}]}`)
+	historyMsg := message.UIMessage{
+		ID:    "hist-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "old"}},
+	}
+	historyMsgJSON, err := json.Marshal(historyMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	liveChunk := message.TextDeltaChunk{ID: "delta-1", Delta: "live"}
 	liveChunkJSON, err := message.MarshalChunk(liveChunk)
 	if err != nil {
@@ -146,14 +331,14 @@ func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
 
 	ma := &streamTestAgent{
 		promptFn: yieldChunksAndBlock(liveChunk),
-		messagesFn: func(_, _ string) ([]json.RawMessage, error) {
-			return []json.RawMessage{historyMsg}, nil
+		messagesFn: func(_, _ string) ([]message.UIMessage, error) {
+			return []message.UIMessage{historyMsg}, nil
 		},
 	}
 	cm := agent.NewCompletionManager(ma)
 	completionID, err := cm.Chat("thread-1", agent.PromptRequest{
 		LeafID:    "leaf-before",
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +365,7 @@ func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected first frame history-start, got %+v", frames[0])
 	}
-	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsg) {
+	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
 		t.Fatalf("unexpected history message frame: %+v", frames[1])
 	}
 	if frames[2].Event != "chunk" || frames[2].ID != completionID+":0" || frames[2].Data != string(liveChunkJSON) {
@@ -202,7 +387,7 @@ func TestChatStream_ValidLastEventID_ResumesWithoutHistory(t *testing.T) {
 	ma := &streamTestAgent{promptFn: yieldChunksAndBlock(chunk1, chunk2)}
 	cm := agent.NewCompletionManager(ma)
 	completionID, err := cm.Chat("thread-2", agent.PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -240,15 +425,19 @@ func TestChatStream_ValidLastEventID_ResumesWithoutHistory(t *testing.T) {
 }
 
 func TestChatStream_InvalidLastEventID_TreatedAsFreshRequest(t *testing.T) {
-	historyMsg := json.RawMessage(`{"id":"hist-2","role":"user","parts":[{"type":"text","text":"old"}]}`)
+	historyMsg := message.UIMessage{
+		ID:    "hist-2",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "old"}},
+	}
 	ma := &streamTestAgent{
 		promptFn: yieldChunksAndBlock(message.TextDeltaChunk{ID: "delta-2", Delta: "live"}),
-		messagesFn: func(_, _ string) ([]json.RawMessage, error) {
-			return []json.RawMessage{historyMsg}, nil
+		messagesFn: func(_, _ string) ([]message.UIMessage, error) {
+			return []message.UIMessage{historyMsg}, nil
 		},
 	}
 	cm := agent.NewCompletionManager(ma)
-	if _, err := cm.Chat("thread-3", agent.PromptRequest{UserParts: []message.Part{message.TextPart{Text: "hi"}}}); err != nil {
+	if _, err := cm.Chat("thread-3", agent.PromptRequest{UserParts: []message.UIPart{message.UITextPart{Text: "hi"}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -277,15 +466,24 @@ func TestChatStream_InvalidLastEventID_TreatedAsFreshRequest(t *testing.T) {
 	}
 }
 
-func TestChatStream_FreshRequestWithoutActiveCompletion_ReplaysHistoryAndDone(t *testing.T) {
-	historyMsg := json.RawMessage(`{"id":"hist-3","role":"assistant","parts":[{"type":"text","text":"done"}]}`)
+func TestChatStream_FreshRequestWithoutActiveCompletion_ReplaysHistoryAndPing(t *testing.T) {
+	historyMsg := message.UIMessage{
+		ID:    "hist-3",
+		Role:  "assistant",
+		Parts: []message.UIPart{message.UITextPart{Text: "done"}},
+	}
+	historyMsgJSON, err := json.Marshal(historyMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ma := &streamTestAgent{
-		messagesFn: func(_, _ string) ([]json.RawMessage, error) {
-			return []json.RawMessage{historyMsg}, nil
+		messagesFn: func(_, _ string) ([]message.UIMessage, error) {
+			return []message.UIMessage{historyMsg}, nil
 		},
 	}
 	cm := agent.NewCompletionManager(ma)
 	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 10 * time.Millisecond
 	ts := newStreamTestServer(t, h)
 	defer ts.Close()
 
@@ -297,20 +495,124 @@ func TestChatStream_FreshRequestWithoutActiveCompletion_ReplaysHistoryAndDone(t 
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	frames := readFrames(t, resp.Body, 0, true)
+	frames := readFrames(t, resp.Body, 4, false)
 	if len(frames) != 4 {
 		t.Fatalf("expected 4 frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
 	}
-	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsg) {
+	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
 		t.Fatalf("unexpected history message frame: %+v", frames[1])
 	}
 	if frames[2].Event != "history-end" {
 		t.Fatalf("expected history-end, got %+v", frames[2])
 	}
-	if frames[3].Event != "done" || !frames[3].Done {
-		t.Fatalf("expected final DONE frame, got %+v", frames[3])
+	if frames[3].Event != "ping" {
+		t.Fatalf("expected ping after history replay, got %+v", frames[3])
+	}
+}
+
+func TestChatStream_CompletionEndDoesNotCloseStream(t *testing.T) {
+	liveChunk := message.TextDeltaChunk{ID: "delta-5", Delta: "live"}
+	liveChunkJSON, err := message.MarshalChunk(liveChunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{promptFn: yieldChunksAndBlock(liveChunk)}
+	cm := agent.NewCompletionManager(ma)
+	if _, err := cm.Chat("thread-5", agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 25 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-5/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	time.AfterFunc(5*time.Millisecond, func() {
+		cm.Cancel("thread-5")
+	})
+
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "chunk" || frames[1].Data != string(liveChunkJSON) {
+		t.Fatalf("unexpected chunk frame: %+v", frames[1])
+	}
+	if frames[2].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[2])
+	}
+	if frames[3].Event != "ping" {
+		t.Fatalf("expected ping after completion finished, got %+v", frames[3])
+	}
+}
+
+func TestChatStream_ContinuesIntoLaterCompletionOnSameConnection(t *testing.T) {
+	nextChunk := message.TextDeltaChunk{ID: "delta-6", Delta: "later"}
+	nextChunkJSON, err := message.MarshalChunk(nextChunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{promptFn: yieldChunksAndFinish(nextChunk)}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 25 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-6/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	startErrCh := make(chan error, 1)
+	time.AfterFunc(5*time.Millisecond, func() {
+		_, startErr := cm.Chat("thread-6", agent.PromptRequest{
+			UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+		})
+		startErrCh <- startErr
+	})
+
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[1])
+	}
+	if frames[2].Event != "chunk" || frames[2].Data != string(nextChunkJSON) {
+		t.Fatalf("expected next completion chunk, got %+v", frames[2])
+	}
+	if frames[3].Event != "ping" {
+		t.Fatalf("expected ping after later completion, got %+v", frames[3])
+	}
+
+	if startErr := <-startErrCh; startErr != nil {
+		t.Fatalf("expected later completion to start successfully: %v", startErr)
 	}
 }

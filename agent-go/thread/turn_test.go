@@ -867,7 +867,7 @@ func TestResumeTurn_CrashedAfterStreamingNoTools(t *testing.T) {
 		ID:          turnID,
 		ThreadID:    threadID,
 		CurrentStep: 0,
-		Phase:       PhaseSaving,
+		Phase:       PhaseStreaming,
 		LeafMsgID:   userMsgID,
 		Config:      TurnConfig{Model: "test-model"},
 	}

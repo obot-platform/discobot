@@ -83,11 +83,59 @@ type UIDataPart struct {
 
 func (p UIDataPart) uiPartType() string { return p.Type }
 
-// MarshalUIPart serializes a UIPart to JSON. Each concrete UIPart type carries
-// its own "type" discriminator field so plain json.Marshal produces the correct
-// wire format.
+// MarshalUIPart serializes a UIPart to JSON, always injecting the correct
+// "type" discriminator from uiPartType() regardless of the struct's Type field
+// value. The outer Type field at depth 0 shadows the embedded struct's Type
+// field at depth 1, matching the pattern used by MarshalPart.
 func MarshalUIPart(p UIPart) (json.RawMessage, error) {
-	data, err := json.Marshal(p)
+	t := p.uiPartType()
+	var (
+		data []byte
+		err  error
+	)
+	switch v := p.(type) {
+	case UITextPart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+			UITextPart
+		}{t, v})
+	case UIReasoningPart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+			UIReasoningPart
+		}{t, v})
+	case UIFilePart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+			UIFilePart
+		}{t, v})
+	case UIStepStartPart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+		}{t})
+	case UISourceURLPart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+			UISourceURLPart
+		}{t, v})
+	case UISourceDocumentPart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+			UISourceDocumentPart
+		}{t, v})
+	case UIDataPart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+			UIDataPart
+		}{t, v})
+	case DynamicToolPart:
+		data, err = json.Marshal(struct {
+			Type string `json:"type"`
+			DynamicToolPart
+		}{t, v})
+	default:
+		return nil, fmt.Errorf("unknown UIPart type: %T", p)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("marshal UIPart (%T): %w", p, err)
 	}
@@ -131,4 +179,77 @@ func UnmarshalUIPart(data []byte) (UIPart, error) {
 	default:
 		return nil, fmt.Errorf("unknown UIPart type: %q", disc.Type)
 	}
+}
+
+// UIPartToPart converts a UI-formatted part into the agent's internal Part form.
+// Parts that exist only in UI projection format are not convertible.
+func UIPartToPart(p UIPart) (Part, bool) {
+	switch v := p.(type) {
+	case UITextPart:
+		return TextPart{
+			Text:             v.Text,
+			State:            v.State,
+			ProviderMetadata: v.ProviderMetadata,
+		}, true
+	case UIReasoningPart:
+		return ReasoningPart{
+			Text:             v.Text,
+			State:            v.State,
+			ProviderMetadata: v.ProviderMetadata,
+		}, true
+	case UIFilePart:
+		if strings.HasPrefix(v.MediaType, "image/") {
+			return ImagePart{
+				Image:     v.URL,
+				MediaType: v.MediaType,
+			}, true
+		}
+		return FilePart{
+			Data:             v.URL,
+			MediaType:        v.MediaType,
+			Filename:         v.Filename,
+			ProviderMetadata: v.ProviderMetadata,
+		}, true
+	case UIStepStartPart:
+		return StepStartPart{}, true
+	case UISourceURLPart:
+		return SourceURLPart{
+			SourceID:         v.SourceID,
+			URL:              v.URL,
+			Title:            v.Title,
+			ProviderMetadata: v.ProviderMetadata,
+		}, true
+	case UISourceDocumentPart:
+		return SourceDocumentPart{
+			SourceID:         v.SourceID,
+			MediaType:        v.MediaType,
+			Title:            v.Title,
+			Filename:         v.Filename,
+			ProviderMetadata: v.ProviderMetadata,
+		}, true
+	case UIDataPart:
+		return DataPart{
+			DataType: strings.TrimPrefix(v.Type, "data-"),
+			ID:       v.ID,
+			Data:     v.Data,
+		}, true
+	default:
+		return nil, false
+	}
+}
+
+// UIPartsToParts converts UI-formatted parts into internal Parts, skipping
+// any parts that have no internal representation.
+func UIPartsToParts(parts []UIPart) []Part {
+	if len(parts) == 0 {
+		return nil
+	}
+	result := make([]Part, 0, len(parts))
+	for _, p := range parts {
+		part, ok := UIPartToPart(p)
+		if ok {
+			result = append(result, part)
+		}
+	}
+	return result
 }

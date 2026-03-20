@@ -163,7 +163,7 @@ func runSubAgentGoroutine(ctx context.Context, rec *taskRecord, subAgent agent.A
 	defer rec.cancel()
 
 	req := agent.PromptRequest{
-		UserParts:    []message.Part{message.TextPart{Text: prompt}},
+		UserParts:    []message.UIPart{message.UITextPart{Text: prompt}},
 		SubagentType: subagentType,
 		MaxTurns:     maxTurns,
 	}

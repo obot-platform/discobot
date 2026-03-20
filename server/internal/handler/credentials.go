@@ -10,6 +10,7 @@ import (
 
 	"github.com/obot-platform/discobot/server/internal/middleware"
 	"github.com/obot-platform/discobot/server/internal/oauth"
+	"github.com/obot-platform/discobot/server/internal/providers"
 	"github.com/obot-platform/discobot/server/internal/service"
 )
 
@@ -19,6 +20,11 @@ type CreateCredentialRequest struct {
 	Name     string `json:"name"`
 	AuthType string `json:"authType"` // "api_key", "id", or "oauth"
 	APIKey   string `json:"apiKey,omitempty"`
+}
+
+// GetCredentialTypes returns the credential choices used by the current UI.
+func (h *Handler) GetCredentialTypes(w http.ResponseWriter, _ *http.Request) {
+	h.JSON(w, http.StatusOK, map[string]any{"credentialTypes": providers.GetCredentialTypes()})
 }
 
 // ListCredentials returns all credentials for a project (safe info only)

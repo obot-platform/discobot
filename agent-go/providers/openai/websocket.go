@@ -87,11 +87,6 @@ func (e *openAIStreamError) Error() string {
 	return fmt.Sprintf("openai: stream error: %s", e.message)
 }
 
-func isPreviousResponseNotFoundError(err error) bool {
-	var streamErr *openAIStreamError
-	return errors.As(err, &streamErr) && streamErr.code == "previous_response_not_found"
-}
-
 // newWSPool derives a wss:// WebSocket URL from the HTTP base URL and returns
 // an initialised wsPool. Connections are created lazily on first use.
 func newWSPool(apiKey, httpBaseURL string) *wsPool {
@@ -310,18 +305,13 @@ func (p *Provider) completeViaWebSocket(ctx context.Context, fullBody map[string
 			return
 		}
 
-		// A previous_response_id cache miss means this socket cannot continue that
-		// chain; retry from full history on a fresh socket.
-		if prevRespID != "" && isPreviousResponseNotFoundError(result.err) {
-			prevRespID = ""
-		}
-
 		if !shouldRetryWebSocketAttempt(ctx, result.err, retryCount) {
 			yield(nil, result.err)
 			return
 		}
 
 		retryCount++
+		// Retry from full history on a fresh socket.
 		prevRespID = ""
 		delay := wsRetryDelay(retryCount)
 		if !waitForWebSocketRetry(ctx, delay) {

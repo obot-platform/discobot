@@ -45,8 +45,7 @@ func TestCreateSession_ViaChat(t *testing.T) {
 	// Sessions are created implicitly via the chat endpoint
 	// Format matches AI SDK's DefaultChatTransport with UIMessage format
 	sessionID := "test-session-id-1"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -95,7 +94,7 @@ func TestCreateSession_ViaChat(t *testing.T) {
 	}
 }
 
-func TestCreateSession_ViaChatWithSessionID(t *testing.T) {
+func TestCreateSession_ViaChatWithSessionIDPath(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -104,8 +103,7 @@ func TestCreateSession_ViaChatWithSessionID(t *testing.T) {
 	client := ts.AuthenticatedClient(user)
 
 	sessionID := "test-session-id-session-field"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"sessionId": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -134,7 +132,7 @@ func TestCreateSession_ViaChatWithSessionID(t *testing.T) {
 	}
 }
 
-func TestCreateSession_ViaChatRequiresIDOrSessionID(t *testing.T) {
+func TestCreateSession_ViaLegacyChatEndpoint_NotFound(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -146,13 +144,7 @@ func TestCreateSession_ViaChatRequiresIDOrSessionID(t *testing.T) {
 	})
 	defer resp.Body.Close()
 
-	AssertStatus(t, resp, http.StatusBadRequest)
-
-	var result map[string]interface{}
-	ParseJSON(t, resp, &result)
-	if result["error"] != "id or sessionId is required" {
-		t.Fatalf("Expected error %q, got %v", "id or sessionId is required", result["error"])
-	}
+	AssertStatus(t, resp, http.StatusNotFound)
 }
 
 func TestCreateSession_ViaEmptyChat(t *testing.T) {
@@ -164,8 +156,7 @@ func TestCreateSession_ViaEmptyChat(t *testing.T) {
 	client := ts.AuthenticatedClient(user)
 
 	sessionID := "test-session-id-empty-chat"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id":          sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages":    []map[string]interface{}{},
 		"workspaceId": workspace.ID,
 	})
@@ -207,8 +198,7 @@ func TestCreateSession_ViaCreateSessionEndpointWithoutWorkspace(t *testing.T) {
 	client := ts.AuthenticatedClient(user)
 
 	sessionID := "test-session-id-no-workspace-1"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id":       sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{},
 	})
 	defer resp.Body.Close()
@@ -263,8 +253,7 @@ func TestCreateSession_ViaChatWithoutWorkspace(t *testing.T) {
 	client := ts.AuthenticatedClient(user)
 
 	sessionID := "test-session-id-no-workspace-2"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -324,8 +313,7 @@ func TestCreateSession_ViaChatWithWorkspace(t *testing.T) {
 	// Sessions are created implicitly via the chat endpoint with workspace
 	// Format matches AI SDK's DefaultChatTransport with UIMessage format
 	sessionID := "test-session-id-2"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -367,8 +355,7 @@ func TestCreateSession_NameFromLongPrompt(t *testing.T) {
 	// Session name is derived from the full prompt text (no truncation)
 	longPrompt := "This is a very long prompt that should be truncated to fit within the 50 character limit for session names"
 	sessionID := "test-session-id-3"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",

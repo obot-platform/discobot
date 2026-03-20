@@ -24,18 +24,18 @@ import (
 )
 
 // readMultilineInput captures input lines until endMarker is entered as a
-// standalone line. It returns a mixed part list where pasted image file paths
-// and raw image bytes are converted to ImagePart, and all remaining content is
-// accumulated into TextPart blocks.
-func readMultilineInput(prompt, endMarker, cwd string) ([]message.Part, error) {
-	var parts []message.Part
+// standalone line. It returns UI-formatted parts where pasted image file paths
+// and raw image bytes are converted to file parts, and all remaining content is
+// accumulated into text parts.
+func readMultilineInput(prompt, endMarker, cwd string) ([]message.UIPart, error) {
+	var parts []message.UIPart
 	var text strings.Builder
 
 	flushText := func() {
 		if text.Len() == 0 {
 			return
 		}
-		parts = append(parts, message.TextPart{Text: text.String()})
+		parts = append(parts, message.UITextPart{Text: text.String()})
 		text.Reset()
 	}
 
@@ -64,7 +64,7 @@ func readMultilineInput(prompt, endMarker, cwd string) ([]message.Part, error) {
 	}
 }
 
-func multilinePartFromInput(input []byte, cwd string) (message.Part, bool, error) {
+func multilinePartFromInput(input []byte, cwd string) (message.UIPart, bool, error) {
 	if part, ok, err := imagePartFromPathInput(input, cwd); err != nil {
 		return nil, false, err
 	} else if ok {
@@ -76,17 +76,17 @@ func multilinePartFromInput(input []byte, cwd string) (message.Part, bool, error
 	return nil, false, nil
 }
 
-func imagePartFromPathInput(input []byte, cwd string) (message.ImagePart, bool, error) {
+func imagePartFromPathInput(input []byte, cwd string) (message.UIFilePart, bool, error) {
 	if !utf8.Valid(input) {
-		return message.ImagePart{}, false, nil
+		return message.UIFilePart{}, false, nil
 	}
 	text := strings.TrimSpace(string(input))
 	if text == "" {
-		return message.ImagePart{}, false, nil
+		return message.UIFilePart{}, false, nil
 	}
 	text = strings.Trim(text, "\"'")
 	if strings.ContainsAny(text, "\r\n\x00") {
-		return message.ImagePart{}, false, nil
+		return message.UIFilePart{}, false, nil
 	}
 	path := strings.TrimPrefix(text, "file://")
 	if !filepath.IsAbs(path) {
@@ -96,34 +96,34 @@ func imagePartFromPathInput(input []byte, cwd string) (message.ImagePart, bool, 
 
 	fi, err := os.Stat(path)
 	if err != nil || fi.IsDir() {
-		return message.ImagePart{}, false, nil
+		return message.UIFilePart{}, false, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return message.ImagePart{}, false, err
+		return message.UIFilePart{}, false, err
 	}
 	mediaType := http.DetectContentType(data)
 	if !strings.HasPrefix(mediaType, "image/") {
 		extType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
 		if !strings.HasPrefix(extType, "image/") {
-			return message.ImagePart{}, false, nil
+			return message.UIFilePart{}, false, nil
 		}
 		mediaType = extType
 	}
 
-	return message.ImagePart{Image: base64.StdEncoding.EncodeToString(data), MediaType: mediaType}, true, nil
+	return message.UIFilePart{URL: base64.StdEncoding.EncodeToString(data), MediaType: mediaType}, true, nil
 }
 
-func imagePartFromRawBytes(input []byte) (message.ImagePart, bool) {
+func imagePartFromRawBytes(input []byte) (message.UIFilePart, bool) {
 	trimmed := bytes.Trim(input, "\r\n")
 	if len(trimmed) == 0 {
-		return message.ImagePart{}, false
+		return message.UIFilePart{}, false
 	}
 	mediaType := http.DetectContentType(trimmed)
 	if !strings.HasPrefix(mediaType, "image/") {
-		return message.ImagePart{}, false
+		return message.UIFilePart{}, false
 	}
-	return message.ImagePart{Image: base64.StdEncoding.EncodeToString(trimmed), MediaType: mediaType}, true
+	return message.UIFilePart{URL: base64.StdEncoding.EncodeToString(trimmed), MediaType: mediaType}, true
 }
 
 // handleSlashCommand dispatches a slash command entered in the main input loop.

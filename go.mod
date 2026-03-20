@@ -8,6 +8,7 @@ require (
 	// Server dependencies
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
+	github.com/obot-platform/discobot/modelsdev v0.0.0
 
 	// Proxy dependencies
 	github.com/elazarl/goproxy v1.7.2
@@ -320,6 +321,8 @@ require (
 
 // Explicit version overrides to avoid ambiguous imports
 replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20251202230838-ff82c1b0f217
+
+replace github.com/obot-platform/discobot/modelsdev => ./modelsdev
 
 tool (
 	github.com/go-delve/delve/cmd/dlv

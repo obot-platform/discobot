@@ -147,9 +147,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		ErrorMessage:    strPtr("error message"),
 		WorkspacePath:   strPtr("/path/to/workspace"),
 		WorkspaceCommit: strPtr("commit789"),
-		Model:           strPtr("claude-opus-4-6"),
-		Reasoning:       strPtr("enabled"),
-		Mode:            strPtr("plan"),
 		ActiveEnvSetIDs: []string{"test-env-set-id"},
 	}
 
@@ -177,9 +174,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		"ErrorMessage":    "ErrorMessage",
 		"WorkspacePath":   "WorkspacePath",
 		"WorkspaceCommit": "WorkspaceCommit",
-		"Model":           "Model",
-		"Reasoning":       "Reasoning",
-		"Mode":            "Mode",
 		"ActiveEnvSetIDs": "ActiveEnvSetIDs",
 		// Excluded fields (not part of API response):
 		// - CreatedAt, UpdatedAt: mapped to Timestamp
@@ -241,12 +235,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 	// Verify specific field values to ensure mapping is correct
 	if result.ID != "test-id" {
 		t.Errorf("ID = %q, want %q", result.ID, "test-id")
-	}
-	if result.Model != "claude-opus-4-6" {
-		t.Errorf("Model = %q, want %q", result.Model, "claude-opus-4-6")
-	}
-	if result.Reasoning != "enabled" {
-		t.Errorf("Reasoning = %q, want %q", result.Reasoning, "enabled")
 	}
 	if result.DisplayName != "Test Display" {
 		t.Errorf("DisplayName = %q, want %q", result.DisplayName, "Test Display")

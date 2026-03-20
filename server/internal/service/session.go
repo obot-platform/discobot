@@ -32,6 +32,8 @@ const (
 // ErrSessionOperationInProgress indicates a commit/rebase operation is already running.
 var ErrSessionOperationInProgress = errors.New("session operation already in progress")
 
+const legacySessionStatusRunning = "running"
+
 // sessionIDRegex matches valid session IDs (alphanumeric and hyphens only).
 var sessionIDRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
@@ -51,6 +53,13 @@ func ValidateSessionID(sessionID string) error {
 	return nil
 }
 
+func normalizeSessionStatus(status string) string {
+	if status == legacySessionStatusRunning {
+		return model.SessionStatusReady
+	}
+	return status
+}
+
 // Session represents a chat session (for API responses)
 type Session struct {
 	ID              string     `json:"id"`
@@ -68,9 +77,6 @@ type Session struct {
 	ErrorMessage    string     `json:"errorMessage,omitempty"`
 	Files           []FileNode `json:"files"`
 	WorkspaceID     string     `json:"workspaceId,omitempty"`
-	Model           string     `json:"model,omitempty"`
-	Reasoning       string     `json:"reasoning,omitempty"`
-	Mode            string     `json:"mode,omitempty"`
 	WorkspacePath   string     `json:"workspacePath,omitempty"`
 	WorkspaceCommit string     `json:"workspaceCommit,omitempty"`
 	ActiveEnvSetIDs []string   `json:"activeEnvSetIds,omitempty"`
@@ -179,29 +185,11 @@ func (s *SessionService) CreateSession(ctx context.Context, projectID, workspace
 }
 
 // CreateSessionWithID creates a new session with the provided client ID.
-func (s *SessionService) CreateSessionWithID(ctx context.Context, sessionID, projectID, workspaceID, name, modelID, reasoning, mode string) (*Session, error) {
-	var modelPtr *string
-	if modelID != "" {
-		modelPtr = &modelID
-	}
-
-	var reasoningPtr *string
-	if reasoning != "" {
-		reasoningPtr = &reasoning
-	}
-
-	var modePtr *string
-	if mode != "" {
-		modePtr = &mode
-	}
-
+func (s *SessionService) CreateSessionWithID(ctx context.Context, sessionID, projectID, workspaceID, name string) (*Session, error) {
 	sess := &model.Session{
 		ID:          sessionID, // Use client-provided ID
 		ProjectID:   projectID,
 		WorkspaceID: workspaceID,
-		Model:       modelPtr,
-		Reasoning:   reasoningPtr,
-		Mode:        modePtr,
 		Name:        name,
 		Description: nil,
 		Status:      model.SessionStatusInitializing,
@@ -215,6 +203,8 @@ func (s *SessionService) CreateSessionWithID(ctx context.Context, sessionID, pro
 
 // UpdateStatus updates the session status and optional error message, and publishes an SSE event.
 func (s *SessionService) UpdateStatus(ctx context.Context, projectID, sessionID, status string, errorMsg *string) (*Session, error) {
+	status = normalizeSessionStatus(status)
+
 	// Use targeted column update to avoid overwriting concurrent changes to other fields
 	if err := s.store.UpdateSessionStatus(ctx, sessionID, status, errorMsg); err != nil {
 		return nil, fmt.Errorf("failed to update session status: %w", err)
@@ -226,23 +216,9 @@ func (s *SessionService) UpdateStatus(ctx context.Context, projectID, sessionID,
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	// If the session is transitioning to running and was previously committed,
-	// clear the commit status so it goes back to an open state.
-	// The actual commit (appliedCommit) is preserved.
-	commitStatusChanged := ""
-	if status == model.SessionStatusRunning && sess.CommitStatus == model.CommitStatusCompleted {
-		sess.CommitStatus = model.CommitStatusNone
-		sess.CommitOperation = nil
-		sess.CommitError = nil
-		if err := s.store.UpdateSession(ctx, sess); err != nil {
-			return nil, fmt.Errorf("failed to clear commit status: %w", err)
-		}
-		commitStatusChanged = model.CommitStatusNone
-	}
-
 	// Always publish SSE event for status changes
 	if s.eventBroker != nil {
-		if err := s.eventBroker.PublishSessionUpdated(ctx, projectID, sessionID, status, commitStatusChanged); err != nil {
+		if err := s.eventBroker.PublishSessionUpdated(ctx, projectID, sessionID, status, ""); err != nil {
 			log.Printf("Failed to publish session update event: %v", err)
 		}
 	}
@@ -269,7 +245,7 @@ func (s *SessionService) UpdateSession(ctx context.Context, sessionID, name stri
 		}
 	}
 	if status != "" {
-		sess.Status = status
+		sess.Status = normalizeSessionStatus(status)
 	}
 	if err := s.store.UpdateSession(ctx, sess); err != nil {
 		return nil, fmt.Errorf("failed to update session: %w", err)
@@ -282,6 +258,28 @@ func (s *SessionService) UpdateSession(ctx context.Context, sessionID, name stri
 	}
 
 	return s.mapSession(sess), nil
+}
+
+// ClearCompletedCommitStatus resets the commit status for a session that is
+// moving back into active editing/chat work.
+func (s *SessionService) ClearCompletedCommitStatus(ctx context.Context, projectID, sessionID string) error {
+	sess, err := s.store.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if sess.CommitStatus != model.CommitStatusCompleted {
+		return nil
+	}
+
+	sess.CommitStatus = model.CommitStatusNone
+	sess.CommitOperation = nil
+	sess.CommitError = nil
+	if err := s.store.UpdateSession(ctx, sess); err != nil {
+		return fmt.Errorf("failed to clear commit status: %w", err)
+	}
+
+	s.publishCommitStatusChanged(ctx, projectID, sessionID, model.CommitStatusNone)
+	return nil
 }
 
 // DeleteSession initiates async deletion of a session.
@@ -541,21 +539,6 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 		workspaceCommit = *sess.WorkspaceCommit
 	}
 
-	model := ""
-	if sess.Model != nil {
-		model = *sess.Model
-	}
-
-	reasoning := ""
-	if sess.Reasoning != nil {
-		reasoning = *sess.Reasoning
-	}
-
-	mode := ""
-	if sess.Mode != nil {
-		mode = *sess.Mode
-	}
-
 	activeEnvSetIDs := sess.ActiveEnvSetIDs
 	if activeEnvSetIDs == nil {
 		activeEnvSetIDs = []string{}
@@ -573,7 +556,7 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 		DisplayName:     displayName,
 		Description:     description,
 		Timestamp:       timestamp,
-		Status:          sess.Status,
+		Status:          normalizeSessionStatus(sess.Status),
 		CommitStatus:    sess.CommitStatus,
 		CommitOperation: commitOperation,
 		CommitError:     commitError,
@@ -582,9 +565,6 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 		ErrorMessage:    errorMessage,
 		Files:           []FileNode{},
 		WorkspaceID:     sess.WorkspaceID,
-		Model:           model,
-		Reasoning:       reasoning,
-		Mode:            mode,
 		WorkspacePath:   workspacePath,
 		WorkspaceCommit: workspaceCommit,
 		ActiveEnvSetIDs: activeEnvSetIDs,
@@ -1068,9 +1048,6 @@ func (s *SessionService) sendCommitPrompt(ctx context.Context, projectID string,
 
 	// Dereference model pointer; use empty string if nil (agent will use default)
 	modelID := ""
-	if sess.Model != nil {
-		modelID = *sess.Model
-	}
 
 	streamCh, err := client.SendMessages(ctx, sess.ID, messages, modelID, nil)
 	if err != nil {
@@ -1119,9 +1096,6 @@ func (s *SessionService) sendRebasePrompt(ctx context.Context, projectID string,
 	}
 
 	modelID := ""
-	if sess.Model != nil {
-		modelID = *sess.Model
-	}
 
 	streamCh, err := client.SendMessages(ctx, sess.ID, messages, modelID, nil)
 	if err != nil {

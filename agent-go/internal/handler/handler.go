@@ -26,6 +26,7 @@ type Handler struct {
 	hookManager    *hooks.Manager          // nil if hooks are disabled
 	serviceManager *services.Manager       // always initialized
 	defaultAgent   *agentimpl.DefaultAgent // for MCP manager access; may be nil
+	chatPingEvery  time.Duration
 
 	hookMu         sync.Mutex
 	hookRetryCount int
@@ -42,6 +43,7 @@ func New(agentCwd string, completions *agent.CompletionManager, hookManager *hoo
 		hookManager:       hookManager,
 		serviceManager:    serviceManager,
 		defaultAgent:      defaultAgent,
+		chatPingEvery:     defaultChatStreamPingInterval,
 		answeredQuestions: make(map[string]bool),
 	}
 
@@ -84,8 +86,8 @@ func (h *Handler) scheduleHookEvaluation(threadID string) {
 	}
 
 	req := agent.PromptRequest{
-		UserParts: []message.Part{
-			message.TextPart{Text: result.LLMMessage},
+		UserParts: []message.UIPart{
+			message.UITextPart{Text: result.LLMMessage},
 		},
 	}
 
@@ -118,13 +120,25 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	reg.Register(r, routes.Route{Method: "GET", Pattern: "/threads", Handler: h.ListThreads,
 		Meta: routes.Meta{Group: "Threads", Description: "List all threads"}})
 	reg.Register(r, routes.Route{Method: "POST", Pattern: "/threads", Handler: h.CreateThread,
-		Meta: routes.Meta{Group: "Threads", Description: "Create a thread"}})
+		Meta: routes.Meta{
+			Group:       "Threads",
+			Description: "Create a thread",
+			Body:        map[string]any{"id": "thread-1", "name": "Debug build failure"},
+		}})
 	reg.Register(r, routes.Route{Method: "GET", Pattern: "/threads/{id}", Handler: h.GetThread,
 		Meta: routes.Meta{Group: "Threads", Description: "Get thread metadata"}})
 	reg.Register(r, routes.Route{Method: "PUT", Pattern: "/threads/{id}", Handler: h.UpdateThread,
-		Meta: routes.Meta{Group: "Threads", Description: "Replace thread metadata"}})
+		Meta: routes.Meta{
+			Group:       "Threads",
+			Description: "Replace thread metadata",
+			Body:        map[string]any{"name": "Investigate failing CI"},
+		}})
 	reg.Register(r, routes.Route{Method: "PATCH", Pattern: "/threads/{id}", Handler: h.UpdateThread,
-		Meta: routes.Meta{Group: "Threads", Description: "Update thread metadata"}})
+		Meta: routes.Meta{
+			Group:       "Threads",
+			Description: "Update thread metadata",
+			Body:        map[string]any{"name": "Investigate failing CI"},
+		}})
 	reg.Register(r, routes.Route{Method: "DELETE", Pattern: "/threads/{id}", Handler: h.DeleteThread,
 		Meta: routes.Meta{Group: "Threads", Description: "Delete a thread"}})
 
@@ -137,7 +151,21 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			Meta: routes.Meta{Group: "Threads", Description: "Get conversation history"}})
 
 		threadReg.Register(r, routes.Route{Method: "POST", Pattern: "/chat", Handler: h.PostChat,
-			Meta: routes.Meta{Group: "Chat", Description: "Start a completion turn"}})
+			Meta: routes.Meta{
+				Group:       "Chat",
+				Description: "Start a completion turn",
+				Body: map[string]any{
+					"messages": []map[string]any{{
+						"id":   "msg-1",
+						"role": "user",
+						"parts": []map[string]any{{
+							"type":  "text",
+							"text":  "Help me understand this repository.",
+							"state": "done",
+						}},
+					}},
+				},
+			}})
 		threadReg.Register(r, routes.Route{Method: "GET", Pattern: "/chat/status", Handler: h.ChatStatus,
 			Meta: routes.Meta{Group: "Chat", Description: "Check whether a completion is active"}})
 		threadReg.Register(r, routes.Route{Method: "GET", Pattern: "/chat/stream", Handler: h.ChatStream,
@@ -147,7 +175,15 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		threadReg.Register(r, routes.Route{Method: "GET", Pattern: "/chat/question/{questionId}", Handler: h.GetQuestion,
 			Meta: routes.Meta{Group: "Chat", Description: "Get pending AskUserQuestion"}})
 		threadReg.Register(r, routes.Route{Method: "POST", Pattern: "/chat/answer/{questionId}", Handler: h.PostAnswer,
-			Meta: routes.Meta{Group: "Chat", Description: "Submit answer to pending question"}})
+			Meta: routes.Meta{
+				Group:       "Chat",
+				Description: "Submit answer to pending question",
+				Body: map[string]any{
+					"answers": map[string]string{
+						"Which model should we use?": "Claude Sonnet",
+					},
+				},
+			}})
 	})
 
 	// File system routes
@@ -161,11 +197,23 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		Meta: routes.Meta{Group: "Files", Description: "Read file contents",
 			Params: []routes.Param{{Name: "path", In: "query", Required: true}}}})
 	reg.Register(r, routes.Route{Method: "POST", Pattern: "/files/write", Handler: h.WriteFile,
-		Meta: routes.Meta{Group: "Files", Description: "Write file contents"}})
+		Meta: routes.Meta{
+			Group:       "Files",
+			Description: "Write file contents",
+			Body:        map[string]any{"path": "notes/todo.txt", "content": "Ship it\n", "encoding": "utf8"},
+		}})
 	reg.Register(r, routes.Route{Method: "POST", Pattern: "/files/delete", Handler: h.DeleteFile,
-		Meta: routes.Meta{Group: "Files", Description: "Delete a file or directory"}})
+		Meta: routes.Meta{
+			Group:       "Files",
+			Description: "Delete a file or directory",
+			Body:        map[string]any{"path": "notes/todo.txt"},
+		}})
 	reg.Register(r, routes.Route{Method: "POST", Pattern: "/files/rename", Handler: h.RenameFile,
-		Meta: routes.Meta{Group: "Files", Description: "Rename or move a file"}})
+		Meta: routes.Meta{
+			Group:       "Files",
+			Description: "Rename or move a file",
+			Body:        map[string]any{"oldPath": "notes/todo.txt", "newPath": "notes/archive/todo.txt"},
+		}})
 
 	// Git routes
 	reg.Register(r, routes.Route{Method: "GET", Pattern: "/diff", Handler: h.GetDiff,
@@ -202,7 +250,11 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	reg.Register(r, routes.Route{Method: "GET", Pattern: "/mcp/servers/{name}/oauth", Handler: h.GetMCPServerOAuth,
 		Meta: routes.Meta{Group: "MCP", Description: "Get OAuth authorization URL for MCP server"}})
 	reg.Register(r, routes.Route{Method: "POST", Pattern: "/mcp/servers/{name}/oauth/code", Handler: h.PostMCPServerOAuthCode,
-		Meta: routes.Meta{Group: "MCP", Description: "Submit OAuth authorization code for MCP server"}})
+		Meta: routes.Meta{
+			Group:       "MCP",
+			Description: "Submit OAuth authorization code for MCP server",
+			Body:        map[string]any{"code": "abc123", "state": "xyz789"},
+		}})
 }
 
 // JSON writes a JSON response with the given status code.

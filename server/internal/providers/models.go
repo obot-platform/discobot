@@ -1,233 +1,119 @@
 package providers
 
 import (
-	"encoding/json"
-	"log"
 	"strings"
-	"sync"
 
-	"github.com/obot-platform/discobot/server/static"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
-// ModelInfo represents a model with its metadata
+// ModelInfo represents a model with its metadata.
 type ModelInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Family      string `json:"family,omitempty"`
-	Provider    string `json:"provider"` // Set during parsing from provider ID
-	Description string `json:"description,omitempty"`
-	Reasoning   bool   `json:"reasoning"` // Whether model supports extended thinking
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Family             string   `json:"family,omitempty"`
+	Provider           string   `json:"provider"` // Set during parsing from provider ID
+	Description        string   `json:"description,omitempty"`
+	Reasoning          bool     `json:"reasoning"` // Whether model supports extended thinking
+	ReasoningLevels    []string `json:"reasoningLevels,omitempty"`
+	DefaultReasonLevel string   `json:"defaultReasonLevel,omitempty"`
 }
 
-// modelsDevData represents the entire models.dev api.json structure
-type modelsDevData map[string]providerWithModels
-
-// providerWithModels represents a provider entry with its models
-type providerWithModels struct {
-	ID     string                   `json:"id"`
-	Name   string                   `json:"name"`
-	Models map[string]modelMetadata `json:"models"`
+func rawModelID(modelID string) string {
+	if idx := strings.Index(modelID, "/"); idx >= 0 {
+		return modelID[idx+1:]
+	}
+	return modelID
 }
 
-// modelCost represents the cost per million tokens
-type modelCost struct {
-	Input  float64 `json:"input"`
-	Output float64 `json:"output"`
+// toServerModelInfo converts a modelsdev.ModelInfo into the server's ModelInfo,
+// setting the qualified ID and provider display name.
+func toServerModelInfo(providerID, providerName string, md modelsdev.ModelInfo) ModelInfo {
+	return ModelInfo{
+		ID:                 providerID + "/" + md.ID,
+		Name:               md.Name,
+		Family:             md.Family,
+		Provider:           providerName,
+		Reasoning:          md.Reasoning,
+		ReasoningLevels:    append([]string(nil), md.ReasoningLevels...),
+		DefaultReasonLevel: md.DefaultReasonLevel,
+	}
 }
 
-// modelMetadata represents the raw model data from models.dev
-type modelMetadata struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Family    string    `json:"family,omitempty"`
-	Reasoning bool      `json:"reasoning"`
-	ToolCall  bool      `json:"tool_call"`
-	Cost      modelCost `json:"cost"`
-}
-
-// Provider aliases for model lookups in models-dev-api.json.
-// Example: Codex credentials should surface OpenAI models.
-var modelProviderAliases = map[string]string{
-	"codex": "openai",
-}
-
-func resolveModelProviderID(providerID string) string {
-	if alias, ok := modelProviderAliases[providerID]; ok {
-		return alias
+// providerDisplayName returns the display name for the given provider ID.
+func providerDisplayName(providerID string) string {
+	if pi := modelsdev.LookupProvider(providerID); pi != nil {
+		return pi.Name
 	}
 	return providerID
 }
 
-func resolveProviderAndModelID(providerID, modelID string) (string, string) {
-	resolvedProviderID := resolveModelProviderID(providerID)
-	rawModelID := modelID
-	if idx := strings.Index(rawModelID, "/"); idx >= 0 {
-		rawModelID = rawModelID[idx+1:]
-	}
-	return resolvedProviderID, rawModelID
-}
+// ── public API ────────────────────────────────────────────────────────────────
 
 // IsProviderModelToolCallable reports whether a model supports tool calling.
 func IsProviderModelToolCallable(providerID, modelID string) bool {
-	loadModelsData()
-	if modelsLoadErr != nil {
-		return false
-	}
-
-	resolvedProviderID, rawModelID := resolveProviderAndModelID(providerID, modelID)
-	provider, exists := cachedModels[resolvedProviderID]
-	if !exists {
-		return false
-	}
-
-	modelData, exists := provider.Models[rawModelID]
-	if !exists {
-		return false
-	}
-
-	return modelData.ToolCall
+	md := modelsdev.Lookup(providerID, rawModelID(modelID))
+	return md != nil && md.ToolCall
 }
 
-// Cached models data
-var (
-	modelsOnce    sync.Once
-	cachedModels  modelsDevData
-	modelsLoadErr error
-)
-
-// loadModelsData loads and caches the models.dev data
-func loadModelsData() {
-	modelsOnce.Do(func() {
-		data, err := static.Files.ReadFile("models-dev-api.json")
-		if err != nil {
-			log.Printf("Warning: Failed to load models-dev-api.json: %v", err)
-			modelsLoadErr = err
-			return
-		}
-
-		if err := json.Unmarshal(data, &cachedModels); err != nil {
-			log.Printf("Warning: Failed to parse models-dev-api.json: %v", err)
-			modelsLoadErr = err
-			return
-		}
-	})
-}
-
-// GetModelsForProviders returns all models for the given provider IDs
+// GetModelsForProviders returns all tool-callable models for the given provider IDs.
 func GetModelsForProviders(providerIDs []string) ([]ModelInfo, error) {
-	loadModelsData()
-
-	if modelsLoadErr != nil {
-		return nil, modelsLoadErr
-	}
-
-	// Create a map for fast provider lookup
-	providerMap := make(map[string]bool)
+	providerMap := make(map[string]bool, len(providerIDs))
 	for _, id := range providerIDs {
-		providerMap[resolveModelProviderID(id)] = true
-	}
-
-	var models []ModelInfo
-	seen := make(map[string]bool) // Deduplicate models by ID
-
-	for providerID, provider := range cachedModels {
-		// Skip providers not in the requested list
-		if !providerMap[providerID] {
-			continue
-		}
-
-		// Extract all models for this provider
-		for _, modelData := range provider.Models {
-			if !modelData.ToolCall {
-				continue
-			}
-
-			// Create fully qualified model ID: provider-id/model-id
-			qualifiedID := providerID + "/" + modelData.ID
-
-			// Skip if we've already seen this model ID
-			if seen[qualifiedID] {
-				continue
-			}
-			seen[qualifiedID] = true
-
-			models = append(models, ModelInfo{
-				ID:        qualifiedID,
-				Name:      modelData.Name,
-				Family:    modelData.Family,
-				Provider:  provider.Name, // Use provider name, not ID
-				Reasoning: modelData.Reasoning,
-			})
-		}
-	}
-
-	return models, nil
-}
-
-// GetFreeModelsForProvider returns models with zero cost for a specific provider
-func GetFreeModelsForProvider(providerID string) ([]ModelInfo, error) {
-	loadModelsData()
-
-	if modelsLoadErr != nil {
-		return nil, modelsLoadErr
-	}
-
-	resolvedProviderID := resolveModelProviderID(providerID)
-	provider, exists := cachedModels[resolvedProviderID]
-	if !exists {
-		return nil, nil
-	}
-
-	var models []ModelInfo
-	for _, modelData := range provider.Models {
-		if modelData.Cost.Input == 0 && modelData.Cost.Output == 0 && modelData.ToolCall {
-			models = append(models, ModelInfo{
-				ID:        resolvedProviderID + "/" + modelData.ID,
-				Name:      modelData.Name,
-				Family:    modelData.Family,
-				Provider:  provider.Name,
-				Reasoning: modelData.Reasoning,
-			})
-		}
-	}
-
-	return models, nil
-}
-
-// GetAllModels returns all models across all providers
-func GetAllModels() ([]ModelInfo, error) {
-	loadModelsData()
-
-	if modelsLoadErr != nil {
-		return nil, modelsLoadErr
+		providerMap[id] = true
 	}
 
 	var models []ModelInfo
 	seen := make(map[string]bool)
 
-	for providerID, provider := range cachedModels {
-		for _, modelData := range provider.Models {
-			if !modelData.ToolCall {
+	for providerID := range providerMap {
+		name := providerDisplayName(providerID)
+		for _, md := range modelsdev.AllForProvider(providerID) {
+			if !md.ToolCall {
 				continue
 			}
-
-			// Create fully qualified model ID: provider-id/model-id
-			qualifiedID := providerID + "/" + modelData.ID
-
+			qualifiedID := providerID + "/" + md.ID
 			if seen[qualifiedID] {
 				continue
 			}
 			seen[qualifiedID] = true
-
-			models = append(models, ModelInfo{
-				ID:        qualifiedID,
-				Name:      modelData.Name,
-				Family:    modelData.Family,
-				Provider:  provider.Name,
-				Reasoning: modelData.Reasoning,
-			})
+			models = append(models, toServerModelInfo(providerID, name, md))
 		}
 	}
 
+	return models, nil
+}
+
+// GetFreeModelsForProvider returns tool-callable models with zero cost for a
+// specific provider.
+func GetFreeModelsForProvider(providerID string) ([]ModelInfo, error) {
+	name := providerDisplayName(providerID)
+
+	var models []ModelInfo
+	for _, md := range modelsdev.AllForProvider(providerID) {
+		if md.ToolCall && md.Cost.Input == 0 && md.Cost.Output == 0 {
+			models = append(models, toServerModelInfo(providerID, name, md))
+		}
+	}
+	return models, nil
+}
+
+// GetAllModels returns all tool-callable models across all providers.
+func GetAllModels() ([]ModelInfo, error) {
+	var models []ModelInfo
+	seen := make(map[string]bool)
+
+	for _, provider := range modelsdev.AllProviders() {
+		for _, md := range modelsdev.AllForProvider(provider.ID) {
+			if !md.ToolCall {
+				continue
+			}
+			qualifiedID := provider.ID + "/" + md.ID
+			if seen[qualifiedID] {
+				continue
+			}
+			seen[qualifiedID] = true
+			models = append(models, toServerModelInfo(provider.ID, provider.Name, md))
+		}
+	}
 	return models, nil
 }

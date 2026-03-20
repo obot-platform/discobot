@@ -4,6 +4,8 @@ FROM golang:1.26 AS proxy-builder
 WORKDIR /build
 
 # Copy module files first for better caching
+# modelsdev/go.mod is needed by the replace directive in the root go.mod
+COPY modelsdev/go.mod ./modelsdev/
 COPY go.mod go.sum ./
 
 # Download dependencies
@@ -21,6 +23,8 @@ FROM golang:1.26 AS agent-builder
 WORKDIR /build
 
 # Copy module files first for better caching
+# modelsdev/go.mod is needed by the replace directive in the root go.mod
+COPY modelsdev/go.mod ./modelsdev/
 COPY go.mod go.sum ./
 
 # Download dependencies
@@ -38,11 +42,18 @@ FROM golang:1.26 AS agent-go-builder
 
 WORKDIR /build
 
+# Copy modelsdev module files first — needed by the replace directive in agent-go/go.mod
+# (replace ../modelsdev resolves to /modelsdev relative to WORKDIR /build)
+COPY modelsdev/go.mod /modelsdev/
+
 # Copy module files first for better layer caching
 COPY agent-go/go.mod agent-go/go.sum ./
 
 # Download dependencies
 RUN go mod download
+
+# Copy modelsdev source (required for compilation, not just module resolution)
+COPY modelsdev/ /modelsdev/
 
 # Copy agent-go source
 COPY agent-go/ ./

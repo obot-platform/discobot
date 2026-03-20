@@ -28,7 +28,7 @@ func (m *mockSubAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 }
 
 func (m *mockSubAgent) Cancel(_ string) bool                                        { return false }
-func (m *mockSubAgent) Messages(_, _ string) ([]json.RawMessage, error)             { return nil, nil }
+func (m *mockSubAgent) Messages(_, _ string) ([]message.UIMessage, error)           { return nil, nil }
 func (m *mockSubAgent) ListModels(_ context.Context) ([]providers.ModelInfo, error) { return nil, nil }
 func (m *mockSubAgent) ListThreads() ([]string, error)                              { return nil, nil }
 func (m *mockSubAgent) InterruptedThreads() ([]string, error)                       { return nil, nil }
@@ -37,6 +37,7 @@ func (m *mockSubAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error)
 }
 func (m *mockSubAgent) SubmitAnswer(_, _ string, _ map[string]string) error { return nil }
 func (m *mockSubAgent) ListCommands() ([]agent.Command, error)              { return nil, nil }
+func (m *mockSubAgent) IsLeaf(_, _ string) (bool, error)                    { return true, nil }
 func (m *mockSubAgent) FinalResponse(threadID string) (string, error) {
 	if m.finalResponseFn != nil {
 		return m.finalResponseFn(threadID)
@@ -154,7 +155,7 @@ func TestTask_ForwardsPromptAndSubagentType(t *testing.T) {
 	subAgent := &mockSubAgent{
 		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 			if len(req.UserParts) > 0 {
-				if tp, ok := req.UserParts[0].(message.TextPart); ok {
+				if tp, ok := req.UserParts[0].(message.UITextPart); ok {
 					gotPrompt = tp.Text
 				}
 			}

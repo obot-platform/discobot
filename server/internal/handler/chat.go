@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,22 +17,13 @@ import (
 
 // ChatRequest represents the request body for the chat endpoint.
 // This matches the AI SDK's DefaultChatTransport format.
-// The Messages field is kept as raw JSON to pass through to the sandbox
-// without requiring the Go server to understand the UIMessage structure.
+// Each element is a single UIMessage encoded as JSON.
 type ChatRequest struct {
-	// ID is the deprecated legacy chat/session ID field.
-	ID string `json:"id"`
-	// SessionID is the preferred explicit session identifier.
-	SessionID string `json:"sessionId,omitempty"`
-	// ThreadID is optional. When omitted, the session ID is used.
-	ThreadID string `json:"threadId,omitempty"`
-	// Messages is optional for create-only requests. When omitted, null, or [], the
+	// Messages is optional for create-only requests. When omitted or [], the
 	// handler creates/validates the session and returns an immediate empty SSE completion.
-	Messages json.RawMessage `json:"messages"`
+	Messages []json.RawMessage `json:"messages"`
 	// Trigger indicates the type of request: "submit-message" or "regenerate-message"
 	Trigger string `json:"trigger,omitempty"`
-	// MessageID is the ID of the message to regenerate (for regenerate-message trigger)
-	MessageID string `json:"messageId,omitempty"`
 	// WorkspaceID is optional for new sessions.
 	// If omitted, the server creates a local workspace under Discobot's data directory.
 	WorkspaceID string `json:"workspaceId,omitempty"`
@@ -46,15 +36,16 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	WorkspaceID string `json:"workspaceId"`
-	SessionID   string `json:"sessionId"`
-	ThreadID    string `json:"threadId"`
-	MessageID   string `json:"messageId,omitempty"`
+	WorkspaceID  string `json:"workspaceId"`
+	SessionID    string `json:"sessionId"`
+	ThreadID     string `json:"threadId"`
+	MessageID    string `json:"messageId,omitempty"`
+	CompletionID string `json:"completionId,omitempty"`
 }
 
 // Chat handles AI chat initiation.
-// POST /api/chat
-// Request body: { id?, sessionId?, threadId?, messages, workspaceId?, trigger?, messageId? }
+// POST /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/chat
+// Request body: { messages, workspaceId?, trigger?, messageId?, model?, reasoning?, mode? }
 // Response: JSON metadata for the initiated chat request
 func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -67,17 +58,16 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	emptySubmission := isEmptyChatMessages(req.Messages)
+	emptySubmission := len(req.Messages) == 0
 
-	sessionID := req.SessionID
+	sessionID := r.PathValue("sessionId")
 	if sessionID == "" {
-		sessionID = req.ID
+		h.Error(w, http.StatusBadRequest, "sessionId is required")
+		return
 	}
-	threadID := resolveChatThreadID(sessionID, req.ThreadID)
-
-	// The client must provide either the legacy id or the preferred sessionId.
-	if sessionID == "" {
-		h.Error(w, http.StatusBadRequest, "id or sessionId is required")
+	threadID := r.PathValue("threadId")
+	if threadID == "" {
+		h.Error(w, http.StatusBadRequest, "threadId is required")
 		return
 	}
 	// Check if session exists
@@ -120,9 +110,6 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 			SessionID:   sessionID,
 			ProjectID:   projectID,
 			WorkspaceID: workspaceID,
-			Model:       req.Model,
-			Reasoning:   req.Reasoning,
-			Mode:        req.Mode,
 			Messages:    req.Messages,
 		})
 		if err != nil {
@@ -135,7 +122,7 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: sessionWorkspaceID,
 		SessionID:   sessionID,
 		ThreadID:    threadID,
-		MessageID:   extractSubmittedMessageID(req.Messages, req.MessageID),
+		MessageID:   lastUserMessageID(req.Messages),
 	}
 
 	if emptySubmission {
@@ -145,28 +132,31 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	// Use a context that won't be cancelled when the client disconnects.
 	// This ensures sandbox creation and message sending complete even if the
-	// client aborts the request. The explicit cancel endpoint (/chat/{id}/cancel)
-	// remains the way to stop a running chat completion.
+	// client aborts the request. The explicit cancel endpoint
+	// (/sessions/{sessionId}/threads/{threadId}/cancel) remains the way to stop a running chat completion.
 	sendCtx := context.WithoutCancel(ctx)
-	go func() {
-		if _, err := h.chatService.StartChat(sendCtx, projectID, sessionID, threadID, req.Messages, req.Model, req.Reasoning, req.Mode); err != nil {
-			log.Printf("[Chat] Failed to start chat for session %s: %v", sessionID, err)
-		}
-	}()
+	_, started, err := h.chatService.StartChat(sendCtx, projectID, sessionID, threadID, req.Messages, req.Model, req.Reasoning, req.Mode)
+	if err != nil {
+		log.Printf("[Chat] Failed to start chat for session %s: %v", sessionID, err)
+		h.Error(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	response.CompletionID = started.CompletionID
 
 	h.JSON(w, http.StatusOK, response)
 }
 
 // ChatStream handles resuming an in-progress chat stream.
-// GET /api/chat/{sessionId}/stream
+// GET /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/stream
 // Query params:
 //   - replay=true: stream the last completed turn even if no completion is active
 //
-// Response: SSE stream if completion in progress (or replay requested), 204 No Content if not
+// Response: long-lived SSE stream for the thread, or 204 No Content if the
+// thread/session cannot currently provide a stream
 func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
-	sessionID, threadID, existingSession, ok := h.resolveSessionAndThread(w, r, projectID, true)
+	sessionID, threadID, _, ok := h.resolveSessionAndThread(w, r, projectID, true)
 	if !ok {
 		return
 	}
@@ -183,9 +173,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if channel is already closed (no active completion).
-	// With replay=true this check is skipped — the channel will carry completed chunks.
-	// Store the first message if we consume one during this check.
+	// Store the first message if we consume one during this initial readiness check.
 	var firstLine *service.SSELine
 	if !replay {
 		select {
@@ -199,14 +187,6 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			firstLine = &line
 		default:
 			// Channel not ready yet - we have a stream, set up SSE
-		}
-	}
-
-	// Mark session as running if it isn't already. The session status poller
-	// handles resetting back to ready once the agent-api completion finishes.
-	if existingSession.Status != model.SessionStatusRunning {
-		if _, err := h.sessionService.UpdateStatus(ctx, projectID, sessionID, model.SessionStatusRunning, nil); err != nil {
-			log.Printf("[ChatStream] Warning: failed to update session %s status to running: %v", sessionID, err)
 		}
 	}
 
@@ -225,14 +205,10 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 	// Send the first event if we consumed one during the check
 	if firstLine != nil {
-		if firstLine.Done {
-			log.Printf("[ChatStream] Received done signal from sandbox (first line)")
+		if !firstLine.Done {
 			writeStreamEvent(w, *firstLine)
 			flusher.Flush()
-			return
 		}
-		writeStreamEvent(w, *firstLine)
-		flusher.Flush()
 	}
 
 	// Pass through remaining SSE events from sandbox
@@ -244,16 +220,10 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		case line, ok := <-sseCh:
 			if !ok {
-				// Channel closed without explicit done event.
-				writeStreamEvent(w, service.SSELine{Event: "done", Data: `{}`, Done: true})
-				flusher.Flush()
 				return
 			}
 			if line.Done {
-				log.Printf("[ChatStream] Received done signal from sandbox")
-				writeStreamEvent(w, line)
-				flusher.Flush()
-				return
+				continue
 			}
 			writeStreamEvent(w, line)
 			flusher.Flush()
@@ -271,8 +241,8 @@ func writeStreamEvent(w http.ResponseWriter, line service.SSELine) {
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", line.Data)
 }
 
-// ChatQuestion returns the current pending AskUserQuestion for a session.
-// GET /api/chat/{sessionId}/question/{questionId}
+// ChatQuestion returns the current pending AskUserQuestion for a session thread.
+// GET /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/question/{questionId}
 // Returns { status: "pending", question: {...} } if that question is still waiting
 // Returns { status: "answered", question: null } if already answered or unknown
 func (h *Handler) ChatQuestion(w http.ResponseWriter, r *http.Request) {
@@ -295,8 +265,8 @@ func (h *Handler) ChatQuestion(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, result)
 }
 
-// ChatAnswer submits answers to a pending AskUserQuestion for a session.
-// POST /api/chat/{sessionId}/answer/{questionId}
+// ChatAnswer submits answers to a pending AskUserQuestion for a session thread.
+// POST /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/answer/{questionId}
 func (h *Handler) ChatAnswer(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
@@ -338,7 +308,7 @@ func (h *Handler) ChatAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 // ChatCancel handles cancelling an in-progress chat completion.
-// POST /api/projects/{projectId}/chat/{sessionId}/cancel
+// POST /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/cancel
 func (h *Handler) ChatCancel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
@@ -358,22 +328,7 @@ func (h *Handler) ChatCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update session status to ready after successful cancellation
-	// UpdateStatus now automatically publishes SSE event
-	if _, err := h.sessionService.UpdateStatus(ctx, projectID, sessionID, model.SessionStatusReady, nil); err != nil {
-		log.Printf("[ChatCancel] Warning: failed to reset session %s status to ready: %v", sessionID, err)
-	}
-
 	h.JSON(w, http.StatusOK, result)
-}
-
-func resolveChatThreadID(sessionID, threadID string) string {
-	if threadID != "" {
-		return threadID
-	}
-	// TODO: Remove the sessionID fallback once clients migrate to explicit
-	// thread-scoped chat APIs under /sessions/{sessionId}/threads/{threadId}/...
-	return sessionID
 }
 
 func (h *Handler) resolveSessionAndThread(w http.ResponseWriter, r *http.Request, projectID string, noContentOnMissing bool) (sessionID, threadID string, session *model.Session, ok bool) {
@@ -381,6 +336,11 @@ func (h *Handler) resolveSessionAndThread(w http.ResponseWriter, r *http.Request
 	sessionID = r.PathValue("sessionId")
 	if sessionID == "" {
 		h.Error(w, http.StatusBadRequest, "sessionId is required")
+		return "", "", nil, false
+	}
+	threadID = r.PathValue("threadId")
+	if threadID == "" {
+		h.Error(w, http.StatusBadRequest, "threadId is required")
 		return "", "", nil, false
 	}
 
@@ -398,35 +358,19 @@ func (h *Handler) resolveSessionAndThread(w http.ResponseWriter, r *http.Request
 		return "", "", nil, false
 	}
 
-	threadID = resolveChatThreadID(sessionID, r.PathValue("threadId"))
 	return sessionID, threadID, session, true
 }
 
-func extractSubmittedMessageID(messages json.RawMessage, fallback string) string {
-	if fallback != "" {
-		return fallback
-	}
-	if len(messages) == 0 {
-		return ""
-	}
-
-	var rawMessages []struct {
-		ID   string `json:"id"`
-		Role string `json:"role"`
-	}
-	if err := json.Unmarshal(messages, &rawMessages); err != nil {
-		return ""
-	}
-
-	for i := len(rawMessages) - 1; i >= 0; i-- {
-		if rawMessages[i].Role == "user" && rawMessages[i].ID != "" {
-			return rawMessages[i].ID
+// lastUserMessageID returns the ID of the last user message in the slice, or "".
+func lastUserMessageID(messages []json.RawMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		var m struct {
+			ID   string `json:"id"`
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(messages[i], &m) == nil && m.Role == "user" && m.ID != "" {
+			return m.ID
 		}
 	}
 	return ""
-}
-
-func isEmptyChatMessages(messages json.RawMessage) bool {
-	trimmed := bytes.TrimSpace(messages)
-	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("[]"))
 }

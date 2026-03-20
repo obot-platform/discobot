@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,6 +17,14 @@ type globInput struct {
 	Path    string `json:"path"` // optional directory to search in
 }
 
+// globSkipDirs are directory names that are always skipped during glob walks.
+// This mirrors the skip logic in internal/grep/walker.go.
+var globSkipDirs = map[string]bool{
+	"node_modules": true,
+	"__pycache__":  true,
+	".git":         true,
+}
+
 func (e *Executor) executeGlob(call message.ToolCallPart) (thread.ToolExecuteResult, error) {
 	var input globInput
 	if err := unmarshalInput(call, &input); err != nil {
@@ -25,50 +34,68 @@ func (e *Executor) executeGlob(call message.ToolCallPart) (thread.ToolExecuteRes
 		return errResult(call, "pattern is required"), nil
 	}
 
+	// Validate the pattern before walking.
+	if !doublestar.ValidatePattern(input.Pattern) {
+		return errResult(call, "invalid glob pattern"), nil
+	}
+
 	// Determine search root.
 	root := e.cwd
 	if input.Path != "" {
 		root = resolvePath(e.cwd, input.Path)
 	}
 
-	// Build the full glob pattern.
-	var pattern string
+	// For absolute patterns, extract the relative portion against root if
+	// possible, otherwise fall back to the pattern as-is.
+	matchPattern := input.Pattern
 	if filepath.IsAbs(input.Pattern) {
-		pattern = input.Pattern
-	} else {
-		pattern = filepath.Join(root, input.Pattern)
+		rel, relErr := filepath.Rel(root, input.Pattern)
+		if relErr == nil {
+			matchPattern = rel
+		}
 	}
 
-	matches, err := doublestar.FilepathGlob(pattern)
-	if err != nil {
-		return errResult(call, "invalid glob pattern: "+err.Error()), nil
+	// Walk the filesystem using filepath.WalkDir, which does not follow
+	// symbolic links. This avoids traversing node_modules symlinks (and
+	// similar) that would otherwise flood results with thousands of
+	// irrelevant package files.
+	var matched []string
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries
+		}
+		if d.IsDir() {
+			name := d.Name()
+			// Skip common non-source directories and hidden directories.
+			if globSkipDirs[name] || (strings.HasPrefix(name, ".") && name != ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		// Match the relative path against the pattern.
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return nil
+		}
+		ok, matchErr := doublestar.Match(matchPattern, rel)
+		if matchErr == nil && ok {
+			matched = append(matched, rel)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return errResult(call, "error walking directory: "+walkErr.Error()), nil
 	}
 
-	if len(matches) == 0 {
+	if len(matched) == 0 {
 		return textResult(call, "No files found"), nil
 	}
 
-	type entry struct {
-		path string
-	}
-	entries := make([]entry, 0, len(matches))
-	for _, m := range matches {
-		// Convert to relative path if inside root.
-		rel, relErr := filepath.Rel(root, m)
-		if relErr != nil {
-			rel = m
-		}
-		entries = append(entries, entry{path: rel})
-	}
-
-	// Simple alphabetical sort as fallback (stat calls add overhead).
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].path < entries[j].path
-	})
+	sort.Strings(matched)
 
 	var sb strings.Builder
-	for _, e := range entries {
-		sb.WriteString(e.path)
+	for _, p := range matched {
+		sb.WriteString(p)
 		sb.WriteByte('\n')
 	}
 

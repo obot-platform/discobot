@@ -17,12 +17,13 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobot/agent-go/agent"
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/mcp"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
 	"github.com/obot-platform/discobot/agent-go/sessionconfig"
 	"github.com/obot-platform/discobot/agent-go/thread"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 // MCPConfig holds MCP OAuth and connectivity settings.
@@ -256,9 +257,9 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 	cfg := thread.TurnConfig{
 		ProviderID:            providerID,
 		Model:                 modelID,
-		Reasoning:             req.Reasoning,
+		Reasoning:             providers.Reasoning(req.Reasoning),
 		PromptRequestPlanMode: promptRequestPlanMode,
-		UserParts:             expandLegacyCommand(a.cwd, req.UserParts),
+		UserParts:             message.UIPartsToParts(expandLegacyCommand(a.cwd, req.UserParts)),
 		Tools:                 tools,
 		MaxSteps:              maxSteps,
 	}
@@ -480,6 +481,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		_ = a.store.SaveConfig(threadID, thread.Config{
 			Name:         threadCfg.Name,
 			Model:        cfg.ProviderID + "/" + cfg.Model,
+			Reasoning:    cfg.Reasoning,
 			CWD:          cwd,
 			PlanMode:     planMode,
 			ActiveLeafID: req.LeafID,
@@ -663,8 +665,8 @@ func (a *DefaultAgent) Cancel(threadID string) bool {
 	return false
 }
 
-// Messages returns the conversation history as UI-projected JSON.
-func (a *DefaultAgent) Messages(threadID, leafID string) ([]json.RawMessage, error) {
+// Messages returns the conversation history as UI-projected messages.
+func (a *DefaultAgent) Messages(threadID, leafID string) ([]message.UIMessage, error) {
 	if leafID == "" {
 		var err error
 		leafID, err = a.resolveCurrentLeaf(threadID)
@@ -793,6 +795,17 @@ func (a *DefaultAgent) ListCommands() ([]agent.Command, error) {
 	return commands, nil
 }
 
+// IsLeaf reports whether msgID is a valid leaf in the thread's message tree.
+// Fast path: compares against the thread's persisted ActiveLeafID to avoid a
+// full store scan when the client is simply continuing the current branch.
+func (a *DefaultAgent) IsLeaf(threadID, msgID string) (bool, error) {
+	cfg, err := a.store.LoadConfig(threadID)
+	if err == nil && cfg.ActiveLeafID == msgID {
+		return true, nil
+	}
+	return a.store.IsLeaf(threadID, msgID)
+}
+
 // expandLegacyCommand checks whether the user parts contain a single text
 // message starting with "/command-name [args]" that maps to a legacy command
 // (i.e. a file in .claude/commands/ or .discobot/commands/).
@@ -803,11 +816,11 @@ func (a *DefaultAgent) ListCommands() ([]agent.Command, error) {
 //
 // Skills (.claude/skills/) are intentionally excluded: they are invoked by the
 // LLM through the Skill tool, not expanded here.
-func expandLegacyCommand(cwd string, parts []message.Part) []message.Part {
+func expandLegacyCommand(cwd string, parts []message.UIPart) []message.UIPart {
 	if len(parts) == 0 {
 		return parts
 	}
-	first, ok := parts[0].(message.TextPart)
+	first, ok := parts[0].(message.UITextPart)
 	if !ok {
 		return parts
 	}
@@ -841,12 +854,9 @@ func expandLegacyCommand(cwd string, parts []message.Part) []message.Part {
 		OriginalCommand: text,
 	})
 
-	expanded := make([]message.Part, len(parts))
+	expanded := make([]message.UIPart, len(parts))
 	copy(expanded, parts)
-	expanded[0] = message.TextPart{
-		Text:             cmd.Expand(args),
-		ProviderMetadata: meta,
-	}
+	expanded[0] = message.UITextPart{Text: cmd.Expand(args), State: first.State, ProviderMetadata: meta}
 	return expanded
 }
 
@@ -893,7 +903,11 @@ func (a *DefaultAgent) PendingQuestion(threadID string) (*agent.PendingQuestion,
 	if q == nil {
 		return nil, nil
 	}
-	return &agent.PendingQuestion{ToolCallID: q.ToolCallID, Questions: q.Questions}, nil
+	var questions []api.AskUserQuestion
+	if err := json.Unmarshal(q.Questions, &questions); err != nil {
+		return nil, fmt.Errorf("unmarshal questions: %w", err)
+	}
+	return &agent.PendingQuestion{ToolCallID: q.ToolCallID, Questions: questions}, nil
 }
 
 // SubmitAnswer persists the user's answer for a pending AskUserQuestion.
@@ -922,20 +936,20 @@ func (a *DefaultAgent) SubmitAnswer(threadID, toolCallID string, answers map[str
 }
 
 // isClearCommand reports whether the user parts contain exactly the /clear command.
-func isClearCommand(parts []message.Part) bool {
+func isClearCommand(parts []message.UIPart) bool {
 	if len(parts) != 1 {
 		return false
 	}
-	tp, ok := parts[0].(message.TextPart)
+	tp, ok := parts[0].(message.UITextPart)
 	return ok && strings.TrimSpace(tp.Text) == "/clear"
 }
 
 // isCompactCommand reports whether the user parts contain exactly the /compact command.
-func isCompactCommand(parts []message.Part) bool {
+func isCompactCommand(parts []message.UIPart) bool {
 	if len(parts) != 1 {
 		return false
 	}
-	tp, ok := parts[0].(message.TextPart)
+	tp, ok := parts[0].(message.UITextPart)
 	return ok && strings.TrimSpace(tp.Text) == "/compact"
 }
 

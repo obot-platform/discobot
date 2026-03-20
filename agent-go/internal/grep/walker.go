@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/charlievieth/fastwalk"
 
 	"github.com/obot-platform/discobot/agent-go/internal/grep/filetypes"
@@ -130,8 +131,11 @@ func walk(ctx context.Context, opts GrepOptions, s *searcher) (*Results, error) 
 		}
 
 		// Apply glob filter
-		if opts.Glob != "" && !matchGlob(opts.Glob, path) {
-			return nil
+		if opts.Glob != "" {
+			rel, relErr := filepath.Rel(opts.Path, path)
+			if relErr != nil || !matchGlob(opts.Glob, rel) {
+				return nil
+			}
 		}
 
 		var size int64
@@ -235,49 +239,15 @@ func shouldRespectGitignore(opts GrepOptions) bool {
 	}
 }
 
-// matchGlob matches a path against a glob pattern, supporting ** for
-// recursive directory matching.
-func matchGlob(pattern, path string) bool {
-	if strings.Contains(pattern, "**") {
-		parts := strings.SplitN(pattern, "**", 2)
-		prefix := parts[0]
-		suffix := parts[1]
-
-		suffix = strings.TrimPrefix(suffix, "/")
-		suffix = strings.TrimPrefix(suffix, string(filepath.Separator))
-
-		if prefix != "" {
-			prefix = strings.TrimSuffix(prefix, "/")
-			prefix = strings.TrimSuffix(prefix, string(filepath.Separator))
-			if !strings.HasPrefix(path, prefix) {
-				return false
-			}
-		}
-
-		if suffix == "" {
-			return true
-		}
-
-		// Try matching suffix against the filename
-		matched, _ := filepath.Match(suffix, filepath.Base(path))
-		if matched {
-			return true
-		}
-
-		// Try matching suffix against each possible tail of path
-		for i := 0; i < len(path); i++ {
-			if i > 0 && path[i-1] != '/' && path[i-1] != filepath.Separator {
-				continue
-			}
-			matched, _ = filepath.Match(suffix, path[i:])
-			if matched {
-				return true
-			}
-		}
-		return false
+// matchGlob matches a relative path against a glob pattern using doublestar,
+// which supports ** recursive matching and {alt1,alt2} brace expansion.
+// For patterns without a path separator (e.g. *.go, *.{ts,tsx}), the pattern
+// is anchored to match at any depth, mirroring ripgrep's --glob behavior.
+func matchGlob(pattern, rel string) bool {
+	rel = filepath.ToSlash(rel)
+	if !strings.ContainsRune(pattern, '/') {
+		pattern = "**/" + pattern
 	}
-
-	// Simple glob: match against the filename only
-	matched, _ := filepath.Match(pattern, filepath.Base(path))
+	matched, _ := doublestar.Match(pattern, rel)
 	return matched
 }

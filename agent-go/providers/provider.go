@@ -8,7 +8,6 @@ import (
 	"github.com/obot-platform/discobot/agent-go/message"
 )
 
-
 // ModelTaskType identifies the intended use of a model within a provider's
 // default model map.
 type ModelTaskType = string
@@ -57,6 +56,10 @@ func (c Config) APIKey() string {
 	return c["api_key"]
 }
 
+func (c Config) Token() string {
+	return c["auth_token"]
+}
+
 // BaseURL returns the "base_url" config value.
 func (c Config) BaseURL() string {
 	return c["base_url"]
@@ -89,9 +92,10 @@ type CompleteRequest struct {
 	Temperature *float64 `json:"temperature,omitempty"`
 	TopP        *float64 `json:"topP,omitempty"`
 
-	// Reasoning controls extended thinking. Empty means disabled.
-	// "enabled" means the model should use extended thinking if supported.
-	Reasoning string `json:"reasoning,omitempty"`
+	// Reasoning controls extended thinking. Empty (ReasoningEmpty) means use
+	// the model's built-in default, which is the same as ReasoningDefault.
+	// Providers translate this to their native API format.
+	Reasoning Reasoning `json:"reasoning,omitempty"`
 
 	// ProviderOptions is an opaque JSON blob for provider-specific parameters
 	// that don't fit the common fields.

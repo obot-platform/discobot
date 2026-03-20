@@ -58,6 +58,12 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.chatService.GetThread(ctx, projectID, sessionID, threadID)
 	if err != nil {
+		// When the thread hasn't been created yet but it's the session's primary thread,
+		// return a pending placeholder instead of a 404.
+		if threadErrorStatus(err) == http.StatusNotFound && threadID == sessionID {
+			h.JSON(w, http.StatusOK, sandboxapi.Thread{ID: threadID, Pending: true})
+			return
+		}
 		h.Error(w, threadErrorStatus(err), err.Error())
 		return
 	}

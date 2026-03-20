@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func mustMarshal(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return data
+}
+
 func TestProjectUIMessages_System(t *testing.T) {
 	msgs := []Message{
 		{ID: "m1", Role: "system", Parts: []Part{TextPart{Text: "Be helpful."}}},
@@ -22,7 +31,7 @@ func TestProjectUIMessages_System(t *testing.T) {
 		ID   string `json:"id"`
 		Role string `json:"role"`
 	}
-	json.Unmarshal(result[0], &ui)
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
 	if ui.Role != "system" {
 		t.Errorf("Role: got %q", ui.Role)
 	}
@@ -47,7 +56,7 @@ func TestProjectUIMessages_User(t *testing.T) {
 	var ui struct {
 		Parts []json.RawMessage `json:"parts"`
 	}
-	json.Unmarshal(result[0], &ui)
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
 	if len(ui.Parts) != 2 {
 		t.Fatalf("parts: got %d", len(ui.Parts))
 	}
@@ -76,7 +85,7 @@ func TestProjectUIMessages_AssistantToolPair(t *testing.T) {
 		Role  string            `json:"role"`
 		Parts []json.RawMessage `json:"parts"`
 	}
-	json.Unmarshal(result[0], &ui)
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
 	if ui.Role != "assistant" {
 		t.Errorf("Role: got %q", ui.Role)
 	}
@@ -134,7 +143,7 @@ func TestProjectUIMessages_RawToolInput(t *testing.T) {
 	var ui struct {
 		Parts []json.RawMessage `json:"parts"`
 	}
-	if err := json.Unmarshal(result[0], &ui); err != nil {
+	if err := json.Unmarshal(mustMarshal(t, result[0]), &ui); err != nil {
 		t.Fatalf("unmarshal ui message: %v", err)
 	}
 	if len(ui.Parts) != 1 {
@@ -183,7 +192,7 @@ func TestProjectUIMessages_MultiStep(t *testing.T) {
 	var ui struct {
 		Parts []json.RawMessage `json:"parts"`
 	}
-	json.Unmarshal(result[0], &ui)
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
 
 	// Two steps: dynamic-tool, step-start + text (no leading step-start for first step)
 	if len(ui.Parts) != 3 {
@@ -221,7 +230,7 @@ func TestProjectUIMessages_ToolError(t *testing.T) {
 	var ui struct {
 		Parts []json.RawMessage `json:"parts"`
 	}
-	json.Unmarshal(result[0], &ui)
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
 
 	var dp struct {
 		State     string `json:"state"`
@@ -262,7 +271,7 @@ func TestProjectUIMessages_ProviderExecutedResult(t *testing.T) {
 	var ui struct {
 		Parts []json.RawMessage `json:"parts"`
 	}
-	json.Unmarshal(result[0], &ui)
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
 
 	// dynamic-tool only (no leading step-start for first step)
 	if len(ui.Parts) != 1 {
@@ -300,7 +309,7 @@ func TestProjectUIMessages_Approval(t *testing.T) {
 	var ui struct {
 		Parts []json.RawMessage `json:"parts"`
 	}
-	json.Unmarshal(result[0], &ui)
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
 
 	var dp struct {
 		State    string `json:"state"`
@@ -321,4 +330,234 @@ func TestProjectUIMessages_Approval(t *testing.T) {
 		t.Error("expected approved=true")
 	}
 	_ = boolTrue
+}
+
+// --- Projection field-coverage tests ---
+//
+// Each test below creates a source Part with every projectable field set to a
+// distinctive non-zero value, projects it, and checks the corresponding UIPart
+// field-by-field. If a new field is added to a Part and its UIPart mapping, add
+// it here so that the test catches any missing mapping in the projection code.
+
+func projectAssistantPart(t *testing.T, p Part) UIPart {
+	t.Helper()
+	parts, err := convertAssistantToolPairToUI(Message{Role: "assistant", Parts: []Part{p}}, nil)
+	if err != nil {
+		t.Fatalf("convertAssistantToolPairToUI: %v", err)
+	}
+	if len(parts) != 1 {
+		t.Fatalf("expected 1 UIPart, got %d", len(parts))
+	}
+	return parts[0]
+}
+
+func projectUserPart(t *testing.T, p Part) UIPart {
+	t.Helper()
+	msg := Message{Role: "user", Parts: []Part{p}}
+	uiMsg := buildUIUserMessage(msg)
+	var ui struct {
+		Parts []json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal(mustMarshal(t, uiMsg), &ui); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(ui.Parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(ui.Parts))
+	}
+	got, err := UnmarshalUIPart(ui.Parts[0])
+	if err != nil {
+		t.Fatalf("UnmarshalUIPart: %v", err)
+	}
+	return got
+}
+
+// MAINTENANCE: update when adding fields to TextPart or UITextPart.
+func TestProjectionFieldCoverage_TextPart_Assistant(t *testing.T) {
+	src := TextPart{
+		Text:             "hello projection",
+		ProviderMetadata: json.RawMessage(`{"k":"v"}`),
+		// ID and ProviderOptions are intentionally not projected to UI.
+	}
+	got, ok := projectAssistantPart(t, src).(UITextPart)
+	if !ok {
+		t.Fatalf("expected UITextPart, got %T", projectAssistantPart(t, src))
+	}
+	if got.Text != src.Text {
+		t.Errorf("Text: got %q, want %q", got.Text, src.Text)
+	}
+	if string(got.ProviderMetadata) != string(src.ProviderMetadata) {
+		t.Errorf("ProviderMetadata: got %s, want %s", got.ProviderMetadata, src.ProviderMetadata)
+	}
+	if got.State != "done" {
+		t.Errorf("State: got %q, want %q", got.State, "done")
+	}
+}
+
+// MAINTENANCE: update when adding fields to TextPart or UITextPart.
+func TestProjectionFieldCoverage_TextPart_User(t *testing.T) {
+	src := TextPart{
+		Text:             "user hello",
+		ProviderMetadata: json.RawMessage(`{"u":"w"}`),
+	}
+	got, ok := projectUserPart(t, src).(UITextPart)
+	if !ok {
+		t.Fatalf("expected UITextPart, got %T", projectUserPart(t, src))
+	}
+	if got.Text != src.Text {
+		t.Errorf("Text: got %q, want %q", got.Text, src.Text)
+	}
+	if string(got.ProviderMetadata) != string(src.ProviderMetadata) {
+		t.Errorf("ProviderMetadata: got %s, want %s", got.ProviderMetadata, src.ProviderMetadata)
+	}
+}
+
+// MAINTENANCE: update when adding fields to ReasoningPart or UIReasoningPart.
+func TestProjectionFieldCoverage_ReasoningPart(t *testing.T) {
+	src := ReasoningPart{
+		Text:             "let me think",
+		ProviderMetadata: json.RawMessage(`{"a":"b"}`),
+	}
+	got, ok := projectAssistantPart(t, src).(UIReasoningPart)
+	if !ok {
+		t.Fatalf("expected UIReasoningPart, got %T", projectAssistantPart(t, src))
+	}
+	if got.Text != src.Text {
+		t.Errorf("Text: got %q, want %q", got.Text, src.Text)
+	}
+	if string(got.ProviderMetadata) != string(src.ProviderMetadata) {
+		t.Errorf("ProviderMetadata: got %s, want %s", got.ProviderMetadata, src.ProviderMetadata)
+	}
+	if got.State != "done" {
+		t.Errorf("State: got %q, want %q", got.State, "done")
+	}
+}
+
+// MAINTENANCE: update when adding fields to FilePart or UIFilePart.
+func TestProjectionFieldCoverage_FilePart_User(t *testing.T) {
+	src := FilePart{
+		Data:             "data:image/png;base64,abc123",
+		MediaType:        "image/png",
+		Filename:         "photo.png",
+		ProviderMetadata: json.RawMessage(`{"c":"d"}`),
+	}
+	got, ok := projectUserPart(t, src).(UIFilePart)
+	if !ok {
+		t.Fatalf("expected UIFilePart, got %T", projectUserPart(t, src))
+	}
+	if got.URL != src.Data {
+		t.Errorf("URL (from Data): got %q, want %q", got.URL, src.Data)
+	}
+	if got.MediaType != src.MediaType {
+		t.Errorf("MediaType: got %q, want %q", got.MediaType, src.MediaType)
+	}
+	if got.Filename != src.Filename {
+		t.Errorf("Filename: got %q, want %q", got.Filename, src.Filename)
+	}
+	if string(got.ProviderMetadata) != string(src.ProviderMetadata) {
+		t.Errorf("ProviderMetadata: got %s, want %s", got.ProviderMetadata, src.ProviderMetadata)
+	}
+}
+
+// MAINTENANCE: update when adding fields to FilePart or UIFilePart.
+func TestProjectionFieldCoverage_FilePart_Assistant(t *testing.T) {
+	src := FilePart{
+		Data:             "data:text/plain;base64,aGVsbG8=",
+		MediaType:        "text/plain",
+		Filename:         "note.txt",
+		ProviderMetadata: json.RawMessage(`{"e":"f"}`),
+	}
+	got, ok := projectAssistantPart(t, src).(UIFilePart)
+	if !ok {
+		t.Fatalf("expected UIFilePart, got %T", projectAssistantPart(t, src))
+	}
+	if got.URL != src.Data {
+		t.Errorf("URL (from Data): got %q, want %q", got.URL, src.Data)
+	}
+	if got.MediaType != src.MediaType {
+		t.Errorf("MediaType: got %q, want %q", got.MediaType, src.MediaType)
+	}
+	if got.Filename != src.Filename {
+		t.Errorf("Filename: got %q, want %q", got.Filename, src.Filename)
+	}
+	if string(got.ProviderMetadata) != string(src.ProviderMetadata) {
+		t.Errorf("ProviderMetadata: got %s, want %s", got.ProviderMetadata, src.ProviderMetadata)
+	}
+}
+
+// MAINTENANCE: update when adding fields to SourceURLPart or UISourceURLPart.
+func TestProjectionFieldCoverage_SourceURLPart(t *testing.T) {
+	src := SourceURLPart{
+		SourceID:         "src-1",
+		URL:              "https://example.com/page",
+		Title:            "Example Page",
+		ProviderMetadata: json.RawMessage(`{"g":"h"}`),
+	}
+	got, ok := projectAssistantPart(t, src).(UISourceURLPart)
+	if !ok {
+		t.Fatalf("expected UISourceURLPart, got %T", projectAssistantPart(t, src))
+	}
+	if got.SourceID != src.SourceID {
+		t.Errorf("SourceID: got %q, want %q", got.SourceID, src.SourceID)
+	}
+	if got.URL != src.URL {
+		t.Errorf("URL: got %q, want %q", got.URL, src.URL)
+	}
+	if got.Title != src.Title {
+		t.Errorf("Title: got %q, want %q", got.Title, src.Title)
+	}
+	if string(got.ProviderMetadata) != string(src.ProviderMetadata) {
+		t.Errorf("ProviderMetadata: got %s, want %s", got.ProviderMetadata, src.ProviderMetadata)
+	}
+}
+
+// MAINTENANCE: update when adding fields to SourceDocumentPart or UISourceDocumentPart.
+func TestProjectionFieldCoverage_SourceDocumentPart(t *testing.T) {
+	src := SourceDocumentPart{
+		SourceID:         "doc-1",
+		MediaType:        "application/pdf",
+		Title:            "Report",
+		Filename:         "report.pdf",
+		ProviderMetadata: json.RawMessage(`{"i":"j"}`),
+	}
+	got, ok := projectAssistantPart(t, src).(UISourceDocumentPart)
+	if !ok {
+		t.Fatalf("expected UISourceDocumentPart, got %T", projectAssistantPart(t, src))
+	}
+	if got.SourceID != src.SourceID {
+		t.Errorf("SourceID: got %q, want %q", got.SourceID, src.SourceID)
+	}
+	if got.MediaType != src.MediaType {
+		t.Errorf("MediaType: got %q, want %q", got.MediaType, src.MediaType)
+	}
+	if got.Title != src.Title {
+		t.Errorf("Title: got %q, want %q", got.Title, src.Title)
+	}
+	if got.Filename != src.Filename {
+		t.Errorf("Filename: got %q, want %q", got.Filename, src.Filename)
+	}
+	if string(got.ProviderMetadata) != string(src.ProviderMetadata) {
+		t.Errorf("ProviderMetadata: got %s, want %s", got.ProviderMetadata, src.ProviderMetadata)
+	}
+}
+
+// MAINTENANCE: update when adding fields to DataPart or UIDataPart.
+func TestProjectionFieldCoverage_DataPart(t *testing.T) {
+	src := DataPart{
+		DataType: "mode-change",
+		ID:       "dp-1",
+		Data:     json.RawMessage(`{"mode":"edit"}`),
+	}
+	got, ok := projectAssistantPart(t, src).(UIDataPart)
+	if !ok {
+		t.Fatalf("expected UIDataPart, got %T", projectAssistantPart(t, src))
+	}
+	if got.Type != "data-"+src.DataType {
+		t.Errorf("Type: got %q, want %q", got.Type, "data-"+src.DataType)
+	}
+	if got.ID != src.ID {
+		t.Errorf("ID: got %q, want %q", got.ID, src.ID)
+	}
+	if string(got.Data) != string(src.Data) {
+		t.Errorf("Data: got %s, want %s", got.Data, src.Data)
+	}
 }

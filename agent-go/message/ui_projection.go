@@ -33,9 +33,9 @@ type ToolApproval struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
-// uiMessage is the JSON wire format for a UIMessage in the AI SDK v6 protocol.
+// UIMessage is the JSON wire format for a UIMessage in the AI SDK v6 protocol.
 // Parts are marshaled via the UIPart interface.
-type uiMessage struct {
+type UIMessage struct {
 	ID        string          `json:"id"`
 	Role      string          `json:"role"`
 	Parts     []UIPart        `json:"-"`
@@ -43,12 +43,12 @@ type uiMessage struct {
 	CreatedAt *time.Time      `json:"createdAt,omitempty"`
 }
 
-func (m uiMessage) MarshalJSON() ([]byte, error) {
+func (m UIMessage) MarshalJSON() ([]byte, error) {
 	parts := make([]json.RawMessage, len(m.Parts))
 	for i, p := range m.Parts {
 		data, err := MarshalUIPart(p)
 		if err != nil {
-			return nil, fmt.Errorf("marshal uiMessage.Parts[%d]: %w", i, err)
+			return nil, fmt.Errorf("marshal UIMessage.Parts[%d]: %w", i, err)
 		}
 		parts[i] = data
 	}
@@ -61,11 +61,37 @@ func (m uiMessage) MarshalJSON() ([]byte, error) {
 	}{m.ID, m.Role, parts, m.Metadata, m.CreatedAt})
 }
 
+func (m *UIMessage) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID        string            `json:"id"`
+		Role      string            `json:"role"`
+		Parts     []json.RawMessage `json:"parts"`
+		Metadata  json.RawMessage   `json:"metadata,omitempty"`
+		CreatedAt *time.Time        `json:"createdAt,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	m.ID = raw.ID
+	m.Role = raw.Role
+	m.Metadata = raw.Metadata
+	m.CreatedAt = raw.CreatedAt
+	m.Parts = make([]UIPart, 0, len(raw.Parts))
+	for _, partData := range raw.Parts {
+		p, err := UnmarshalUIPart(partData)
+		if err != nil {
+			continue // skip unknown part types
+		}
+		m.Parts = append(m.Parts, p)
+	}
+	return nil
+}
+
 // ProjectUIMessages converts a slice of Messages (which may include "tool" role
-// messages) into the AI SDK v6 UIMessage JSON format. Consecutive assistant+tool
-// pairs are merged into single assistant messages with DynamicToolParts.
-func ProjectUIMessages(messages []Message) ([]json.RawMessage, error) {
-	var result []json.RawMessage
+// messages) into the AI SDK v6 UIMessage format. Consecutive assistant+tool
+// pairs are merged into single assistant UIMessages with DynamicToolParts.
+func ProjectUIMessages(messages []Message) ([]UIMessage, error) {
+	var result []UIMessage
 	i := 0
 	for i < len(messages) {
 		msg := messages[i]
@@ -75,22 +101,14 @@ func ProjectUIMessages(messages []Message) ([]json.RawMessage, error) {
 		}
 		switch msg.Role {
 		case "system":
-			data, err := marshalUISystemMessage(msg)
-			if err != nil {
-				return nil, err
-			}
-			result = append(result, data)
+			result = append(result, buildUISystemMessage(msg))
 			i++
 		case "user":
-			data, err := marshalUIUserMessage(msg)
-			if err != nil {
-				return nil, err
-			}
-			result = append(result, data)
+			result = append(result, buildUIUserMessage(msg))
 			i++
 		case "assistant":
 			// Consume consecutive (assistant, optional tool) pairs into one UIMessage.
-			ui := uiMessage{
+			ui := UIMessage{
 				ID:        msg.ID,
 				Role:      "assistant",
 				Metadata:  msg.Metadata,
@@ -117,11 +135,7 @@ func ProjectUIMessages(messages []Message) ([]json.RawMessage, error) {
 				}
 				ui.Parts = append(ui.Parts, parts...)
 			}
-			data, err := json.Marshal(ui)
-			if err != nil {
-				return nil, err
-			}
-			result = append(result, data)
+			result = append(result, ui)
 		default:
 			// Skip unknown roles (including orphan "tool" messages).
 			i++
@@ -130,25 +144,24 @@ func ProjectUIMessages(messages []Message) ([]json.RawMessage, error) {
 	return result, nil
 }
 
-func marshalUISystemMessage(msg Message) (json.RawMessage, error) {
+func buildUISystemMessage(msg Message) UIMessage {
 	text := ""
 	for _, p := range msg.Parts {
 		if tp, ok := p.(TextPart); ok {
 			text += tp.Text
 		}
 	}
-	ui := uiMessage{
+	return UIMessage{
 		ID:        msg.ID,
 		Role:      "system",
 		Parts:     []UIPart{UITextPart{Type: "text", Text: text, State: "done"}},
 		Metadata:  msg.Metadata,
 		CreatedAt: msg.CreatedAt,
 	}
-	return json.Marshal(ui)
 }
 
-func marshalUIUserMessage(msg Message) (json.RawMessage, error) {
-	ui := uiMessage{
+func buildUIUserMessage(msg Message) UIMessage {
+	ui := UIMessage{
 		ID:        msg.ID,
 		Role:      "user",
 		Metadata:  msg.Metadata,
@@ -164,7 +177,7 @@ func marshalUIUserMessage(msg Message) (json.RawMessage, error) {
 			ui.Parts = append(ui.Parts, UIFilePart{Type: "file", URL: v.Image, MediaType: v.MediaType})
 		}
 	}
-	return json.Marshal(ui)
+	return ui
 }
 
 func convertAssistantToolPairToUI(ass Message, toolMsg *Message) ([]UIPart, error) {

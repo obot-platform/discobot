@@ -14,7 +14,6 @@ const (
 	PhaseStreaming        TurnPhase = "streaming"
 	PhaseTools            TurnPhase = "tools"
 	PhaseWaitingForAsync  TurnPhase = "waiting_for_async"
-	PhaseSaving           TurnPhase = "saving"
 	PhaseWaitingForAnswer TurnPhase = "waiting_for_answer"
 )
 

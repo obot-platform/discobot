@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"iter"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 
 type mockAgent struct {
 	promptFn   func(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
-	messagesFn func(threadID, leafID string) ([]json.RawMessage, error)
+	messagesFn func(threadID, leafID string) ([]message.UIMessage, error)
 
 	interruptedThreads []string
 	models             []providers.ModelInfo
@@ -34,7 +33,7 @@ func (m *mockAgent) Cancel(_ string) bool {
 	return false
 }
 
-func (m *mockAgent) Messages(threadID, leafID string) ([]json.RawMessage, error) {
+func (m *mockAgent) Messages(threadID, leafID string) ([]message.UIMessage, error) {
 	if m.messagesFn != nil {
 		return m.messagesFn(threadID, leafID)
 	}
@@ -68,6 +67,8 @@ func (m *mockAgent) FinalResponse(_ string) (string, error) {
 func (m *mockAgent) ListCommands() ([]Command, error) {
 	return nil, nil
 }
+
+func (m *mockAgent) IsLeaf(_, _ string) (bool, error) { return true, nil }
 
 // --- Helpers ---
 
@@ -123,7 +124,7 @@ func TestCompletionManager_Chat_SimpleCompletion(t *testing.T) {
 	cm := NewCompletionManager(agent)
 
 	completionID, err := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -156,12 +157,54 @@ func TestCompletionManager_Chat_SimpleCompletion(t *testing.T) {
 	}
 }
 
+func TestCompletionManager_Chat_PrependsStartBeforeEarlyError(t *testing.T) {
+	agent := &mockAgent{
+		promptFn: func(_ context.Context, _ string, _ PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			return func(yield func(message.MessageChunk, error) bool) {
+				yield(nil, context.Canceled)
+			}
+		},
+	}
+	cm := NewCompletionManager(agent)
+
+	_, err := cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	waitForDone(t, cm, "thread1")
+
+	result := cm.PollChunks("thread1", 0)
+	if result == nil {
+		t.Fatal("expected poll result")
+	}
+	if len(result.Chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(result.Chunks))
+	}
+	start, ok := result.Chunks[0].(message.StartChunk)
+	if !ok {
+		t.Fatalf("expected first chunk to be StartChunk, got %T", result.Chunks[0])
+	}
+	if start.MessageID == "" {
+		t.Fatal("expected synthetic start chunk to include a message ID")
+	}
+	errChunk, ok := result.Chunks[1].(message.ErrorChunk)
+	if !ok {
+		t.Fatalf("expected second chunk to be ErrorChunk, got %T", result.Chunks[1])
+	}
+	if errChunk.ErrorText != context.Canceled.Error() {
+		t.Fatalf("expected error text %q, got %q", context.Canceled.Error(), errChunk.ErrorText)
+	}
+}
+
 func TestCompletionManager_Chat_ConflictWhenActive(t *testing.T) {
 	agent := &mockAgent{promptFn: blockingPromptFn()}
 	cm := NewCompletionManager(agent)
 
 	_, err := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +212,7 @@ func TestCompletionManager_Chat_ConflictWhenActive(t *testing.T) {
 
 	// Second chat should fail.
 	_, err = cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi again"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi again"}},
 	})
 	if err == nil {
 		t.Error("expected error for concurrent completion")
@@ -196,10 +239,10 @@ func TestCompletionManager_Chat_DifferentThreadsIndependent(t *testing.T) {
 	cm := NewCompletionManager(agent)
 
 	_, err1 := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "a"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "a"}},
 	})
 	_, err2 := cm.Chat("thread2", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "b"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "b"}},
 	})
 
 	if err1 != nil {
@@ -218,7 +261,7 @@ func TestCompletionManager_Cancel(t *testing.T) {
 	cm := NewCompletionManager(agent)
 
 	completionID, err := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +313,7 @@ func TestCompletionManager_PollChunks_WithOffset(t *testing.T) {
 	cm := NewCompletionManager(agent)
 
 	_, err := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +350,7 @@ func TestCompletionManager_ActiveCompletionID(t *testing.T) {
 	}
 
 	completionID, err := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -336,7 +379,7 @@ func TestCompletionManager_ChatAfterDone(t *testing.T) {
 	cm := NewCompletionManager(agent)
 
 	_, err := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -346,7 +389,7 @@ func TestCompletionManager_ChatAfterDone(t *testing.T) {
 
 	// Starting a new chat on same thread should succeed after previous is done.
 	_, err = cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi again"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi again"}},
 	})
 	if err != nil {
 		t.Fatalf("expected chat to succeed after previous done: %v", err)
@@ -369,7 +412,7 @@ func TestCompletionManager_SetOnTurnComplete(t *testing.T) {
 	})
 
 	_, err := cm.Chat("thread1", PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -385,6 +428,51 @@ func TestCompletionManager_SetOnTurnComplete(t *testing.T) {
 	}
 }
 
+func TestCompletionManager_WaitNextCompletion_ReturnsFinishedNewCompletion(t *testing.T) {
+	agent := &mockAgent{
+		promptFn: simplePromptFn([]message.MessageChunk{
+			message.TextDeltaChunk{ID: "t1", Delta: "done"},
+		}),
+	}
+	cm := NewCompletionManager(agent)
+
+	firstCompletionID, err := cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "first"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForDone(t, cm, "thread1")
+
+	_, err = cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "second"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForDone(t, cm, "thread1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	result := cm.WaitNextCompletion(ctx, "thread1", firstCompletionID)
+	if result == nil {
+		t.Fatal("expected next completion result")
+	}
+	if !result.Done {
+		t.Fatal("expected finished completion to be returned")
+	}
+	if result.CompletionID == firstCompletionID {
+		t.Fatalf("expected a newer completion than %s", firstCompletionID)
+	}
+	if len(result.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(result.Chunks))
+	}
+	if delta, ok := result.Chunks[0].(message.TextDeltaChunk); !ok || delta.Delta != "done" {
+		t.Fatalf("unexpected chunk: %#v", result.Chunks[0])
+	}
+}
+
 // TestCompletionManager_Messages_ClampsToStartLeaf verifies that while a
 // completion is in progress, Messages() passes the completion's starting
 // leafID to the underlying agent so that in-progress messages are not
@@ -394,7 +482,7 @@ func TestCompletionManager_Messages_ClampsToStartLeaf(t *testing.T) {
 
 	ma := &mockAgent{
 		promptFn: blockingPromptFn(),
-		messagesFn: func(_, leafID string) ([]json.RawMessage, error) {
+		messagesFn: func(_, leafID string) ([]message.UIMessage, error) {
 			capturedLeafID = leafID
 			return nil, nil
 		},
@@ -405,7 +493,7 @@ func TestCompletionManager_Messages_ClampsToStartLeaf(t *testing.T) {
 
 	_, err := cm.Chat("thread1", PromptRequest{
 		LeafID:    startingLeaf,
-		UserParts: []message.Part{message.TextPart{Text: "hi"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
 	})
 	if err != nil {
 		t.Fatal(err)

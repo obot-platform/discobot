@@ -341,12 +341,6 @@ func (s *Store) CreateSession(ctx context.Context, session *model.Session) error
 	return s.writeDB.WithContext(ctx).Create(session).Error
 }
 
-// UpdateSessionMode updates only the mode column, correctly writing NULL when mode is nil.
-// Uses Updates(map) instead of Save so that nil is not silently skipped by GORM.
-func (s *Store) UpdateSessionMode(ctx context.Context, id string, mode *string) error {
-	return s.writeDB.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(map[string]interface{}{"mode": mode}).Error
-}
-
 func (s *Store) UpdateSession(ctx context.Context, session *model.Session) error {
 	return s.writeDB.WithContext(ctx).Save(session).Error
 }

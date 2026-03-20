@@ -59,6 +59,16 @@ func seedWorkspace(t *testing.T, s *store.Store) {
 	}
 }
 
+// parseMessages unmarshals a JSON array string into []json.RawMessage for use in ChatRequest.Messages.
+func parseMessages(t *testing.T, s string) []json.RawMessage {
+	t.Helper()
+	var msgs []json.RawMessage
+	if err := json.Unmarshal([]byte(s), &msgs); err != nil {
+		t.Fatalf("parseMessages: %v", err)
+	}
+	return msgs
+}
+
 // seedSession creates a workspace and session in the store for testing.
 func seedSession(t *testing.T, s *store.Store, sessionID string) {
 	t.Helper()
@@ -118,13 +128,18 @@ func newChatTestHandler(t *testing.T, s *store.Store, provider *mocksandbox.Prov
 }
 
 // makeChatRequest builds an http.Request for the Chat endpoint with the project ID set in context.
-func makeChatRequest(ctx context.Context, t *testing.T, req ChatRequest) *http.Request {
+func makeChatRequest(ctx context.Context, t *testing.T, sessionID, threadID string, req ChatRequest) *http.Request {
 	t.Helper()
+	if threadID == "" {
+		threadID = sessionID
+	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		t.Fatalf("failed to marshal request: %v", err)
 	}
-	httpReq := httptest.NewRequest("POST", "/api/chat", bytes.NewReader(body))
+	httpReq := httptest.NewRequest("POST", "/api/projects/"+testProjectID+"/sessions/"+sessionID+"/threads/"+threadID+"/chat", bytes.NewReader(body))
+	httpReq.SetPathValue("sessionId", sessionID)
+	httpReq.SetPathValue("threadId", threadID)
 	ctx = context.WithValue(ctx, middleware.ProjectIDKey, testProjectID)
 	return httpReq.WithContext(ctx)
 }
@@ -144,9 +159,8 @@ func TestChat_GetSessionByID_UnexpectedError(t *testing.T) {
 	}
 	sqlDB.Close()
 
-	req := makeChatRequest(context.Background(), t, ChatRequest{
-		ID:          "session-123",
-		Messages:    json.RawMessage(`[{"role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+	req := makeChatRequest(context.Background(), t, "session-123", "", ChatRequest{
+		Messages:    parseMessages(t, `[{"role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 		WorkspaceID: "test-workspace",
 	})
 	w := httptest.NewRecorder()
@@ -173,9 +187,8 @@ func TestChat_EmptyMessages_CreatesSessionWithoutSendingToSandbox(t *testing.T) 
 
 	h := newChatTestHandler(t, s, provider)
 
-	req := makeChatRequest(context.Background(), t, ChatRequest{
-		ID:          "session-empty-create",
-		Messages:    json.RawMessage(`[]`),
+	req := makeChatRequest(context.Background(), t, "session-empty-create", "", ChatRequest{
+		Messages:    []json.RawMessage{},
 		WorkspaceID: "test-workspace",
 	})
 	w := httptest.NewRecorder()
@@ -269,9 +282,8 @@ func TestChat_ClientDisconnect_DoesNotCancelSandbox(t *testing.T) {
 	h := newChatTestHandler(t, s, provider)
 
 	reqCtx, cancelReq := context.WithCancel(context.Background())
-	req := makeChatRequest(reqCtx, t, ChatRequest{
-		ID:       sessionID,
-		Messages: json.RawMessage(`[{"role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+	req := makeChatRequest(reqCtx, t, sessionID, "", ChatRequest{
+		Messages: parseMessages(t, `[{"role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 	})
 	w := httptest.NewRecorder()
 
@@ -329,9 +341,8 @@ func TestChat_StartsCompletion_StatusBecomesRunning(t *testing.T) {
 
 	h := newChatTestHandler(t, s, provider)
 
-	req := makeChatRequest(context.Background(), t, ChatRequest{
-		ID:       sessionID,
-		Messages: json.RawMessage(`[{"id":"msg-1","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+	req := makeChatRequest(context.Background(), t, sessionID, "", ChatRequest{
+		Messages: parseMessages(t, `[{"id":"msg-1","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 	})
 	w := httptest.NewRecorder()
 
@@ -358,25 +369,13 @@ func TestChat_StartsCompletion_StatusBecomesRunning(t *testing.T) {
 		t.Fatalf("expected message ID %q, got %q", "msg-1", response.MessageID)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		session, err := s.GetSessionByID(context.Background(), sessionID)
-		if err != nil {
-			t.Fatalf("failed to get session: %v", err)
-		}
-		if session.Status == model.SessionStatusRunning {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
 	session, err := s.GetSessionByID(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("failed to get session: %v", err)
 	}
-	if session.Status != model.SessionStatusRunning {
-		t.Errorf("expected session status %q after chat start, got %q",
-			model.SessionStatusRunning, session.Status)
+	if session.Status != model.SessionStatusReady {
+		t.Errorf("expected session status to remain %q after chat start, got %q",
+			model.SessionStatusReady, session.Status)
 	}
 }
 
@@ -416,10 +415,8 @@ func TestChat_UsesExplicitThreadID(t *testing.T) {
 	})
 
 	h := newChatTestHandler(t, s, provider)
-	req := makeChatRequest(context.Background(), t, ChatRequest{
-		SessionID: sessionID,
-		ThreadID:  threadID,
-		Messages:  json.RawMessage(`[{"id":"msg-thread","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+	req := makeChatRequest(context.Background(), t, sessionID, threadID, ChatRequest{
+		Messages: parseMessages(t, `[{"id":"msg-thread","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 	})
 	w := httptest.NewRecorder()
 
@@ -473,9 +470,8 @@ func TestChat_ReturnsJSONResponse(t *testing.T) {
 
 	h := newChatTestHandler(t, s, provider)
 
-	req := makeChatRequest(context.Background(), t, ChatRequest{
-		ID:       sessionID,
-		Messages: json.RawMessage(`[{"id":"msg-json","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+	req := makeChatRequest(context.Background(), t, sessionID, "", ChatRequest{
+		Messages: parseMessages(t, `[{"id":"msg-json","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
 	})
 	w := httptest.NewRecorder()
 

@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -14,6 +17,8 @@ import (
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 )
+
+const defaultChatStreamPingInterval = 15 * time.Second
 
 // ListMessages handles GET /threads/{id}/messages — returns all messages for the session.
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
@@ -26,16 +31,11 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if msgs == nil {
-		msgs = []json.RawMessage{}
-	}
-	data, err := json.Marshal(msgs)
-	if err != nil {
-		h.Error(w, http.StatusInternalServerError, "failed to marshal messages: "+err.Error())
-		return
+		msgs = []message.UIMessage{}
 	}
 
 	h.JSON(w, http.StatusOK, api.GetMessagesResponse{
-		Messages: data,
+		Messages: msgs,
 	})
 }
 
@@ -58,13 +58,38 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Derive leafID and userParts from the full message history the client sent.
+	// leafID is the last assistant message's ID (the branch point); userParts
+	// come from the user messages that follow it.
+	leafID, userParts, err := resolveLeafAndParts(req.Messages)
+	if err != nil {
+		h.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// When the client is continuing an existing thread, validate that the
+	// requested leaf ID actually exists and is a current leaf in the store.
+	if leafID != "" {
+		valid, err := h.completions.IsLeaf(threadID, leafID)
+		if err != nil {
+			h.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !valid {
+			h.Error(w, http.StatusBadRequest, fmt.Sprintf("message %q is not a valid leaf in this thread; the thread may have diverged", leafID))
+			return
+		}
+	}
+
 	// Reset hook state for user-initiated completions.
 	h.resetHookState()
 
 	promptReq := agent.PromptRequest{
+		LeafID:    leafID,
 		Model:     req.Model,
 		Reasoning: req.Reasoning,
-		UserParts: extractUserParts(req.Messages),
+		Mode:      req.Mode,
+		UserParts: userParts,
 	}
 
 	completionID, err := h.completions.Chat(threadID, promptReq)
@@ -91,14 +116,19 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ChatStream handles GET /threads/{id}/chat/stream — streams SSE events for a completion.
+// ChatStream handles GET /threads/{id}/chat/stream — streams SSE events for a thread.
 // Fresh requests (no Last-Event-ID, or an invalid one) replay the full persisted
 // UI message history first using named SSE events, then continue with any live
 // in-memory deltas. Valid Last-Event-ID reconnects keep the existing resume-only
 // behavior. The SSE protocol is explicit:
 //   - history-start / history-message / history-end for replayed UIMessage values
 //   - chunk for UIMessageChunk deltas
-//   - done for stream completion
+//   - ping while the stream is otherwise idle
+//
+// Unlike the previous one-completion model, this endpoint stays connected until
+// the client disconnects so later completions on the same thread can arrive on
+// the same SSE connection. There is no terminal "done" event; completion
+// boundaries are internal and the connection remains reusable for later turns.
 func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	threadID := chi.URLParam(r, "id")
 
@@ -118,7 +148,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 
-	var historyMessages []json.RawMessage
+	var historyMessages []message.UIMessage
 	if freshRequest {
 		var err error
 		historyMessages, err = h.completions.Messages(threadID, "")
@@ -127,7 +157,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if historyMessages == nil {
-			historyMessages = []json.RawMessage{}
+			historyMessages = []message.UIMessage{}
 		}
 	}
 
@@ -145,15 +175,22 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
+	currentCompletionID := ""
+	lastSeenCompletionID := ""
+
 	if freshRequest {
 		writeSSEEvent(w, "", "history-start", json.RawMessage(`{}`))
 		flusher.Flush()
 		for _, msg := range historyMessages {
-			writeSSEEvent(w, "", "history-message", msg)
+			data, err := json.Marshal(msg)
+			if err != nil {
+				continue
+			}
+			writeSSEEvent(w, "", "history-message", data)
 			flusher.Flush()
 		}
 
-		if snapshot != nil && !snapshot.Done {
+		if snapshot != nil && (!snapshot.Done || snapshot.Err != nil) {
 			for index, chunk := range snapshot.Chunks {
 				data, err := message.MarshalChunk(chunk)
 				if err != nil {
@@ -163,24 +200,79 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 				offset = index + 1
 			}
+			currentCompletionID = snapshot.CompletionID
+			lastSeenCompletionID = snapshot.CompletionID
 		}
 
 		writeSSEEvent(w, "", "history-end", json.RawMessage(`{}`))
 		flusher.Flush()
 
 		if snapshot == nil || snapshot.Done {
-			writeSSEEvent(w, "", "done", json.RawMessage(`{}`))
-			flusher.Flush()
-			return
+			if snapshot != nil {
+				lastSeenCompletionID = snapshot.CompletionID
+			}
+			offset = 0
+			currentCompletionID = ""
 		}
+	} else if snapshot != nil {
+		currentCompletionID = snapshot.CompletionID
+		lastSeenCompletionID = snapshot.CompletionID
 	}
 
 	for {
-		result := h.completions.WaitChunks(r.Context(), threadID, offset)
-		if result == nil {
-			writeSSEEvent(w, "", "done", json.RawMessage(`{}`))
-			flusher.Flush()
+		if currentCompletionID == "" {
+			waitCtx, cancel := context.WithTimeout(r.Context(), h.chatPingEvery)
+			result := h.completions.WaitNextCompletion(waitCtx, threadID, lastSeenCompletionID)
+			timedOut := errors.Is(waitCtx.Err(), context.DeadlineExceeded)
+			cancel()
+
+			if r.Context().Err() != nil {
+				return
+			}
+			if result == nil {
+				if timedOut {
+					writeSSEEvent(w, "", "ping", json.RawMessage(`{}`))
+					flusher.Flush()
+				}
+				continue
+			}
+
+			currentCompletionID = result.CompletionID
+			lastSeenCompletionID = result.CompletionID
+			offset = 0
+			for _, chunk := range result.Chunks {
+				data, err := message.MarshalChunk(chunk)
+				if err != nil {
+					offset++
+					continue
+				}
+				writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, offset), "chunk", data)
+				flusher.Flush()
+				offset++
+			}
+			if result.Done {
+				currentCompletionID = ""
+				offset = 0
+			}
+			continue
+		}
+
+		waitCtx, cancel := context.WithTimeout(r.Context(), h.chatPingEvery)
+		result := h.completions.WaitChunks(waitCtx, threadID, offset)
+		timedOut := errors.Is(waitCtx.Err(), context.DeadlineExceeded)
+		cancel()
+
+		if r.Context().Err() != nil {
 			return
+		}
+		if result == nil {
+			currentCompletionID = ""
+			offset = 0
+			if timedOut {
+				writeSSEEvent(w, "", "ping", json.RawMessage(`{}`))
+				flusher.Flush()
+			}
+			continue
 		}
 
 		for _, chunk := range result.Chunks {
@@ -195,13 +287,15 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if result.Done {
-			writeSSEEvent(w, "", "done", json.RawMessage(`{}`))
-			flusher.Flush()
-			return
+			lastSeenCompletionID = result.CompletionID
+			currentCompletionID = ""
+			offset = 0
+			continue
 		}
 
-		if r.Context().Err() != nil {
-			return
+		if timedOut && len(result.Chunks) == 0 {
+			writeSSEEvent(w, "", "ping", json.RawMessage(`{}`))
+			flusher.Flush()
 		}
 	}
 }
@@ -214,6 +308,48 @@ func writeSSEEvent(w http.ResponseWriter, id, event string, data []byte) {
 		fmt.Fprintf(w, "event: %s\n", event)
 	}
 	fmt.Fprintf(w, "data: %s\n\n", data)
+}
+
+// resolveLeafAndParts extracts the leaf ID and user parts from the message
+// history the client sends on every chat request.
+//
+//   - leafID: the ID of the last assistant message in msgs. This is the branch
+//     point the new user turn will extend. Empty when there are no assistant
+//     messages yet (first turn of a new thread).
+//   - userParts: the parts from the last user message that follows the leaf
+//     (i.e. the new user input). Returns an error when no user message is found
+//     after the last assistant, or when the last assistant message has no ID.
+func resolveLeafAndParts(msgs []message.UIMessage) (leafID string, userParts []message.UIPart, err error) {
+	// Find the last assistant message.
+	lastAssistantIdx := -1
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "assistant" {
+			lastAssistantIdx = i
+			break
+		}
+	}
+
+	startIdx := 0
+	if lastAssistantIdx >= 0 {
+		if msgs[lastAssistantIdx].ID == "" {
+			return "", nil, fmt.Errorf("last assistant message has no ID")
+		}
+		leafID = msgs[lastAssistantIdx].ID
+		startIdx = lastAssistantIdx + 1
+	}
+
+	// Extract user parts from the last user message at or after startIdx.
+	for i := len(msgs) - 1; i >= startIdx; i-- {
+		if msgs[i].Role == "user" && len(msgs[i].Parts) > 0 {
+			userParts = msgs[i].Parts
+			break
+		}
+	}
+	if len(userParts) == 0 {
+		return "", nil, fmt.Errorf("no user message found after the last assistant message")
+	}
+
+	return leafID, userParts, nil
 }
 
 // parseSSEEventID parses a "{completionID}:{offset}" SSE event ID.
@@ -268,18 +404,12 @@ func (h *Handler) GetQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if pending != nil && pending.ToolCallID == questionID {
-		// Question is pending — parse and return it.
-		var questions []api.AskUserQuestion
-		if err := json.Unmarshal(pending.Questions, &questions); err != nil {
-			h.Error(w, http.StatusInternalServerError, "failed to parse questions: "+err.Error())
-			return
-		}
-
+		// Question is pending — return it directly.
 		h.JSON(w, http.StatusOK, api.PendingQuestionResponse{
 			Status: "pending",
 			Question: &api.PendingQuestion{
 				ToolUseID: pending.ToolCallID,
-				Questions: questions,
+				Questions: pending.Questions,
 			},
 		})
 		return
@@ -340,41 +470,4 @@ func (h *Handler) PostAnswer(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, api.AnswerQuestionResponse{Success: true})
 }
 
-// extractUserParts parses the last user message from the AI SDK UIMessages JSON array
-// and returns its parts as message.Part values. This converts the frontend wire format
-// to the agent's internal representation using UnmarshalUIPart for type dispatch.
-func extractUserParts(msgs json.RawMessage) []message.Part {
-	if len(msgs) == 0 {
-		return nil
-	}
-	var rawMsgs []struct {
-		Role  string            `json:"role"`
-		Parts []json.RawMessage `json:"parts"`
-	}
-	if err := json.Unmarshal(msgs, &rawMsgs); err != nil {
-		// Fallback: treat the whole blob as plain text (CLI compat).
-		return []message.Part{message.TextPart{Text: string(msgs)}}
-	}
-	for i := len(rawMsgs) - 1; i >= 0; i-- {
-		if rawMsgs[i].Role != "user" {
-			continue
-		}
-		var parts []message.Part
-		for _, partData := range rawMsgs[i].Parts {
-			p, err := message.UnmarshalUIPart(partData)
-			if err != nil {
-				continue
-			}
-			switch v := p.(type) {
-			case message.UITextPart:
-				parts = append(parts, message.TextPart{Text: v.Text})
-			case message.UIFilePart:
-				parts = append(parts, message.FilePart{Data: v.URL, MediaType: v.MediaType, Filename: v.Filename})
-			}
-		}
-		if len(parts) > 0 {
-			return parts
-		}
-	}
-	return nil
-}
+

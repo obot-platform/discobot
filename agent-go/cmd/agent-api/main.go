@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/joho/godotenv"
+
 	"github.com/obot-platform/discobot/agent-go/cmd/agent-api/cli"
 	"github.com/obot-platform/discobot/agent-go/cmd/agent-api/server"
 	"github.com/obot-platform/discobot/agent-go/internal/config"
@@ -37,6 +39,7 @@ func main() {
 	flags := cli.AddFlags()
 	flag.Parse()
 
+	_ = godotenv.Load()
 	cfg := config.Load()
 
 	// When invoked as "discobot-agent-api" (drop-in replacement), default to server mode.

@@ -922,6 +922,34 @@ func TestGrepGlobNoMatches(t *testing.T) {
 	}
 }
 
+func TestGrepGlobBraceExpansion(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	os.MkdirAll(sub, 0o755)
+	writeFile(t, dir, "app.ts", "const x = 1")
+	writeFile(t, sub, "component.tsx", "const y = 2")
+	writeFile(t, dir, "style.css", "body {}")
+	writeFile(t, dir, "script.js", "var z = 3")
+
+	results, err := Grep(context.Background(), GrepOptions{
+		Pattern: ".",
+		Path:    dir,
+		Glob:    "**/*.{ts,tsx}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results.TotalCount == 0 {
+		t.Fatal("expected matches for **/*.{ts,tsx} brace expansion, got none")
+	}
+	for _, fm := range results.Files {
+		ext := filepath.Ext(fm.Path)
+		if ext != ".ts" && ext != ".tsx" {
+			t.Errorf("brace glob matched unexpected file: %s", fm.Path)
+		}
+	}
+}
+
 // ============================================================
 // Offset/Limit Combinations (ripgrep: feature.rs)
 // ============================================================

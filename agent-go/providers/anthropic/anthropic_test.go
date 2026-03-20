@@ -909,8 +909,8 @@ func TestComplete(t *testing.T) {
 			if thinking["type"] != "enabled" {
 				t.Errorf("expected thinking type 'enabled', got %v", thinking["type"])
 			}
-			if thinking["budget_tokens"] != float64(reasoningBudget) {
-				t.Errorf("expected budget_tokens %d, got %v", reasoningBudget, thinking["budget_tokens"])
+			if thinking["budget_tokens"] != float64(reasoningBudgetHigh) {
+				t.Errorf("expected budget_tokens %d, got %v", reasoningBudgetHigh, thinking["budget_tokens"])
 			}
 			// max_tokens should be bumped to reasoningMaxTokens.
 			if body["max_tokens"] != float64(reasoningMaxTokens) {

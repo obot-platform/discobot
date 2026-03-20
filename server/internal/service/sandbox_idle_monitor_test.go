@@ -198,12 +198,12 @@ func TestSandboxIdleMonitor_SkipsRunningCompletions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a running session with old updated_at
+	// Create a ready session with old updated_at
 	session := &model.Session{
 		ID:          "test-session",
 		ProjectID:   project.ID,
 		WorkspaceID: workspace.ID,
-		Status:      model.SessionStatusRunning,       // Running status
+		Status:      model.SessionStatusReady,
 		UpdatedAt:   time.Now().Add(-2 * time.Second), // Older than idle timeout
 	}
 
@@ -226,14 +226,14 @@ func TestSandboxIdleMonitor_SkipsRunningCompletions(t *testing.T) {
 		t.Error("Expected sandbox NOT to be stopped when completion is running")
 	}
 
-	// Verify session status remains running
+	// Verify session status remains ready
 	updatedSession, err := testStore.GetSessionByID(ctx, session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if updatedSession.Status != model.SessionStatusRunning {
-		t.Errorf("Expected session to stay running, got %q", updatedSession.Status)
+	if updatedSession.Status != model.SessionStatusReady {
+		t.Errorf("Expected session to stay ready, got %q", updatedSession.Status)
 	}
 }
 

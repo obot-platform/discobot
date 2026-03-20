@@ -264,7 +264,7 @@ func TestImagePartFromPathInput_DetectsImageFile(t *testing.T) {
 	if !strings.HasPrefix(part.MediaType, "image/") {
 		t.Fatalf("expected image media type, got %q", part.MediaType)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(part.Image)
+	decoded, err := base64.StdEncoding.DecodeString(part.URL)
 	if err != nil {
 		t.Fatalf("decode base64 image: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestImagePartFromRawBytes_DetectsImageData(t *testing.T) {
 	if !strings.HasPrefix(part.MediaType, "image/") {
 		t.Fatalf("expected image media type, got %q", part.MediaType)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(part.Image)
+	decoded, err := base64.StdEncoding.DecodeString(part.URL)
 	if err != nil {
 		t.Fatalf("decode base64 image: %v", err)
 	}

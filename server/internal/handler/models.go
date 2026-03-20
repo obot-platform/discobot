@@ -17,11 +17,13 @@ type ModelsResponse struct {
 
 // ModelInfo represents a model in the API response
 type ModelInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Provider    string `json:"provider"`
-	Description string `json:"description,omitempty"`
-	Reasoning   bool   `json:"reasoning,omitempty"` // Whether model supports extended thinking
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Provider         string   `json:"provider"`
+	Description      string   `json:"description,omitempty"`
+	Reasoning        bool     `json:"reasoning,omitempty"` // Whether model supports extended thinking
+	ReasoningLevels  []string `json:"reasoningLevels,omitempty"`
+	DefaultReasoning string   `json:"defaultReasoning,omitempty"`
 }
 
 // toModelInfos converts service models to API response models.
@@ -29,11 +31,13 @@ func toModelInfos(models []service.Model) []ModelInfo {
 	modelInfos := make([]ModelInfo, len(models))
 	for i, m := range models {
 		modelInfos[i] = ModelInfo{
-			ID:          m.ID,
-			Name:        m.Name,
-			Provider:    m.Provider,
-			Description: m.Description,
-			Reasoning:   m.Reasoning,
+			ID:               m.ID,
+			Name:             m.Name,
+			Provider:         m.Provider,
+			Description:      m.Description,
+			Reasoning:        m.Reasoning,
+			ReasoningLevels:  m.ReasoningLevels,
+			DefaultReasoning: m.DefaultReasoning,
 		}
 	}
 	return modelInfos

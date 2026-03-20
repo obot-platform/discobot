@@ -40,16 +40,6 @@ func isOAuthOnly() bool {
 	return os.Getenv("ANTHROPIC_API_KEY") == "" && os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != ""
 }
 
-func isAnthropicBillingError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "credit balance is too low") ||
-		strings.Contains(s, "plans & billing") ||
-		strings.Contains(s, "purchase credits")
-}
-
 func TestAnthropic_SimpleTextCompletion(t *testing.T) {
 	t.Parallel()
 	p := anthropicProvider(t)

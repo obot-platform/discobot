@@ -1076,7 +1076,6 @@ func TestGenerateSummary_StopsAtSingleMessage(t *testing.T) {
 	}
 }
 
-
 func TestMakeSummaryMessage(t *testing.T) {
 	msg := makeSummaryMessage("User asked about Go.")
 

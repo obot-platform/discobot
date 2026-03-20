@@ -123,8 +123,8 @@ func (m *SandboxIdleMonitor) monitorLoop(ctx context.Context) {
 
 // checkIdleSessions checks all active sessions and stops those that are idle.
 func (m *SandboxIdleMonitor) checkIdleSessions(ctx context.Context) error {
-	// Get all sessions that could potentially be idle (ready or running)
-	statuses := []string{model.SessionStatusReady, model.SessionStatusRunning}
+	// Get all ready sessions that could potentially be idle.
+	statuses := []string{model.SessionStatusReady, legacySessionStatusRunning}
 	sessions, err := m.store.ListSessionsByStatuses(ctx, statuses)
 	if err != nil {
 		return fmt.Errorf("failed to list active sessions: %w", err)
@@ -175,26 +175,24 @@ func (m *SandboxIdleMonitor) shouldStopSession(ctx context.Context, session *mod
 		return false
 	}
 
-	// Check if completion is currently running - don't stop if so
-	if session.Status == model.SessionStatusRunning {
-		client, err := m.sandboxSvc.GetClient(ctx, session.ID)
-		if err != nil {
-			logger.Warn("failed to get sandbox client for idle check", "error", err)
-			return false
-		}
+	// Check if a completion is currently running - don't stop if so.
+	client, err := m.sandboxSvc.GetClient(ctx, session.ID)
+	if err != nil {
+		logger.Warn("failed to get sandbox client for idle check", "error", err)
+		return false
+	}
 
-		chatStatus, err := client.GetChatStatus(ctx)
-		if err != nil {
-			logger.Warn("failed to get chat status for idle check", "error", err)
-			return false
-		}
+	chatStatus, err := client.GetChatStatus(ctx)
+	if err != nil {
+		logger.Warn("failed to get chat status for idle check", "error", err)
+		return false
+	}
 
-		if chatStatus.IsRunning {
-			logger.Debug("session idle but completion in progress, skipping stop",
-				"completion_id", chatStatus.CompletionID,
-				"idle_duration", time.Since(lastActivity))
-			return false
-		}
+	if chatStatus.IsRunning {
+		logger.Debug("session idle but completion in progress, skipping stop",
+			"completion_id", chatStatus.CompletionID,
+			"idle_duration", time.Since(lastActivity))
+		return false
 	}
 
 	// Stop the sandbox

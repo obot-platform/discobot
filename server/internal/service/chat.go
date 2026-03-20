@@ -49,11 +49,8 @@ type NewSessionRequest struct {
 	SessionID   string
 	ProjectID   string
 	WorkspaceID string
-	Model       string
-	Reasoning   string
-	Mode        string
-	// Messages is the raw UIMessage array - passed through without parsing
-	Messages json.RawMessage
+	// Messages is the UIMessage array from the client — each element is a raw JSON object.
+	Messages []json.RawMessage
 }
 
 // CancelCompletionResponse represents the response from cancelling a completion.
@@ -83,10 +80,14 @@ func (c *ChatService) NewSession(ctx context.Context, req NewSessionRequest) (st
 	}
 
 	// Try to derive session name from first user message text
-	name := deriveSessionName(req.Messages)
+	rawMessages, err := json.Marshal(req.Messages)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal messages: %w", err)
+	}
+	name := deriveSessionName(rawMessages)
 
 	// Use SessionService to create the session with client-provided ID
-	sess, err := c.sessionService.CreateSessionWithID(ctx, req.SessionID, req.ProjectID, req.WorkspaceID, name, req.Model, req.Reasoning, req.Mode)
+	sess, err := c.sessionService.CreateSessionWithID(ctx, req.SessionID, req.ProjectID, req.WorkspaceID, name)
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
@@ -122,49 +123,6 @@ func (c *ChatService) GetSessionByID(ctx context.Context, sessionID string) (*mo
 	return c.store.GetSessionByID(ctx, sessionID)
 }
 
-// updateSessionModel updates the model for a session and broadcasts a session_updated event.
-func (c *ChatService) updateSessionModel(ctx context.Context, sessionID, modelID string) error {
-	session, err := c.store.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("session not found: %w", err)
-	}
-	session.Model = &modelID
-	if err := c.store.UpdateSession(ctx, session); err != nil {
-		return err
-	}
-	return c.eventBroker.PublishSessionUpdated(ctx, session.ProjectID, sessionID, string(session.Status), string(session.CommitStatus))
-}
-
-// updateSessionReasoning updates the reasoning setting for a session and broadcasts a session_updated event.
-func (c *ChatService) updateSessionReasoning(ctx context.Context, sessionID, reasoning string) error {
-	session, err := c.store.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("session not found: %w", err)
-	}
-	session.Reasoning = &reasoning
-	if err := c.store.UpdateSession(ctx, session); err != nil {
-		return err
-	}
-	return c.eventBroker.PublishSessionUpdated(ctx, session.ProjectID, sessionID, string(session.Status), string(session.CommitStatus))
-}
-
-// UpdateSessionMode updates the mode for a session and broadcasts a session_updated event.
-func (c *ChatService) UpdateSessionMode(ctx context.Context, sessionID, mode string) error {
-	session, err := c.store.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("session not found: %w", err)
-	}
-	var modePtr *string
-	if mode != "" {
-		modePtr = &mode
-	}
-	// Use store.UpdateSessionMode (Updates map) instead of Save so nil is not skipped by GORM.
-	if err := c.store.UpdateSessionMode(ctx, sessionID, modePtr); err != nil {
-		return err
-	}
-	return c.eventBroker.PublishSessionUpdated(ctx, session.ProjectID, sessionID, string(session.Status), string(session.CommitStatus))
-}
-
 // ValidateSessionResources validates that a session's workspace belongs to the project.
 func (c *ChatService) ValidateSessionResources(ctx context.Context, projectID string, session *model.Session) error {
 	// Validate workspace belongs to project
@@ -186,7 +144,7 @@ type preparedChatRequest struct {
 }
 
 func (c *ChatService) prepareChatRequest(ctx context.Context, projectID, sessionID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (*preparedChatRequest, error) {
-	// Validate session belongs to project and get session for model
+	// Validate session belongs to project
 	session, err := c.GetSession(ctx, projectID, sessionID)
 	if err != nil {
 		return nil, err
@@ -203,44 +161,6 @@ func (c *ChatService) prepareChatRequest(ctx context.Context, projectID, session
 		}
 	}
 
-	// If a model is provided in the request, update the session's model
-	if requestModel != "" {
-		session.Model = &requestModel
-		if err := c.store.UpdateSession(ctx, session); err != nil {
-			log.Printf("Warning: failed to update session model for %s: %v", sessionID, err)
-		}
-	}
-
-	// If reasoning is provided in the request, update the session's reasoning
-	// Otherwise, use the session's saved reasoning (if any)
-	effectiveReasoning := reasoning
-	if reasoning != "" {
-		session.Reasoning = &reasoning
-		if err := c.store.UpdateSession(ctx, session); err != nil {
-			log.Printf("Warning: failed to update session reasoning for %s: %v", sessionID, err)
-		}
-	} else if session.Reasoning != nil {
-		// Use session's saved reasoning if no reasoning provided in request
-		effectiveReasoning = *session.Reasoning
-	}
-
-	// If mode is provided in the request, update the session's mode.
-	// If mode is "" (Build), ensure any saved plan mode is cleared in the DB.
-	// Uses store.UpdateSessionMode (Updates map) so nil is not skipped by GORM.
-	effectiveMode := mode
-	if mode != "" {
-		if err := c.store.UpdateSessionMode(ctx, sessionID, &mode); err != nil {
-			log.Printf("Warning: failed to update session mode for %s: %v", sessionID, err)
-		}
-		session.Mode = &mode
-	} else if session.Mode != nil {
-		// mode="" means Build — clear the stale saved plan mode
-		if err := c.store.UpdateSessionMode(ctx, sessionID, nil); err != nil {
-			log.Printf("Warning: failed to clear session mode for %s: %v", sessionID, err)
-		}
-		session.Mode = nil
-	}
-
 	if c.sandboxService == nil {
 		return nil, fmt.Errorf("sandbox provider not available")
 	}
@@ -250,39 +170,36 @@ func (c *ChatService) prepareChatRequest(ctx context.Context, projectID, session
 		return nil, err
 	}
 
-	opts := &RequestOptions{
-		Reasoning: effectiveReasoning,
-		Mode:      effectiveMode,
-	}
-
-	// Use the model from the session (which may have just been updated)
-	// Dereference model pointer; use empty string if nil (agent will use default)
-	modelID := ""
-	if session.Model != nil {
-		modelID = *session.Model
-	}
-
 	return &preparedChatRequest{
 		client:  client,
-		modelID: modelID,
-		opts:    opts,
+		modelID: requestModel,
+		opts: &RequestOptions{
+			Reasoning: reasoning,
+			Mode:      mode,
+		},
 	}, nil
 }
 
-// StartChat sends messages to the sandbox and returns completion metadata without opening a stream.
-func (c *ChatService) StartChat(ctx context.Context, projectID, sessionID, threadID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (*sandboxapi.ChatStartedResponse, error) {
-	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, messages, requestModel, reasoning, mode)
+// StartChat sends messages to the sandbox and returns the message ID and completion metadata.
+func (c *ChatService) StartChat(ctx context.Context, projectID, sessionID, threadID string, messages []json.RawMessage, requestModel string, reasoning string, mode string) (string, *sandboxapi.ChatStartedResponse, error) {
+	messageID := lastUserMessageID(messages)
+
+	rawMessages, err := json.Marshal(messages)
 	if err != nil {
-		return nil, err
+		return "", nil, fmt.Errorf("failed to marshal messages: %w", err)
 	}
-	started, err := prepared.client.StartChat(ctx, threadID, messages, prepared.modelID, prepared.opts)
+	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, rawMessages, requestModel, reasoning, mode)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	if _, err := c.sessionService.UpdateStatus(ctx, projectID, sessionID, model.SessionStatusRunning, nil); err != nil {
-		log.Printf("Warning: failed to update session status to running for %s: %v", sessionID, err)
+	started, err := prepared.client.StartChat(ctx, threadID, rawMessages, prepared.modelID, prepared.opts)
+	if err != nil {
+		return "", nil, err
 	}
-	return started, nil
+	if err := c.sessionService.ClearCompletedCommitStatus(ctx, projectID, sessionID); err != nil {
+		log.Printf("Warning: failed to clear completed commit status for %s: %v", sessionID, err)
+	}
+	return messageID, started, nil
 }
 
 // SendToSandbox sends messages to the sandbox and returns a channel of raw SSE lines.
@@ -303,75 +220,11 @@ func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID, t
 	if err != nil {
 		return nil, err
 	}
-	if _, err := c.sessionService.UpdateStatus(ctx, projectID, sessionID, model.SessionStatusRunning, nil); err != nil {
-		log.Printf("Warning: failed to update session status to running for %s: %v", sessionID, err)
+	if err := c.sessionService.ClearCompletedCommitStatus(ctx, projectID, sessionID); err != nil {
+		log.Printf("Warning: failed to clear completed commit status for %s: %v", sessionID, err)
 	}
 
-	// Wrap the inner channel to intercept SSE events that carry session metadata updates.
-	// We update the session in the background so callers receive all lines unchanged.
-	// Use a context that outlives client disconnection for the DB update.
-	updateCtx := context.WithoutCancel(ctx)
-	outerCh := make(chan SSELine)
-	go func() {
-		defer close(outerCh)
-		for line := range innerCh {
-			if !line.Done {
-				// Intercept 'start' events that carry the actual model ID and reasoning
-				// setting chosen by the agent.
-				if strings.Contains(line.Data, `"type":"start"`) {
-					var startEvent struct {
-						MessageMetadata *struct {
-							Model     string `json:"model"`
-							Reasoning string `json:"reasoning"`
-						} `json:"messageMetadata"`
-					}
-					if err := json.Unmarshal([]byte(line.Data), &startEvent); err == nil &&
-						startEvent.MessageMetadata != nil {
-						if actualModel := startEvent.MessageMetadata.Model; actualModel != "" {
-							go func() {
-								if err := c.updateSessionModel(updateCtx, sessionID, actualModel); err != nil {
-									log.Printf("[Chat] Warning: failed to update session model for %s: %v", sessionID, err)
-								} else {
-									log.Printf("[Chat] Updated session %s with actual model: %s", sessionID, actualModel)
-								}
-							}()
-						}
-						if actualReasoning := startEvent.MessageMetadata.Reasoning; actualReasoning != "" {
-							go func() {
-								if err := c.updateSessionReasoning(updateCtx, sessionID, actualReasoning); err != nil {
-									log.Printf("[Chat] Warning: failed to update session reasoning for %s: %v", sessionID, err)
-								} else {
-									log.Printf("[Chat] Updated session %s with actual reasoning: %s", sessionID, actualReasoning)
-								}
-							}()
-						}
-					}
-				}
-				// Intercept 'data-mode-change' events emitted when the agent enters/exits plan mode.
-				if strings.Contains(line.Data, `"type":"data-mode-change"`) {
-					var modeEvent struct {
-						Type string `json:"type"`
-						Data struct {
-							Mode string `json:"mode"`
-						} `json:"data"`
-					}
-					if err := json.Unmarshal([]byte(line.Data), &modeEvent); err == nil &&
-						modeEvent.Type == "data-mode-change" {
-						newMode := modeEvent.Data.Mode
-						go func() {
-							if err := c.UpdateSessionMode(updateCtx, sessionID, newMode); err != nil {
-								log.Printf("[Chat] Warning: failed to update session mode for %s: %v", sessionID, err)
-							} else {
-								log.Printf("[Chat] Updated session %s mode to: %q", sessionID, newMode)
-							}
-						}()
-					}
-				}
-			}
-			outerCh <- line
-		}
-	}()
-	return outerCh, nil
+	return innerCh, nil
 }
 
 // GetStream returns a channel of SSE events for an in-progress completion.
@@ -889,5 +742,19 @@ func deriveSessionName(messages json.RawMessage) string {
 		}
 	}
 
+	return ""
+}
+
+// lastUserMessageID returns the ID of the last user message in the slice, or "".
+func lastUserMessageID(messages []json.RawMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		var m struct {
+			ID   string `json:"id"`
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(messages[i], &m) == nil && m.Role == "user" && m.ID != "" {
+			return m.ID
+		}
+	}
 	return ""
 }

@@ -16,19 +16,22 @@ import (
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
 	"github.com/obot-platform/discobot/agent-go/providers/transport"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 const (
-	providerID         = "anthropic"
-	defaultBaseURL     = "https://api.anthropic.com/v1"
-	apiVersion         = "2023-06-01"
-	defaultMaxTokens   = 8192
-	reasoningMaxTokens = 16000
-	reasoningBudget    = 10000
-	thinkingBetaHeader = "interleaved-thinking-2025-05-14"
-	oauthBetaHeader    = "oauth-2025-04-20"
+	providerID            = "anthropic"
+	defaultBaseURL        = "https://api.anthropic.com/v1"
+	apiVersion            = "2023-06-01"
+	defaultMaxTokens      = 8192
+	reasoningMaxTokens    = 16000
+	reasoningBudgetLow    = 2000
+	reasoningBudgetMedium = 5000
+	reasoningBudgetHigh   = 10000
+	reasoningBudgetXHigh  = 16000
+	thinkingBetaHeader    = "interleaved-thinking-2025-05-14"
+	oauthBetaHeader       = "oauth-2025-04-20"
 )
 
 func init() {
@@ -149,15 +152,9 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 		if req.TopP != nil {
 			body["top_p"] = *req.TopP
 		}
-		// Determine effective reasoning: explicit "enabled"/"disabled", or auto-detect
-		// from model capability when unset (matching Claude CLI default behaviour).
-		effectiveReasoning := req.Reasoning
-		if effectiveReasoning == "" {
-			if md := modelsdev.Lookup(providerID, req.Model.ModelID); md != nil && md.Reasoning {
-				effectiveReasoning = "enabled"
-			}
-		}
-		if effectiveReasoning == "enabled" {
+		// Resolve the effective reasoning level to use for this request.
+		effectiveReasoning := resolveReasoning(req.Reasoning, req.Model.ModelID)
+		if effectiveReasoning != providers.ReasoningDisabled && effectiveReasoning != providers.ReasoningNone {
 			if supportsAdaptiveThinking(req.Model.ModelID) {
 				body["thinking"] = map[string]any{
 					"type": "adaptive",
@@ -165,7 +162,7 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 			} else {
 				body["thinking"] = map[string]any{
 					"type":          "enabled",
-					"budget_tokens": reasoningBudget,
+					"budget_tokens": reasoningBudgetForLevel(effectiveReasoning),
 				}
 			}
 			if maxTokens < reasoningMaxTokens {
@@ -187,7 +184,7 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 			return
 		}
 
-		adaptiveThinking := effectiveReasoning == "enabled" && supportsAdaptiveThinking(req.Model.ModelID)
+		adaptiveThinking := supportsAdaptiveThinking(req.Model.ModelID) && effectiveReasoning != providers.ReasoningDisabled && effectiveReasoning != providers.ReasoningNone
 		httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/messages", bytes.NewReader(jsonBody))
 		if err != nil {
 			yield(nil, fmt.Errorf("anthropic: create request: %w", err))
@@ -196,7 +193,8 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 		httpReq.Header.Set("Content-Type", "application/json")
 		p.setAuthHeader(httpReq)
 		httpReq.Header.Set("anthropic-version", apiVersion)
-		if effectiveReasoning == "enabled" && !adaptiveThinking {
+		needsBetaHeader := !adaptiveThinking && effectiveReasoning != providers.ReasoningDisabled && effectiveReasoning != providers.ReasoningNone && effectiveReasoning != providers.ReasoningEmpty
+		if needsBetaHeader {
 			httpReq.Header.Add("anthropic-beta", thinkingBetaHeader)
 		}
 
@@ -258,8 +256,20 @@ func (p *Provider) ListModels(ctx context.Context) ([]providers.ModelInfo, error
 		if md := modelsdev.Lookup(providerID, m.ID); md != nil {
 			info.DisplayName = md.Name
 			info.Reasoning = md.Reasoning
+			info.ReasoningLevels = toReasoningSlice(md.ReasoningLevels)
+			info.DefaultReasoning = providers.Reasoning(md.DefaultReasonLevel)
 			info.ContextWindow = md.ContextWindow
 			info.MaxOutputTokens = md.MaxOutputTokens
+		} else if supportsAdaptiveThinking(m.ID) {
+			// Unknown model with adaptive thinking (≥4.6): only auto/none.
+			info.Reasoning = true
+			info.ReasoningLevels = []providers.Reasoning{providers.ReasoningAuto, providers.ReasoningNone}
+			info.DefaultReasoning = providers.ReasoningAuto
+		} else if strings.Contains(m.ID, "3-7") || strings.Contains(m.ID, "claude-4") || strings.Contains(m.ID, "opus") || strings.Contains(m.ID, "sonnet") || strings.Contains(m.ID, "haiku") {
+			// Unknown Claude model that likely supports budget thinking: full range.
+			info.Reasoning = true
+			info.ReasoningLevels = []providers.Reasoning{providers.ReasoningAuto, providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh, providers.ReasoningXHigh, providers.ReasoningNone}
+			info.DefaultReasoning = providers.ReasoningAuto
 		}
 		models = append(models, info)
 	}
@@ -933,4 +943,55 @@ func extractErrorMessage(body []byte) string {
 		return apiErr.Error.Message
 	}
 	return string(body)
+}
+
+// resolveReasoning translates the requested Reasoning level to the effective
+// level for this model. Empty / default fall back to the models.dev default,
+// then to auto-detect from the reasoning bool.
+func resolveReasoning(r providers.Reasoning, modelID string) providers.Reasoning {
+	switch r {
+	case providers.ReasoningDisabled, providers.ReasoningNone:
+		return providers.ReasoningDisabled
+	case providers.ReasoningEmpty, providers.ReasoningDefault:
+		// Use the models.dev default level if set; otherwise auto-detect.
+		if md := modelsdev.Lookup(providerID, modelID); md != nil {
+			if md.DefaultReasonLevel != "" {
+				return providers.Reasoning(md.DefaultReasonLevel)
+			}
+			if md.Reasoning {
+				return providers.ReasoningAuto
+			}
+		}
+		return providers.ReasoningDisabled
+	default:
+		return r
+	}
+}
+
+// reasoningBudgetForLevel maps a Reasoning level to an Anthropic budget_tokens
+// value for old-style (non-adaptive) thinking models.
+func reasoningBudgetForLevel(r providers.Reasoning) int {
+	switch r {
+	case providers.ReasoningLow:
+		return reasoningBudgetLow
+	case providers.ReasoningMedium:
+		return reasoningBudgetMedium
+	case providers.ReasoningXHigh:
+		return reasoningBudgetXHigh
+	default: // high, auto, enabled, and anything else
+		return reasoningBudgetHigh
+	}
+}
+
+// toReasoningSlice converts a slice of strings from models.dev into a slice of
+// providers.Reasoning values.
+func toReasoningSlice(ss []string) []providers.Reasoning {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]providers.Reasoning, len(ss))
+	for i, s := range ss {
+		out[i] = providers.Reasoning(s)
+	}
+	return out
 }

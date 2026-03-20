@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/obot-platform/discobot/agent-go/internal/credentials"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 // ProviderRegistry builds and caches Provider instances on demand.
@@ -127,8 +127,13 @@ func (r *ProviderRegistry) Resolve(modelRef string) (Provider, string, error) {
 //   - ref == "provider/model": parse and return as-is.
 func (r *ProviderRegistry) ResolveModel(ref string, taskType string) (ModelRef, error) {
 	if ref == "" {
+		ids := r.IDs()
+		if len(ids) == 0 {
+			return ModelRef{}, fmt.Errorf("no model providers are available; configure a provider, set MODEL, or pass --model")
+		}
+
 		// Find the first available provider with a default for this task type.
-		for _, id := range r.IDs() {
+		for _, id := range ids {
 			p, err := r.Get(id)
 			if err != nil {
 				continue
@@ -137,7 +142,11 @@ func (r *ProviderRegistry) ResolveModel(ref string, taskType string) (ModelRef, 
 				return ref, nil
 			}
 		}
-		return ModelRef{}, fmt.Errorf("no provider available with a default %q model; set MODEL or pass --model", taskType)
+		return ModelRef{}, fmt.Errorf(
+			"no provider available with a default %q model; available providers: %s; set MODEL or pass --model",
+			taskType,
+			strings.Join(ids, ", "),
+		)
 	}
 
 	if !strings.Contains(ref, "/") {
@@ -227,13 +236,12 @@ func (r *ProviderRegistry) IDs() []string {
 
 // configForProvider builds a Config for the given provider ID.
 //
-// Credential resolution order for each env var name declared by models.dev:
-//  1. In-memory credentials from the Manager (populated via X-Discobot-Credentials).
-//  2. OS environment variable fallback.
-//
-// OAuth credentials (authType == "oauth") are mapped to "auth_token" and take
-// priority over API key credentials. All other credentials populate "api_key"
-// (first one wins) and their own named key.
+// Credential resolution order:
+//  1. OAuth credentials in the Manager for this provider ID (sets "auth_token", returns early).
+//  2. Special alias: "codex" OAuth credentials are mapped to the "openai" provider
+//     with the ChatGPT Codex base URL (sets "api_key", returns early).
+//  3. Env var credentials from models.dev (Manager first, then OS env).
+//  4. CODEX_TOKEN OS env var overrides OpenAI credentials with the Codex backend.
 //
 // Returns an empty Config if no credentials are found.
 func (r *ProviderRegistry) configForProvider(id string) Config {
@@ -274,22 +282,6 @@ func (r *ProviderRegistry) configForProvider(id string) Config {
 		if !apiKeySet {
 			cfg["api_key"] = val
 			apiKeySet = true
-		}
-	}
-
-	// Special case: CODEX_TOKEN configures the openai provider to use the
-	// ChatGPT Codex backend instead of api.openai.com. Takes priority over
-	// any other OpenAI credentials (OPENAI_API_KEY etc). The base URL is only
-	// overridden when OPENAI_API_BASE is not set, preserving any explicit user config.
-	if id == "openai" {
-		if codexToken := os.Getenv("CODEX_TOKEN"); codexToken != "" {
-			cfg["api_key"] = codexToken
-			if os.Getenv("OPENAI_API_BASE") == "" {
-				cfg["base_url"] = "wss://chatgpt.com/backend-api/codex"
-			}
-			if accountID := os.Getenv("CHATGPT_ACCOUNT_ID"); accountID != "" {
-				cfg["account_id"] = accountID
-			}
 		}
 	}
 

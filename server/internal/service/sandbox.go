@@ -126,7 +126,7 @@ func (s *SandboxService) ensureSandboxReady(ctx context.Context, sessionID strin
 	}
 
 	switch sess.Status {
-	case model.SessionStatusReady, model.SessionStatusRunning:
+	case model.SessionStatusReady, legacySessionStatusRunning:
 		// Session status looks good — verify the container is actually running.
 		// This fast-path check avoids expensive reconciliation when everything is healthy.
 		sb, err := s.provider.Get(ctx, sessionID)
@@ -526,22 +526,20 @@ func (s *SandboxService) ReconcileSandboxes(ctx context.Context) error {
 // ReconcileSessionStates checks sessions that the database considers active or
 // in-progress and verifies their sandbox state matches. If a sandbox has failed,
 // the session is marked as error. If the sandbox is stopped or doesn't exist,
-// the session is marked as stopped. For sessions marked "running", checks with
-// the agent API to verify a chat is actually in progress. This should be called
-// on server startup after ReconcileSandboxes.
+// the session is marked as stopped. This should be called on server startup
+// after ReconcileSandboxes.
 //
 // This handles three cases:
-//  1. Sessions marked "ready" or "running" but sandbox is missing/stopped/failed
-//  2. Sessions marked "running" but no completion is actually in progress
-//  3. Sessions stuck in intermediate states (initializing, creating_sandbox, etc.)
+//  1. Sessions marked "ready" but sandbox is missing/stopped/failed
+//  2. Sessions stuck in intermediate states (initializing, creating_sandbox, etc.)
 //     where the server died mid-creation and the sandbox doesn't exist
 func (s *SandboxService) ReconcileSessionStates(ctx context.Context) error {
 	// Get all sessions that need reconciliation:
-	// - "ready" or "running" sessions where sandbox might have died
+	// - "ready" sessions where sandbox might have died
 	// - intermediate states where server might have died mid-creation
 	statesToReconcile := []string{
 		model.SessionStatusReady,
-		model.SessionStatusRunning,
+		legacySessionStatusRunning,
 		model.SessionStatusInitializing,
 		model.SessionStatusReinitializing,
 		model.SessionStatusCloning,
@@ -592,39 +590,6 @@ func (s *SandboxService) ReconcileSessionStates(ctx context.Context) error {
 
 		// Sandbox exists and is running
 		if sb.Status == sandbox.StatusRunning {
-			// Special handling for "running" sessions - verify chat is actually in progress
-			if session.Status == model.SessionStatusRunning {
-				// Check with agent if completion is actually running
-				client := NewSandboxChatClient(s.provider, nil, nil)
-				chatStatus, err := client.GetChatStatus(ctx, session.ID)
-				if err != nil {
-					// Failed to get chat status - assume chat is not running
-					// This handles cases where the sandbox doesn't have the agent API
-					// or the agent API is not responding
-					log.Printf("Failed to get chat status for session %s (assuming not running): %v", session.ID, err)
-					log.Printf("Session %s marked as running but chat status unavailable, updating to ready", session.ID)
-					if err := s.store.UpdateSessionStatus(ctx, session.ID, model.SessionStatusReady, nil); err != nil {
-						log.Printf("Failed to update session %s status: %v", session.ID, err)
-					}
-					continue
-				}
-
-				if !chatStatus.IsRunning {
-					// Chat is not actually running - reset to ready
-					log.Printf("Session %s marked as running but chat not active, updating to ready", session.ID)
-					if err := s.store.UpdateSessionStatus(ctx, session.ID, model.SessionStatusReady, nil); err != nil {
-						log.Printf("Failed to update session %s status: %v", session.ID, err)
-					}
-				} else {
-					completionID := "unknown"
-					if chatStatus.CompletionID != nil {
-						completionID = *chatStatus.CompletionID
-					}
-					log.Printf("Session %s chat is running (completion: %s)", session.ID, completionID)
-				}
-				continue
-			}
-
 			// Update session status if it was in intermediate state
 			if session.Status != model.SessionStatusReady {
 				log.Printf("Session %s was in %s state but sandbox is running, updating to ready", session.ID, session.Status)

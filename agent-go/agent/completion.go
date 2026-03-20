@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -25,6 +24,7 @@ type CompletionManager struct {
 	agent Agent
 
 	mu             sync.Mutex
+	cond           *sync.Cond
 	active         map[string]*activeCompletion // keyed by threadID
 	onTurnComplete TurnCompleteFunc
 }
@@ -44,10 +44,12 @@ type activeCompletion struct {
 
 // NewCompletionManager creates a CompletionManager wrapping the given Agent.
 func NewCompletionManager(agent Agent) *CompletionManager {
-	return &CompletionManager{
+	cm := &CompletionManager{
 		agent:  agent,
 		active: make(map[string]*activeCompletion),
 	}
+	cm.cond = sync.NewCond(&cm.mu)
+	return cm
 }
 
 // Recover checks all threads for interrupted turns and resumes them.
@@ -92,6 +94,7 @@ func (cm *CompletionManager) Chat(threadID string, req PromptRequest) (string, e
 	}
 	comp.cond = sync.NewCond(&comp.mu)
 	cm.active[threadID] = comp
+	cm.cond.Broadcast()
 
 	go cm.runCompletion(ctx, comp, threadID, req)
 
@@ -114,6 +117,7 @@ func (cm *CompletionManager) startPrompt(threadID string, req PromptRequest) {
 
 	cm.mu.Lock()
 	cm.active[threadID] = comp
+	cm.cond.Broadcast()
 	cm.mu.Unlock()
 
 	go cm.runCompletion(ctx, comp, threadID, req)
@@ -122,19 +126,29 @@ func (cm *CompletionManager) startPrompt(threadID string, req PromptRequest) {
 // runCompletion drives the Agent.Prompt iterator in a goroutine, caching chunks.
 func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeCompletion, threadID string, req PromptRequest) {
 	var turnErr error
+	sawStart := false
 	for chunk, err := range cm.agent.Prompt(ctx, threadID, req) {
 		comp.mu.Lock()
 		if err != nil {
 			turnErr = err
 			comp.err = err
+			if !sawStart {
+				comp.events = append(comp.events, message.StartChunk{MessageID: generateID()})
+			}
 			comp.events = append(comp.events, message.ErrorChunk{ErrorText: err.Error()})
 			comp.done = true
 			comp.cond.Broadcast()
 			comp.mu.Unlock()
+			cm.mu.Lock()
+			cm.cond.Broadcast()
+			cm.mu.Unlock()
 			cm.notifyComplete(threadID, turnErr)
 			return
 		}
 		if chunk != nil {
+			if _, ok := chunk.(message.StartChunk); ok {
+				sawStart = true
+			}
 			comp.events = append(comp.events, chunk)
 			comp.cond.Broadcast()
 		}
@@ -144,6 +158,9 @@ func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeComp
 	comp.done = true
 	comp.cond.Broadcast()
 	comp.mu.Unlock()
+	cm.mu.Lock()
+	cm.cond.Broadcast()
+	cm.mu.Unlock()
 	cm.notifyComplete(threadID, nil)
 }
 
@@ -152,6 +169,7 @@ type PollResult struct {
 	CompletionID string
 	Chunks       []message.MessageChunk
 	Done         bool
+	Err          error
 }
 
 // PollChunks returns cached events from the given offset for a thread's
@@ -170,12 +188,12 @@ func (cm *CompletionManager) PollChunks(threadID string, offset int) *PollResult
 	defer comp.mu.Unlock()
 
 	if offset >= len(comp.events) {
-		return &PollResult{CompletionID: comp.id, Done: comp.done}
+		return &PollResult{CompletionID: comp.id, Done: comp.done, Err: comp.err}
 	}
 
 	chunks := make([]message.MessageChunk, len(comp.events)-offset)
 	copy(chunks, comp.events[offset:])
-	return &PollResult{CompletionID: comp.id, Chunks: chunks, Done: comp.done}
+	return &PollResult{CompletionID: comp.id, Chunks: chunks, Done: comp.done, Err: comp.err}
 }
 
 // WaitChunks blocks until new chunks are available at or after offset (or the
@@ -202,7 +220,47 @@ func (cm *CompletionManager) WaitChunks(ctx context.Context, threadID string, of
 
 	chunks := make([]message.MessageChunk, len(comp.events)-offset)
 	copy(chunks, comp.events[offset:])
-	return &PollResult{CompletionID: comp.id, Chunks: chunks, Done: comp.done}
+	return &PollResult{CompletionID: comp.id, Chunks: chunks, Done: comp.done, Err: comp.err}
+}
+
+// WaitNextCompletion blocks until threadID has a completion whose ID differs
+// from afterCompletionID, then returns its current cached chunks and done state.
+// This lets SSE consumers observe both new active completions and completions
+// that started and finished between polls.
+// Returns nil if ctx is cancelled first.
+func (cm *CompletionManager) WaitNextCompletion(ctx context.Context, threadID, afterCompletionID string) *PollResult {
+	stop := context.AfterFunc(ctx, func() {
+		cm.mu.Lock()
+		cm.cond.Broadcast()
+		cm.mu.Unlock()
+	})
+	defer stop()
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	for ctx.Err() == nil {
+		comp, ok := cm.active[threadID]
+		if ok {
+			comp.mu.Lock()
+			if comp.id != afterCompletionID {
+				chunks := make([]message.MessageChunk, len(comp.events))
+				copy(chunks, comp.events)
+				result := &PollResult{
+					CompletionID: comp.id,
+					Chunks:       chunks,
+					Done:         comp.done,
+					Err:          comp.err,
+				}
+				comp.mu.Unlock()
+				return result
+			}
+			comp.mu.Unlock()
+		}
+		cm.cond.Wait()
+	}
+
+	return nil
 }
 
 // Cancel cancels the active completion for a thread.
@@ -249,7 +307,7 @@ func (cm *CompletionManager) ActiveCompletionID(threadID string) string {
 // If a completion is currently running and no leafID was specified, the result
 // is clamped to the completion's starting leaf so that in-progress messages
 // are not returned (they arrive via the SSE stream instead).
-func (cm *CompletionManager) Messages(threadID, leafID string) ([]json.RawMessage, error) {
+func (cm *CompletionManager) Messages(threadID, leafID string) ([]message.UIMessage, error) {
 	if leafID == "" {
 		if startLeaf := cm.activeCompletionLeafID(threadID); startLeaf != "" {
 			leafID = startLeaf
@@ -310,4 +368,9 @@ func (cm *CompletionManager) notifyComplete(threadID string, err error) {
 	if fn != nil {
 		fn(threadID, err)
 	}
+}
+
+// IsLeaf reports whether msgID is a valid leaf in the thread's message tree.
+func (cm *CompletionManager) IsLeaf(threadID, msgID string) (bool, error) {
+	return cm.agent.IsLeaf(threadID, msgID)
 }

@@ -42,7 +42,17 @@ func (h *Handler) ListThreads(w http.ResponseWriter, _ *http.Request) {
 		if cfgErr == nil && strings.TrimSpace(cfg.Name) != "" {
 			name = cfg.Name
 		}
-		threads = append(threads, api.Thread{ID: threadID, Name: name})
+		mode := ""
+		if cfgErr == nil && cfg.PlanMode {
+			mode = "plan"
+		}
+		threads = append(threads, api.Thread{
+			ID:        threadID,
+			Name:      name,
+			Model:     cfg.Model,
+			Reasoning: string(cfg.Reasoning),
+			Mode:      mode,
+		})
 	}
 
 	h.JSON(w, http.StatusOK, api.ListThreadsResponse{Threads: threads})
@@ -94,7 +104,7 @@ func (h *Handler) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.JSON(w, http.StatusCreated, api.Thread(req))
+	h.JSON(w, http.StatusCreated, api.Thread{ID: req.ID, Name: cfg.Name})
 }
 
 // GetThread handles GET /threads/{id} — returns thread metadata.
@@ -125,8 +135,18 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 	if err == nil && strings.TrimSpace(cfg.Name) != "" {
 		name = cfg.Name
 	}
+	mode := ""
+	if err == nil && cfg.PlanMode {
+		mode = "plan"
+	}
 
-	h.JSON(w, http.StatusOK, api.Thread{ID: threadID, Name: name})
+	h.JSON(w, http.StatusOK, api.Thread{
+		ID:        threadID,
+		Name:      name,
+		Model:     cfg.Model,
+		Reasoning: string(cfg.Reasoning),
+		Mode:      mode,
+	})
 }
 
 // UpdateThread handles PUT/PATCH /threads/{id} — updates thread metadata.
@@ -172,8 +192,18 @@ func (h *Handler) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	mode := ""
+	if cfg.PlanMode {
+		mode = "plan"
+	}
 
-	h.JSON(w, http.StatusOK, api.Thread{ID: threadID, Name: req.Name})
+	h.JSON(w, http.StatusOK, api.Thread{
+		ID:        threadID,
+		Name:      req.Name,
+		Model:     cfg.Model,
+		Reasoning: string(cfg.Reasoning),
+		Mode:      mode,
+	})
 }
 
 // DeleteThread handles DELETE /threads/{id} — removes a thread.

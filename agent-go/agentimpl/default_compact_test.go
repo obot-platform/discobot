@@ -63,7 +63,7 @@ func TestPromptCompactCommand_ForceCompactsImmediately(t *testing.T) {
 
 	var deltas []string
 	for chunk, err := range agentImpl.Prompt(context.Background(), threadID, agent.PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "/compact"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "/compact"}},
 	}) {
 		if err != nil {
 			t.Fatal(err)
@@ -98,7 +98,7 @@ func TestPromptCompactCommand_NoHistory(t *testing.T) {
 
 	var deltas []string
 	for chunk, err := range agentImpl.Prompt(context.Background(), "thread-empty", agent.PromptRequest{
-		UserParts: []message.Part{message.TextPart{Text: "/compact"}},
+		UserParts: []message.UIPart{message.UITextPart{Text: "/compact"}},
 	}) {
 		if err != nil {
 			t.Fatal(err)

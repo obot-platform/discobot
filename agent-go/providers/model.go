@@ -16,6 +16,15 @@ type ModelInfo struct {
 	// Reasoning indicates whether the model supports extended thinking.
 	Reasoning bool `json:"reasoning"`
 
+	// ReasoningLevels lists the Reasoning values that this model accepts.
+	// Empty means reasoning is not supported or the valid levels are not known.
+	ReasoningLevels []Reasoning `json:"reasoningLevels,omitempty"`
+
+	// DefaultReasoning is the reasoning level applied when the request does not
+	// specify one (i.e. Reasoning is ReasoningEmpty or ReasoningDefault).
+	// Empty means the provider chooses its own default.
+	DefaultReasoning Reasoning `json:"defaultReasoning,omitempty"`
+
 	// ContextWindow is the maximum context length in tokens. Zero means unknown.
 	ContextWindow int `json:"contextWindow,omitempty"`
 

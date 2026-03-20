@@ -350,7 +350,7 @@ func Run(cfg *config.Config, flags *Flags) {
 				Mode:         planModeStr(planMode),
 				MaxTurns:     *flags.maxTurns,
 				SubagentType: *flags.subagent,
-				UserParts:    []message.Part{message.TextPart{Text: line}},
+				UserParts:    []message.UIPart{message.UITextPart{Text: line}},
 			}
 			runTurnLoop(ctx, cancel, a, threadID, req, func(enabled bool) {
 				planMode = enabled

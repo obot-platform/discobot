@@ -22,6 +22,8 @@ The agent-go API uses different route naming than the original TypeScript agent-
 1. **No `{agent}` path parameter** — routes are `/threads/{id}/...` not `/session/{id}/{agent}/...`
 2. **`sessions` → `threads`** — a session can have multiple threads
 3. **JSON and SSE are separate endpoints** — `GET /messages` for JSON history, `GET /chat/stream` for SSE
+4. **Chat SSE is long-lived** — `GET /chat/stream` no longer closes after a single completion; it stays connected and emits `ping` events while idle, without a terminal `done` event
+5. **Sessions stay `ready` while chat streams** — completion activity is no longer reflected as a session-level `running` state
 
 ## Server Changes Needed
 
@@ -42,6 +44,9 @@ Update HTTP client calls to use new routes:
 ### `server/internal/handler/chat.go`
 
 Update handler to proxy to new agent-go routes and adapt request/response formats.
+The downstream proxying logic also needs to treat chat SSE as a persistent
+connection with periodic `ping` events between completions, and it should not
+expect a terminal `done` event from the stream itself.
 
 ### `server/internal/service/chat.go`
 
@@ -58,6 +63,8 @@ Update service layer to match new route structure.
 
 - Update API client methods to call new routes
 - Question/answer endpoints use path params instead of query/body
+- Keep chat SSE subscriptions open across multiple completions and ignore
+  `ping` events except for connection liveness
 
 ### `components/ai-elements/tool-renderers/ask-user-question-tool.tsx`
 
@@ -75,6 +82,8 @@ The agent-go message format is compatible with the existing UI. Key points:
 - Part types (`text`, `tool-call`, `tool-result`, `reasoning`, etc.) are the same
 - UI projection (`ProjectUIMessages`) produces the same JSON format
 - SSE streaming uses the same chunk format
+- Chat SSE additionally emits `ping` events with `{}` payloads to keep the
+  connection alive between completions
 
 ## System Prompt Delivery
 

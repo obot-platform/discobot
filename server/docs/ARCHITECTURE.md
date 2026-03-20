@@ -176,7 +176,7 @@ Client Request
 ### Chat Request (SSE)
 
 ```
-Client POST /chat
+Client POST /sessions/{sessionId}/threads/{threadId}/chat
       │
       ▼
 ┌─────────────────┐

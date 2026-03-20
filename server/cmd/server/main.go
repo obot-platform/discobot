@@ -222,17 +222,6 @@ func main() {
 		}()
 	}
 
-	// Start session status poller to verify running sessions actually have active completions
-	// This catches sessions that are marked "running" but the agent has no active completion
-	var sessionStatusPoller *service.SessionStatusPoller
-	if sandboxProvider != nil {
-		// Create a temporary sandbox service for the poller (will be replaced later)
-		pollerSandboxSvc := service.NewSandboxService(s, sandboxProvider, cfg, nil, nil, nil, nil)
-		sessionStatusPoller = service.NewSessionStatusPoller(s, pollerSandboxSvc, eventBroker, slog.Default())
-		sessionStatusPoller.Start(context.Background())
-		log.Println("Session status poller started")
-	}
-
 	// Create a shared connection tracker so the idle monitor can see live SSH and
 	// service-proxy connections and avoid stopping sandboxes while they are in use.
 	connTracker := conntrack.New()
@@ -933,6 +922,26 @@ func main() {
 					},
 				})
 
+				sessReg.Register(r, routes.Route{
+					Method: "POST", Pattern: "/{sessionId}/threads/{threadId}/chat",
+					Handler: h.Chat,
+					Meta: routes.Meta{
+						Group:       "Chat",
+						Description: "Start chat for a specific session thread",
+						Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
+						Body: map[string]any{
+							"messages": []map[string]any{{
+								"id":   "msg-1",
+								"role": "user",
+								"parts": []map[string]any{{
+									"type": "text",
+									"text": "Help me understand this repository.",
+								}},
+							}},
+						},
+					},
+				})
+
 				// All session-specific routes are nested under /{sessionId} so
 				// the SessionBelongsToProject middleware can validate ownership
 				// before any handler runs.
@@ -1198,17 +1207,6 @@ func main() {
 					})
 
 					sidReg.Register(r, routes.Route{
-						Method: "POST", Pattern: "/threads/{threadId}/chat",
-						Handler: h.Chat,
-						Meta: routes.Meta{
-							Group:       "Chat",
-							Description: "Start chat for a specific session thread",
-							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
-							Body:        map[string]any{"sessionId": "abc123", "threadId": "thread-1", "messages": []map[string]any{{"role": "user", "content": "Hello"}}},
-						},
-					})
-
-					sidReg.Register(r, routes.Route{
 						Method: "GET", Pattern: "/threads/{threadId}/stream",
 						Handler: h.ChatStream,
 						Meta: routes.Meta{
@@ -1391,6 +1389,16 @@ func main() {
 			// Credentials
 			r.Route("/credentials", func(r chi.Router) {
 				credReg := projReg.WithPrefix("/credentials")
+
+				credReg.Register(r, routes.Route{
+					Method: "GET", Pattern: "/types",
+					Handler: h.GetCredentialTypes,
+					Meta: routes.Meta{
+						Group:       "Credentials",
+						Description: "List credential types",
+						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
+					},
+				})
 
 				credReg.Register(r, routes.Route{
 					Method: "GET", Pattern: "/",
@@ -1602,79 +1610,6 @@ func main() {
 					},
 				})
 			})
-
-			// TODO: Remove these legacy session-scoped chat routes after all clients
-			// migrate to the thread-scoped /sessions/{sessionId}/threads/{threadId}/... APIs.
-			// Chat endpoint
-			projReg.Register(r, routes.Route{
-				Method: "POST", Pattern: "/chat",
-				Handler: h.Chat,
-				Meta: routes.Meta{
-					Group:       "Chat",
-					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/chat instead",
-					Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					Body:        map[string]any{"messages": []map[string]any{{"role": "user", "content": "Hello"}}},
-				},
-			})
-
-			// Chat stream resume endpoint
-			projReg.Register(r, routes.Route{
-				Method: "GET", Pattern: "/chat/{sessionId}/stream",
-				Handler: h.ChatStream,
-				Meta: routes.Meta{
-					Group:       "Chat",
-					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/stream instead",
-					Params: []routes.Param{
-						{Name: "projectId", Example: "local"},
-						{Name: "sessionId", Example: "abc123"},
-						{Name: "replay", In: "query", Example: "true"},
-					},
-				},
-			})
-
-			// Chat cancel endpoint
-			projReg.Register(r, routes.Route{
-				Method: "POST", Pattern: "/chat/{sessionId}/cancel",
-				Handler: h.ChatCancel,
-				Meta: routes.Meta{
-					Group:       "Chat",
-					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/cancel instead",
-					Params: []routes.Param{
-						{Name: "projectId", Example: "local"},
-						{Name: "sessionId", Example: "abc123"},
-					},
-				},
-			})
-
-			// Chat question endpoint - poll for pending AskUserQuestion
-			projReg.Register(r, routes.Route{
-				Method: "GET", Pattern: "/chat/{sessionId}/question/{questionId}",
-				Handler: h.ChatQuestion,
-				Meta: routes.Meta{
-					Group:       "Chat",
-					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/question/{questionId} instead",
-					Params: []routes.Param{
-						{Name: "projectId", Example: "local"},
-						{Name: "sessionId", Example: "abc123"},
-						{Name: "questionId", Example: "tool-use-id"},
-					},
-				},
-			})
-
-			// Chat answer endpoint - submit answer to pending AskUserQuestion
-			projReg.Register(r, routes.Route{
-				Method: "POST", Pattern: "/chat/{sessionId}/answer/{questionId}",
-				Handler: h.ChatAnswer,
-				Meta: routes.Meta{
-					Group:       "Chat",
-					Description: "DEPRECATED: Use /sessions/{sessionId}/threads/{threadId}/answer/{questionId} instead",
-					Params: []routes.Param{
-						{Name: "projectId", Example: "local"},
-						{Name: "sessionId", Example: "abc123"},
-						{Name: "questionId", Example: "tool-use-id"},
-					},
-				},
-			})
 		})
 	})
 
@@ -1750,15 +1685,6 @@ func main() {
 		log.Println("Shutting down sandbox providers...")
 		sandboxManager.Shutdown()
 		log.Println("Sandbox providers stopped")
-	}
-
-	// Stop session status poller
-	if sessionStatusPoller != nil {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if err := sessionStatusPoller.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Warning: failed to stop session status poller: %v", err)
-		}
-		shutdownCancel()
 	}
 
 	// Stop sandbox idle monitor

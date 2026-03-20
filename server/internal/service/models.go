@@ -10,11 +10,13 @@ import (
 
 // Model represents a model available for selection (for API responses)
 type Model struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Provider    string `json:"provider"`
-	Description string `json:"description,omitempty"`
-	Reasoning   bool   `json:"reasoning,omitempty"` // Whether model supports extended thinking
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Provider         string   `json:"provider"`
+	Description      string   `json:"description,omitempty"`
+	Reasoning        bool     `json:"reasoning,omitempty"` // Whether model supports extended thinking
+	ReasoningLevels  []string `json:"reasoningLevels,omitempty"`
+	DefaultReasoning string   `json:"defaultReasoning,omitempty"`
 }
 
 // ModelsService handles model listing operations
@@ -65,10 +67,12 @@ func (s *ModelsService) GetModelsForProject(ctx context.Context, projectID strin
 	models := make([]Model, len(providerModels))
 	for i, pm := range providerModels {
 		models[i] = Model{
-			ID:        pm.ID,
-			Name:      pm.Name,
-			Provider:  pm.Provider,
-			Reasoning: pm.Reasoning,
+			ID:               pm.ID,
+			Name:             pm.Name,
+			Provider:         pm.Provider,
+			Reasoning:        pm.Reasoning,
+			ReasoningLevels:  pm.ReasoningLevels,
+			DefaultReasoning: pm.DefaultReasonLevel,
 		}
 	}
 
@@ -105,11 +109,13 @@ func (s *ModelsService) GetModelsForSession(ctx context.Context, sessionID strin
 			continue
 		}
 		models = append(models, Model{
-			ID:          m.ID,
-			Name:        m.DisplayName,
-			Provider:    m.Provider,
-			Description: "",          // Claude API doesn't provide description
-			Reasoning:   m.Reasoning, // Extended thinking support
+			ID:               m.ID,
+			Name:             m.DisplayName,
+			Provider:         m.Provider,
+			Description:      "",          // Claude API doesn't provide description
+			Reasoning:        m.Reasoning, // Extended thinking support
+			ReasoningLevels:  m.ReasoningLevels,
+			DefaultReasoning: m.DefaultReasoning,
 		})
 	}
 

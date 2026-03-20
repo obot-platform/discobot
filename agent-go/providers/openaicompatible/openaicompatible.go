@@ -35,11 +35,15 @@ import (
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
-	"github.com/obot-platform/discobot/agent-go/providers/modelsdev"
 	"github.com/obot-platform/discobot/agent-go/providers/transport"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 func init() {
+	if true {
+		// disabled
+		return
+	}
 	for _, info := range modelsdev.ProvidersByNPM("@ai-sdk/openai-compatible") {
 		info := info // capture loop variable
 		providers.Register(info.ID, func(cfg providers.Config) (providers.Provider, error) {
@@ -113,8 +117,8 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 			body["top_p"] = *req.TopP
 		}
 		// reasoning_effort is the Chat Completions analogue of extended thinking.
-		if req.Reasoning == "enabled" {
-			body["reasoning_effort"] = "high"
+		if effort := p.resolveReasoningEffort(req.Reasoning, req.Model.ModelID); effort != "" {
+			body["reasoning_effort"] = effort
 		}
 		if req.ProviderOptions != nil {
 			var opts map[string]any
@@ -198,8 +202,16 @@ func (p *Provider) ListModels(ctx context.Context) ([]providers.ModelInfo, error
 		if md := modelsdev.Lookup(p.id, m.ID); md != nil {
 			info.DisplayName = md.Name
 			info.Reasoning = md.Reasoning
+			info.ReasoningLevels = toReasoningSlice(md.ReasoningLevels)
+			info.DefaultReasoning = providers.Reasoning(md.DefaultReasonLevel)
 			info.ContextWindow = md.ContextWindow
 			info.MaxOutputTokens = md.MaxOutputTokens
+			// If the model is known to support reasoning but no levels are specified,
+			// apply safe defaults so callers can present a choice.
+			if md.Reasoning && len(info.ReasoningLevels) == 0 {
+				info.ReasoningLevels = []providers.Reasoning{providers.ReasoningLow, providers.ReasoningMedium, providers.ReasoningHigh}
+				info.DefaultReasoning = providers.ReasoningMedium
+			}
 		}
 		models = append(models, info)
 	}
@@ -753,4 +765,64 @@ func mapFinishReason(reason string, hasToolCalls bool) string {
 	default:
 		return "other"
 	}
+}
+
+// resolveReasoningEffort maps a Reasoning request to a reasoning_effort string
+// for the Chat Completions API. Returns "" if reasoning_effort should be omitted.
+func (p *Provider) resolveReasoningEffort(r providers.Reasoning, modelID string) string {
+	switch r {
+	case providers.ReasoningDisabled, providers.ReasoningNone:
+		return "" // omit reasoning_effort
+	case providers.ReasoningEmpty, providers.ReasoningDefault:
+		// Auto-detect from model metadata.
+		if md := modelsdev.Lookup(p.id, modelID); md != nil {
+			if md.DefaultReasonLevel != "" {
+				return reasoningEffortString(providers.Reasoning(md.DefaultReasonLevel))
+			}
+			if md.Reasoning {
+				return "high" // legacy: default to high
+			}
+		}
+		return ""
+	case providers.ReasoningLow:
+		return "low"
+	case providers.ReasoningMedium:
+		return "medium"
+	case providers.ReasoningHigh:
+		return "high"
+	case providers.ReasoningXHigh:
+		return "xhigh"
+	default: // auto, enabled → high
+		return "high"
+	}
+}
+
+// reasoningEffortString maps a Reasoning level to an effort string.
+func reasoningEffortString(r providers.Reasoning) string {
+	switch r {
+	case providers.ReasoningLow:
+		return "low"
+	case providers.ReasoningMedium:
+		return "medium"
+	case providers.ReasoningHigh:
+		return "high"
+	case providers.ReasoningXHigh:
+		return "xhigh"
+	case providers.ReasoningEmpty, providers.ReasoningDisabled, providers.ReasoningNone:
+		return ""
+	default:
+		return "high"
+	}
+}
+
+// toReasoningSlice converts a []string from models.dev into []providers.Reasoning.
+func toReasoningSlice(ss []string) []providers.Reasoning {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]providers.Reasoning, len(ss))
+	for i, s := range ss {
+		out[i] = providers.Reasoning(s)
+	}
+	return out
 }

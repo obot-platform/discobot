@@ -218,29 +218,32 @@ type DataPart struct {
 
 func (p DataPart) partType() string { return "data-" + p.DataType }
 
-// MarshalPart serializes a Part to JSON, injecting the "type" discriminator.
+// MarshalPart serializes a Part to JSON, injecting the "type" discriminator
+// from partType(). The outer Type field at depth 0 shadows any embedded
+// struct's Type field at depth 1, matching the pattern used by MarshalUIPart.
 func MarshalPart(p Part) ([]byte, error) {
+	t := p.partType()
 	switch v := p.(type) {
 	case TextPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			TextPart
-		}{"text", v})
+		}{t, v})
 	case ReasoningPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			ReasoningPart
-		}{"reasoning", v})
+		}{t, v})
 	case ImagePart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			ImagePart
-		}{"image", v})
+		}{t, v})
 	case FilePart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			FilePart
-		}{"file", v})
+		}{t, v})
 	case ToolCallPart:
 		inputRaw, inputText := persistedToolInputFields(v.Input)
 		return json.Marshal(struct {
@@ -252,7 +255,7 @@ func MarshalPart(p Part) ([]byte, error) {
 			ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 			ProviderOptions  json.RawMessage `json:"providerOptions,omitempty"`
 		}{
-			Type:             "tool-call",
+			Type:             t,
 			ToolCallID:       v.ToolCallID,
 			ToolName:         v.ToolName,
 			Input:            inputRaw,
@@ -272,7 +275,7 @@ func MarshalPart(p Part) ([]byte, error) {
 			Output          json.RawMessage `json:"output"`
 			ProviderOptions json.RawMessage `json:"providerOptions,omitempty"`
 		}{
-			Type:            "tool-result",
+			Type:            t,
 			ToolCallID:      v.ToolCallID,
 			ToolName:        v.ToolName,
 			Output:          outputData,
@@ -282,31 +285,31 @@ func MarshalPart(p Part) ([]byte, error) {
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			ToolApprovalRequest
-		}{"tool-approval-request", v})
+		}{t, v})
 	case ToolApprovalResponse:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			ToolApprovalResponse
-		}{"tool-approval-response", v})
+		}{t, v})
 	case SourceURLPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			SourceURLPart
-		}{"source-url", v})
+		}{t, v})
 	case SourceDocumentPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			SourceDocumentPart
-		}{"source-document", v})
+		}{t, v})
 	case StepStartPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
-		}{"step-start"})
+		}{t})
 	case DataPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			DataPart
-		}{"data-" + v.DataType, v})
+		}{t, v})
 	default:
 		return nil, fmt.Errorf("unknown Part type: %T", p)
 	}

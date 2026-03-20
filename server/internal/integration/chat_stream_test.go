@@ -57,18 +57,22 @@ func readChatSSEFrames(body io.Reader) ([]chatSSEFrame, error) {
 	return frames, nil
 }
 
+func threadChatStreamPath(projectID, sessionID, threadID string) string {
+	return "/api/projects/" + projectID + "/sessions/" + sessionID + "/threads/" + threadID + "/stream"
+}
+
 func TestChatStream_SessionNotFound(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
 	client := ts.AuthenticatedClient(user)
 
-	// Request stream for non-existent session - should return 204 No Content
-	resp := client.Get("/api/projects/" + project.ID + "/chat/nonexistent-session/stream")
+	// Request stream for non-existent session - the nested session route rejects it before the stream handler runs.
+	resp := client.Get(threadChatStreamPath(project.ID, "nonexistent-session", "nonexistent-thread"))
 	defer resp.Body.Close()
 
-	// No session = no stream = 204 No Content
-	AssertStatus(t, resp, http.StatusNoContent)
+	// Missing session = 404 Not Found from session route validation
+	AssertStatus(t, resp, http.StatusNotFound)
 }
 
 func TestChatStream_SessionBelongsToOtherProject(t *testing.T) {
@@ -85,7 +89,7 @@ func TestChatStream_SessionBelongsToOtherProject(t *testing.T) {
 
 	// User2 tries to access user1's session via their own project
 	client2 := ts.AuthenticatedClient(user2)
-	resp := client2.Get("/api/projects/" + project2.ID + "/chat/" + session1.ID + "/stream")
+	resp := client2.Get(threadChatStreamPath(project2.ID, session1.ID, session1.ID))
 	defer resp.Body.Close()
 
 	// Should return 403 Forbidden
@@ -103,7 +107,7 @@ func TestChatStream_ValidSession_NoActiveStream(t *testing.T) {
 	// Request stream for valid session but no active completion
 	// The mock sandbox will return an error (no sandbox running), which
 	// should be handled gracefully as 204 No Content
-	resp := client.Get("/api/projects/" + project.ID + "/chat/" + session.ID + "/stream")
+	resp := client.Get(threadChatStreamPath(project.ID, session.ID, session.ID))
 	defer resp.Body.Close()
 
 	// No sandbox/no active stream = 204 No Content
@@ -118,7 +122,7 @@ func TestChatStream_RequiresAuthentication(t *testing.T) {
 	session := ts.CreateTestSession(workspace, "Test Session")
 
 	// Make unauthenticated request
-	resp, err := http.Get(ts.Server.URL + "/api/projects/" + project.ID + "/chat/" + session.ID + "/stream")
+	resp, err := http.Get(ts.Server.URL + threadChatStreamPath(project.ID, session.ID, session.ID))
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
@@ -128,16 +132,17 @@ func TestChatStream_RequiresAuthentication(t *testing.T) {
 	AssertStatus(t, resp, http.StatusUnauthorized)
 }
 
-func TestChatStream_MissingSessionId(t *testing.T) {
+func TestChatStream_MissingThreadId(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
+	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
+	session := ts.CreateTestSession(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
-	// Request stream without session ID
-	// chi router treats /chat//stream as /chat/{sessionId}/stream with empty sessionId
-	// The handler validates and returns 400 Bad Request
-	resp := client.Get("/api/projects/" + project.ID + "/chat//stream")
+	// Request stream without thread ID.
+	// chi router treats /threads//stream as /threads/{threadId}/stream with an empty threadId.
+	resp := client.Get("/api/projects/" + project.ID + "/sessions/" + session.ID + "/threads//stream")
 	defer resp.Body.Close()
 
 	AssertStatus(t, resp, http.StatusBadRequest)
@@ -201,7 +206,7 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 	})
 
 	// Request the stream
-	resp := client.Get("/api/projects/" + project.ID + "/chat/" + session.ID + "/stream")
+	resp := client.Get(threadChatStreamPath(project.ID, session.ID, session.ID))
 	defer resp.Body.Close()
 
 	// Verify we got 200 OK with SSE headers
@@ -296,7 +301,7 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 		_, _ = w.Write([]byte(`{"messages":[]}`))
 	})
 
-	resp := client.Get("/api/projects/" + project.ID + "/chat/" + session.ID + "/stream")
+	resp := client.Get(threadChatStreamPath(project.ID, session.ID, session.ID))
 	defer resp.Body.Close()
 
 	AssertStatus(t, resp, http.StatusOK)
@@ -377,7 +382,7 @@ func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 		_, _ = w.Write([]byte(`{"messages":[]}`))
 	})
 
-	resp := client.Get("/api/projects/" + project.ID + "/chat/" + session.ID + "/stream")
+	resp := client.Get(threadChatStreamPath(project.ID, session.ID, session.ID))
 	defer resp.Body.Close()
 
 	AssertStatus(t, resp, http.StatusOK)

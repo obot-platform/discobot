@@ -159,8 +159,6 @@ func (h *Handler) RebaseSession(w http.ResponseWriter, r *http.Request) {
 type CreateSessionRequest struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
-	Model       string `json:"model,omitempty"`
-	Reasoning   string `json:"reasoning,omitempty"`
 }
 
 func (h *Handler) resolveWorkspaceIDForNewSession(
@@ -229,8 +227,6 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		SessionID:   req.ID,
 		ProjectID:   projectID,
 		WorkspaceID: workspaceID,
-		Model:       req.Model,
-		Reasoning:   req.Reasoning,
 		Messages:    nil,
 	})
 	if err != nil {

@@ -15,8 +15,7 @@ func TestSessionDisplayName_SetAndGet(t *testing.T) {
 
 	// Create a session via chat
 	sessionID := "test-displayname-session-1"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -91,8 +90,7 @@ func TestSessionDisplayName_ClearDisplayName(t *testing.T) {
 
 	// Create a session
 	sessionID := "test-displayname-session-2"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -144,8 +142,7 @@ func TestSessionDisplayName_InList(t *testing.T) {
 
 	// Create multiple sessions with different displayName configurations
 	session1ID := "test-displayname-list-1"
-	resp1 := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": session1ID,
+	resp1 := client.Post(threadChatPath(project.ID, session1ID, session1ID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -161,8 +158,7 @@ func TestSessionDisplayName_InList(t *testing.T) {
 	AssertStatus(t, resp1, http.StatusOK)
 
 	session2ID := "test-displayname-list-2"
-	resp2 := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": session2ID,
+	resp2 := client.Post(threadChatPath(project.ID, session2ID, session2ID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",
@@ -243,8 +239,7 @@ func TestSessionDisplayName_EmptyString(t *testing.T) {
 
 	// Create a session
 	sessionID := "test-displayname-empty"
-	resp := client.Post("/api/projects/"+project.ID+"/chat", map[string]interface{}{
-		"id": sessionID,
+	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
 		"messages": []map[string]interface{}{
 			{
 				"id":   "msg-1",

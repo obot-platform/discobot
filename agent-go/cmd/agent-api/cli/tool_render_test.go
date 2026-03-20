@@ -39,6 +39,26 @@ func TestToolOutputDetail_Edit(t *testing.T) {
 	}
 }
 
+func TestToolOutputDetail_ApplyPatch(t *testing.T) {
+	input, err := json.Marshal("*** Begin Patch\n*** Update File: foo.txt\n@@\n-old\n+new\n*** Add File: bar.txt\n+hello\n*** Update File: old.txt\n*** Move to: new.txt\n@@\n-old\n+new\n*** Delete File: gone.txt\n*** End Patch")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	detail := toolOutputDetail("apply_patch", input)
+	for _, want := range []string{
+		"patch files:",
+		"M foo.txt",
+		"A bar.txt",
+		"M old.txt -> new.txt",
+		"D gone.txt",
+	} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("expected detail to contain %q, got %q", want, detail)
+		}
+	}
+}
+
 func TestToolErrorDetail(t *testing.T) {
 	detail := toolErrorDetail("line1\r\nline2\n")
 	if detail != "tool output:\nline1\nline2" {
@@ -198,6 +218,19 @@ func TestToolInputSummary_SpecialTools(t *testing.T) {
 				t.Fatalf("toolInputSummary() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestToolInputSummary_ApplyPatchShowsFiles(t *testing.T) {
+	input, err := json.Marshal("*** Begin Patch\n*** Update File: foo.txt\n@@\n-old\n+new\n*** Add File: bar.txt\n+hello\n*** Delete File: gone.txt\n*** End Patch")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := toolInputSummary("apply_patch", input)
+	want := "files: M foo.txt, A bar.txt, D gone.txt"
+	if got != want {
+		t.Fatalf("toolInputSummary() = %q, want %q", got, want)
 	}
 }
 

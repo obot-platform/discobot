@@ -10,23 +10,20 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-SERVER_API_OUTPUT="$PROJECT_DIR/server/static/models-dev-api.json"
-AGENT_API_OUTPUT="$PROJECT_DIR/agent-go/providers/modelsdev/models-dev-api.json"
+MODELSDEV_OUTPUT="$PROJECT_DIR/modelsdev/models-dev-api.json"
 TMP_OUTPUT="$(mktemp)"
 trap 'rm -f "$TMP_OUTPUT"' EXIT
 
 echo "Refreshing models.dev data..."
 
-# Download api.json once, then copy to both server and agent-go locations
+# Download api.json and save to the shared modelsdev module (embedded at compile time)
 echo "Downloading models.dev API data..."
 curl -s "https://models.dev/api.json" | jq --sort-keys '.' > "$TMP_OUTPUT"
-cp "$TMP_OUTPUT" "$SERVER_API_OUTPUT"
-cp "$TMP_OUTPUT" "$AGENT_API_OUTPUT"
+cp "$TMP_OUTPUT" "$MODELSDEV_OUTPUT"
 echo "  Saved models-dev-api.json ($(wc -c < "$TMP_OUTPUT" | tr -d ' ') bytes)"
 
 # Show summary
 echo ""
 echo "Summary:"
-echo "  API data (server): $SERVER_API_OUTPUT"
-echo "  API data (agent-go): $AGENT_API_OUTPUT"
+echo "  API data: $MODELSDEV_OUTPUT"
 echo "  Providers: $(jq 'keys | length' "$TMP_OUTPUT")"
