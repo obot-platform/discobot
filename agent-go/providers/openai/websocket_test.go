@@ -35,7 +35,7 @@ func TestNewWSPool_URLDerivation(t *testing.T) {
 
 func TestNew_WebSocketMode(t *testing.T) {
 	t.Run("enabled by default", func(t *testing.T) {
-		p, err := New(providers.Config{"api_key": "key"})
+		p, err := New(providers.Config{"api_key": "key"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +52,7 @@ func TestNew_WebSocketMode(t *testing.T) {
 	})
 
 	t.Run("enabled via use_websocket=true", func(t *testing.T) {
-		p, err := New(providers.Config{"api_key": "key", configUseWebSocket: "true", "base_url": "https://api.openai.com/v1"})
+		p, err := New(providers.Config{"api_key": "key", configUseWebSocket: "true", "base_url": "https://api.openai.com/v1"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +69,7 @@ func TestNew_WebSocketMode(t *testing.T) {
 	})
 
 	t.Run("disabled via explicit https base_url", func(t *testing.T) {
-		p, err := New(providers.Config{"api_key": "key", "base_url": "https://api.openai.com/v1"})
+		p, err := New(providers.Config{"api_key": "key", "base_url": "https://api.openai.com/v1"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +79,7 @@ func TestNew_WebSocketMode(t *testing.T) {
 	})
 
 	t.Run("enabled and URL normalised via wss:// base_url", func(t *testing.T) {
-		p, err := New(providers.Config{"api_key": "key", "base_url": "wss://custom.api.com/v1"})
+		p, err := New(providers.Config{"api_key": "key", "base_url": "wss://custom.api.com/v1"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,7 +96,7 @@ func TestNew_WebSocketMode(t *testing.T) {
 	})
 
 	t.Run("HTTP base URL is preserved for REST endpoints", func(t *testing.T) {
-		p, err := New(providers.Config{"api_key": "key", configUseWebSocket: "true", "base_url": "https://api.openai.com/v1"})
+		p, err := New(providers.Config{"api_key": "key", configUseWebSocket: "true", "base_url": "https://api.openai.com/v1"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -15,14 +15,14 @@ import (
 
 func TestNew(t *testing.T) {
 	t.Run("requires api key", func(t *testing.T) {
-		_, err := New(providers.Config{})
+		_, err := New(providers.Config{}, false, defaultBaseURL)
 		if err == nil {
 			t.Fatal("expected error for missing api key")
 		}
 	})
 
 	t.Run("uses default base url", func(t *testing.T) {
-		p, err := New(providers.Config{"api_key": "test-key"})
+		p, err := New(providers.Config{"api_key": "test-key"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +39,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("uses custom base url and strips trailing slash", func(t *testing.T) {
-		p, err := New(providers.Config{"api_key": "test-key", "base_url": "https://custom.api.com/v1/"})
+		p, err := New(providers.Config{"api_key": "test-key", "base_url": "https://custom.api.com/v1/"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +51,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestProviderID(t *testing.T) {
-	p, _ := New(providers.Config{"api_key": "test"})
+	p, _ := New(providers.Config{"api_key": "test"}, false, defaultBaseURL)
 	if p.ID() != "openai" {
 		t.Errorf("expected ID %q, got %q", "openai", p.ID())
 	}

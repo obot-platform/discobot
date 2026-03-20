@@ -173,7 +173,7 @@ func TestCodexWebSocket_ContinuationInstructionsDependOnConnection(t *testing.T)
 func TestCompleteToolCallDeltasHaveCallID(t *testing.T) {
 	apiKey := readAPIKey(t)
 
-	p, err := New(providers.Config{"api_key": apiKey})
+	p, err := New(providers.Config{"api_key": apiKey}, false, defaultBaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
