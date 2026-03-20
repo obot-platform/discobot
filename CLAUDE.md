@@ -112,6 +112,52 @@ Project → Workspace (git repo or local folder) → Session (chat thread + cont
 - **AI chat**: Vercel AI SDK v6 with `useChat` hook and custom elements in `components/ai-elements/`
 - **React Compiler**: Enabled via babel plugin — run `/vercel-react-best-practices` skill when working on React code
 
+### Svelte UI (`./ui`)
+
+The Svelte UI is the active frontend. Build and develop it from the `./ui` directory:
+
+```bash
+cd ui && pnpm build       # Production build
+cd ui && pnpm dev         # Dev server (port 3100)
+cd ui && pnpm typecheck   # Type-check (svelte-check)
+```
+
+#### Component folders
+
+Components live under `ui/src/lib/components/` in three folders, each with a distinct role:
+
+| Folder | Role | Context |
+|--------|------|---------|
+| `ui/` | Pure primitives — buttons, inputs, dialogs, etc. | None |
+| `ai/` | Self-contained compound components | Component-local only |
+| `app/` | App shell — session UI, composer, panels | Global app/session/thread contexts |
+
+**`ui/` is always pure.** Never add context consumers here.
+
+**`ai/` is self-contained.** Each subdirectory is a compound component group with its own `context.ts`. The root component (e.g. `AudioPlayer.svelte`) sets local context; children (e.g. `AudioPlayerPlayButton.svelte`) consume it. These components never use the global app/session/thread contexts.
+
+**`app/` root** contains context consumers and providers — every component here reads from at least one global context. **`app/parts/`** contains pure sub-components that are props-only and used as implementation details by the context consumers at the root. When adding to `app/`, the rule is simple: if it calls `useAppContext`, `useSessionContext`, or `useThreadContext`, it belongs at the `app/` root; if it only takes props, it belongs in `app/parts/`.
+
+#### Global context system
+
+Three contexts flow top-down, each set by a single provider:
+
+| Context | Provider | Provides |
+|---------|----------|---------|
+| `AppContext` | `routes/+layout.svelte` | Sessions, workspaces, models, credentials, preferences |
+| `SessionContext` | `app/SessionWorkspace.svelte` | Threads, files, hooks, services, env sets |
+| `ThreadContext` | `app/ThreadWorkspace.svelte` | Conversation, messages, plan entries |
+
+Access via `useAppContext()`, `useSessionContext()`, `useThreadContext()` from `$lib/context/`.
+
+#### Pure vs context consumer
+
+Make a component **pure** when it can be described and tested without knowing its parent, and all the data it displays is passed directly via props.
+
+Make a component a **context consumer** when it would require threading the same data through multiple intermediate components that don't use it, or when it needs to coordinate with siblings that share the same ambient state.
+
+The practical test: if removing `useXxxContext()` would mean adding three or more props that just relay data the context already holds, it belongs in context. If the component makes sense anywhere in the tree without a specific ancestor, it should be pure.
+
 ### Adding Features
 
 For active UI work, prefer `./ui`. The steps below apply to the legacy React UI only and generally should be ignored unless the task explicitly targets that code.
@@ -120,7 +166,7 @@ For active UI work, prefer `./ui`. The steps below apply to the legacy React UI 
 2. Add Go handler/service/store in `server/internal/`
 3. Add API client method in `lib/api-client.ts`
 4. Create SWR hook in `lib/hooks/`
-5. Build UI in `components/ide/`
+5. Build UI in `components/app/`
 
 ## Testing
 

@@ -8,6 +8,7 @@ The repository now also contains an **isolated Svelte 5 redesign workspace** und
 
 - `ui/` is currently a standalone SvelteKit SPA scaffold for the upcoming UI rewrite.
 - `/` is now the redesign home/shell wireframe, while `/gallery` is the component exploration route.
+- `/ai-gallery` remains the AI component gallery, and `/ai-gallery/conversation-pane` is the dedicated mocked `ConversationPane` sandbox for iterating on message-interaction UX without a live session.
 - The Svelte shell now uses layered context state (`AppContext` → `SessionContext`) where AppContext owns user-accessible sessions and SessionContext owns active sandbox + thread-aware panel/chat state.
 - The shell chrome (header + toolbar + sidebar) now uses a shared Discobot brand component and shadcn Svelte controls for consistent sizing/interaction styles.
 - The redesign conversation pane now renders session-scoped conversation fixtures (`SessionData.conversation`) instead of hardcoded transcript text, so thread/session state changes are reflected in the timeline.
