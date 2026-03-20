@@ -4,7 +4,7 @@
 	import GitBranchIcon from "@lucide/svelte/icons/git-branch";
 	import GitCommitIcon from "@lucide/svelte/icons/git-commit";
 	import GithubIcon from "@lucide/svelte/icons/github";
-	import { onDestroy, tick } from "svelte";
+	import { onDestroy, onMount, tick } from "svelte";
 	import type { Workspace } from "$lib/api-types";
 	import type { WorkspaceSelectionResult } from "$lib/components/ide/conversation-composer.types";
 	import { useAppContext } from "$lib/context/app-context.svelte";
@@ -190,11 +190,69 @@
 		sessionView.setPendingWorkspaceSourceInput("");
 	}
 
+	function resetWorkspaceValidationState(clearSuggestions = false) {
+		clearWorkspaceValidationDebounce();
+		sessionView.setPendingWorkspaceValidating(false);
+		sessionView.setPendingWorkspaceValidation(null);
+		if (clearSuggestions) {
+			showWorkspaceSuggestions = false;
+		}
+		selectedWorkspaceSuggestionIndex = -1;
+	}
+
+	function scheduleWorkspaceValidation() {
+		if (!requiresSourceInput) {
+			resetWorkspaceValidationState(true);
+			return;
+		}
+
+		const currentInput = sessionView.pendingWorkspaceSourceInput;
+		if (currentInput.trim().length === 0) {
+			resetWorkspaceValidationState();
+			return;
+		}
+
+		clearWorkspaceValidationDebounce();
+		sessionView.setPendingWorkspaceValidating(true);
+		const requestId = workspaceValidationRequestId + 1;
+		workspaceValidationRequestId = requestId;
+
+		workspaceValidationDebounce = setTimeout(async () => {
+			try {
+				const result = await workspaces.validate(currentInput, workspaceSourceType);
+
+				if (workspaceValidationRequestId !== requestId) {
+					return;
+				}
+
+				sessionView.setPendingWorkspaceValidation(result);
+			} catch (error) {
+				if (workspaceValidationRequestId !== requestId) {
+					return;
+				}
+
+				sessionView.setPendingWorkspaceValidation({
+					path: currentInput,
+					sourceType: workspaceSourceType,
+					valid: false,
+					classification: "invalid",
+					error: error instanceof Error ? error.message : "Failed to validate workspace.",
+					suggestions: [],
+				});
+			} finally {
+				if (workspaceValidationRequestId === requestId) {
+					sessionView.setPendingWorkspaceValidating(false);
+				}
+			}
+		}, 250);
+	}
+
 	function handleWorkspaceSourceInputChange(value: string) {
 		sessionView.setPendingWorkspaceSourceInput(value);
 		sessionView.setPendingWorkspaceSetupMessage(null);
 		showWorkspaceSuggestions = true;
 		selectedWorkspaceSuggestionIndex = -1;
+		scheduleWorkspaceValidation();
 	}
 
 	function handleWorkspaceSourceFocus() {
@@ -216,6 +274,7 @@
 		sessionView.setPendingWorkspaceSetupMessage(null);
 		showWorkspaceSuggestions = false;
 		selectedWorkspaceSuggestionIndex = -1;
+		scheduleWorkspaceValidation();
 		focusWorkspaceSourceInput();
 	}
 
@@ -389,25 +448,19 @@
 		};
 	}
 
-	$effect(() => {
-		if (workspaces.status === "idle") {
-			void workspaces.refresh();
-		}
-	});
-
-	$effect(() => {
+	function syncPendingWorkspaceSelection() {
 		const workspacesList = availableWorkspaces;
 		if (workspacesList.length === 0) {
 			if (sessionView.pendingWorkspaceOption.startsWith("existing:")) {
 				sessionView.setPendingWorkspaceOption("new-workspace");
 			}
-			return;
+			return false;
 		}
 
 		const preferredWorkspace =
 			workspacesList.find((workspace) => workspace.status === "ready") || workspacesList[0];
 		if (!preferredWorkspace) {
-			return;
+			return false;
 		}
 
 		if (sessionView.pendingWorkspaceOption.startsWith("existing:")) {
@@ -417,8 +470,9 @@
 				!hasUserSelectedWorkspace
 			) {
 				sessionView.setPendingWorkspaceOption(`existing:${preferredWorkspace.id}`);
+				return true;
 			}
-			return;
+			return false;
 		}
 
 		if (
@@ -428,10 +482,12 @@
 		) {
 			hasInitializedSelection = true;
 			sessionView.setPendingWorkspaceOption(`existing:${preferredWorkspace.id}`);
+			return true;
 		}
-	});
+		return false;
+	}
 
-	$effect(() => {
+	function syncPendingWorkspaceBranch() {
 		if (!showBranchSelector) {
 			sessionView.setPendingWorkspaceBranch("");
 			return;
@@ -443,60 +499,17 @@
 		) {
 			sessionView.setPendingWorkspaceBranch("");
 		}
-	});
+	}
 
-	$effect(() => {
-		if (!requiresSourceInput) {
-			clearWorkspaceValidationDebounce();
-			sessionView.setPendingWorkspaceValidating(false);
-			sessionView.setPendingWorkspaceValidation(null);
-			showWorkspaceSuggestions = false;
-			selectedWorkspaceSuggestionIndex = -1;
-			return;
-		}
-
-		const currentInput = sessionView.pendingWorkspaceSourceInput;
-		if (currentInput.trim().length === 0) {
-			clearWorkspaceValidationDebounce();
-			sessionView.setPendingWorkspaceValidating(false);
-			sessionView.setPendingWorkspaceValidation(null);
-			selectedWorkspaceSuggestionIndex = -1;
-			return;
-		}
-
-		clearWorkspaceValidationDebounce();
-		sessionView.setPendingWorkspaceValidating(true);
-		const requestId = workspaceValidationRequestId + 1;
-		workspaceValidationRequestId = requestId;
-
-		workspaceValidationDebounce = setTimeout(async () => {
-			try {
-				const result = await workspaces.validate(currentInput, workspaceSourceType);
-
-				if (workspaceValidationRequestId !== requestId) {
-					return;
-				}
-
-				sessionView.setPendingWorkspaceValidation(result);
-			} catch (error) {
-				if (workspaceValidationRequestId !== requestId) {
-					return;
-				}
-
-				sessionView.setPendingWorkspaceValidation({
-					path: currentInput,
-					sourceType: workspaceSourceType,
-					valid: false,
-					classification: "invalid",
-					error: error instanceof Error ? error.message : "Failed to validate workspace.",
-					suggestions: [],
-				});
-			} finally {
-				if (workspaceValidationRequestId === requestId) {
-					sessionView.setPendingWorkspaceValidating(false);
-				}
+	onMount(() => {
+		void (async () => {
+			if (workspaces.status === "idle") {
+				await workspaces.refresh();
 			}
-		}, 250);
+			syncPendingWorkspaceSelection();
+			syncPendingWorkspaceBranch();
+			scheduleWorkspaceValidation();
+		})();
 	});
 
 	onDestroy(() => {

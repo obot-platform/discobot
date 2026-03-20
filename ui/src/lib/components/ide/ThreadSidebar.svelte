@@ -82,7 +82,9 @@
 
 	<div class="flex-1 overflow-y-auto p-2">
 		<div class="space-y-1.5">
-			{#if session.threads.list.length === 0}
+			{#if session.threads.status === "idle" || session.threads.status === "loading"}
+				<p class="px-2 text-xs text-muted-foreground">Loading threads...</p>
+			{:else if session.threads.list.length === 0}
 				<p class="px-2 text-xs text-muted-foreground">No threads</p>
 			{:else}
 				{#each session.threads.list as thread}

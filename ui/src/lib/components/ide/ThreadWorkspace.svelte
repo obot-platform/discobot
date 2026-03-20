@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from "svelte";
 	import ConversationPane from "$lib/components/ide/ConversationPane.svelte";
 	import DockPanel from "$lib/components/ide/DockPanel.svelte";
 	import SessionToolbar from "$lib/components/ide/SessionToolbar.svelte";
@@ -18,7 +19,14 @@
 
 	const session = useSessionContext();
 	// threadId is stable at mount time because SessionWorkspace wraps us in {#key session.threads.selectedId}
-	setThreadContext(session.threads.selectedId ?? session.sessionId)
+	const thread = setThreadContext(session.threads.selectedId ?? session.sessionId);
+
+	onMount(() => {
+		void thread.load();
+		return () => {
+			thread.dispose();
+		};
+	});
 
 	const showDock = $derived(
 		(props.mode ?? "full") === "full" && !isChatView(session.ui.activeView),
@@ -40,7 +48,7 @@
 				: "flex min-h-0 flex-1 flex-col overflow-hidden"}
 		>
 			<div class={showDock ? "min-h-0" : "contents"}>
-				<ConversationPane />
+				<ConversationPane contentTopPadding={5} />
 			</div>
 			{#if showDock}
 				<div

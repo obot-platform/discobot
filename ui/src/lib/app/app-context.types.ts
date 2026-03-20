@@ -1,11 +1,16 @@
+import type { SessionStore } from "$lib/store/sessions.store.svelte";
+import type { WorkspaceStore } from "$lib/store/workspaces.store.svelte";
+import type { ModelStore } from "$lib/store/models.store.svelte";
+import type { CredentialStore } from "$lib/store/credentials.store.svelte";
+import type { StartupTaskStore } from "$lib/store/startup-tasks.store.svelte";
 import type {
 	ModelInfo,
-	AuthProvider,
 	CodexAuthorizeResponse,
 	CodexExchangeRequest,
 	CodexExchangeResponse,
 	CreateWorkspaceRequest,
 	CredentialInfo,
+	CredentialType,
 	GitHubDeviceCodeRequest,
 	GitHubDeviceCodeResponse,
 	GitHubPollRequest,
@@ -18,6 +23,7 @@ import type {
 	Session,
 	StartChatRequest,
 	StartChatResponse,
+	StartupTask,
 	SupportInfoResponse,
 	ThemeColorScheme,
 	Workspace,
@@ -110,9 +116,11 @@ export type AppSessions = {
 	select: (sessionId: string) => void;
 	startNew: () => void;
 	refresh: () => Promise<void>;
+	reloadSession: (sessionId: string) => Promise<void>;
 	create: (workspaceId?: string) => Promise<string | null>;
 	rename: (sessionId: string, nextName: string) => Promise<boolean>;
 	remove: (sessionId: string) => Promise<boolean>;
+	removeFromMemory: (sessionId: string) => boolean;
 };
 
 export type AppWorkspaces = {
@@ -120,14 +128,20 @@ export type AppWorkspaces = {
 	status: AsyncStatus;
 	get: (workspaceId: string) => Workspace | null;
 	refresh: () => Promise<void>;
+	reloadWorkspace: (workspaceId: string) => Promise<void>;
 	validate: (path: string, sourceType: "local" | "git") => Promise<WorkspaceValidationResult>;
 	create: (data: CreateWorkspaceRequest) => Promise<Workspace>;
 };
 
-export type AppChatRequest = Omit<StartChatRequest, "sessionId" | "threadId" | "workspaceId"> & {
+export type AppStartupStatus = {
+	tasks: StartupTask[];
+	visibleTasks: StartupTask[];
+	hasActiveTasks: boolean;
+	refresh: () => Promise<void>;
+};
+
+export type AppChatRequest = Omit<StartChatRequest, "sessionId"> & {
 	sessionId?: string | null;
-	threadId?: string | null;
-	workspaceId?: string | null;
 	workspaceType?: CreateWorkspaceRequest["sourceType"] | null;
 	workspacePath?: string | null;
 };
@@ -139,7 +153,7 @@ export type AppModels = {
 
 export type AppCredentials = {
 	list: CredentialInfo[];
-	providers: AuthProvider[];
+	credentialTypes: CredentialType[];
 	get: (idOrProvider: string) => CredentialInfo | null;
 	refresh: () => Promise<void>;
 	create: (provider: string, authType: CredentialAuthType, apiKey: string) => Promise<CredentialInfo>;
@@ -174,15 +188,27 @@ export type AppUpdates = {
 	ignore: () => void;
 };
 
+export type AppStores = {
+	sessions: SessionStore;
+	workspaces: WorkspaceStore;
+	models: ModelStore;
+	credentials: CredentialStore;
+	startup: StartupTaskStore;
+};
+
 export type AppContext = {
+	stores: AppStores;
 	ui: AppUI;
 	preferences: AppPreferences;
 	environment: AppEnvironment;
 	sessions: AppSessions;
 	workspaces: AppWorkspaces;
+	startup: AppStartupStatus;
 	models: AppModels;
 	credentials: AppCredentials;
 	supportInfo: AppSupportInfo;
 	chat: (data: AppChatRequest) => Promise<StartChatResponse>;
+	refresh: () => Promise<void>;
+	connectProjectEvents: () => () => void;
 	updates: AppUpdates;
 };

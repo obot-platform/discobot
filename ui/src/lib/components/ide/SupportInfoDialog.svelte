@@ -3,7 +3,7 @@
 	import DownloadIcon from "@lucide/svelte/icons/download";
 	import InfoIcon from "@lucide/svelte/icons/info";
 	import Loader2Icon from "@lucide/svelte/icons/loader-2";
-	import { onDestroy } from "svelte";
+	import { onDestroy, onMount } from "svelte";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { useAppContext } from "$lib/context/app-context.svelte";
@@ -56,14 +56,21 @@
 		URL.revokeObjectURL(url);
 	}
 
-	$effect(() => {
-		if (ui.supportInfoDialogOpen) {
-			void supportInfo.fetch();
-			return;
-		}
-
+	function resetCopiedState() {
 		copied = false;
 		clearCopiedTimeout();
+	}
+
+	function handleOpenChange(open: boolean) {
+		if (open) {
+			return;
+		}
+		ui.closeSupportInfo();
+	}
+
+	onMount(() => {
+		resetCopiedState();
+		void supportInfo.fetch();
 	});
 
 	onDestroy(() => {
@@ -71,7 +78,7 @@
 	});
 </script>
 
-<Dialog.Root bind:open={ui.supportInfoDialogOpen}>
+<Dialog.Root open={true} onOpenChange={handleOpenChange}>
 	<Dialog.Content class="sm:max-w-3xl max-h-[88vh] flex flex-col overflow-hidden">
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
@@ -111,7 +118,7 @@
 				<DownloadIcon class="size-3.5" />
 				Download JSON
 			</Button>
-			<Button variant="default" size="sm" onclick={() => ui.closeSupportInfo()}>
+			<Button variant="default" size="sm" onclick={() => handleOpenChange(false)}>
 				Close
 			</Button>
 		</Dialog.Footer>

@@ -1,8 +1,8 @@
 import { getContext, hasContext, setContext } from "svelte";
 
-import { appQueryKeys } from "$lib/app/query/app-query-keys";
+import { useAppContext } from "$lib/context/app-context.svelte";
 import { useSessionContext } from "$lib/context/session-context.svelte";
-import { createSessionConversationDomain } from "$lib/session/domains/session-conversation.svelte";
+import { createConversationDomain } from "$lib/thread/conversation.svelte";
 import { getPlanEntries } from "$lib/session/domains/session-domain.helpers";
 import type { SessionContextValue, ThreadContextValue } from "$lib/session/session-context.types";
 
@@ -12,22 +12,27 @@ function createThreadContext(
 	threadId: string,
 	session: SessionContextValue,
 ): ThreadContextValue {
-	const conversation = createSessionConversationDomain({
-		queryClient: session.queryClient,
-		getSession: () => session.current,
+	const app = useAppContext();
+	const hasSession = $derived.by(() => session.current !== null);
+	const sessionStatus = $derived.by(() => session.current?.status ?? null);
+
+	const conversation = createConversationDomain({
+		sessionId: session.sessionId,
+		hasSession: () => hasSession,
+		getSessionStatus: () => sessionStatus,
 		threadId,
-		key: (domain, ...parts) => session.cache.key(domain, ...parts),
-		updateSession: session.updateCurrent,
+		refreshThread: async () => {
+			await session.threads.refreshThread(threadId);
+		},
 		afterTurn: async () => {
+			await session.threads.refreshThread(threadId);
 			await Promise.all([
 				session.files.refresh(),
 				session.services.refresh(),
 				session.envSets.refresh(),
 				session.hooks.refresh(),
 			]);
-			await session.queryClient.invalidateQueries({
-				queryKey: appQueryKeys.sessions(),
-			});
+			await app.sessions.reloadSession(session.sessionId);
 		},
 	});
 
@@ -52,6 +57,7 @@ function createThreadContext(
 		},
 		submit: conversation.submit,
 		cancel: conversation.cancel,
+		load: conversation.load,
 		refresh: conversation.refresh,
 		dispose: conversation.dispose,
 		get editorFiles() {

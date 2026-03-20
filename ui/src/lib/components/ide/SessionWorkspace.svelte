@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { onMount } from "svelte";
 	import type { PaneAPI } from "paneforge";
 	import AppHeader from "$lib/components/ide/AppHeader.svelte";
+	import StartupTasksBanner from "$lib/components/ide/StartupTasksBanner.svelte";
 	import ThreadWorkspace from "$lib/components/ide/ThreadWorkspace.svelte";
 	import ThreadSidebar from "$lib/components/ide/ThreadSidebar.svelte";
 	import * as Resizable from "$lib/components/ui/resizable";
@@ -10,7 +12,6 @@
 	import { IsMobile } from "$lib/hooks/is-mobile.svelte.js";
 
 	const app = useAppContext();
-	const ui = app.ui;
 	const isMobile = new IsMobile(1024);
 	const THREADS_LAYOUT_STORAGE_KEY = "paneforge:discobot-ui-threads-layout";
 	let desktopThreadsPane = $state<PaneAPI | null>(null);
@@ -18,6 +19,10 @@
 
 	const session = setSessionContext();
 	const sessionView = session.ui;
+
+	onMount(() => {
+		void session.load();
+	});
 
 	function threadsOpen() {
 		return isMobile.current ? sessionView.mobileThreadsOpen : sessionView.desktopThreadsOpen;
@@ -73,6 +78,7 @@
 
 <div class="h-screen flex flex-col bg-background text-foreground">
 	<AppHeader />
+	<StartupTasksBanner startup={app.startup} />
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		{#if isMobile.current}

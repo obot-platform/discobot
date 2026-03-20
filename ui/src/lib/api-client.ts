@@ -25,6 +25,7 @@ import type {
 	CreateCredentialRequest,
 	CreateWorkspaceRequest,
 	CredentialInfo,
+	CredentialType,
 	DeleteSessionFileRequest,
 	DeleteSessionFileResponse,
 	EnvSetInfo,
@@ -391,13 +392,6 @@ class ApiClient {
 		return this.fetch(`/sessions/${sessionId}/diff${query ? `?${query}` : ""}`);
 	}
 
-	// Messages
-	async getMessages(sessionId: string): Promise<{ messages: ChatMessage[] }> {
-		return this.fetch<{ messages: ChatMessage[] }>(
-			`/sessions/${sessionId}/messages`,
-		);
-	}
-
 	async getThreadMessages(
 		sessionId: string,
 		threadId: string,
@@ -408,35 +402,25 @@ class ApiClient {
 	}
 
 	async startChat(data: StartChatRequest): Promise<StartChatResponse> {
-		return this.fetch<StartChatResponse>("/chat", {
+		return this.fetch<StartChatResponse>(`/sessions/${data.sessionId}/threads/${data.threadId}/chat`, {
 			method: "POST",
 			body: JSON.stringify(data),
 		});
 	}
 
-	/**
-	 * Get the URL for resuming an in-progress chat stream via SSE.
-	 * Returns SSE stream if completion is in progress, 204 No Content if not.
-	 * @param sessionId Session ID
-	 */
-	getChatStreamUrl(sessionId: string): string {
-		return appendAuthToken(`${this.base}/chat/${sessionId}/stream`);
-	}
-
-	getThreadChatStreamUrl(sessionId: string, threadId: string): string {
+	getThreadChatStreamUrl(
+		sessionId: string,
+		threadId: string,
+		replay = false,
+	): string {
+		const params = new URLSearchParams();
+		if (replay) {
+			params.set("replay", "true");
+		}
+		const query = params.toString();
 		return appendAuthToken(
-			`${this.base}/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/stream`,
+			`${this.base}/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/stream${query ? `?${query}` : ""}`,
 		);
-	}
-
-	/**
-	 * Cancel an in-progress chat completion.
-	 * @param sessionId Session ID
-	 */
-	async cancelChat(sessionId: string): Promise<CancelChatResponse> {
-		return this.fetch(`/chat/${sessionId}/cancel`, {
-			method: "POST",
-		});
 	}
 
 	async cancelThreadChat(
@@ -457,15 +441,6 @@ class ApiClient {
 	 * @param questionId The tool use / approval ID to query for
 	 * @returns { status: "pending", question } if still waiting, { status: "answered", question: null } if resolved
 	 */
-	async getChatQuestion(
-		sessionId: string,
-		questionId: string,
-	): Promise<PendingQuestionResponse> {
-		return this.fetch<PendingQuestionResponse>(
-			`/chat/${sessionId}/question/${encodeURIComponent(questionId)}`,
-		);
-	}
-
 	async getThreadChatQuestion(
 		sessionId: string,
 		threadId: string,
@@ -473,24 +448,6 @@ class ApiClient {
 	): Promise<PendingQuestionResponse> {
 		return this.fetch<PendingQuestionResponse>(
 			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/question/${encodeURIComponent(questionId)}`,
-		);
-	}
-
-	/**
-	 * Submit answers to a pending AskUserQuestion.
-	 * @param sessionId Session ID
-	 * @param data Answer payload with toolUseID and answers map
-	 */
-	async submitChatAnswer(
-		sessionId: string,
-		data: AnswerQuestionRequest,
-	): Promise<AnswerQuestionResponse> {
-		return this.fetch<AnswerQuestionResponse>(
-			`/chat/${sessionId}/answer/${encodeURIComponent(data.toolUseID)}`,
-			{
-				method: "POST",
-				body: JSON.stringify({ answers: data.answers }),
-			},
 		);
 	}
 
@@ -511,6 +468,12 @@ class ApiClient {
 	// Threads
 	async getThreads(sessionId: string): Promise<ListThreadsResponse> {
 		return this.fetch<ListThreadsResponse>(`/sessions/${sessionId}/threads`);
+	}
+
+	async getThread(sessionId: string, threadId: string): Promise<Thread> {
+		return this.fetch<Thread>(
+			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}`,
+		);
 	}
 
 	async createThread(
@@ -588,6 +551,10 @@ class ApiClient {
 	// Credentials
 	async getCredentials(): Promise<{ credentials: CredentialInfo[] }> {
 		return this.fetch<{ credentials: CredentialInfo[] }>("/credentials");
+	}
+
+	async getCredentialTypes(): Promise<{ credentialTypes: CredentialType[] }> {
+		return this.fetch<{ credentialTypes: CredentialType[] }>("/credentials/types");
 	}
 
 	async createCredential(

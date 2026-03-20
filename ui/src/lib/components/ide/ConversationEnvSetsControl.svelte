@@ -24,7 +24,7 @@
 	import type {
 		SessionEnvSetsService,
 		ThreadEnvSetsService,
-	} from "$lib/session/services";
+	} from "$lib/session/session-context.types";
 
 	type EnvVarRow = {
 		id: string;
@@ -88,6 +88,11 @@
 		sessionView.openEnvSetManager();
 	}
 
+	function closeEnvSetManager() {
+		resetEnvSetEditor();
+		sessionView.closeEnvSetManager();
+	}
+
 	function startEnvSetCreate() {
 		sessionView.startEnvSetCreate();
 		envSetNameDraft = "";
@@ -140,23 +145,20 @@
 		const envVars = envVarsFromRows();
 		if (sessionView.envSetEditorMode === "create") {
 			sessionEnvSets.create(trimmedName, envVars);
-			resetEnvSetEditor();
-			sessionView.closeEnvSetManager();
+			closeEnvSetManager();
 			return;
 		}
 
 		if (sessionView.envSetEditorMode === "edit" && sessionView.editingEnvSetId) {
 			sessionEnvSets.update(sessionView.editingEnvSetId, trimmedName, envVars);
-			resetEnvSetEditor();
-			sessionView.closeEnvSetManager();
+			closeEnvSetManager();
 		}
 	}
 
 	function removeEnvSet(envSetId: string) {
 		sessionEnvSets.remove(envSetId);
 		if (sessionView.editingEnvSetId === envSetId) {
-			resetEnvSetEditor();
-			sessionView.closeEnvSetManager();
+			closeEnvSetManager();
 		}
 	}
 
@@ -184,11 +186,13 @@
 		return date.toLocaleDateString();
 	}
 
-	$effect(() => {
-		if (!sessionView.envSetDialogOpen) {
-			resetEnvSetEditor();
+	function handleEnvSetDialogOpenChange(open: boolean) {
+		if (open) {
+			sessionView.envSetDialogOpen = true;
+			return;
 		}
-	});
+		closeEnvSetManager();
+	}
 </script>
 
 <DropdownMenu>
@@ -231,7 +235,7 @@
 	</DropdownMenuContent>
 </DropdownMenu>
 
-<Dialog.Root bind:open={sessionView.envSetDialogOpen}>
+<Dialog.Root open={sessionView.envSetDialogOpen} onOpenChange={handleEnvSetDialogOpenChange}>
 	<Dialog.Content class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
@@ -401,10 +405,7 @@
 				<Button
 					variant="ghost"
 					size="sm"
-					onclick={() => {
-						resetEnvSetEditor();
-						sessionView.closeEnvSetManager();
-					}}
+					onclick={closeEnvSetManager}
 				>
 					Cancel
 				</Button>

@@ -57,9 +57,31 @@
 		() => preferences.availableThemes.find((themeOption) => themeOption.id === preferences.colorScheme)?.name ?? "Default",
 	);
 
+	function handleSettingsOpenChange(open: boolean) {
+		if (!open) {
+			ui.closeSettings();
+			return;
+		}
+
+		ui.settingsDialog.open = true;
+	}
+
+	function handleSettingsTabChange(value: string) {
+		if (
+			value !== "appearance" &&
+			value !== "chat" &&
+			value !== "update" &&
+			value !== "credentials"
+		) {
+			return;
+		}
+
+		ui.settingsDialog.tab = value;
+	}
+
 </script>
 
-<Dialog.Root bind:open={ui.settingsDialog.open}>
+<Dialog.Root open={ui.settingsDialog.open} onOpenChange={handleSettingsOpenChange}>
 	<Dialog.Content class="sm:max-w-2xl">
 		<Dialog.Header>
 			<Dialog.Title>Settings</Dialog.Title>
@@ -68,7 +90,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<Tabs bind:value={ui.settingsDialog.tab} class="mt-1">
+		<Tabs value={ui.settingsDialog.tab} onValueChange={handleSettingsTabChange} class="mt-1">
 			<TabsList class="grid w-full grid-cols-4">
 				<TabsTrigger value="appearance">Appearance</TabsTrigger>
 				<TabsTrigger value="chat">Chat</TabsTrigger>
@@ -280,7 +302,9 @@
 							</CardDescription>
 						</CardHeader>
 						<CardContent>
-							<CredentialsManager />
+							{#if ui.settingsDialog.open && ui.settingsDialog.tab === "credentials"}
+								<CredentialsManager />
+							{/if}
 						</CardContent>
 					</Card>
 				</TabsContent>
@@ -304,4 +328,6 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<SupportInfoDialog />
+{#if ui.supportInfoDialogOpen}
+	<SupportInfoDialog />
+{/if}

@@ -8,11 +8,12 @@
 	import PencilIcon from "@lucide/svelte/icons/pencil";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
-	import { onDestroy } from "svelte";
+	import { onDestroy, onMount } from "svelte";
 	import type {
-		AuthProvider,
 		CredentialAuthType,
 		CredentialInfo,
+		CredentialType,
+		CredentialTypeOAuthConfig,
 		GitHubDeviceCodeResponse,
 	} from "$lib/api-types";
 	import { openUrl } from "$lib/tauri";
@@ -32,76 +33,40 @@
 	import { useAppContext } from "$lib/context/app-context.svelte";
 
 	type EditorMode = "list" | "create" | "edit";
-	type OAuthFlow = "none" | "anthropic" | "openai" | "github-git";
-	const SUPPORTED_PROVIDERS = ["anthropic", "openai", "discobot", "tavily", "github-git"] as const;
-	type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
-	type SupportedCredential = {
+	type DisplayCredential = {
 		id: string;
-		provider: SupportedProvider;
+		provider: string;
 		backendProvider: string;
 		authType: CredentialAuthType;
 		updatedAt?: string;
 		expiresAt?: string;
+		type: CredentialType;
 	};
 
-	const FALLBACK_PROVIDER_NAMES: Record<SupportedProvider, string> = {
-		anthropic: "Anthropic",
-		openai: "OpenAI",
-		discobot: "Discobot",
-		tavily: "Tavily",
-		"github-git": "GitHub",
+	type ProviderOption = {
+		provider: string;
+		name: string;
+		group: CredentialType["group"];
+		groupName: string;
 	};
-
-	const PROVIDER_AUTH_TYPES: Record<SupportedProvider, CredentialAuthType[]> = {
-		anthropic: ["api_key", "oauth"],
-		openai: ["api_key", "oauth"],
-		discobot: ["id"],
-		tavily: ["api_key"],
-		"github-git": ["oauth"],
-	};
-
-	type ProviderGroup = {
-		id: "model-providers" | "git-version-control" | "tools";
-		title: string;
-		providers: SupportedProvider[];
-	};
-
-	const PROVIDER_GROUPS: ProviderGroup[] = [
-		{
-			id: "model-providers",
-			title: "Model Providers",
-			providers: ["anthropic", "openai"],
-		},
-		{
-			id: "git-version-control",
-			title: "Git / Version Control",
-			providers: ["github-git"],
-		},
-		{
-			id: "tools",
-			title: "Tools",
-			providers: ["discobot", "tavily"],
-		},
-	];
 
 	const app = useAppContext();
 	const credentialsApi = app.credentials;
-	const ui = app.ui;
-	let providersById = $state<Record<string, AuthProvider>>({});
-	let credentials = $state<SupportedCredential[]>([]);
+	let credentialTypes = $state<CredentialType[]>([]);
+	let credentials = $state<DisplayCredential[]>([]);
 	let loading = $state(false);
 	let errorMessage = $state<string | null>(null);
 	let mode = $state<EditorMode>("list");
 	let editingCredentialId = $state<string | null>(null);
-	let selectedProvider = $state<SupportedProvider>("anthropic");
+	let selectedProvider = $state("");
 	let selectedAuthType = $state<CredentialAuthType>("api_key");
 	let apiKeyDraft = $state("");
 	let showApiKey = $state(false);
 	let submitting = $state(false);
 	let deletingProvider = $state<string | null>(null);
 
-	let oauthFlow = $state<OAuthFlow>("none");
+	let activeOAuth = $state<CredentialTypeOAuthConfig | null>(null);
 	let oauthError = $state<string | null>(null);
 	let oauthBusy = $state(false);
 	let oauthAuthUrl = $state<string | null>(null);
@@ -115,64 +80,114 @@
 
 	const hasEditor = $derived.by(() => mode === "create" || mode === "edit");
 	const isEditing = $derived.by(() => mode === "edit");
-	const selectedAuthTypeOptions = $derived.by(() => PROVIDER_AUTH_TYPES[selectedProvider]);
+	const providerOptions = $derived.by(() => {
+		const seen = new Set<string>();
+		const options: ProviderOption[] = [];
+		for (const credentialType of credentialTypes) {
+			if (seen.has(credentialType.provider)) {
+				continue;
+			}
+			seen.add(credentialType.provider);
+			options.push({
+				provider: credentialType.provider,
+				name: credentialType.name,
+				group: credentialType.group,
+				groupName: credentialType.groupName,
+			});
+		}
+		return options;
+	});
+	const providerGroups = $derived.by(() => {
+		const groups: { id: CredentialType["group"]; title: string; providers: ProviderOption[] }[] = [];
+		for (const option of providerOptions) {
+			const existing = groups.find((group) => group.id === option.group);
+			if (existing) {
+				existing.providers.push(option);
+				continue;
+			}
+			groups.push({ id: option.group, title: option.groupName, providers: [option] });
+		}
+		return groups;
+	});
+	const selectedAuthTypeOptions = $derived.by(() => getAuthTypesForProvider(selectedProvider));
+	const selectedCredentialType = $derived.by(() => getCredentialType(selectedProvider, selectedAuthType));
 	const credentialsByGroup = $derived.by(() =>
 		Object.fromEntries(
-			PROVIDER_GROUPS.map((group) => [
+			providerGroups.map((group) => [
 				group.id,
-				credentials.filter((credential) => group.providers.includes(credential.provider)),
+				credentials.filter((credential) => credential.type.group === group.id),
 			]),
-		) as Record<ProviderGroup["id"], SupportedCredential[]>,
+		) as Record<CredentialType["group"], DisplayCredential[]>,
 	);
-	const providerEnvHint = $derived.by(() => {
-		if (selectedProvider === "openai" && selectedAuthType === "oauth") {
-			return "CODEX_API_KEY";
+	const providerEnvHint = $derived.by(() => selectedCredentialType?.env?.[0] ?? "");
+
+	function getAuthTypesForProvider(provider: string): CredentialAuthType[] {
+		const authTypes = credentialTypes
+			.filter((credentialType) => credentialType.provider === provider)
+			.map((credentialType) => credentialType.authType);
+		return Array.from(new Set(authTypes));
+	}
+
+	function getCredentialType(
+		provider: string,
+		authType: CredentialAuthType,
+	): CredentialType | undefined {
+		return credentialTypes.find(
+			(credentialType) =>
+				credentialType.provider === provider && credentialType.authType === authType,
+		);
+	}
+
+	function firstProvider(): string {
+		return providerOptions[0]?.provider ?? "";
+	}
+
+	function ensureSelection() {
+		const nextProvider =
+			selectedProvider && providerOptions.some((option) => option.provider === selectedProvider)
+				? selectedProvider
+				: firstProvider();
+		selectedProvider = nextProvider;
+		const authTypes = getAuthTypesForProvider(nextProvider);
+		if (!authTypes.includes(selectedAuthType)) {
+			selectedAuthType = authTypes[0] ?? "api_key";
 		}
-		if (selectedProvider === "github-git") {
-			return "GITHUB_TOKEN";
-		}
-		return providersById[selectedProvider]?.env?.[0] ?? "";
-	});
-
-	function providerName(provider: SupportedProvider): string {
-		return providersById[provider]?.name ?? FALLBACK_PROVIDER_NAMES[provider];
 	}
 
-	function configuredProviderName(provider: SupportedProvider): string {
-		return providersById[provider]?.configuredName ?? providerName(provider);
+	function secretLabel(provider: string, authType: CredentialAuthType): string {
+		return getCredentialType(provider, authType)?.secretLabel ?? (authType === "id" ? "ID" : "API key");
 	}
 
-	function secretLabel(provider: SupportedProvider, authType: CredentialAuthType): string {
-		return providersById[provider]?.secretLabel ?? (authType === "id" ? "ID" : "API key");
-	}
-
-	function secretDescription(provider: SupportedProvider, isEditing: boolean): string {
+	function secretDescription(provider: string, authType: CredentialAuthType, isEditing: boolean): string {
 		return (
-			providersById[provider]?.secretDescription ??
+			getCredentialType(provider, authType)?.secretDescription ??
 			`Paste a key to ${isEditing ? "update" : "save"} this credential.`
 		);
 	}
 
-	function autoGenerateSecret(provider: SupportedProvider): boolean {
-		return providersById[provider]?.autoGenerateSecret ?? false;
+	function autoGenerateSecret(provider: string, authType: CredentialAuthType): boolean {
+		return getCredentialType(provider, authType)?.autoGenerateSecret ?? false;
 	}
 
-	function autoGeneratePrefix(provider: SupportedProvider): string {
-		return providersById[provider]?.autoGeneratePrefix ?? "";
+	function autoGeneratePrefix(provider: string, authType: CredentialAuthType): string {
+		return getCredentialType(provider, authType)?.autoGeneratePrefix ?? "";
 	}
 
-	function autoGenerateDescription(provider: SupportedProvider): string {
+	function autoGenerateDescription(provider: string, authType: CredentialAuthType): string {
 		return (
-			providersById[provider]?.autoGenerateDescription ??
+			getCredentialType(provider, authType)?.autoGenerateDescription ??
 			"A random value will be generated automatically when you save."
 		);
 	}
 
-	function credentialLabel(credential: SupportedCredential): string {
-		if (credential.provider === "openai" && credential.backendProvider === "codex") {
-			return `${providerName("openai")} (OAuth)`;
+	function credentialLabel(credential: DisplayCredential): string {
+		const providerCredentialTypes = credentialTypes.filter(
+			(credentialType) => credentialType.provider === credential.provider,
+		);
+		if (providerCredentialTypes.length > 1) {
+			return `${credential.type.name} (${authLabel(credential.authType)})`;
 		}
-		return configuredProviderName(credential.provider);
+		return credential.type.configuredName ?? credential.type.name;
 	}
 
 	function authLabel(authType: CredentialAuthType): string {
@@ -204,7 +219,7 @@
 
 	function resetOAuthState() {
 		stopGithubPolling();
-		oauthFlow = "none";
+		activeOAuth = null;
 		oauthError = null;
 		oauthBusy = false;
 		oauthAuthUrl = null;
@@ -218,53 +233,39 @@
 	function resetEditor() {
 		mode = "list";
 		editingCredentialId = null;
-		selectedProvider = "anthropic";
-		selectedAuthType = "api_key";
 		apiKeyDraft = "";
 		showApiKey = false;
 		submitting = false;
 		resetOAuthState();
+		ensureSelection();
 	}
 
-	function normalizeCredentials(rawCredentials: CredentialInfo[]): SupportedCredential[] {
-		const mapped: SupportedCredential[] = [];
+	function normalizeCredentials(rawCredentials: CredentialInfo[]): DisplayCredential[] {
+		const mapped: DisplayCredential[] = [];
 		for (const credential of rawCredentials) {
-			if (credential.provider === "codex") {
-				mapped.push({
-					id: credential.id,
-					provider: "openai",
-					backendProvider: "codex",
-					authType: "oauth",
-					updatedAt: credential.updatedAt,
-					expiresAt: credential.expiresAt,
-				});
-				continue;
-			}
-
-			if (!SUPPORTED_PROVIDERS.includes(credential.provider as SupportedProvider)) {
+			const credentialType = credentialTypes.find(
+				(type) =>
+					type.backendProvider === credential.provider && type.authType === credential.authType,
+			);
+			if (!credentialType) {
 				continue;
 			}
 
 			mapped.push({
 				id: credential.id,
-				provider: credential.provider as SupportedProvider,
+				provider: credentialType.provider,
 				backendProvider: credential.provider,
 				authType: credential.authType,
 				updatedAt: credential.updatedAt,
 				expiresAt: credential.expiresAt,
+				type: credentialType,
 			});
 		}
 
 		mapped.sort((left, right) => {
-			const providerOrder =
-				SUPPORTED_PROVIDERS.indexOf(left.provider) - SUPPORTED_PROVIDERS.indexOf(right.provider);
-			if (providerOrder !== 0) {
-				return providerOrder;
-			}
-			if (left.authType === right.authType) {
-				return 0;
-			}
-			return left.authType === "oauth" ? 1 : -1;
+			const leftIndex = credentialTypes.findIndex((type) => type.id === left.type.id);
+			const rightIndex = credentialTypes.findIndex((type) => type.id === right.type.id);
+			return leftIndex - rightIndex;
 		});
 
 		return mapped;
@@ -275,9 +276,8 @@
 		errorMessage = null;
 		try {
 			await credentialsApi.refresh();
-			providersById = Object.fromEntries(
-				credentialsApi.providers.map((provider) => [provider.id, provider]),
-			);
+			credentialTypes = credentialsApi.credentialTypes;
+			ensureSelection();
 			credentials = normalizeCredentials(credentialsApi.list);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : "Failed to load credentials";
@@ -286,11 +286,23 @@
 		}
 	}
 
+	async function startGitHubCredentialFlow() {
+		mode = "create";
+		editingCredentialId = null;
+		selectedProvider = "github-git";
+		selectedAuthType = "oauth";
+		apiKeyDraft = "";
+		showApiKey = false;
+		resetOAuthState();
+		errorMessage = null;
+		await loadCredentialsData();
+		await startGithubOAuth();
+	}
+
 	function startCreate() {
 		mode = "create";
 		editingCredentialId = null;
-		selectedProvider = "anthropic";
-		selectedAuthType = PROVIDER_AUTH_TYPES.anthropic[0];
+		ensureSelection();
 		apiKeyDraft = "";
 		showApiKey = false;
 		resetOAuthState();
@@ -314,13 +326,13 @@
 	}
 
 	function handleProviderChange(value: string) {
-		if (!SUPPORTED_PROVIDERS.includes(value as SupportedProvider)) {
+		if (!providerOptions.some((option) => option.provider === value)) {
 			return;
 		}
-		selectedProvider = value as SupportedProvider;
-		const nextAuthTypes = PROVIDER_AUTH_TYPES[selectedProvider];
+		selectedProvider = value;
+		const nextAuthTypes = getAuthTypesForProvider(selectedProvider);
 		if (!nextAuthTypes.includes(selectedAuthType)) {
-			selectedAuthType = nextAuthTypes[0];
+			selectedAuthType = nextAuthTypes[0] ?? "api_key";
 		}
 		apiKeyDraft = "";
 		resetOAuthState();
@@ -346,16 +358,21 @@
 	}
 
 	async function saveApiKeyCredential() {
+		const credentialType = selectedCredentialType;
+		if (!credentialType) {
+			return;
+		}
+
 		submitting = true;
 		errorMessage = null;
 		try {
-			const trimmedKey = autoGenerateSecret(selectedProvider)
-				? generateAutoSecret(autoGeneratePrefix(selectedProvider))
+			const trimmedKey = autoGenerateSecret(selectedProvider, selectedAuthType)
+				? generateAutoSecret(autoGeneratePrefix(selectedProvider, selectedAuthType))
 				: apiKeyDraft.trim();
 			if (!trimmedKey) {
 				return;
 			}
-			await credentialsApi.create(selectedProvider, selectedAuthType, trimmedKey);
+			await credentialsApi.create(credentialType.backendProvider, credentialType.authType, trimmedKey);
 			await loadCredentialsData();
 			resetEditor();
 		} catch (error) {
@@ -365,7 +382,7 @@
 		}
 	}
 
-	async function deleteCredential(credential: SupportedCredential) {
+	async function deleteCredential(credential: DisplayCredential) {
 		deletingProvider = credential.backendProvider;
 		errorMessage = null;
 		try {
@@ -386,7 +403,7 @@
 		oauthError = null;
 		try {
 			const response = await credentialsApi.anthropicAuthorize();
-			oauthFlow = "anthropic";
+			activeOAuth = selectedCredentialType?.oauth ?? null;
 			oauthAuthUrl = response.url;
 			oauthVerifier = response.verifier;
 			oauthCode = "";
@@ -430,12 +447,12 @@
 		}
 	}
 
-	async function startOpenAIOAuth() {
+	async function startCodexOAuth() {
 		oauthBusy = true;
 		oauthError = null;
 		try {
 			const response = await credentialsApi.codexAuthorize();
-			oauthFlow = "openai";
+			activeOAuth = selectedCredentialType?.oauth ?? null;
 			oauthAuthUrl = response.url;
 			oauthVerifier = response.verifier;
 			oauthCode = "";
@@ -473,7 +490,7 @@
 		return trimmed;
 	}
 
-	async function completeOpenAIOAuth() {
+	async function completeCodexOAuth() {
 		if (!oauthVerifier) {
 			oauthError = "Missing verifier. Start the OAuth flow again.";
 			return;
@@ -557,7 +574,7 @@
 		oauthError = null;
 		try {
 			const response = await credentialsApi.githubDeviceCode();
-			oauthFlow = "github-git";
+			activeOAuth = selectedCredentialType?.oauth ?? null;
 			githubDeviceInfo = response;
 			await openUrl(response.verificationUri);
 		} catch (error) {
@@ -581,42 +598,44 @@
 	}
 
 	async function startOAuthFlow() {
-		if (selectedProvider === "anthropic") {
+		const oauthConfig = selectedCredentialType?.oauth;
+		if (!oauthConfig) {
+			return;
+		}
+		if (oauthConfig.provider === "anthropic") {
 			await startAnthropicOAuth();
 			return;
 		}
-		if (selectedProvider === "openai") {
-			await startOpenAIOAuth();
+		if (oauthConfig.provider === "codex") {
+			await startCodexOAuth();
 			return;
 		}
-		if (selectedProvider === "github-git") {
+		if (oauthConfig.provider === "github-git") {
 			await startGithubOAuth();
 		}
 	}
 
-	$effect(() => {
-		if (!ui.settingsDialog.open) {
-			resetEditor();
+	async function completeOAuthFlow() {
+		const oauthConfig = activeOAuth;
+		if (!oauthConfig) {
+			return;
+		}
+		if (oauthConfig.provider === "anthropic") {
+			await completeAnthropicOAuth();
+			return;
+		}
+		if (oauthConfig.provider === "codex") {
+			await completeCodexOAuth();
+		}
+	}
+
+	onMount(() => {
+		if (app.ui.credentialFlowIntent === "github-git") {
+			app.ui.credentialFlowIntent = null;
+			void startGitHubCredentialFlow();
 			return;
 		}
 		void loadCredentialsData();
-	});
-
-	$effect(() => {
-		if (!ui.settingsDialog.open || ui.credentialFlowIntent !== "github-git") {
-			return;
-		}
-
-		ui.credentialFlowIntent = null;
-		mode = "create";
-		editingCredentialId = null;
-		selectedProvider = "github-git";
-		selectedAuthType = "oauth";
-		apiKeyDraft = "";
-		showApiKey = false;
-		resetOAuthState();
-		errorMessage = null;
-		void startGithubOAuth();
 	});
 
 	onDestroy(() => {
@@ -644,13 +663,13 @@
 						class="w-full"
 						disabled={isEditing}
 					>
-						{#each PROVIDER_GROUPS as group (group.id)}
-							<optgroup label={group.title}>
-								{#each group.providers as providerId (providerId)}
-									<option value={providerId}>{providerName(providerId)}</option>
-								{/each}
-							</optgroup>
-						{/each}
+					{#each providerGroups as group (group.id)}
+						<optgroup label={group.title}>
+							{#each group.providers as option (option.provider)}
+								<option value={option.provider}>{option.name}</option>
+							{/each}
+						</optgroup>
+					{/each}
 					</NativeSelect>
 				</ItemActions>
 			</Item>
@@ -689,12 +708,12 @@
 				<Item size="sm">
 					<ItemContent>
 						<ItemTitle>{secretLabel(selectedProvider, selectedAuthType)}</ItemTitle>
-						<ItemDescription>{secretDescription(selectedProvider, isEditing)}</ItemDescription>
+						<ItemDescription>{secretDescription(selectedProvider, selectedAuthType, isEditing)}</ItemDescription>
 					</ItemContent>
 					<ItemActions class="ml-auto w-80 justify-end">
-						{#if autoGenerateSecret(selectedProvider)}
+						{#if autoGenerateSecret(selectedProvider, selectedAuthType)}
 							<div class="w-full rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-								{autoGenerateDescription(selectedProvider)}
+								{autoGenerateDescription(selectedProvider, selectedAuthType)}
 							</div>
 						{:else}
 							<div class="flex w-full items-center gap-2">
@@ -730,15 +749,9 @@
 			</ItemGroup>
 		{:else}
 			<div class="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-				{#if oauthFlow === "none"}
+				{#if activeOAuth === null}
 					<p class="text-sm text-muted-foreground">
-						{#if selectedProvider === "anthropic"}
-							Use Claude login (or direct token) to connect Anthropic.
-						{:else if selectedProvider === "openai"}
-							Use ChatGPT login (Codex OAuth) to connect OpenAI.
-						{:else}
-							Use GitHub device flow to connect GitHub for git operations.
-						{/if}
+						{selectedCredentialType?.oauth?.description ?? "Use OAuth to connect this provider."}
 					</p>
 					<Button variant="outline" size="sm" onclick={startOAuthFlow} disabled={oauthBusy}>
 						{#if oauthBusy}
@@ -749,7 +762,7 @@
 							Start OAuth
 						{/if}
 					</Button>
-				{:else if oauthFlow === "github-git"}
+				{:else if activeOAuth.kind === "device_code"}
 					{#if githubDeviceInfo}
 						<div class="space-y-3">
 							<p class="text-sm text-muted-foreground">
@@ -797,9 +810,7 @@
 							</Button>
 						{/if}
 						<Label for="oauth-code" class="text-sm">
-							{oauthFlow === "anthropic"
-								? "Authorization code or token"
-								: "Authorization code or callback URL"}
+							{activeOAuth.inputLabel ?? "Authorization code"}
 						</Label>
 						<Input
 							id="oauth-code"
@@ -807,15 +818,11 @@
 							oninput={(event) => {
 								oauthCode = (event.currentTarget as HTMLInputElement).value;
 							}}
-							placeholder={oauthFlow === "anthropic" ? "Paste code or sk-ant-oat0..." : "Paste code or callback URL"}
+							placeholder={activeOAuth.inputPlaceholder ?? "Paste authorization code"}
 							class="font-mono text-sm"
 							disabled={oauthBusy}
 						/>
-						<Button
-							size="sm"
-							onclick={oauthFlow === "anthropic" ? completeAnthropicOAuth : completeOpenAIOAuth}
-							disabled={!oauthCode.trim() || oauthBusy}
-						>
+						<Button size="sm" onclick={completeOAuthFlow} disabled={!oauthCode.trim() || oauthBusy}>
 							{#if oauthBusy}
 								<Loader2Icon class="size-3.5 animate-spin" />
 								Completing...
@@ -845,13 +852,14 @@
 					variant="default"
 					size="sm"
 					onclick={saveApiKeyCredential}
-					disabled={(!autoGenerateSecret(selectedProvider) && apiKeyDraft.trim().length === 0) ||
+					disabled={(!autoGenerateSecret(selectedProvider, selectedAuthType) &&
+						apiKeyDraft.trim().length === 0) ||
 						submitting}
 				>
 					{#if submitting}
 						<Loader2Icon class="size-3.5 animate-spin" />
 						Saving...
-					{:else if autoGenerateSecret(selectedProvider)}
+					{:else if autoGenerateSecret(selectedProvider, selectedAuthType)}
 						{isEditing
 							? `Regenerate ${secretLabel(selectedProvider, selectedAuthType)}`
 							: `Add ${secretLabel(selectedProvider, selectedAuthType)}`}
@@ -878,7 +886,7 @@
 			</div>
 		{:else}
 			<div class="space-y-4">
-				{#each PROVIDER_GROUPS as group (group.id)}
+				{#each providerGroups as group (group.id)}
 					<div class="space-y-2">
 						<p class="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
 							{group.title}

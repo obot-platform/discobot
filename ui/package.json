@@ -16,7 +16,6 @@
 		"@streamdown/code": "^1.0.3",
 		"@streamdown/math": "^1.0.2",
 		"@streamdown/mermaid": "^1.0.2",
-		"@tanstack/svelte-query": "^6.1.0",
 		"@tauri-apps/plugin-opener": "^2.5.3",
 		"class-variance-authority": "latest",
 		"clsx": "latest",

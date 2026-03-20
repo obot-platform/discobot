@@ -66,6 +66,9 @@ export type SessionReferences = {
 export type ThreadSummary = {
 	id: string;
 	name: string;
+	model?: string;
+	reasoning?: string;
+	mode?: string;
 };
 
 export type PlanEntry = {

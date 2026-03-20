@@ -98,18 +98,14 @@
 
 	async function fetchPendingQuestion(
 		sessionId: string,
-		threadId: string | null,
+		threadId: string,
 		questionId: string,
 	): Promise<PendingQuestionResponse> {
-		if (threadId && threadId !== sessionId) {
-			return (await api.getThreadChatQuestion(
-				sessionId,
-				threadId,
-				questionId,
-			)) as PendingQuestionResponse;
-		}
-
-		return (await api.getChatQuestion(sessionId, questionId)) as PendingQuestionResponse;
+		return (await api.getThreadChatQuestion(
+			sessionId,
+			threadId,
+			questionId,
+		)) as PendingQuestionResponse;
 	}
 
 	$effect(() => {
@@ -132,7 +128,7 @@
 			return;
 		}
 
-		if (!activeSessionId || !approvalId) {
+		if (!activeSessionId || !activeThreadId || !approvalId) {
 			approvalStatus = "loading";
 			pendingQuestion = null;
 			return;
@@ -182,17 +178,16 @@
 		}
 
 		try {
-			if (activeThreadId && activeThreadId !== activeSessionId) {
-				await api.submitThreadChatAnswer(activeSessionId, activeThreadId, {
-					toolUseID,
-					answers,
-				});
-			} else {
-				await api.submitChatAnswer(activeSessionId, {
-					toolUseID,
-					answers,
-				});
+			if (!activeThreadId) {
+				approvalStatus = "pending";
+				approvalError = "Missing thread context";
+				return;
 			}
+
+			await api.submitThreadChatAnswer(activeSessionId, activeThreadId, {
+				toolUseID,
+				answers,
+			});
 
 			approvalStatus = "answered";
 			pendingQuestion = null;

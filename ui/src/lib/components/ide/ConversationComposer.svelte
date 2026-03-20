@@ -63,25 +63,22 @@
 		modelIdOverride = undefined;
 	}
 
-	// When pending, session.current is null so these fall back to defaults ("build", preferences.defaultModel).
-	const sessionMode = $derived.by(() => normalizeComposerMode(session.current?.mode));
+	// When pending, thread.thread is null so these fall back to defaults ("build", preferences.defaultModel).
+	const sessionMode = $derived.by(() => normalizeComposerMode(thread.thread?.mode));
 
 	const sessionModelId = $derived.by(() => {
-		if (!session.current) {
-			return preferences.defaultModel || null;
-		}
-
-		if (!session.current.model) {
-			return null;
+		const t = thread.thread;
+		if (!t?.model) {
+			return session.isPending ? (preferences.defaultModel || null) : null;
 		}
 
 		const supportsReasoning = models.list.some(
-			(model) => model.id === session.current?.model && model.reasoning,
+			(model) => model.id === t.model && model.reasoning,
 		);
 
-		return session.current.reasoning === "enabled" && supportsReasoning
-			? `${session.current.model}:thinking`
-			: session.current.model;
+		return t.reasoning === "enabled" && supportsReasoning
+			? `${t.model}:thinking`
+			: t.model;
 	});
 
 	const effectiveMode = $derived.by(() => modeOverride ?? sessionMode);
@@ -176,16 +173,20 @@
 		}
 
 		const nextMessageText = sessionView.composerDraft.trim();
-		await thread.submit({
-			text: nextMessageText,
-			mode: effectiveMode,
-			modelId: effectiveModelId,
-			reasoning: effectiveReasoning,
-		});
-		sessionView.setComposerDraft("");
-		clearComposerOverrides();
-		composerTextareaRef?.closeMentionDropdown();
-		clearAttachments();
+		try {
+			await thread.submit({
+				text: nextMessageText,
+				mode: effectiveMode,
+				modelId: effectiveModelId,
+				reasoning: effectiveReasoning,
+			});
+			sessionView.setComposerDraft("");
+			clearComposerOverrides();
+			composerTextareaRef?.closeMentionDropdown();
+			clearAttachments();
+		} catch {
+			// Error is already surfaced via thread.error in ConversationPane
+		}
 	}
 
 	async function submitNewSession() {
@@ -210,6 +211,7 @@
 		try {
 			const response = await app.chat({
 				sessionId: session.sessionId,
+				threadId: thread.threadId,
 				messages: trimmedText
 					? [{ id: generateId(), role: "user", parts: [{ type: "text", text: trimmedText }] }]
 					: [],
@@ -221,7 +223,7 @@
 						}
 					: {}),
 				...(model ? { model } : {}),
-				reasoning: effectiveReasoning ? "enabled" : "disabled",
+				...(effectiveReasoning ? { reasoning: "enabled" } : {}),
 				mode: effectiveMode === "plan" ? "plan" : "",
 			});
 			sessions.select(response.sessionId);

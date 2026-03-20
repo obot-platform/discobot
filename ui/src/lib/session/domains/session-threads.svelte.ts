@@ -1,21 +1,18 @@
 import { generateId } from "ai";
-import { createMutation, createQuery, queryOptions } from "@tanstack/svelte-query";
-import type { QueryClient } from "@tanstack/svelte-query";
 
-import { api } from "$lib/api-client";
 import type { Session } from "$lib/api-types";
 import {
 	buildImplicitThread,
 	getNextSelectedThreadId,
 } from "$lib/session/domains/session-domain.helpers";
-import type { SessionThreadsService } from "$lib/session/services/threads-service";
-
-const THREADS_DOMAIN = "threads";
+import type { SessionThreadsService } from "$lib/session/session-context.types";
+import type { ThreadStore } from "$lib/store/threads.store.svelte";
 
 type CreateSessionThreadsDomainArgs = {
-	queryClient: QueryClient;
+	store: ThreadStore;
+	sessionId: string;
+	hasSession: () => boolean;
 	getSession: () => Session | null;
-	key: (...parts: string[]) => readonly unknown[];
 	getSelectedId: () => string | null;
 	setSelectedId: (threadId: string | null) => void;
 };
@@ -23,126 +20,34 @@ type CreateSessionThreadsDomainArgs = {
 export function createSessionThreadsDomain(
 	args: CreateSessionThreadsDomainArgs,
 ): SessionThreadsService {
-	const threadsQuery = createQuery(() => {
-		const session = args.getSession();
-		return queryOptions({
-			queryKey: args.key(THREADS_DOMAIN),
-			enabled: !!session?.id,
-			queryFn: async () => {
-				const { threads } = await api.getThreads(session!.id);
-				return threads;
-			},
-			initialData: [],
-		});
-	});
+	const { store } = args;
 
-	const rawList = $derived.by(() =>
-		(threadsQuery.data ?? []).map((thread) => ({ id: thread.id, name: thread.name })),
-	);
-	const list = $derived.by(() => {
-		const session = args.getSession();
-		return rawList.length > 0 ? rawList : buildImplicitThread(session);
-	});
+	function currentList() {
+		return store.list.length > 0 ? store.list : buildImplicitThread(args.getSession());
+	}
 
-	const createThreadMutation = createMutation(() => ({
-		mutationFn: async (name?: string) => {
-			const session = args.getSession();
-			if (!session) {
-				return null;
-			}
-
-			const trimmedName = name?.trim();
-			const threadId = rawList.length === 0 ? session.id : generateId();
-			return api.createThread(session.id, {
-				id: threadId,
-				name: trimmedName && trimmedName.length > 0 ? trimmedName : undefined,
-			});
-		},
-		onSuccess: (created) => {
-			if (!created) {
-				return;
-			}
-			args.queryClient.setQueryData(args.key(THREADS_DOMAIN), (previous: Array<{ id: string; name: string }> | undefined) => {
-				const next = previous ? [...previous] : [];
-				const index = next.findIndex((thread) => thread.id === created.id);
-				if (index === -1) {
-					next.push(created);
-				} else {
-					next[index] = created;
-				}
-				return next;
-			});
-			args.setSelectedId(created.id);
-		},
-	}));
-
-	const renameThreadMutation = createMutation(() => ({
-		mutationFn: async ({ threadId, nextName }: { threadId: string; nextName: string }) => {
-			const session = args.getSession();
-			if (!session) {
-				return null;
-			}
-
-			if (rawList.length === 0 && threadId === session.id) {
-				return api.createThread(session.id, { id: threadId, name: nextName });
-			}
-
-			return api.updateThread(session.id, threadId, { name: nextName });
-		},
-		onSuccess: (updated) => {
-			if (!updated) {
-				return;
-			}
-			args.queryClient.setQueryData(args.key(THREADS_DOMAIN), (previous: Array<{ id: string; name: string }> | undefined) => {
-				const next = previous ? [...previous] : [];
-				const index = next.findIndex((thread) => thread.id === updated.id);
-				if (index === -1) {
-					next.push(updated);
-				} else {
-					next[index] = updated;
-				}
-				return next;
-			});
-		},
-	}));
-
-	const removeThreadMutation = createMutation(() => ({
-		mutationFn: async (threadId: string) => {
-			const session = args.getSession();
-			if (!session) {
-				return null;
-			}
-			await api.deleteThread(session.id, threadId);
-			return threadId;
-		},
-		onSuccess: (removedThreadId) => {
-			if (!removedThreadId) {
-				return;
-			}
-			args.queryClient.setQueryData(args.key(THREADS_DOMAIN), (previous: Array<{ id: string; name: string }> | undefined) =>
-				(previous ?? []).filter((thread) => thread.id !== removedThreadId),
-			);
-			args.setSelectedId(getNextSelectedThreadId(list, removedThreadId, args.getSelectedId()));
-		},
-	}));
-
-	$effect(() => {
-		if (list.length === 0) {
+	function syncSelectedThread(nextList = currentList()) {
+		if (nextList.length === 0) {
 			args.setSelectedId(null);
 			return;
 		}
 
 		const selectedId = args.getSelectedId();
-		if (selectedId && list.some((thread) => thread.id === selectedId)) {
+		if (selectedId && nextList.some((thread) => thread.id === selectedId)) {
 			return;
 		}
 
-		args.setSelectedId(list[0]?.id ?? null);
-	});
+		args.setSelectedId(nextList[0]?.id ?? null);
+	}
+
+	const list = $derived.by(() => currentList());
 
 	return {
 		get list() {
 			return list;
+		},
+		get status() {
+			return store.status;
 		},
 		get selectedId() {
 			return args.getSelectedId();
@@ -150,33 +55,82 @@ export function createSessionThreadsDomain(
 		get selected() {
 			return list.find((thread) => thread.id === args.getSelectedId()) ?? null;
 		},
+		load: async () => {
+			if (store.status === "loading" || store.status === "ready") {
+				syncSelectedThread();
+				return;
+			}
+			if (!args.hasSession()) {
+				store.reset();
+				syncSelectedThread([]);
+				return;
+			}
+			try {
+				await store.fetch(args.sessionId);
+				syncSelectedThread(store.list.length > 0 ? store.list : buildImplicitThread(args.getSession()));
+			} catch (error) {
+				throw error;
+			}
+		},
 		select: (threadId: string) => {
 			if (list.some((thread) => thread.id === threadId)) {
 				args.setSelectedId(threadId);
 			}
 		},
 		create: (name?: string) => {
-			void createThreadMutation.mutateAsync(name);
+			void (async () => {
+				if (!args.hasSession()) {
+					return;
+				}
+
+				const trimmedName = name?.trim();
+				const threadId = store.list.length === 0 ? args.sessionId : generateId();
+				const created = await store.create(args.sessionId, {
+					id: threadId,
+					name: trimmedName && trimmedName.length > 0 ? trimmedName : undefined,
+				});
+				args.setSelectedId(created.id);
+			})();
 		},
 		rename: (threadId: string, nextName: string) => {
 			const trimmedName = nextName.trim();
 			if (!trimmedName || !list.some((thread) => thread.id === threadId)) {
 				return;
 			}
-			void renameThreadMutation.mutateAsync({ threadId, nextName: trimmedName });
+			void (async () => {
+				if (!args.hasSession()) {
+					return;
+				}
+
+				if (store.list.length === 0 && threadId === args.sessionId) {
+					await store.create(args.sessionId, { id: threadId, name: trimmedName });
+				} else {
+					await store.update(args.sessionId, threadId, { name: trimmedName });
+				}
+			})();
 		},
 		remove: (threadId: string) => {
-			const session = args.getSession();
-			if (!session) {
+			if (!args.hasSession()) {
 				return;
 			}
-			if (rawList.length === 0 && threadId === session.id) {
+			if (store.list.length === 0 && threadId === args.sessionId) {
 				return;
 			}
-			if (!rawList.some((thread) => thread.id === threadId)) {
+			if (!store.list.some((thread) => thread.id === threadId)) {
 				return;
 			}
-			void removeThreadMutation.mutateAsync(threadId);
+			void (async () => {
+				await store.remove(args.sessionId, threadId);
+				args.setSelectedId(getNextSelectedThreadId(currentList(), threadId, args.getSelectedId()));
+				syncSelectedThread();
+			})();
+		},
+		refreshThread: async (threadId: string) => {
+			if (!args.hasSession()) {
+				return;
+			}
+			await store.fetchOne(args.sessionId, threadId);
+			syncSelectedThread();
 		},
 	};
 }

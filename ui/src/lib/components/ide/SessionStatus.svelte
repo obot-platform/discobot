@@ -37,8 +37,6 @@
 				return "text-destructive";
 			case "ready":
 				return "text-green-500";
-			case "running":
-				return "text-blue-500";
 			case "initializing":
 			case "reinitializing":
 			case "cloning":
@@ -54,7 +52,6 @@
 
 	function isSpinningStatus(status: SessionStatusValue): boolean {
 		switch (normalizedStatus(status)) {
-			case "running":
 			case "initializing":
 			case "reinitializing":
 			case "cloning":

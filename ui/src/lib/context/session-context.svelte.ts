@@ -2,56 +2,50 @@ import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 
 import { useAppContext } from "$lib/context/app-context.svelte";
-import { appQueryKeys } from "$lib/app/query/app-query-keys";
-import { getQueryClient } from "$lib/query/query-client";
-import { createSessionQueryCache } from "$lib/session/cache/query-cache.svelte";
 import { createSessionEnvSetsDomain } from "$lib/session/domains/session-env-sets.svelte";
 import { createSessionFilesDomain } from "$lib/session/domains/session-files.svelte";
 import { createSessionHooksDomain } from "$lib/session/domains/session-hooks.svelte";
 import { createSessionServicesDomain } from "$lib/session/domains/session-services.svelte";
 import { createSessionThreadsDomain } from "$lib/session/domains/session-threads.svelte";
-import type { SessionContextValue, ThreadContextValue } from "$lib/session/session-context.types";
+import type { SessionContextValue, SessionStores, ThreadContextValue } from "$lib/session/session-context.types";
 import { createSessionViewState } from "$lib/session/view/create-session-view-state.svelte";
-import type { Session } from "$lib/api-types";
+import { EnvSetStore } from "$lib/store/env-sets.store.svelte";
+import { ThreadStore } from "$lib/store/threads.store.svelte";
 
 const SESSION_CONTEXT_KEY = Symbol.for("discobot-ui-session-context");
 
 function createSessionContext(sessionId: string): SessionContextValue {
 	const app = useAppContext();
-	const queryClient = getQueryClient();
+	let loaded = $state(false);
 
 	const current = $derived.by(() => {
 		return app.sessions.sessions.find((s) => s.id === sessionId) ?? null;
 	});
 
-	const isPending = $derived.by(() => current === null);
-
-	const cache = createSessionQueryCache(queryClient, sessionId);
-
-	function updateCurrent(updater: (session: Session) => Session) {
-		queryClient.setQueryData<Session[]>(appQueryKeys.sessions(), (previous) =>
-			(previous ?? []).map((candidate) =>
-				candidate.id === sessionId ? updater(candidate) : candidate,
-			),
-		);
-	}
+	const hasSession = $derived.by(() => current !== null);
+	const isPending = $derived.by(() => !hasSession);
 
 	const ui = createSessionViewState({
 		getFiles: () => filesDomain.list,
 	});
 
+	const stores: SessionStores = {
+		threads: new ThreadStore(),
+		envSets: new EnvSetStore(),
+	};
+
 	const filesDomain = createSessionFilesDomain({
-		queryClient,
-		getSession: () => current,
-		key: (domain, ...parts) => cache.key(domain, ...parts),
+		sessionId,
+		hasSession: () => hasSession,
 		getSelectedFile: () => ui.selectedFile,
 		openFile: ui.openFile,
 	});
 
 	const threads = createSessionThreadsDomain({
-		queryClient,
+		store: stores.threads,
+		sessionId,
+		hasSession: () => hasSession,
 		getSession: () => current,
-		key: (domain, ...parts) => cache.key(domain, ...parts),
 		getSelectedId: () => ui.selectedThreadId,
 		setSelectedId: (threadId) => {
 			ui.selectThread(threadId);
@@ -59,34 +53,53 @@ function createSessionContext(sessionId: string): SessionContextValue {
 	});
 
 	const envSets = createSessionEnvSetsDomain({
-		queryClient,
+		store: stores.envSets,
+		sessionId,
+		hasSession: () => hasSession,
 		getSession: () => current,
-		key: (domain, ...parts) => cache.key(domain, ...parts),
-		updateSession: updateCurrent,
+		reloadSession: () => app.sessions.reloadSession(sessionId),
 	});
 
 	const hooks = createSessionHooksDomain({
-		queryClient,
-		getSession: () => current,
-		key: (domain, ...parts) => cache.key(domain, ...parts),
+		sessionId,
+		hasSession: () => hasSession,
 	});
 
 	const services = createSessionServicesDomain({
-		queryClient,
-		getSession: () => current,
-		key: (domain, ...parts) => cache.key(domain, ...parts),
+		sessionId,
+		hasSession: () => hasSession,
 		getActiveServiceId: () => ui.activeServiceId,
 		openService: ui.openService,
 	});
 
 	const threadContexts = new SvelteMap<string, ThreadContextValue>();
 
-	$effect(() => {
-		if (ui.activeView.kind !== "file") {
+	async function load() {
+		if (!hasSession) {
+			loaded = false;
 			return;
 		}
-		void filesDomain.open(ui.activeView.path);
-	});
+		if (!loaded) {
+			await threads.load();
+			await Promise.all([
+				filesDomain.refresh(),
+				services.refresh(),
+				envSets.refresh(),
+				hooks.refresh(),
+			]);
+			loaded = true;
+		}
+
+		const activeThreadId = threads.selectedId ?? sessionId;
+		await threadContexts.get(activeThreadId)?.load();
+	}
+
+	function dispose() {
+		for (const context of threadContexts.values()) {
+			context.dispose();
+		}
+		threadContexts.clear();
+	}
 
 	return {
 		get sessionId() {
@@ -98,8 +111,9 @@ function createSessionContext(sessionId: string): SessionContextValue {
 		get current() {
 			return current;
 		},
-		queryClient,
-		cache,
+		load,
+		dispose,
+		stores,
 		ui,
 		threads,
 		envSets,
@@ -107,11 +121,6 @@ function createSessionContext(sessionId: string): SessionContextValue {
 		files: filesDomain,
 		services,
 		threadContexts,
-		updateCurrent,
-		dispose: () => {
-			void cache.cancelAll();
-			cache.removeAll();
-		},
 	};
 }
 

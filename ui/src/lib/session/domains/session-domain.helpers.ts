@@ -21,7 +21,13 @@ export function buildImplicitThread(session: Session | null): ThreadSummary[] {
 		return [];
 	}
 
-	return [{ id: session.id, name: session.displayName || session.name }];
+	return [{
+		id: session.id,
+		name: session.displayName || session.name,
+		model: session.model,
+		reasoning: session.reasoning,
+		mode: session.mode,
+	}];
 }
 
 export function getNextSelectedThreadId(
@@ -42,11 +48,17 @@ export function getNextSelectedThreadId(
 	return remainingThreads[removedIndex]?.id ?? remainingThreads[removedIndex - 1]?.id ?? null;
 }
 
-export function createUserMessage(text: string): ChatMessage {
+export function createUserMessage(
+	text: string,
+	options: {
+		provisional?: boolean;
+	} = {},
+): ChatMessage {
 	return {
 		id: generateId(),
 		role: "user",
 		parts: [{ type: "text", text }],
+		...(options.provisional ? { provisional: true } : {}),
 	};
 }
 

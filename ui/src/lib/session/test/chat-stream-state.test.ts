@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { UIMessage } from "ai";
+import type { ChatMessage } from "$lib/api-types";
 
 import {
 	bindChatStreamEventSource,
 	createChatStreamState,
-} from "../domains/session-conversation.stream";
+} from "$lib/thread/conversation-stream";
 
-function makeTextMessage(id: string, role: UIMessage["role"], text: string): UIMessage {
+function makeTextMessage(id: string, role: ChatMessage["role"], text: string): ChatMessage {
 	return {
 		id,
 		role,
@@ -47,16 +47,16 @@ async function flushStreamEvents() {
 }
 
 function createHarness(
-	initialMessages: UIMessage[] = [],
+	initialMessages: ChatMessage[] = [],
 ): {
-	messages: UIMessage[];
+	messages: ChatMessage[];
 	modeChanges: string[];
 	modelChanges: string[];
 	reasoningChanges: string[];
 	setCount: number;
 	state: ReturnType<typeof createChatStreamState>;
 } {
-	let messages: UIMessage[] = initialMessages;
+	let messages: ChatMessage[] = initialMessages;
 	let setCount = 0;
 	const modeChanges: string[] = [];
 	const modelChanges: string[] = [];
@@ -136,7 +136,7 @@ test("history replay buffers messages until history-end", async () => {
 		data: "{}",
 	});
 
-	const messages = harness.messages as UIMessage[];
+	const messages = harness.messages;
 
 	assert.equal(harness.setCount, 1);
 	assert.equal(harness.state.isBufferingHistory, false);
@@ -198,7 +198,7 @@ test("data-user-message inserts a preserved user message before the assistant re
 		}),
 	});
 
-	const messages = harness.messages as UIMessage[];
+	const messages = harness.messages;
 
 	assert.deepEqual(
 		messages.map((message) => message.id),
@@ -211,6 +211,33 @@ test("data-user-message inserts a preserved user message before the assistant re
 	assert.equal(messages[1].parts[0]?.type, "text");
 	assert.equal(messages[1].parts[0]?.text, "answer");
 	assert.equal(messages[1].parts[0]?.state, "done");
+});
+
+test("appending a new message removes all provisional messages first", async () => {
+	const harness = createHarness([
+		{
+			id: "provisional-1",
+			role: "user",
+			parts: [{ type: "text", text: "local prompt", state: "done" }],
+			provisional: true,
+		},
+	]);
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-user-message",
+			data: {
+				insertBeforeMessageId: "assistant-1",
+				message: makeTextMessage("user-2", "user", "server prompt"),
+			},
+		}),
+	});
+
+	assert.deepEqual(
+		harness.messages.map((message) => ({ id: message.id, provisional: message.provisional })),
+		[{ id: "user-2", provisional: undefined }],
+	);
 });
 
 test("assistant chunk updates keep the same message object and avoid array reassignment", async () => {
