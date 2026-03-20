@@ -894,7 +894,7 @@ func TestReconcileSessionStates_ResetsRunningSessionWithNoActiveChat(t *testing.
 		ProjectID:     project.ID,
 		WorkspaceID:   workspace.ID,
 		Name:          "Running Session Test",
-		Status:        model.SessionStatusRunning, // Marked as running
+		Status:        "running", // Marked as legacy running
 		WorkspacePath: &workspacePath,
 	}
 	if err := setup.store.CreateSession(ctx, session); err != nil {
