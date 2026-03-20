@@ -9,8 +9,8 @@
 
 	type Props = {
 		mainClass: string;
-		threadsOpen?: boolean;
-		onToggleThreads?: () => void;
+		sidebarOpen?: boolean;
+		onToggleSidebar?: () => void;
 		mode?: "full" | "conversation-only";
 	};
 
@@ -36,8 +36,8 @@
 <main class={props.mainClass}>
 	{#if (props.mode ?? "full") === "full"}
 		<SessionToolbar
-			threadsOpen={props.threadsOpen ?? false}
-			onToggleThreads={props.onToggleThreads ?? noop}
+			sidebarOpen={props.sidebarOpen ?? false}
+			onToggleSidebar={props.onToggleSidebar ?? noop}
 		/>
 	{/if}
 

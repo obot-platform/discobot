@@ -13,8 +13,8 @@ export type SessionViewState = {
 	activeServiceId: string | null;
 	ideMenuOpen: boolean;
 	composerDraft: string;
-	desktopThreadsOpen: boolean;
-	mobileThreadsOpen: boolean;
+	desktopSidebarOpen: boolean;
+	mobileSidebarOpen: boolean;
 	hooksExpanded: boolean;
 	queueExpanded: boolean;
 	hookDialogOpen: boolean;
@@ -48,8 +48,8 @@ export type SessionViewState = {
 	setPendingWorkspaceValidating: (value: boolean) => void;
 	setPendingWorkspaceSetupMessage: (value: string | null) => void;
 	resetPendingWorkspaceSetup: () => void;
-	setDesktopThreadsOpen: (value: boolean) => void;
-	setMobileThreadsOpen: (value: boolean) => void;
+	setDesktopSidebarOpen: (value: boolean) => void;
+	setMobileSidebarOpen: (value: boolean) => void;
 	setHooksExpanded: (value: boolean) => void;
 	setQueueExpanded: (value: boolean) => void;
 	openHookDialog: (hookId: string) => void;
@@ -67,8 +67,8 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 	let selectedFile = $state("");
 	let ideMenuOpen = $state(false);
 	let composerDraft = $state("");
-	let desktopThreadsOpen = $state(false);
-	let mobileThreadsOpen = $state(false);
+	let desktopSidebarOpen = $state(false);
+	let mobileSidebarOpen = $state(false);
 	let hooksExpanded = $state(false);
 	let queueExpanded = $state(false);
 	let hookDialogOpen = $state(false);
@@ -148,17 +148,17 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 		get composerDraft() {
 			return composerDraft;
 		},
-		get desktopThreadsOpen() {
-			return desktopThreadsOpen;
+		get desktopSidebarOpen() {
+			return desktopSidebarOpen;
 		},
-		set desktopThreadsOpen(value: boolean) {
-			desktopThreadsOpen = value;
+		set desktopSidebarOpen(value: boolean) {
+			desktopSidebarOpen = value;
 		},
-		get mobileThreadsOpen() {
-			return mobileThreadsOpen;
+		get mobileSidebarOpen() {
+			return mobileSidebarOpen;
 		},
-		set mobileThreadsOpen(value: boolean) {
-			mobileThreadsOpen = value;
+		set mobileSidebarOpen(value: boolean) {
+			mobileSidebarOpen = value;
 		},
 		get hooksExpanded() {
 			return hooksExpanded;
@@ -303,11 +303,11 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 			pendingWorkspaceSetupMessage = value;
 		},
 		resetPendingWorkspaceSetup,
-		setDesktopThreadsOpen: (value) => {
-			desktopThreadsOpen = value;
+		setDesktopSidebarOpen: (value) => {
+			desktopSidebarOpen = value;
 		},
-		setMobileThreadsOpen: (value) => {
-			mobileThreadsOpen = value;
+		setMobileSidebarOpen: (value) => {
+			mobileSidebarOpen = value;
 		},
 		setHooksExpanded: (value) => {
 			hooksExpanded = value;
@@ -342,8 +342,8 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 			activeView = { kind: "chat" };
 			ideMenuOpen = false;
 			composerDraft = "";
-			desktopThreadsOpen = false;
-			mobileThreadsOpen = false;
+			desktopSidebarOpen = false;
+			mobileSidebarOpen = false;
 			hooksExpanded = false;
 			queueExpanded = false;
 			closeHookDialog();

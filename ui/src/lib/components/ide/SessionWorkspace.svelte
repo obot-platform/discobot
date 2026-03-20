@@ -4,7 +4,7 @@
 	import AppHeader from "$lib/components/ide/AppHeader.svelte";
 	import StartupTasksBanner from "$lib/components/ide/StartupTasksBanner.svelte";
 	import ThreadWorkspace from "$lib/components/ide/ThreadWorkspace.svelte";
-	import ThreadSidebar from "$lib/components/ide/ThreadSidebar.svelte";
+	import SessionSidebar from "$lib/components/ide/SessionSidebar.svelte";
 	import * as Resizable from "$lib/components/ui/resizable";
 	import * as Sheet from "$lib/components/ui/sheet";
 	import { setSessionContext } from "$lib/context/session-context.svelte";
@@ -13,9 +13,9 @@
 
 	const app = useAppContext();
 	const isMobile = new IsMobile(1024);
-	const THREADS_LAYOUT_STORAGE_KEY = "paneforge:discobot-ui-threads-layout";
-	let desktopThreadsPane = $state<PaneAPI | null>(null);
-	let desktopThreadsInitialized = $state(false);
+	const SIDEBAR_LAYOUT_STORAGE_KEY = "paneforge:discobot-ui-sidebar-layout";
+	let desktopSidebarPane = $state<PaneAPI | null>(null);
+	let desktopSidebarInitialized = $state(false);
 
 	const session = setSessionContext();
 	const sessionView = session.ui;
@@ -24,55 +24,56 @@
 		void session.load();
 	});
 
-	function threadsOpen() {
-		return isMobile.current ? sessionView.mobileThreadsOpen : sessionView.desktopThreadsOpen;
+	function sidebarOpen() {
+		return isMobile.current ? sessionView.mobileSidebarOpen : sessionView.desktopSidebarOpen;
 	}
 
-	function toggleThreads() {
+	function toggleSidebar() {
 		if (isMobile.current) {
-			sessionView.mobileThreadsOpen = !sessionView.mobileThreadsOpen;
+			sessionView.mobileSidebarOpen = !sessionView.mobileSidebarOpen;
 			return;
 		}
 
-		if (!desktopThreadsPane) {
-			sessionView.desktopThreadsOpen = !sessionView.desktopThreadsOpen;
+		if (!desktopSidebarPane) {
+			sessionView.desktopSidebarOpen = !sessionView.desktopSidebarOpen;
 			return;
 		}
 
-		if (desktopThreadsPane.isCollapsed()) {
-			desktopThreadsPane.expand();
-			sessionView.desktopThreadsOpen = true;
+		if (desktopSidebarPane.isCollapsed()) {
+			desktopSidebarPane.expand();
+			sessionView.desktopSidebarOpen = true;
 			return;
 		}
 
-		desktopThreadsPane.collapse();
-		sessionView.desktopThreadsOpen = false;
+		desktopSidebarPane.collapse();
+		sessionView.desktopSidebarOpen = false;
 	}
 
-	function handleThreadSelect() {
+	function handleSessionSelect() {
 		if (isMobile.current) {
-			sessionView.mobileThreadsOpen = false;
+			sessionView.mobileSidebarOpen = false;
 		}
 	}
 
-	function hasSavedThreadsLayout() {
-		return typeof window !== "undefined" && window.localStorage.getItem(THREADS_LAYOUT_STORAGE_KEY);
+	function hasSavedSidebarLayout() {
+		return typeof window !== "undefined" && window.localStorage.getItem(SIDEBAR_LAYOUT_STORAGE_KEY);
 	}
 
 	$effect(() => {
-		if (isMobile.current || !desktopThreadsPane || desktopThreadsInitialized) {
+		if (isMobile.current || !desktopSidebarPane || desktopSidebarInitialized) {
 			return;
 		}
 
-		desktopThreadsInitialized = true;
+		desktopSidebarInitialized = true;
 
-		if (hasSavedThreadsLayout()) {
-			sessionView.desktopThreadsOpen = !desktopThreadsPane.isCollapsed();
+		if (hasSavedSidebarLayout()) {
+			sessionView.desktopSidebarOpen = !desktopSidebarPane.isCollapsed();
 			return;
 		}
 
-		desktopThreadsPane.collapse();
-		sessionView.desktopThreadsOpen = false;
+		// Default to expanded — sessions list is primary navigation
+		desktopSidebarPane.expand();
+		sessionView.desktopSidebarOpen = true;
 	});
 </script>
 
@@ -82,53 +83,49 @@
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		{#if isMobile.current}
-			{#if !session.isPending}
-				<Sheet.Root bind:open={sessionView.mobileThreadsOpen}>
-					<Sheet.Content side="left" class="w-64 max-w-none p-0 [&>button]:hidden">
-						<ThreadSidebar onThreadSelect={handleThreadSelect} />
-					</Sheet.Content>
-				</Sheet.Root>
-			{/if}
+			<Sheet.Root bind:open={sessionView.mobileSidebarOpen}>
+				<Sheet.Content side="left" class="w-64 max-w-none p-0 [&>button]:hidden">
+					<SessionSidebar onThreadSelect={handleSessionSelect} />
+				</Sheet.Content>
+			</Sheet.Root>
 
 			{#key session.threads.selectedId ?? session.sessionId}
 				<ThreadWorkspace
 					mainClass="flex min-h-0 flex-1 flex-col overflow-hidden"
-					threadsOpen={session.isPending ? false : threadsOpen()}
-					onToggleThreads={session.isPending ? undefined : toggleThreads}
+					sidebarOpen={sidebarOpen()}
+					onToggleSidebar={toggleSidebar}
 					mode={session.isPending ? "conversation-only" : undefined}
 				/>
 			{/key}
 		{:else}
 			<Resizable.PaneGroup
 				direction="horizontal"
-				autoSaveId="discobot-ui-threads-layout"
+				autoSaveId="discobot-ui-sidebar-layout"
 				class="min-h-0 flex-1"
 			>
 				<Resizable.Pane
-					bind:this={desktopThreadsPane}
+					bind:this={desktopSidebarPane}
 					defaultSize={16}
 					minSize={10}
 					maxSize={35}
 					collapsible
 					collapsedSize={0}
 					onCollapse={() => {
-						sessionView.desktopThreadsOpen = false;
+						sessionView.desktopSidebarOpen = false;
 					}}
 					onExpand={() => {
-						sessionView.desktopThreadsOpen = true;
+						sessionView.desktopSidebarOpen = true;
 					}}
 				>
-					{#if !session.isPending}
-						<ThreadSidebar />
-					{/if}
+					<SessionSidebar />
 				</Resizable.Pane>
 				<Resizable.Handle />
 				<Resizable.Pane minSize={45} class="min-h-0">
 					{#key session.threads.selectedId ?? session.sessionId}
 						<ThreadWorkspace
 							mainClass="flex h-full min-h-0 flex-col overflow-hidden"
-							threadsOpen={session.isPending ? false : threadsOpen()}
-							onToggleThreads={session.isPending ? undefined : toggleThreads}
+							sidebarOpen={sidebarOpen()}
+							onToggleSidebar={toggleSidebar}
 							mode={session.isPending ? "conversation-only" : undefined}
 						/>
 					{/key}

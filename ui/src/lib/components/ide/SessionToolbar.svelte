@@ -6,11 +6,11 @@
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 
 	type Props = {
-		threadsOpen: boolean;
-		onToggleThreads: () => void;
+		sidebarOpen: boolean;
+		onToggleSidebar: () => void;
 	};
 
-	let { threadsOpen, onToggleThreads }: Props = $props();
+	let { sidebarOpen, onToggleSidebar }: Props = $props();
 
 	const app = useAppContext();
 	const preferences = app.preferences;
@@ -39,11 +39,11 @@
 <div class="grid h-10 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 bg-background px-2">
 	<div class="flex min-w-0 items-center gap-2">
 		<Button
-			variant={threadsOpen ? "secondary" : "ghost"}
+			variant={sidebarOpen ? "secondary" : "ghost"}
 			size="icon-xs"
-			onclick={onToggleThreads}
-			aria-label={threadsOpen ? "Collapse threads panel" : "Expand threads panel"}
-			title={threadsOpen ? "Collapse threads panel" : "Expand threads panel"}
+			onclick={onToggleSidebar}
+			aria-label={sidebarOpen ? "Collapse sessions panel" : "Expand sessions panel"}
+			title={sidebarOpen ? "Collapse sessions panel" : "Expand sessions panel"}
 		>
 			<PanelLeftIcon class="size-3.5" />
 		</Button>
