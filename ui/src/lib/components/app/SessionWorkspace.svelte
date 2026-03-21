@@ -78,7 +78,7 @@
 </script>
 
 <div class="h-screen flex flex-col bg-background text-foreground">
-	<AppHeader />
+	<AppHeader showSessionToolbar={!session.isPending} />
 	<StartupTasksBanner startup={app.startup} />
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">

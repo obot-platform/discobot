@@ -5,9 +5,16 @@
 	import DiscobotBrand from "$lib/components/app/parts/DiscobotBrand.svelte";
 	import LeftWindowControls from "$lib/components/app/parts/LeftWindowControls.svelte";
 	import RightWindowControls from "$lib/components/app/parts/RightWindowControls.svelte";
+	import SessionToolbar from "$lib/components/app/SessionToolbar.svelte";
 	import SettingsDialog from "$lib/components/app/SettingsDialog.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { useAppContext } from "$lib/context/app-context.svelte";
+
+	type Props = {
+		showSessionToolbar?: boolean;
+	};
+
+	let { showSessionToolbar = true }: Props = $props();
 
 	const app = useAppContext();
 	const environment = app.environment;
@@ -25,17 +32,20 @@
 	}
 </script>
 
-<header class="relative z-[60] flex h-12 items-center justify-between border-b border-border bg-background" data-tauri-drag-region>
+<header
+	class="relative z-[60] grid h-12 grid-cols-[auto_minmax(0,1fr)_auto] items-center border-b border-border bg-background"
+	data-tauri-drag-region
+>
 	<div class="absolute inset-0 pointer-events-auto" data-tauri-drag-region></div>
 
-	<div class="relative flex min-w-0 items-center gap-2 px-3">
+	<div class="relative z-20 flex min-w-0 items-center gap-2 px-3">
 		{#if showMacSpacer()}
 			<LeftWindowControls />
 		{/if}
 
 		<DiscobotBrand textSizeClass="text-sm" />
 
-		<div class="tauri-no-drag flex flex-wrap items-center gap-1">
+		<div class="tauri-no-drag flex min-w-0 flex-wrap items-center gap-1">
 			{#each environment.workflowActions as action, index (action + index)}
 				<Button
 					variant="ghost"
@@ -49,7 +59,15 @@
 		</div>
 	</div>
 
-	<div class="relative flex items-center gap-1 pr-2">
+	{#if showSessionToolbar}
+		<div class="relative z-20 min-w-0 px-2">
+			<div class="tauri-no-drag min-w-0">
+				<SessionToolbar />
+			</div>
+		</div>
+	{/if}
+
+	<div class="relative z-20 flex min-w-0 items-center justify-self-end gap-1 pr-2">
 		<Button
 			variant="ghost"
 			size="icon-sm"

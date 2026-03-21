@@ -26,6 +26,7 @@
 		sessionError?: string | null;
 		chatWidthMode?: ChatWidthMode;
 		showComposer?: boolean;
+		toolDefaultOpen?: boolean;
 	};
 
 	const SCROLL_TO_BOTTOM_BUFFER = 64;
@@ -40,6 +41,7 @@
 		sessionError: sessionErrorOverride = null,
 		chatWidthMode,
 		showComposer = true,
+		toolDefaultOpen = false,
 	}: Props = $props();
 
 	const app = getAppContextIfPresent();
@@ -320,7 +322,12 @@
 											{:else if isTextPart(part) && part.text.length > 0}
 												<MessageResponse text={part.text} />
 											{:else if isDynamicToolPart(part)}
-												<OptimizedToolRenderer toolPart={part as DynamicToolPart} sessionId={activeSessionId} threadId={activeThreadId} />
+												<OptimizedToolRenderer
+												toolPart={part as DynamicToolPart}
+												sessionId={activeSessionId}
+												threadId={activeThreadId}
+												defaultOpen={toolDefaultOpen}
+											/>
 											{/if}
 										{/each}
 									</MessageContent>

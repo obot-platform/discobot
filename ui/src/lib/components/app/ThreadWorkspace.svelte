@@ -2,7 +2,8 @@
 	import { onMount } from "svelte";
 	import ConversationPane from "$lib/components/app/ConversationPane.svelte";
 	import DockPanel from "$lib/components/app/DockPanel.svelte";
-	import SessionToolbar from "$lib/components/app/SessionToolbar.svelte";
+	import ThreadWorkspaceHeader from "$lib/components/app/parts/ThreadWorkspaceHeader.svelte";
+	import * as Resizable from "$lib/components/ui/resizable";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { setThreadContext } from "$lib/context/thread-context.svelte";
 	import { isChatView } from "$lib/session/view/create-session-view-state.svelte";
@@ -34,29 +35,40 @@
 </script>
 
 <main class={props.mainClass}>
-	{#if (props.mode ?? "full") === "full"}
-		<SessionToolbar
-			sidebarOpen={props.sidebarOpen ?? false}
-			onToggleSidebar={props.onToggleSidebar ?? noop}
-		/>
-	{/if}
-
-	<div class="flex min-h-0 flex-1 overflow-hidden">
-		<div
-			class={showDock
-				? "grid min-h-0 flex-1 xl:grid-cols-[1.1fr_0.9fr]"
-				: "flex min-h-0 flex-1 flex-col overflow-hidden"}
+	{#if showDock}
+		<Resizable.PaneGroup
+			direction="horizontal"
+			autoSaveId="discobot-ui-thread-layout"
+			class="min-h-0 flex-1"
 		>
-			<div class={showDock ? "min-h-0" : "contents"}>
-				<ConversationPane contentTopPadding={5} />
-			</div>
-			{#if showDock}
-				<div
-					class="min-h-0 overflow-auto xl:rounded-tl-xl xl:border-t xl:border-l xl:border-border"
-				>
+			<Resizable.Pane defaultSize={55} minSize={35} class="min-h-0">
+				<div class="flex min-h-0 h-full flex-col overflow-hidden">
+					<ThreadWorkspaceHeader
+						sidebarOpen={props.sidebarOpen ?? false}
+						onToggleSidebar={props.onToggleSidebar ?? noop}
+						title={session.threads.selected?.name ?? (session.isPending ? "" : "No thread selected")}
+					/>
+					<div class="min-h-0 flex-1 overflow-hidden">
+						<ConversationPane contentTopPadding={5} />
+					</div>
+				</div>
+			</Resizable.Pane>
+			<Resizable.Handle />
+			<Resizable.Pane defaultSize={45} minSize={25} class="min-h-0">
+				<div class="min-h-0 h-full overflow-auto xl:rounded-tl-xl xl:border-t xl:border-l xl:border-border">
 					<DockPanel />
 				</div>
-			{/if}
+			</Resizable.Pane>
+		</Resizable.PaneGroup>
+	{:else}
+		<ThreadWorkspaceHeader
+			sidebarOpen={props.sidebarOpen ?? false}
+			onToggleSidebar={props.onToggleSidebar ?? noop}
+			title={session.threads.selected?.name ?? (session.isPending ? "" : "No thread selected")}
+		/>
+
+		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+			<ConversationPane contentTopPadding={5} />
 		</div>
-	</div>
+	{/if}
 </main>

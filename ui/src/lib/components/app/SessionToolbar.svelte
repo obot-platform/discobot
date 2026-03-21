@@ -1,16 +1,8 @@
 <script lang="ts">
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
-	import PanelLeftIcon from "@lucide/svelte/icons/panel-left";
 	import { Button } from "$lib/components/ui/button";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
-
-	type Props = {
-		sidebarOpen: boolean;
-		onToggleSidebar: () => void;
-	};
-
-	let { sidebarOpen, onToggleSidebar }: Props = $props();
 
 	const app = useAppContext();
 	const preferences = app.preferences;
@@ -36,23 +28,8 @@
 	});
 </script>
 
-<div class="grid h-10 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 bg-background px-2">
-	<div class="flex min-w-0 items-center gap-2">
-		<Button
-			variant={sidebarOpen ? "secondary" : "ghost"}
-			size="icon-xs"
-			onclick={onToggleSidebar}
-			aria-label={sidebarOpen ? "Collapse sessions panel" : "Expand sessions panel"}
-			title={sidebarOpen ? "Collapse sessions panel" : "Expand sessions panel"}
-		>
-			<PanelLeftIcon class="size-3.5" />
-		</Button>
-		<p class="truncate px-1 text-sm font-medium">
-			{session.threads.selected?.name ?? "No thread selected"}
-		</p>
-	</div>
-
-	<div class="justify-self-center inline-flex rounded-md border border-border bg-background p-0.5">
+<div class="flex h-10 w-full min-w-0 items-center justify-end gap-2 bg-background px-2">
+	<div class="inline-flex rounded-md border border-border bg-background p-0.5">
 		<Button
 			variant={sessionView.activeView.kind === "terminal" ? "secondary" : "ghost"}
 			size="xs"
@@ -95,40 +72,38 @@
 		{/each}
 	</div>
 
-	<div class="flex items-center justify-self-end gap-2">
-		<div class="tauri-no-drag relative inline-flex items-center">
-			<Button variant="outline" size="xs" class="rounded-r-none border-r-0">
-				Open {preferredIdeLabel()}
-			</Button>
-			<Button
-				variant="outline"
-				size="xs"
-				onclick={sessionView.toggleIdeMenu}
-				class="rounded-l-none px-2"
-				aria-label="Select preferred IDE"
-			>
-				<ChevronDownIcon class="size-3.5" />
-			</Button>
-			{#if sessionView.ideMenuOpen}
-				<div class="absolute right-0 top-full z-50 mt-2 min-w-[11rem] rounded-md border border-border bg-popover p-1 shadow-md">
-					<p class="px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-						Preferred IDE
-					</p>
-					{#each preferences.ideOptions as option}
-						<Button
-							variant={preferences.preferredIde === option.id ? "secondary" : "ghost"}
-							size="sm"
-							onclick={() => preferences.setPreferredIde(option.id)}
-							class="w-full justify-between"
-						>
-							<span>{option.label}</span>
-							{#if preferences.preferredIde === option.id}
-								<span class="text-xs font-medium">Default</span>
-							{/if}
-						</Button>
-					{/each}
-				</div>
-			{/if}
-		</div>
+	<div class="tauri-no-drag relative inline-flex items-center">
+		<Button variant="outline" size="xs" class="rounded-r-none border-r-0">
+			Open {preferredIdeLabel()}
+		</Button>
+		<Button
+			variant="outline"
+			size="xs"
+			onclick={sessionView.toggleIdeMenu}
+			class="rounded-l-none px-2"
+			aria-label="Select preferred IDE"
+		>
+			<ChevronDownIcon class="size-3.5" />
+		</Button>
+		{#if sessionView.ideMenuOpen}
+			<div class="absolute right-0 top-full z-50 mt-2 min-w-[11rem] rounded-md border border-border bg-popover p-1 shadow-md">
+				<p class="px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+					Preferred IDE
+				</p>
+				{#each preferences.ideOptions as option}
+					<Button
+						variant={preferences.preferredIde === option.id ? "secondary" : "ghost"}
+						size="sm"
+						onclick={() => preferences.setPreferredIde(option.id)}
+						class="w-full justify-between"
+					>
+						<span>{option.label}</span>
+						{#if preferences.preferredIde === option.id}
+							<span class="text-xs font-medium">Default</span>
+						{/if}
+					</Button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 </div>
