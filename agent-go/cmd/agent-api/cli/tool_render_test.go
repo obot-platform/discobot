@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -11,28 +12,35 @@ import (
 )
 
 func TestToolOutputDetail_DefaultTool(t *testing.T) {
-	detail := toolOutputDetail("Bash", json.RawMessage(`{"command":"pwd"}`))
+	detail := toolOutputDetail("Read", json.RawMessage(`{"file_path":"/tmp/file.txt"}`), "")
 	if detail != "" {
 		t.Fatalf("expected no detail for non-special tool, got %q", detail)
 	}
 }
 
 func TestToolOutputDetail_Write(t *testing.T) {
-	detail := toolOutputDetail("Write", json.RawMessage(`{"file_path":"/tmp/file.txt","content":"line1\nline2\n"}`))
-	if !strings.HasPrefix(detail, "written content:\n") {
-		t.Fatalf("expected written content header, got %q", detail)
+	detail := toolOutputDetail("Write", json.RawMessage(`{"file_path":"/tmp/file.txt","content":"line1\nline2\n"}`), "")
+	if !strings.HasPrefix(detail, "wrote 2 lines:\n") {
+		t.Fatalf("expected wrote N lines header, got %q", detail)
 	}
-	if !strings.Contains(detail, "line1") || !strings.Contains(detail, "line2") {
-		t.Fatalf("expected written content lines in detail, got %q", detail)
+	if !strings.Contains(detail, "+line1") || !strings.Contains(detail, "+line2") {
+		t.Fatalf("expected written content lines with + prefix in detail, got %q", detail)
+	}
+}
+
+func TestToolOutputDetail_WriteEmpty(t *testing.T) {
+	detail := toolOutputDetail("Write", json.RawMessage(`{"file_path":"/tmp/file.txt","content":""}`), "")
+	if detail != "" {
+		t.Fatalf("expected no detail for empty write content, got %q", detail)
 	}
 }
 
 func TestToolOutputDetail_Edit(t *testing.T) {
-	detail := toolOutputDetail("Edit", json.RawMessage(`{"file_path":"/tmp/file.txt","old_string":"line one\nline two","new_string":"line one\nline 2\nline three"}`))
+	detail := toolOutputDetail("Edit", json.RawMessage(`{"file_path":"/tmp/file.txt","old_string":"line one\nline two","new_string":"line one\nline 2\nline three"}`), "")
 	if !strings.HasPrefix(detail, "applied diff:\n") {
 		t.Fatalf("expected applied diff header, got %q", detail)
 	}
-	for _, want := range []string{"--- old", "+++ new", " line one", "-line two", "+line 2", "+line three"} {
+	for _, want := range []string{"--- old", "+++ new", "line one", "line two", "line 2", "line three"} {
 		if !strings.Contains(detail, want) {
 			t.Fatalf("expected detail to contain %q, got %q", want, detail)
 		}
@@ -45,16 +53,18 @@ func TestToolOutputDetail_ApplyPatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	detail := toolOutputDetail("apply_patch", input)
+	detail := toolOutputDetail("apply_patch", input, "")
 	for _, want := range []string{
-		"patch files:",
 		"M foo.txt",
 		"A bar.txt",
 		"M old.txt -> new.txt",
 		"D gone.txt",
+		"+new",
+		"-old",
+		"+hello",
 	} {
 		if !strings.Contains(detail, want) {
-			t.Fatalf("expected detail to contain %q, got %q", want, detail)
+			t.Fatalf("expected detail to contain %q, got:\n%s", want, detail)
 		}
 	}
 }
@@ -63,6 +73,65 @@ func TestToolErrorDetail(t *testing.T) {
 	detail := toolErrorDetail("line1\r\nline2\n")
 	if detail != "tool output:\nline1\nline2" {
 		t.Fatalf("unexpected tool error detail: %q", detail)
+	}
+}
+
+func TestToolOutputDetail_Bash(t *testing.T) {
+	// Short output: show all
+	detail := toolOutputDetail("Bash", json.RawMessage(`{"command":"pwd"}`), "     1→/home/user")
+	if !strings.Contains(detail, "/home/user") {
+		t.Fatalf("expected bash output in detail, got %q", detail)
+	}
+
+	// Long output: show tail
+	var lines []string
+	for i := 1; i <= 20; i++ {
+		lines = append(lines, fmt.Sprintf("     %d→line%d", i, i))
+	}
+	longOutput := strings.Join(lines, "\n")
+	detail = toolOutputDetail("Bash", json.RawMessage(`{"command":"ls"}`), longOutput)
+	if !strings.Contains(detail, "lines above") {
+		t.Fatalf("expected tail indicator for long output, got %q", detail)
+	}
+	if !strings.Contains(detail, "line20") {
+		t.Fatalf("expected last line in tail output, got %q", detail)
+	}
+}
+
+func TestToolOutputDetail_Glob(t *testing.T) {
+	output := "foo/bar.go\nfoo/baz.go\nbaz/qux.go"
+	detail := toolOutputDetail("Glob", json.RawMessage(`{"pattern":"**/*.go"}`), output)
+	if !strings.Contains(detail, "foo/bar.go") || !strings.Contains(detail, "baz/qux.go") {
+		t.Fatalf("expected file paths in glob detail, got %q", detail)
+	}
+}
+
+func TestToolOutputDetail_Glob_NoFiles(t *testing.T) {
+	detail := toolOutputDetail("Glob", json.RawMessage(`{"pattern":"**/*.go"}`), "No files found")
+	if detail != "" {
+		t.Fatalf("expected no detail for empty glob, got %q", detail)
+	}
+}
+
+func TestToolOutputDetail_Grep(t *testing.T) {
+	output := "foo/bar.go:10:func hello()\nfoo/baz.go:42:func hello() string"
+	detail := toolOutputDetail("Grep", json.RawMessage(`{"pattern":"hello"}`), output)
+	if !strings.Contains(detail, "foo/bar.go:10") || !strings.Contains(detail, "foo/baz.go:42") {
+		t.Fatalf("expected matches in grep detail, got %q", detail)
+	}
+}
+
+func TestToolOutputDetail_WebSearch(t *testing.T) {
+	output := "## Result 1: Go context package\n**URL:** https://pkg.go.dev/context\n\nContent here.\n\n---\n\n## Result 2: Go Blog\n**URL:** https://go.dev/blog/context\n\nMore content.\n\n---"
+	detail := toolOutputDetail("WebSearch", json.RawMessage(`{"query":"go context"}`), output)
+	if !strings.Contains(detail, "Go context package") {
+		t.Fatalf("expected title in websearch detail, got %q", detail)
+	}
+	if !strings.Contains(detail, "https://pkg.go.dev/context") {
+		t.Fatalf("expected URL in websearch detail, got %q", detail)
+	}
+	if !strings.Contains(detail, "Go Blog") {
+		t.Fatalf("expected second result title in websearch detail, got %q", detail)
 	}
 }
 

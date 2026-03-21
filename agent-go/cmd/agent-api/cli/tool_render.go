@@ -51,7 +51,7 @@ func renderChunk(chunk message.MessageChunk, md *markdownRenderer, tools *toolRe
 	case message.ToolOutputAvailableChunk:
 		label := tools.labelFor(c.ToolCallID, "")
 		text := extractOutputText(c.Output)
-		detail := toolOutputDetail(tools.toolNameFor(c.ToolCallID), tools.inputFor(c.ToolCallID))
+		detail := toolOutputDetail(tools.toolNameFor(c.ToolCallID), tools.inputFor(c.ToolCallID), text)
 		renderToolTail(label, false, text, detail)
 
 	case message.ToolOutputErrorChunk:
@@ -180,6 +180,34 @@ func styleToolDivider() string {
 	return "\033[2m    ------------------------------\033[0m"
 }
 
+func styleDiffAdd(s string) string {
+	if noColor {
+		return s
+	}
+	return "\033[32m" + s + "\033[0m"
+}
+
+func styleDiffRemove(s string) string {
+	if noColor {
+		return s
+	}
+	return "\033[31m" + s + "\033[0m"
+}
+
+func styleDiffHeader(s string) string {
+	if noColor {
+		return s
+	}
+	return "\033[1m" + s + "\033[0m"
+}
+
+func styleDiffContext(s string) string {
+	if noColor {
+		return s
+	}
+	return "\033[2m" + s + "\033[0m"
+}
+
 func renderToolTail(label string, isError bool, text, detail string) {
 	lineCount := countLines(text)
 	kind := "output"
@@ -208,7 +236,7 @@ func toolErrorDetail(text string) string {
 	return "tool output:\n" + text
 }
 
-func toolOutputDetail(toolName string, input json.RawMessage) string {
+func toolOutputDetail(toolName string, input json.RawMessage, outputText string) string {
 	switch strings.ToLower(toolName) {
 	case "write":
 		return writeOutputDetail(input)
@@ -216,6 +244,14 @@ func toolOutputDetail(toolName string, input json.RawMessage) string {
 		return editOutputDetail(input)
 	case "apply_patch":
 		return applyPatchOutputDetail(input)
+	case "bash":
+		return bashOutputDetail(outputText)
+	case "glob":
+		return globOutputDetail(outputText)
+	case "grep":
+		return grepOutputDetail(outputText)
+	case "websearch":
+		return webSearchOutputDetail(outputText)
 	default:
 		return ""
 	}
@@ -232,9 +268,113 @@ func writeOutputDetail(input json.RawMessage) string {
 		return ""
 	}
 	if payload.Content == "" {
-		return "written content:"
+		return ""
 	}
-	return "written content:\n" + normalizeNewlines(payload.Content)
+	content := normalizeNewlines(payload.Content)
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+
+	const maxLines = 30
+	display := lines
+	truncated := false
+	if len(lines) > maxLines {
+		display = lines[:maxLines]
+		truncated = true
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "wrote %d lines:\n", len(lines))
+	for _, line := range display {
+		b.WriteString(styleDiffAdd("+" + line))
+		b.WriteByte('\n')
+	}
+	if truncated {
+		fmt.Fprintf(&b, "... %d more lines", len(lines)-maxLines)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func bashOutputDetail(text string) string {
+	text = strings.TrimSpace(normalizeNewlines(text))
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	const maxTail = 10
+	if len(lines) <= maxTail {
+		return strings.Join(lines, "\n")
+	}
+	tail := lines[len(lines)-maxTail:]
+	omitted := len(lines) - maxTail
+	return fmt.Sprintf("... %d lines above ...\n", omitted) + strings.Join(tail, "\n")
+}
+
+func globOutputDetail(text string) string {
+	text = strings.TrimSpace(normalizeNewlines(text))
+	if text == "" || text == "No files found" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	const maxFiles = 20
+	if len(lines) <= maxFiles {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[:maxFiles], "\n") + fmt.Sprintf("\n... %d more", len(lines)-maxFiles)
+}
+
+func grepOutputDetail(text string) string {
+	text = strings.TrimSpace(normalizeNewlines(text))
+	if text == "" || text == "No matches found" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	const maxLines = 15
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[:maxLines], "\n") + fmt.Sprintf("\n... %d more lines", len(lines)-maxLines)
+}
+
+func webSearchOutputDetail(text string) string {
+	type result struct{ title, url string }
+	var results []result
+
+	lines := strings.Split(normalizeNewlines(strings.TrimSpace(text)), "\n")
+	var current result
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "## Result ") {
+			if current.title != "" {
+				results = append(results, current)
+			}
+			rest := strings.TrimPrefix(line, "## Result ")
+			if idx := strings.Index(rest, ": "); idx >= 0 {
+				current = result{title: rest[idx+2:]}
+			} else {
+				current = result{title: rest}
+			}
+		} else if strings.HasPrefix(line, "**URL:**") && current.title != "" {
+			current.url = strings.TrimSpace(strings.TrimPrefix(line, "**URL:**"))
+		}
+	}
+	if current.title != "" {
+		results = append(results, current)
+	}
+
+	if len(results) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	for i, r := range results {
+		if i >= 5 {
+			break
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "%d. %s\n   %s", i+1, r.title, r.url)
+	}
+	return b.String()
 }
 
 func editOutputDetail(input json.RawMessage) string {
@@ -255,29 +395,126 @@ func editOutputDetail(input json.RawMessage) string {
 }
 
 func applyPatchOutputDetail(input json.RawMessage) string {
-	changes := summarizeApplyPatchChanges(input)
-	if len(changes) == 0 {
+	patch := extractApplyPatchInput(input)
+	if patch == "" {
 		return ""
 	}
-	return "patch files:\n" + strings.Join(changes, "\n")
+
+	lines := strings.Split(normalizeNewlines(strings.TrimSpace(patch)), "\n")
+	var b strings.Builder
+	lineCount := 0
+	const maxLines = 80
+	needSep := false
+
+	for i := 0; i < len(lines); i++ {
+		if lineCount >= maxLines {
+			b.WriteString("\n... truncated")
+			break
+		}
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "*** Begin Patch" || trimmed == "*** End Patch" || trimmed == "*** End of File" {
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "*** Add File: ") {
+			path := strings.TrimSpace(strings.TrimPrefix(trimmed, "*** Add File: "))
+			if needSep {
+				b.WriteByte('\n')
+			}
+			b.WriteString(styleDiffHeader("A " + path))
+			b.WriteByte('\n')
+			lineCount++
+			needSep = true
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "*** Delete File: ") {
+			path := strings.TrimSpace(strings.TrimPrefix(trimmed, "*** Delete File: "))
+			if needSep {
+				b.WriteByte('\n')
+			}
+			b.WriteString(styleDiffHeader("D " + path))
+			b.WriteByte('\n')
+			lineCount++
+			needSep = true
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "*** Update File: ") {
+			path := strings.TrimSpace(strings.TrimPrefix(trimmed, "*** Update File: "))
+			header := "M " + path
+			if i+1 < len(lines) {
+				next := strings.TrimSpace(lines[i+1])
+				if strings.HasPrefix(next, "*** Move to: ") {
+					movePath := strings.TrimSpace(strings.TrimPrefix(next, "*** Move to: "))
+					if movePath != "" && movePath != path {
+						header = "M " + path + " -> " + movePath
+					}
+					i++
+				}
+			}
+			if needSep {
+				b.WriteByte('\n')
+			}
+			b.WriteString(styleDiffHeader(header))
+			b.WriteByte('\n')
+			lineCount++
+			needSep = true
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "@@") {
+			b.WriteString(styleDiffContext(line))
+			b.WriteByte('\n')
+			lineCount++
+			continue
+		}
+
+		if len(line) > 0 {
+			switch line[0] {
+			case '+':
+				b.WriteString(styleDiffAdd(line))
+				b.WriteByte('\n')
+				lineCount++
+			case '-':
+				b.WriteString(styleDiffRemove(line))
+				b.WriteByte('\n')
+				lineCount++
+			case ' ':
+				b.WriteString(line)
+				b.WriteByte('\n')
+				lineCount++
+			}
+		}
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func renderLineDiff(oldText, newText string) string {
 	oldLines := splitDiffLines(oldText)
 	newLines := splitDiffLines(newText)
 	if len(oldLines) == 0 && len(newLines) == 0 {
-		return "--- old\n+++ new"
+		return styleDiffContext("--- old") + "\n" + styleDiffContext("+++ new")
 	}
 
 	diffLines := lineDiff(oldLines, newLines)
 	var b strings.Builder
-	b.WriteString("--- old\n")
-	b.WriteString("+++ new\n")
-	for i, line := range diffLines {
-		if i > 0 {
-			b.WriteByte('\n')
+	b.WriteString(styleDiffContext("--- old"))
+	b.WriteByte('\n')
+	b.WriteString(styleDiffContext("+++ new"))
+	for _, line := range diffLines {
+		b.WriteByte('\n')
+		switch {
+		case strings.HasPrefix(line, "+"):
+			b.WriteString(styleDiffAdd(line))
+		case strings.HasPrefix(line, "-"):
+			b.WriteString(styleDiffRemove(line))
+		default:
+			b.WriteString(styleDiffContext(line))
 		}
-		b.WriteString(line)
 	}
 	return b.String()
 }
