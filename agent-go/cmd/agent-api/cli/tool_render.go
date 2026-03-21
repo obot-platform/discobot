@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/obot-platform/discobot/agent-go/message"
 )
 
@@ -43,6 +45,7 @@ func renderChunk(chunk message.MessageChunk, md *markdownRenderer, tools *toolRe
 		label := tools.labelFor(c.ToolCallID, c.ToolName)
 		summary := toolInputSummary(c.ToolName, c.Input)
 		if summary != "" {
+			summary = truncateSummaryToWidth(summary, label)
 			fmt.Fprintf(os.Stderr, "%s [%s] %s\n", styleToolStartArrow(), styleToolLabel(label), summary)
 		} else {
 			fmt.Fprintf(os.Stderr, "%s [%s]\n", styleToolStartArrow(), styleToolLabel(label))
@@ -610,7 +613,7 @@ func toolInputSummary(toolName string, input json.RawMessage) string {
 		return summarizeToolFields(obj, []string{"url"})
 	}
 
-	return summarizeToolFields(obj, []string{"command", "path", "old_path", "file_path", "url", "query", "pattern", "description"})
+	return summarizeToolFields(obj, []string{"description", "command", "path", "old_path", "file_path", "url", "query", "pattern"})
 }
 
 func applyPatchInputSummary(input json.RawMessage) string {
@@ -618,7 +621,7 @@ func applyPatchInputSummary(input json.RawMessage) string {
 	if len(changes) == 0 {
 		return ""
 	}
-	return abbreviate("files: "+strings.Join(changes, ", "), 120)
+	return "files: " + strings.Join(changes, ", ")
 }
 
 func summarizeApplyPatchChanges(input json.RawMessage) []string {
@@ -708,7 +711,7 @@ func summarizeToolFields(obj map[string]json.RawMessage, fields []string) string
 	if len(parts) == 0 {
 		return ""
 	}
-	return abbreviate(strings.Join(parts, " "), 120)
+	return strings.Join(parts, " ")
 }
 
 func summaryStringField(obj map[string]json.RawMessage, field string) string {
@@ -764,6 +767,35 @@ func countLines(text string) int {
 		return 0
 	}
 	return len(strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n"))
+}
+
+// stderrWidth returns the terminal column count of stderr,
+// or 0 if stderr is not a terminal or the size cannot be determined.
+func stderrWidth() int {
+	w, _, err := term.GetSize(int(os.Stderr.Fd()))
+	if err != nil {
+		return 0
+	}
+	return w
+}
+
+// truncateSummaryToWidth truncates summary so that the full tool line
+// "→ [label] summary" fits within the current terminal width.
+// If stderr is not a terminal, no truncation is applied.
+func truncateSummaryToWidth(summary, label string) string {
+	w := stderrWidth()
+	if w <= 0 {
+		return summary
+	}
+	// Visible prefix: "→ [" + label + "] " = 5 + len(label) chars
+	available := w - (5 + len(label))
+	if available <= 3 {
+		return ""
+	}
+	if len(summary) <= available {
+		return summary
+	}
+	return summary[:available-3] + "..."
 }
 
 // abbreviate truncates s to maxLen characters, appending "..." if needed.
