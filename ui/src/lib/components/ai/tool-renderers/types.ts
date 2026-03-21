@@ -4,4 +4,6 @@ export type ToolRendererComponentProps = {
 	toolPart: DynamicToolPart;
 	sessionId?: string | null;
 	threadId?: string | null;
+	isRaw?: boolean;
+	onToggleRaw?: () => void;
 };

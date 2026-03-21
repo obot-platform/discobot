@@ -1,16 +1,23 @@
 <script lang="ts">
 	import MessageSquareQuoteIcon from "@lucide/svelte/icons/message-square-quote";
-	import { ToolInput, ToolOutput } from "$lib/components/ai/tool";
+	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
 	import {
 		type AskUserQuestionToolInput,
 		validateAskUserQuestionInput,
 		validateAskUserQuestionOutput,
 	} from "$lib/components/ai/tool-schemas/askuserquestion-schema";
 	import { api } from "$lib/api-client";
+	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import AskUserQuestionWizard from "./AskUserQuestionWizard.svelte";
 	import type { ToolRendererComponentProps } from "./types";
 
-	let { toolPart, sessionId = null, threadId = null }: ToolRendererComponentProps = $props();
+	let {
+		toolPart,
+		sessionId = null,
+		threadId = null,
+		isRaw,
+		onToggleRaw,
+	}: ToolRendererComponentProps = $props();
 
 	type PendingQuestionLike = {
 		toolUseID: string;
@@ -189,107 +196,111 @@
 	}
 </script>
 
-{#if toolPart.state === "approval-requested"}
-	<div class="space-y-4 p-4">
-		<div class="flex items-center gap-2">
-			<MessageSquareQuoteIcon class="size-4 text-muted-foreground" />
-			<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Agent question</h4>
-		</div>
+<div class="flex items-center justify-between gap-4 px-4 pt-4">
+	<CollapsibleTrigger class="flex min-w-0 flex-1 items-center gap-2 text-left">
+		<MessageSquareQuoteIcon class="size-4 shrink-0 text-muted-foreground" />
+		<span class="truncate font-medium text-sm">Agent question</span>
+		<ToolHeaderStatus state={toolPart.state} />
+	</CollapsibleTrigger>
+	<ToolHeaderControls {isRaw} {onToggleRaw} />
+</div>
 
-		{#if approvalStatus === "loading"}
-			<p class="text-muted-foreground text-sm">Loading question...</p>
-		{:else if approvalStatus === "error"}
-			<div class="space-y-1.5">
-				<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
-				<p class="text-destructive text-sm">{approvalError ?? "Failed to load question"}</p>
-			</div>
-		{:else if approvalStatus === "answered"}
-			{#if summaryQuestions.length > 0 && resolvedAnswers}
-				<div class="space-y-2">
-					{#each summaryQuestions as question}
-						<div class="space-y-1">
-							<p class="font-medium text-sm">{question.question}</p>
-							<p class="text-muted-foreground text-sm">{resolvedAnswers[question.question] ?? "No answer"}</p>
-						</div>
-					{/each}
+<ToolContent>
+	{#if toolPart.state === "approval-requested"}
+		<div class="space-y-4 p-4 pt-3">
+			{#if approvalStatus === "loading"}
+				<p class="text-muted-foreground text-sm">Loading question...</p>
+			{:else if approvalStatus === "error"}
+				<div class="space-y-1.5">
+					<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
+					<p class="text-destructive text-sm">{approvalError ?? "Failed to load question"}</p>
+				</div>
+			{:else if approvalStatus === "answered"}
+				{#if summaryQuestions.length > 0 && resolvedAnswers}
+					<div class="space-y-2">
+						{#each summaryQuestions as question}
+							<div class="space-y-1">
+								<p class="font-medium text-sm">{question.question}</p>
+								<p class="text-muted-foreground text-sm">{resolvedAnswers[question.question] ?? "No answer"}</p>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="text-muted-foreground text-sm">Question answered.</p>
+				{/if}
+			{:else if pendingQuestion}
+				<div class="rounded-lg border bg-card p-4">
+					<AskUserQuestionWizard pendingQuestion={pendingQuestion} onSubmit={submitAnswers} />
 				</div>
 			{:else}
-				<p class="text-muted-foreground text-sm">Question answered.</p>
+				<p class="text-muted-foreground text-sm">Waiting for question details...</p>
 			{/if}
-		{:else if pendingQuestion}
-			<div class="rounded-lg border bg-card p-4">
-				<AskUserQuestionWizard pendingQuestion={pendingQuestion} onSubmit={submitAnswers} />
-			</div>
-		{:else}
-			<p class="text-muted-foreground text-sm">Waiting for question details...</p>
-		{/if}
 
-		{#if approvalError && approvalStatus !== "error"}
-			<p class="text-destructive text-sm">{approvalError}</p>
-		{/if}
+			{#if approvalError && approvalStatus !== "error"}
+				<p class="text-destructive text-sm">{approvalError}</p>
+			{/if}
 
-		{#if toolPart.errorText}
-			<div class="space-y-1.5">
-				<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
-				<p class="text-destructive text-sm">{toolPart.errorText}</p>
-			</div>
-		{/if}
-	</div>
-{:else if !toolPart.input || typeof toolPart.input !== "object"}
-	<div class="p-4 text-muted-foreground text-sm">{isStreaming ? "Loading question..." : "No input data"}</div>
-{:else if !inputValidation.success}
-	{#if isStreaming}
-		<div class="p-4 text-muted-foreground text-sm">Loading question...</div>
-	{:else}
-		<ToolInput input={toolPart.input} />
-		<ToolOutput output={toolPart.output} errorText={toolPart.errorText} />
-	{/if}
-{:else}
-	<div class="space-y-4 p-4">
-		<div class="flex items-center gap-2">
-			<MessageSquareQuoteIcon class="size-4 text-muted-foreground" />
-			<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Agent question</h4>
+			{#if toolPart.errorText}
+				<div class="space-y-1.5">
+					<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
+					<p class="text-destructive text-sm">{toolPart.errorText}</p>
+				</div>
+			{/if}
 		</div>
-
-		{#if questions.length > 0}
-			<div class="space-y-2">
-				{#if resolvedAnswers}
-					{#each questions as question}
-						<div class="space-y-1">
-							<p class="font-medium text-sm">{question.question}</p>
-							<p class="text-muted-foreground text-sm">{resolvedAnswers[question.question] ?? "No answer"}</p>
-						</div>
-					{/each}
-				{:else}
-					<ul class="list-disc space-y-1 pl-5 text-sm">
-						{#each questions as question}
-							<li>{question.question}</li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
-		{/if}
-
-		{#if outputText && !resolvedAnswers}
-			<div class="space-y-1.5">
-				<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Response</h4>
-				<pre class="overflow-x-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-sm">{outputText}</pre>
-			</div>
-		{/if}
-
-		{#if outputValidation && !outputValidation.success}
-			<div class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-xs">
-				Could not parse tool output.
-			</div>
-		{/if}
-
-		{#if toolPart.errorText}
-			<div class="space-y-1.5">
-				<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
+	{:else if !toolPart.input || typeof toolPart.input !== "object"}
+		<div class="p-4 pt-3 text-muted-foreground text-sm">{isStreaming ? "Loading question..." : "No input data"}</div>
+	{:else if !inputValidation.success}
+		<div class="space-y-3 p-4 pt-3">
+			<p class="text-muted-foreground text-sm">{isStreaming ? "Loading question..." : "Could not parse question details."}</p>
+			{#if outputText}
+				<div class="rounded-md border border-dashed bg-muted/20 p-3">
+					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs">{outputText}</pre>
+				</div>
+			{/if}
+			{#if toolPart.errorText}
 				<p class="text-destructive text-sm">{toolPart.errorText}</p>
-			</div>
-		{/if}
+			{/if}
+		</div>
+	{:else}
+		<div class="space-y-4 p-4 pt-3">
+			{#if questions.length > 0}
+				<div class="space-y-2">
+					{#if resolvedAnswers}
+						{#each questions as question}
+							<div class="space-y-1">
+								<p class="font-medium text-sm">{question.question}</p>
+								<p class="text-muted-foreground text-sm">{resolvedAnswers[question.question] ?? "No answer"}</p>
+							</div>
+						{/each}
+					{:else}
+						<ul class="list-disc space-y-1 pl-5 text-sm">
+							{#each questions as question}
+								<li>{question.question}</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
 
-		<ToolOutput output={toolPart.output} errorText={toolPart.errorText} />
-	</div>
-{/if}
+			{#if outputText && !resolvedAnswers}
+				<div class="space-y-1.5">
+					<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Response</h4>
+					<pre class="overflow-x-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-sm">{outputText}</pre>
+				</div>
+			{/if}
+
+			{#if outputValidation && !outputValidation.success}
+				<div class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-xs">
+					Could not parse tool output.
+				</div>
+			{/if}
+
+			{#if toolPart.errorText}
+				<div class="space-y-1.5">
+					<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
+					<p class="text-destructive text-sm">{toolPart.errorText}</p>
+				</div>
+			{/if}
+		</div>
+	{/if}
+</ToolContent>

@@ -741,10 +741,10 @@
 			<Card>
 				<CardHeader>
 					<CardTitle>Tool + renderer</CardTitle>
-					<CardDescription>Core tool shell with generic optimized renderer fallback.</CardDescription>
+					<CardDescription>Core tool shell with optimized rendering and an in-card raw fallback toggle.</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-3">
-					<Tool defaultOpen={true}>
+					<Tool defaultOpen={false}>
 						<ToolHeader
 							type="dynamic-tool"
 							toolName="Bash"

@@ -18,6 +18,7 @@ The repository now also contains an **isolated Svelte 5 redesign workspace** und
 - Streamdown link safety in that island uses Tauri-aware URL opening behavior (`@tauri-apps/plugin-opener` in desktop mode, browser-safe fallback otherwise).
 - The Svelte AI component barrel now includes parity ports for `agent`, `code-block`, `inline-citation`, `sandbox`, `file-tree`, `prompt-input`, `speech-input`, `audio-player`, `canvas`, `edge`, `image-attachment`, and `link-safety-modal`.
 - `AskUserQuestion` tool rendering now includes an interactive wizard flow in Svelte with step navigation, multi-select/other answers, and question fetch/submit endpoints when session context is available.
+- Dynamic tool cards in the Svelte conversation pane now render inside a shared collapsible shell with an in-card raw/optimized toggle; specialized renderers own the parsed presentation, while `ToolOutput` is reserved for generic or forced-raw fallbacks.
 - The existing root React app remains the active production frontend and the one wired to `src-tauri/`.
 - Use `pnpm ui:dev`, `pnpm ui:dev:backend`, `pnpm ui:build`, and `pnpm ui:typecheck` when working on the redesign workspace.
 - `.discobot/services/ui-svelte.sh` exposes the redesign as a Discobot preview service on port `3100` while starting the backend and agent watcher alongside it.

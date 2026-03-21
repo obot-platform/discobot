@@ -22,7 +22,8 @@
 
 <Collapsible
 	bind:open
-	class={cn("group not-prose mb-4 w-full rounded-md", showBorder ? "border" : "", className)}
+	data-ai-tool
+	class={cn("group group/tool not-prose mb-4 w-full rounded-md", showBorder ? "border" : "", className)}
 	{...restProps}
 >
 	{@render children?.()}

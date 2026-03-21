@@ -1,15 +1,16 @@
 <script lang="ts">
 	import FilePenIcon from "@lucide/svelte/icons/file-pen";
-	import { ToolInput, ToolOutput } from "$lib/components/ai/tool";
+	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
 	import {
 		type EditToolOutput,
 		validateEditInput,
 		validateEditOutput,
 	} from "$lib/components/ai/tool-schemas/edit-schema";
-	import { shortenPath } from "./utils";
+	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
+	import { countLines, renderToolValue, shortenPath } from "./utils";
 
-	let { toolPart }: ToolRendererComponentProps = $props();
+	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
 	const isStreaming = $derived.by(
 		() =>
@@ -25,39 +26,96 @@
 	const validOutput = $derived.by(() =>
 		outputValidation?.success ? (outputValidation.data as EditToolOutput) : undefined,
 	);
+	const editError = $derived.by(() => toolPart.errorText || validOutput?.error);
+	const rawOutputText = $derived.by(() => renderToolValue(toolPart.output));
 </script>
 
-{#if !toolPart.input || typeof toolPart.input !== "object"}
-	<div class="p-4 text-muted-foreground text-sm">
-		{isStreaming ? "Loading edit details..." : "No input data"}
-	</div>
-{:else if !inputValidation.success || !validInput?.file_path}
-	{#if isStreaming}
-		<div class="p-4 text-muted-foreground text-sm">Loading edit details...</div>
+<div class="flex items-center justify-between gap-4 px-4 pt-4">
+	<CollapsibleTrigger class="flex min-w-0 flex-1 items-center gap-2 text-left">
+		<FilePenIcon class="size-4 shrink-0 text-muted-foreground" />
+		<span class="truncate font-medium text-sm">
+			{validInput?.file_path ? shortenPath(validInput.file_path) : isStreaming ? "Loading edit details..." : "Edit file"}
+		</span>
+		<ToolHeaderStatus state={toolPart.state} />
+	</CollapsibleTrigger>
+	<ToolHeaderControls {isRaw} {onToggleRaw} />
+</div>
+
+<ToolContent>
+	{#if !toolPart.input || typeof toolPart.input !== "object"}
+		<div class="p-4 pt-3 text-muted-foreground text-sm">
+			{isStreaming ? "Loading edit details..." : "Edit details are unavailable."}
+		</div>
+	{:else if !inputValidation.success || !validInput?.file_path}
+		<div class="space-y-3 p-4 pt-3">
+			<p class="text-muted-foreground text-sm">
+				{isStreaming ? "Loading edit details..." : "Could not parse edit details."}
+			</p>
+			{#if rawOutputText}
+				<div class="rounded-md border border-dashed bg-muted/20 p-3">
+					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+				</div>
+			{/if}
+		</div>
 	{:else}
-		<ToolInput input={toolPart.input} />
-		<ToolOutput output={toolPart.output} errorText={toolPart.errorText} />
-	{/if}
-{:else}
-	<div class="space-y-4 p-4">
-		<div class="flex items-center gap-2">
-			<FilePenIcon class="size-4 text-muted-foreground" />
-			<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Edit file</h4>
-		</div>
+		<div class="space-y-4 p-4 pt-3">
+			<div class="space-y-3 rounded-md border bg-muted/20 p-3 text-sm">
+				<div>
+					<p class="font-mono text-muted-foreground text-xs">{shortenPath(validInput.file_path)}</p>
+					<div class="mt-2 flex flex-wrap gap-2 text-xs">
+						<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+							{validInput.replace_all ? "Replace all" : "Single replace"}
+						</span>
+						<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+							old {countLines(validInput.old_string ?? "")} lines
+						</span>
+						<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+							new {countLines(validInput.new_string ?? "")} lines
+						</span>
+					</div>
+				</div>
 
-		<div class="rounded-md border bg-muted/30 p-3 text-xs">
-			<p class="font-mono text-muted-foreground">{shortenPath(validInput.file_path)}</p>
-			<div class="mt-2 space-y-1">
-				<p>replace_all: {validInput.replace_all ? "true" : "false"}</p>
-				<p>old length: {validInput.old_string?.length ?? 0}</p>
-				<p>new length: {validInput.new_string?.length ?? 0}</p>
+				<div class="grid gap-3 md:grid-cols-2">
+					<div class="space-y-1.5">
+						<h5 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Old text</h5>
+						<div class="rounded-md border bg-background/80">
+							<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs"><code>{validInput.old_string}</code></pre>
+						</div>
+					</div>
+					<div class="space-y-1.5">
+						<h5 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">New text</h5>
+						<div class="rounded-md border bg-background/80">
+							<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs"><code>{validInput.new_string}</code></pre>
+						</div>
+					</div>
+				</div>
 			</div>
+
+			<div class="flex flex-wrap items-center gap-3 text-xs">
+				{#if validOutput?.success !== undefined}
+					<span class={validOutput.success ? "text-green-700" : "text-yellow-700"}>
+						{validOutput.success ? "Edit applied" : "Edit returned warnings"}
+					</span>
+				{/if}
+				{#if validOutput?.replacements !== undefined}
+					<span class="text-muted-foreground">{validOutput.replacements} replacements applied</span>
+				{/if}
+			</div>
+
+			{#if editError}
+				<div class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm">
+					{editError}
+				</div>
+			{/if}
+
+			{#if outputValidation && !outputValidation.success && rawOutputText}
+				<div class="rounded-md border border-dashed bg-muted/20 p-3">
+					<h5 class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+						Unparsed output
+					</h5>
+					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+				</div>
+			{/if}
 		</div>
-
-		{#if validOutput?.replacements !== undefined}
-			<p class="text-muted-foreground text-xs">{validOutput.replacements} replacements applied</p>
-		{/if}
-
-		<ToolOutput output={toolPart.output} errorText={toolPart.errorText} />
-	</div>
-{/if}
+	{/if}
+</ToolContent>
