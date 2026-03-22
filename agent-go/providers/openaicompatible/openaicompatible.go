@@ -40,10 +40,6 @@ import (
 )
 
 func init() {
-	if true {
-		// disabled
-		return
-	}
 	for _, info := range modelsdev.ProvidersByNPM("@ai-sdk/openai-compatible") {
 		info := info // capture loop variable
 		providers.Register(info.ID, func(cfg providers.Config) (providers.Provider, error) {

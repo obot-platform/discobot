@@ -287,7 +287,11 @@ func TestChat_ClientDisconnect_DoesNotCancelSandbox(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 
-	h.Chat(w, req)
+	done := make(chan struct{})
+	go func() {
+		h.Chat(w, req)
+		close(done)
+	}()
 
 	select {
 	case <-postCalled:
@@ -296,25 +300,26 @@ func TestChat_ClientDisconnect_DoesNotCancelSandbox(t *testing.T) {
 	}
 
 	cancelReq()
-	time.Sleep(10 * time.Millisecond)
+	<-reqCtx.Done()
 	close(proceedAfterPost)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		wasChecked := contextChecked
-		wasCancelled := contextWasCancelled
-		mu.Unlock()
-		if wasChecked {
-			if wasCancelled {
-				t.Error("context passed to sandbox request was cancelled; client disconnect should not cancel sandbox operations")
-			}
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for chat handler to return")
 	}
 
-	t.Fatal("sandbox request context was never checked")
+	mu.Lock()
+	wasChecked := contextChecked
+	wasCancelled := contextWasCancelled
+	mu.Unlock()
+
+	if !wasChecked {
+		t.Fatal("sandbox request context was never checked")
+	}
+	if wasCancelled {
+		t.Error("context passed to sandbox request was cancelled; client disconnect should not cancel sandbox operations")
+	}
 }
 
 // TestChat_StartsCompletion_StatusBecomesRunning verifies that a normal chat

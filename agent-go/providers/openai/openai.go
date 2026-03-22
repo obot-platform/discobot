@@ -28,7 +28,7 @@ const configUseWebSocket = "use_websocket"
 
 const (
 	providerID            = "openai"
-	defaultBaseURL        = "https://api.openai.com/v1"
+	defaultBaseURL        = "wss://api.openai.com/v1"
 	codexDefaultBaseURL   = "https://chatgpt.com/backend-api/codex"
 	codexProviderID       = "codex"
 	missingToolOutputText = "interrupted by transient system failure"
