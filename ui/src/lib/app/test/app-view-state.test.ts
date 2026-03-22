@@ -6,7 +6,7 @@ import type { SessionSummary } from "$lib/shell-types";
 
 const sessions: SessionSummary[] = [
 	{ id: "session-1", name: "One", isRecent: true, status: "ready" },
-	{ id: "session-2", name: "Two", isRecent: false, status: "running" },
+	{ id: "session-2", name: "Two", isRecent: false, status: "ready" },
 ];
 
 test("getReconciledSelectedSessionId prefers an explicit valid session", () => {

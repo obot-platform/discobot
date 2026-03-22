@@ -9,7 +9,7 @@
 		DropdownMenuTrigger,
 	} from "$lib/components/ui/dropdown-menu";
 	import { InputGroupButton } from "$lib/components/ui/input-group";
-	import type { ComposerMode } from "./conversation-composer.types";
+	import type { ComposerMode } from "../conversation-composer.types";
 
 	type ModeOption = {
 		id: ComposerMode;

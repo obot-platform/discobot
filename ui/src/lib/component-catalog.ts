@@ -21,7 +21,65 @@ export type UiComponentCatalogEntry = {
 	name: string;
 };
 
-const componentModules = import.meta.glob("./components/ui/*/index.ts");
+const componentNames = [
+	"accordion",
+	"alert-dialog",
+	"alert",
+	"aspect-ratio",
+	"avatar",
+	"badge",
+	"breadcrumb",
+	"button-group",
+	"button",
+	"calendar",
+	"card",
+	"carousel",
+	"chart",
+	"checkbox",
+	"collapsible",
+	"command",
+	"context-menu",
+	"data-table",
+	"dialog",
+	"drawer",
+	"dropdown-menu",
+	"empty",
+	"field",
+	"form",
+	"hover-card",
+	"input-group",
+	"input-otp",
+	"input",
+	"item",
+	"kbd",
+	"label",
+	"menubar",
+	"native-select",
+	"navigation-menu",
+	"pagination",
+	"popover",
+	"progress",
+	"radio-group",
+	"range-calendar",
+	"resizable",
+	"scroll-area",
+	"select",
+	"separator",
+	"sheet",
+	"sidebar",
+	"skeleton",
+	"slider",
+	"sonner",
+	"spinner",
+	"split-dropdown-button",
+	"switch",
+	"table",
+	"tabs",
+	"textarea",
+	"toggle-group",
+	"toggle",
+	"tooltip",
+] as const;
 
 const categoryOrder: UiComponentCategory[] = [
 	"layout",
@@ -208,7 +266,7 @@ function defaultDescription(category: UiComponentCategory): string {
 	}
 }
 
-export const uiComponentCatalog: UiComponentCatalogEntry[] = Object.keys(componentModules)
+export const uiComponentCatalog: UiComponentCatalogEntry[] = componentNames
 	.map((path) => {
 		const name = path.split("/").at(-2);
 		if (!name) {

@@ -143,6 +143,13 @@ export function toServiceItem(service: Service): ServiceItem {
 		id: service.id,
 		label: service.name,
 		target,
+		description: service.description,
+		http: service.http,
+		https: service.https,
+		urlPath: service.urlPath,
+		status: service.status,
+		passive: service.passive,
+		exitCode: service.exitCode,
 	};
 }
 

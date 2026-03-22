@@ -1,74 +1,56 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSessionHooksService } from "../services/hooks-service";
-import type { SessionData } from "../../shell-types";
+import type { HooksStatusResponse } from "../../api-types";
+import { mergeHookOutput, toHooksStatus } from "../domains/session-domain.helpers";
 
-function makeSession(): SessionData {
-	return {
-		id: "session-1",
-		name: "Session",
-		description: "",
-		timestamp: "2026-03-11T00:00:00.000Z",
-		status: "ready",
-		files: [],
-		baseBranch: "main",
-		baseCommit: "abcdef0",
-		references: {
-			issueReference: "",
-			pullRequestReference: "",
+const hooksStatusResponse: HooksStatusResponse = {
+	hooks: {
+		"hook-1": {
+			hookId: "hook-1",
+			hookName: "Prompt",
+			type: "session",
+			lastRunAt: "2026-03-11T00:00:00.000Z",
+			lastResult: "success",
+			lastExitCode: 0,
+			outputPath: "/tmp/hook-1.log",
+			runCount: 2,
+			failCount: 0,
+			consecutiveFailures: 0,
 		},
-		threads: [{ id: "thread-1", name: "Thread 1" }],
-		hooksStatus: {
-			hooks: [
-				{
-					hookId: "hook-1",
-					hookName: "Format check",
-					type: "pre_tool_use",
-					lastResult: "failure",
-					runCount: 1,
-					failCount: 1,
-				},
-			],
-			pendingHookIds: [],
+		"hook-2": {
+			hookId: "hook-2",
+			hookName: "Formatter",
+			type: "file",
+			lastRunAt: "2026-03-11T00:00:01.000Z",
+			lastResult: "failure",
+			lastExitCode: 1,
+			outputPath: "/tmp/hook-2.log",
+			runCount: 3,
+			failCount: 2,
+			consecutiveFailures: 1,
 		},
-		hookOutputById: {
-			"hook-1": "previous output",
-		},
-		editorFiles: ["src/app.ts"],
-		fileContents: {
-			"src/app.ts": "export const ok = true;",
-		},
-		services: [],
-	};
-}
+	},
+	pendingHooks: ["hook-2"],
+	lastEvaluatedAt: "2026-03-11T00:00:01.000Z",
+};
 
-test("hooks service rerun transitions a hook from running to success", async () => {
-		let sessionDataById: Record<string, SessionData> = {
-			"session-1": makeSession(),
-		};
-		let tick = 0;
+test("toHooksStatus maps API hook response fields into session hook state", () => {
+	const hooksStatus = toHooksStatus(hooksStatusResponse);
 
-		const service = createSessionHooksService({
-			getSessionId: () => "session-1",
-			getSessionDataById: () => sessionDataById,
-			setSessionDataById: (value) => {
-				sessionDataById = value;
-			},
-			getStatus: () => sessionDataById["session-1"].hooksStatus ?? { hooks: [], pendingHookIds: [] },
-			getOutputById: () => sessionDataById["session-1"].hookOutputById ?? {},
-			nowIsoString: () => `2026-03-11T00:00:0${tick++}.000Z`,
-		});
+	assert.deepEqual(hooksStatus.pendingHookIds, ["hook-2"]);
+	assert.deepEqual(
+		hooksStatus.hooks.map((hook) => ({ id: hook.hookId, type: hook.type, result: hook.lastResult })),
+		[
+			{ id: "hook-1", type: "user_prompt_submit", result: "success" },
+			{ id: "hook-2", type: "post_tool_use", result: "failure" },
+		],
+	);
+});
 
-		service.rerun("hook-1");
-
-		assert.equal(service.status.hooks[0].lastResult, "running");
-		assert.equal(service.status.hooks[0].runCount, 2);
-		assert.match(service.outputById["hook-1"], /rerun requested/);
-
-		await new Promise((resolve) => setTimeout(resolve, 950));
-
-		assert.equal(service.status.hooks[0].lastResult, "success");
-		assert.equal(service.status.hooks[0].lastExitCode, 0);
-		assert.match(service.outputById["hook-1"], /completed successfully/);
+test("mergeHookOutput replaces the latest output for the given hook", () => {
+	assert.deepEqual(
+		mergeHookOutput({ "hook-1": "previous output" }, "hook-1", { output: "latest output" }),
+		{ "hook-1": "latest output" },
+	);
 });

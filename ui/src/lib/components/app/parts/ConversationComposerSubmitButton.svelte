@@ -5,7 +5,7 @@
 	import SquareIcon from "@lucide/svelte/icons/square";
 	import XIcon from "@lucide/svelte/icons/x";
 	import { InputGroupButton } from "$lib/components/ui/input-group";
-	import type { ComposerStatus } from "./conversation-composer.types";
+	import type { ComposerStatus } from "../conversation-composer.types";
 
 	type Props = {
 		status: ComposerStatus;

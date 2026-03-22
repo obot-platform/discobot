@@ -56,16 +56,16 @@ function createHarness(
 	setCount: number;
 	state: ReturnType<typeof createChatStreamState>;
 } {
-	let messages: ChatMessage[] = initialMessages;
+	let currentMessages: ChatMessage[] = initialMessages;
 	let setCount = 0;
 	const modeChanges: string[] = [];
 	const modelChanges: string[] = [];
 	const reasoningChanges: string[] = [];
 
 	const state = createChatStreamState({
-		getMessages: () => messages,
+		getMessages: () => currentMessages,
 		setMessages: (nextMessages) => {
-			messages = nextMessages;
+			currentMessages = nextMessages;
 			setCount += 1;
 		},
 		setMode: (mode) => {
@@ -81,7 +81,7 @@ function createHarness(
 
 	return {
 		get messages() {
-			return messages;
+			return currentMessages;
 		},
 		get modeChanges() {
 			return modeChanges;
@@ -136,7 +136,7 @@ test("history replay buffers messages until history-end", async () => {
 		data: "{}",
 	});
 
-	const messages = harness.messages;
+	const messages: ChatMessage[] = harness.messages;
 
 	assert.equal(harness.setCount, 1);
 	assert.equal(harness.state.isBufferingHistory, false);
@@ -198,7 +198,7 @@ test("data-user-message inserts a preserved user message before the assistant re
 		}),
 	});
 
-	const messages = harness.messages;
+	const messages: ChatMessage[] = harness.messages;
 
 	assert.deepEqual(
 		messages.map((message) => message.id),

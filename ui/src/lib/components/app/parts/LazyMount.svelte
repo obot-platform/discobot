@@ -51,6 +51,6 @@
 	{#if hasMounted}
 		{@render children?.()}
 	{:else}
-		<div aria-hidden="true" style={`height: ${estimatedHeight}px;`} />
+		<div aria-hidden="true" style={`height: ${estimatedHeight}px;`}></div>
 	{/if}
 </div>

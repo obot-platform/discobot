@@ -2,7 +2,7 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import { Button } from "$lib/components/ui/button";
 	import { InputGroupAddon } from "$lib/components/ui/input-group";
-	import type { ComposerAttachment } from "./conversation-composer.types";
+	import type { ComposerAttachment } from "../conversation-composer.types";
 
 	type Props = {
 		files: ComposerAttachment[];

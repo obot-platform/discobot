@@ -47,23 +47,31 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 		}
 	};
 
+	const syncAppliedColorScheme = () => {
+		colorScheme = applyColorScheme(colorScheme);
+	};
+
 	const applyThemeState = (mode: ThemeMode) => {
 		theme = applyTheme(mode);
 		resolvedTheme = resolveThemeMode(theme);
 		ensureColorSchemeForMode();
-		colorScheme = applyColorScheme(colorScheme);
+		syncAppliedColorScheme();
+	};
+
+	const initializePreferences = () => {
+		applyThemeState(getThemeMode());
+		colorScheme = getColorScheme();
+		ensureColorSchemeForMode();
+		syncAppliedColorScheme();
+		preferredIde = readPreferredIde();
+		chatWidthMode = readChatWidthMode();
+		defaultModel = readDefaultModel();
+		sidebarRecentOpen = readSidebarRecentOpen();
+		sidebarAllOpen = readSidebarAllOpen();
 	};
 
 	// Initialize on construction
-	applyThemeState(getThemeMode());
-	colorScheme = getColorScheme();
-	ensureColorSchemeForMode();
-	colorScheme = applyColorScheme(colorScheme);
-	preferredIde = readPreferredIde();
-	chatWidthMode = readChatWidthMode();
-	defaultModel = readDefaultModel();
-	sidebarRecentOpen = readSidebarRecentOpen();
-	sidebarAllOpen = readSidebarAllOpen();
+	initializePreferences();
 
 	if (typeof window !== "undefined") {
 		const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");

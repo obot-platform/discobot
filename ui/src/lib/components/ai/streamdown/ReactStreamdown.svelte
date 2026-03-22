@@ -2,11 +2,7 @@
 	import { onMount } from "svelte";
 	import { createElement, useState } from "react";
 	import { createRoot, type Root } from "react-dom/client";
-	import {
-		Streamdown,
-		type LinkSafetyModalProps,
-		type PluginConfig,
-	} from "streamdown";
+	import type { LinkSafetyModalProps, PluginConfig } from "streamdown";
 	import { openUrl } from "$lib/tauri";
 
 	type Props = {
@@ -17,6 +13,8 @@
 		isAnimating?: boolean;
 		animated?: boolean;
 	};
+
+	type StreamdownComponent = typeof import("streamdown").Streamdown;
 
 	let {
 		text,
@@ -29,6 +27,7 @@
 
 	let host = $state<HTMLDivElement | null>(null);
 	let root = $state<Root | null>(null);
+	let Streamdown = $state<StreamdownComponent | null>(null);
 
 	function StreamdownLinkSafetyModal({
 		url,
@@ -137,16 +136,25 @@
 			return;
 		}
 
+		let cancelled = false;
 		root = createRoot(host);
+		void import("streamdown").then((module) => {
+			if (cancelled) {
+				return;
+			}
+			Streamdown = module.Streamdown;
+		});
 
 		return () => {
+			cancelled = true;
 			root?.unmount();
 			root = null;
+			Streamdown = null;
 		};
 	});
 
 	$effect(() => {
-		if (!root) {
+		if (!root || !Streamdown) {
 			return;
 		}
 		root.render(createElement(Streamdown, streamdownProps, text));

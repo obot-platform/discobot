@@ -19,9 +19,22 @@ import type {
 export const windowControls = ["_", "□", "×"];
 
 export const ideOptions: IdeOption[] = [
-	{ id: "cursor", label: "Cursor" },
-	{ id: "vscode", label: "VS Code" },
-	{ id: "zed", label: "Zed" },
+	{ id: "cursor", label: "Cursor", family: "standard" },
+	{ id: "vscode", label: "VS Code", family: "standard" },
+	{ id: "zed", label: "Zed", family: "standard" },
+	{
+		id: "jetbrains-intellij-idea",
+		label: "IntelliJ IDEA Ultimate",
+		family: "jetbrains",
+		productCode: "IU",
+	},
+	{ id: "jetbrains-webstorm", label: "WebStorm", family: "jetbrains", productCode: "WS" },
+	{ id: "jetbrains-goland", label: "GoLand", family: "jetbrains", productCode: "GO" },
+	{ id: "jetbrains-pycharm", label: "PyCharm Professional", family: "jetbrains", productCode: "PY" },
+	{ id: "jetbrains-phpstorm", label: "PhpStorm", family: "jetbrains", productCode: "PS" },
+	{ id: "jetbrains-clion", label: "CLion", family: "jetbrains", productCode: "CL" },
+	{ id: "jetbrains-rubymine", label: "RubyMine", family: "jetbrains", productCode: "RM" },
+	{ id: "jetbrains-rider", label: "Rider", family: "jetbrains", productCode: "RD" },
 ];
 
 export const files = [
@@ -60,8 +73,20 @@ export const fileContents: Record<string, string> = {
 };
 
 export const services: ServiceItem[] = [
-	{ id: "api", label: "API", target: "localhost:3001" },
-	{ id: "db", label: "DB", target: "localhost:8080" },
+	{
+		id: "api",
+		label: "API",
+		target: "http://localhost:3001/docs",
+		http: 3001,
+		urlPath: "/docs",
+		status: "running",
+	},
+	{
+		id: "db",
+		label: "DB",
+		target: "/home/user/.discobot/services/db.yaml",
+		status: "stopped",
+	},
 ];
 
 export const envSets: EnvSetWithVars[] = [
@@ -99,8 +124,6 @@ export const envSets: EnvSetWithVars[] = [
 		},
 	},
 ];
-
-export const workflowActions = ["Commit", "Rebase", "Create PR", "Merge"];
 
 export const settingsModels: ModelInfo[] = [
 	{ id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", provider: "anthropic" },
@@ -211,7 +234,6 @@ const allSessionStatuses: SessionData["status"][] = [
 	SessionStatus.PULLING_IMAGE,
 	SessionStatus.CREATING_SANDBOX,
 	SessionStatus.READY,
-	SessionStatus.RUNNING,
 	SessionStatus.STOPPED,
 	SessionStatus.ERROR,
 	SessionStatus.REMOVING,
