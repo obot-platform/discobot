@@ -19,7 +19,6 @@
 	const app = useAppContext();
 	const environment = app.environment;
 	const preferences = app.preferences;
-	const sessions = app.sessions;
 	const ui = app.ui;
 	const updates = app.updates;
 
@@ -33,7 +32,7 @@
 </script>
 
 <header
-	class="relative z-[60] grid h-12 grid-cols-[auto_minmax(0,1fr)_auto] items-center border-b border-border bg-background"
+	class="relative z-[60] grid h-12 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-background"
 	data-tauri-drag-region
 >
 	<div class="absolute inset-0 pointer-events-auto" data-tauri-drag-region></div>
@@ -44,19 +43,6 @@
 		{/if}
 
 		<DiscobotBrand textSizeClass="text-sm" />
-
-		<div class="tauri-no-drag flex min-w-0 flex-wrap items-center gap-1">
-			{#each environment.workflowActions as action, index (action + index)}
-				<Button
-					variant="ghost"
-					size="xs"
-					class="h-7 px-2 text-xs"
-					disabled={!sessions.selectedId}
-				>
-					{action}
-				</Button>
-			{/each}
-		</div>
 	</div>
 
 	{#if showSessionToolbar}

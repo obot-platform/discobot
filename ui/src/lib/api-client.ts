@@ -253,12 +253,13 @@ class ApiClient {
 	async listSessionFiles(
 		sessionId: string,
 		path = ".",
-		includeHidden = false,
+		options?: { includeHidden?: boolean; signal?: AbortSignal },
 	): Promise<ListSessionFilesResponse> {
 		const params = new URLSearchParams({ path });
-		if (includeHidden) params.set("hidden", "true");
+		if (options?.includeHidden) params.set("hidden", "true");
 		return this.fetch<ListSessionFilesResponse>(
 			`/sessions/${sessionId}/files?${params}`,
+			options?.signal ? { signal: options.signal } : undefined,
 		);
 	}
 

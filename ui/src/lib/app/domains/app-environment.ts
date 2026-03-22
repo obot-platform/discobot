@@ -12,6 +12,5 @@ export function createAppEnvironmentDomain(args: CreateAppEnvironmentDomainArgs)
 		isTauri: env.isTauri,
 		windowControlsSide: env.windowControlsSide,
 		windowControls: args.bootstrap.windowControls,
-		workflowActions: args.bootstrap.workflowActions,
 	};
 }

@@ -7,7 +7,6 @@
 		validateAskUserQuestionOutput,
 	} from "$lib/components/ai/tool-schemas/askuserquestion-schema";
 	import { api } from "$lib/api-client";
-	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import AskUserQuestionWizard from "./AskUserQuestionWizard.svelte";
 	import type { ToolRendererComponentProps } from "./types";
 
@@ -197,12 +196,12 @@
 </script>
 
 <div class="flex items-center justify-between gap-4 px-4 pt-4">
-	<CollapsibleTrigger class="flex min-w-0 flex-1 items-center gap-2 text-left">
+	<div class="flex min-w-0 flex-1 items-center gap-2 text-left">
 		<MessageSquareQuoteIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">Agent question</span>
 		<ToolHeaderStatus state={toolPart.state} />
-	</CollapsibleTrigger>
-	<ToolHeaderControls {isRaw} {onToggleRaw} />
+	</div>
+	<ToolHeaderControls {isRaw} {onToggleRaw} canCollapse={false} />
 </div>
 
 <ToolContent>

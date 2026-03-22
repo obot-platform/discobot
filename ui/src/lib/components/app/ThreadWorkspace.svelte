@@ -32,16 +32,21 @@
 	const showDock = $derived(
 		(props.mode ?? "full") === "full" && !isChatView(session.ui.activeView),
 	);
+	const dockMaximized = $derived(showDock && session.ui.dockMaximized);
 </script>
 
 <main class={props.mainClass}>
-	{#if showDock}
+	{#if showDock && dockMaximized}
+		<div class="min-h-0 flex-1 overflow-hidden">
+			<DockPanel />
+		</div>
+	{:else if showDock}
 		<Resizable.PaneGroup
 			direction="horizontal"
 			autoSaveId="discobot-ui-thread-layout"
 			class="min-h-0 flex-1"
 		>
-			<Resizable.Pane defaultSize={55} minSize={35} class="min-h-0">
+			<Resizable.Pane defaultSize={35} minSize={25} class="min-h-0">
 				<div class="flex min-h-0 h-full flex-col overflow-hidden">
 					<ThreadWorkspaceHeader
 						sidebarOpen={props.sidebarOpen ?? false}
@@ -49,13 +54,13 @@
 						title={session.threads.selected?.name ?? (session.isPending ? "" : "No thread selected")}
 					/>
 					<div class="min-h-0 flex-1 overflow-hidden">
-						<ConversationPane contentTopPadding={5} />
+						<ConversationPane />
 					</div>
 				</div>
 			</Resizable.Pane>
-			<Resizable.Handle />
-			<Resizable.Pane defaultSize={45} minSize={25} class="min-h-0">
-				<div class="min-h-0 h-full overflow-auto xl:rounded-tl-xl xl:border-t xl:border-l xl:border-border">
+			<Resizable.Handle class="bg-transparent" />
+			<Resizable.Pane defaultSize={65} minSize={25} class="min-h-0">
+				<div class="min-h-0 h-full overflow-auto">
 					<DockPanel />
 				</div>
 			</Resizable.Pane>
@@ -68,7 +73,7 @@
 		/>
 
 		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-			<ConversationPane contentTopPadding={5} />
+			<ConversationPane />
 		</div>
 	{/if}
 </main>

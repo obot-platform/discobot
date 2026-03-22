@@ -4,7 +4,7 @@ export type SessionActiveView =
 	| { kind: "desktop" }
 	| { kind: "diff-review" }
 	| { kind: "file"; path: string }
-	| { kind: "service"; serviceId: string };
+	| { kind: "services" };
 
 export type EnvSetEditorMode = "list" | "create" | "edit";
 
@@ -25,6 +25,6 @@ export function getSelectedFileFromView(activeView: SessionActiveView): string {
 	return activeView.kind === "file" ? activeView.path : "";
 }
 
-export function getSelectedServiceIdFromView(activeView: SessionActiveView): string | null {
-	return activeView.kind === "service" ? activeView.serviceId : null;
+export function getSelectedServiceIdFromView(_activeView: SessionActiveView): string | null {
+	return null;
 }

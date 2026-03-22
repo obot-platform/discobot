@@ -84,8 +84,8 @@
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		{#if isMobile.current}
 			<Sheet.Root bind:open={sessionView.mobileSidebarOpen}>
-				<Sheet.Content side="left" class="w-64 max-w-none p-0 [&>button]:hidden">
-					<SessionSidebar onThreadSelect={handleSessionSelect} />
+				<Sheet.Content side="left" class="w-64 max-w-none bg-background p-3 [&>button]:hidden">
+					<SessionSidebar onThreadSelect={handleSessionSelect} onToggleSidebar={toggleSidebar} />
 				</Sheet.Content>
 			</Sheet.Root>
 
@@ -117,9 +117,11 @@
 						sessionView.desktopSidebarOpen = true;
 					}}
 				>
-					<SessionSidebar />
+					<div class="box-border h-full min-h-0 py-3 pl-3 pr-2">
+						<SessionSidebar onToggleSidebar={toggleSidebar} />
+					</div>
 				</Resizable.Pane>
-				<Resizable.Handle />
+				<Resizable.Handle class="bg-transparent after:w-3" />
 				<Resizable.Pane minSize={45} class="min-h-0">
 					{#key session.threads.selectedId ?? session.sessionId}
 						<ThreadWorkspace

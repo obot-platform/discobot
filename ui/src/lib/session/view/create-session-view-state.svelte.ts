@@ -4,14 +4,35 @@ import { getDefaultActiveView, getSelectedFileFromView } from "$lib/session/sess
 
 type CreateSessionViewStateArgs = {
 	getFiles: () => string[];
+	getServices: () => string[];
 };
+
+export function resolveOpenFileState(
+	file: string | undefined,
+	selectedFile: string,
+	availableFiles: string[],
+): { activeView: SessionActiveView; selectedFile: string } {
+	if (file !== undefined) {
+		return {
+			activeView: { kind: "file", path: file },
+			selectedFile: file,
+		};
+	}
+
+	const nextFile = selectedFile || (availableFiles[0] ?? "");
+	return {
+		activeView: nextFile.length > 0 ? { kind: "file", path: nextFile } : getDefaultActiveView(availableFiles),
+		selectedFile: nextFile,
+	};
+}
 
 export type SessionViewState = {
 	activeView: SessionActiveView;
 	selectedThreadId: string | null;
 	selectedFile: string;
 	activeServiceId: string | null;
-	ideMenuOpen: boolean;
+	terminalRootEnabled: boolean;
+	dockMaximized: boolean;
 	composerDraft: string;
 	desktopSidebarOpen: boolean;
 	mobileSidebarOpen: boolean;
@@ -38,8 +59,10 @@ export type SessionViewState = {
 	openDesktop: () => void;
 	openDiffReview: () => void;
 	openFile: (file?: string) => void;
+	openServices: () => void;
 	openService: (serviceId: string) => void;
-	toggleIdeMenu: () => void;
+	setTerminalRootEnabled: (value: boolean) => void;
+	toggleDockMaximized: () => void;
 	setComposerDraft: (value: string) => void;
 	setPendingWorkspaceOption: (value: string) => void;
 	setPendingWorkspaceBranch: (value: string) => void;
@@ -65,7 +88,9 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 	let activeView = $state<SessionActiveView>({ kind: "chat" });
 	let selectedThreadId = $state<string | null>(null);
 	let selectedFile = $state("");
-	let ideMenuOpen = $state(false);
+	let selectedServiceId = $state<string | null>(null);
+	let terminalRootEnabled = $state(false);
+	let dockMaximized = $state(false);
 	let composerDraft = $state("");
 	let desktopSidebarOpen = $state(false);
 	let mobileSidebarOpen = $state(false);
@@ -84,6 +109,7 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 	let pendingWorkspaceSetupMessage = $state<string | null>(null);
 
 	const openChat = () => {
+		dockMaximized = false;
 		activeView = { kind: "chat" };
 	};
 
@@ -100,13 +126,23 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 	};
 
 	const openFile = (file?: string) => {
-		const nextFile = (file ?? selectedFile) || (args.getFiles()[0] ?? "");
-		selectedFile = nextFile;
-		activeView = nextFile.length > 0 ? { kind: "file", path: nextFile } : getDefaultActiveView(args.getFiles());
+		const nextState = resolveOpenFileState(file, selectedFile, args.getFiles());
+		selectedFile = nextState.selectedFile;
+		activeView = nextState.activeView;
+	};
+
+	const openServices = () => {
+		const serviceIds = args.getServices();
+		selectedServiceId =
+			selectedServiceId && serviceIds.includes(selectedServiceId)
+				? selectedServiceId
+				: (serviceIds[0] ?? null);
+		activeView = { kind: "services" };
 	};
 
 	const openService = (serviceId: string) => {
-		activeView = { kind: "service", serviceId };
+		selectedServiceId = serviceId;
+		activeView = { kind: "services" };
 	};
 
 	const closeHookDialog = () => {
@@ -140,10 +176,16 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 			return activeView.kind === "file" ? activeView.path : selectedFile;
 		},
 		get activeServiceId() {
-			return activeView.kind === "service" ? activeView.serviceId : null;
+			const serviceIds = args.getServices();
+			return selectedServiceId && serviceIds.includes(selectedServiceId)
+				? selectedServiceId
+				: (serviceIds[0] ?? null);
 		},
-		get ideMenuOpen() {
-			return ideMenuOpen;
+		get terminalRootEnabled() {
+			return terminalRootEnabled;
+		},
+		get dockMaximized() {
+			return dockMaximized;
 		},
 		get composerDraft() {
 			return composerDraft;
@@ -277,9 +319,13 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 		openDesktop,
 		openDiffReview,
 		openFile,
+		openServices,
 		openService,
-		toggleIdeMenu: () => {
-			ideMenuOpen = !ideMenuOpen;
+		setTerminalRootEnabled: (value) => {
+			terminalRootEnabled = value;
+		},
+		toggleDockMaximized: () => {
+			dockMaximized = !dockMaximized;
 		},
 		setComposerDraft: (value) => {
 			composerDraft = value;
@@ -339,8 +385,10 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 		resetForSession: (nextSelectedThreadId, nextSelectedFile) => {
 			selectedThreadId = nextSelectedThreadId;
 			selectedFile = nextSelectedFile;
+			selectedServiceId = null;
 			activeView = { kind: "chat" };
-			ideMenuOpen = false;
+			terminalRootEnabled = false;
+			dockMaximized = false;
 			composerDraft = "";
 			desktopSidebarOpen = false;
 			mobileSidebarOpen = false;

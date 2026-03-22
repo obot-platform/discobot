@@ -9,6 +9,7 @@
 	import OptimizedToolRenderer from "$lib/components/ai/tool-renderers/OptimizedToolRenderer.svelte";
 	import type { DynamicToolPart } from "$lib/components/ai/types";
 	import ConversationComposer from "$lib/components/app/ConversationComposer.svelte";
+	import { getBottomSpacerHeight } from "$lib/components/app/conversation-pane-layout";
 	import LazyMount from "$lib/components/app/parts/LazyMount.svelte";
 	import { Alert, AlertDescription } from "$lib/components/ui/alert";
 	import { Button } from "$lib/components/ui/button";
@@ -169,16 +170,18 @@
 		const styles = window.getComputedStyle(element);
 		const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
 		const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
-		const viewportContentHeight = Math.max(
-			0,
-			element.clientHeight - paddingTop - paddingBottom,
-		);
-		const contentHeightWithoutSpacer = contentElement.offsetHeight - bottomSpacerHeight;
-		const distanceFromAnchorTopToEnd = contentHeightWithoutSpacer - anchorElement.offsetTop;
-		const effectiveTopOffset = Math.max(0, contentTopPadding);
+		const contentRect = contentElement.getBoundingClientRect();
+		const anchorRect = anchorElement.getBoundingClientRect();
 
-		const availableViewportHeight = Math.max(0, viewportContentHeight - effectiveTopOffset);
-		bottomSpacerHeight = Math.max(0, availableViewportHeight - distanceFromAnchorTopToEnd);
+		bottomSpacerHeight = getBottomSpacerHeight({
+			contentHeight: contentRect.height,
+			existingSpacerHeight: bottomSpacerHeight,
+			anchorOffsetTop: anchorRect.top - contentRect.top,
+			contentTopPadding,
+			viewportClientHeight: element.clientHeight,
+			viewportPaddingBottom: paddingBottom,
+			viewportPaddingTop: paddingTop,
+		});
 		updateIsNearBottom();
 	}
 

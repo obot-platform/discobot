@@ -1,4 +1,4 @@
-import type { Session, SessionStatus } from "$lib/api-types";
+import type { ServiceStatus, Session, SessionStatus } from "$lib/api-types";
 
 export type CenterPanel =
 	| "chat"
@@ -7,7 +7,23 @@ export type CenterPanel =
 	| "files"
 	| "diff-review"
 	| `service:${string}`;
-export type PreferredIde = "cursor" | "vscode" | "zed";
+export const SUPPORTED_PREFERRED_IDES = [
+	"cursor",
+	"vscode",
+	"zed",
+	"jetbrains-intellij-idea",
+	"jetbrains-webstorm",
+	"jetbrains-goland",
+	"jetbrains-pycharm",
+	"jetbrains-phpstorm",
+	"jetbrains-clion",
+	"jetbrains-rubymine",
+	"jetbrains-rider",
+] as const;
+export type PreferredIde = (typeof SUPPORTED_PREFERRED_IDES)[number];
+export type StandardPreferredIde = Extract<PreferredIde, "cursor" | "vscode" | "zed">;
+export type JetBrainsPreferredIde = Exclude<PreferredIde, StandardPreferredIde>;
+export type JetBrainsProductCode = "IU" | "WS" | "GO" | "PY" | "PS" | "CL" | "RM" | "RD";
 export type WindowControlsSide = "left" | "right";
 
 export type AsyncStatus = "idle" | "loading" | "ready" | "error";
@@ -19,15 +35,39 @@ export type SessionFileState = "active" | "edited" | "linked";
 export type PlanEntryStatus = "pending" | "in_progress" | "completed";
 export type HookLastResult = "pending" | "running" | "success" | "failure";
 
-export type IdeOption = {
+type BaseIdeOption = {
 	id: PreferredIde;
 	label: string;
 };
+
+export type StandardIdeOption = BaseIdeOption & {
+	family: "standard";
+};
+
+export type JetBrainsIdeOption = BaseIdeOption & {
+	family: "jetbrains";
+	productCode: JetBrainsProductCode;
+};
+
+export type IdeOption = StandardIdeOption | JetBrainsIdeOption;
+
+export function isPreferredIde(value: string | null | undefined): value is PreferredIde {
+	return (SUPPORTED_PREFERRED_IDES as readonly string[]).includes(value ?? "");
+}
+
+export const DESKTOP_SERVICE_ID = "discobot-desktop";
 
 export type ServiceItem = {
 	id: string;
 	label: string;
 	target: string;
+	description?: string;
+	http?: number;
+	https?: number;
+	urlPath?: string;
+	status: ServiceStatus;
+	passive?: boolean;
+	exitCode?: number;
 };
 
 export type EnvSetInfo = {

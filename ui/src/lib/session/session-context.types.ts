@@ -1,5 +1,6 @@
 import type {
 	ChatMessage,
+	FileStatus,
 	Session,
 	SessionDiffFileEntry,
 	SessionDiffStats,
@@ -55,6 +56,36 @@ export type SessionThreadsService = {
 	refreshThread: (threadId: string) => Promise<void>;
 };
 
+export type SessionFileTreeNode = {
+	name: string;
+	path: string;
+	type: "file" | "directory";
+	size?: number;
+	changed?: boolean;
+	status?: FileStatus;
+	children?: SessionFileTreeNode[];
+};
+
+export type SessionFileRecord = {
+	path: string;
+	content: string;
+	encoding: "utf8" | "base64";
+	size: number;
+	fromBase: boolean;
+};
+
+export type SessionFileBufferState = {
+	content: string;
+	originalContent: string;
+	encoding: "utf8" | "base64";
+	isDirty: boolean;
+	isSaving: boolean;
+	saveError: string | null;
+	hasConflict: boolean;
+	conflictContent: string | null;
+	fromBase: boolean;
+};
+
 export type SessionFilesDomain = {
 	list: string[];
 	searchable: string[];
@@ -62,14 +93,42 @@ export type SessionFilesDomain = {
 	diffStats: SessionDiffStats;
 	contents: Record<string, string>;
 	selected: string;
+	activePath: string;
+	openPaths: string[];
+	tree: SessionFileTreeNode[];
+	showChangedOnly: boolean;
+	expandedPaths: string[];
+	getRecord: (path: string) => SessionFileRecord | null;
+	getBuffer: (path: string) => SessionFileBufferState | null;
+	isPathLoading: (path: string) => boolean;
+	hasDirtyChanges: (path: string) => boolean;
 	open: (file?: string) => Promise<void>;
+	close: (file: string) => void;
 	refresh: () => Promise<void>;
+	toggleChangedOnly: () => Promise<void>;
+	toggleDirectory: (path: string) => Promise<void>;
+	expandAll: () => Promise<void>;
+	collapseAll: () => void;
+	rename: (path: string, nextName: string) => Promise<boolean>;
+	remove: (path: string) => Promise<boolean>;
+	updateBuffer: (path: string, content: string) => void;
+	discard: (path: string) => void;
+	save: (path: string) => Promise<boolean>;
+	acceptConflict: (path: string) => void;
+	forceSave: (path: string) => Promise<boolean>;
+	getEditorModel: (path: string) => unknown | null;
+	setEditorModel: (path: string, model: unknown | null) => void;
+	getEditorViewState: (path: string) => unknown | null;
+	setEditorViewState: (path: string, viewState: unknown | null) => void;
+	dispose: () => void;
 };
 
 export type SessionServicesDomain = {
 	list: ServiceItem[];
 	active: ServiceItem | null;
 	open: (serviceId: string) => void;
+	start: (serviceId: string) => Promise<void>;
+	stop: (serviceId: string) => Promise<void>;
 	refresh: () => Promise<void>;
 };
 

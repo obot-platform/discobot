@@ -8,6 +8,7 @@ import { createSessionHooksDomain } from "$lib/session/domains/session-hooks.sve
 import { createSessionServicesDomain } from "$lib/session/domains/session-services.svelte";
 import { createSessionThreadsDomain } from "$lib/session/domains/session-threads.svelte";
 import type { SessionContextValue, SessionStores, ThreadContextValue } from "$lib/session/session-context.types";
+import { DESKTOP_SERVICE_ID } from "$lib/shell-types";
 import { createSessionViewState } from "$lib/session/view/create-session-view-state.svelte";
 import { EnvSetStore } from "$lib/store/env-sets.store.svelte";
 import { ThreadStore } from "$lib/store/threads.store.svelte";
@@ -27,6 +28,10 @@ function createSessionContext(sessionId: string): SessionContextValue {
 
 	const ui = createSessionViewState({
 		getFiles: () => filesDomain.list,
+		getServices: () =>
+			services.list
+				.filter((service) => service.id !== DESKTOP_SERVICE_ID)
+				.map((service) => service.id),
 	});
 
 	const stores: SessionStores = {
@@ -95,6 +100,7 @@ function createSessionContext(sessionId: string): SessionContextValue {
 	}
 
 	function dispose() {
+		filesDomain.dispose();
 		for (const context of threadContexts.values()) {
 			context.dispose();
 		}

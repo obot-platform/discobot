@@ -15,6 +15,7 @@
 		showIcon?: boolean;
 		isRaw?: boolean;
 		onToggleRaw?: () => void;
+		canCollapse?: boolean;
 		class?: string;
 	};
 
@@ -26,6 +27,7 @@
 		showIcon = true,
 		isRaw,
 		onToggleRaw,
+		canCollapse = true,
 		class: className,
 		...restProps
 	}: Props = $props();
@@ -41,29 +43,56 @@
 </script>
 
 <div class="flex items-center justify-between gap-4">
-	<CollapsibleTrigger
-		class={cn(
-			"flex w-full min-w-0 items-center gap-2 text-left",
-			showIcon ? "p-3" : "px-3 py-1.5",
-			className,
-		)}
-		{...restProps}
-	>
-		<div class="flex min-w-0 items-center gap-2">
-			{#if showIcon}
-				<WrenchIcon class="size-4 shrink-0 text-muted-foreground" />
-			{/if}
-			{#if verb}
-				<Badge
-					variant="secondary"
-					class="rounded-full bg-primary/10 px-2 py-0.5 font-bold text-primary text-xs"
-				>
-					{verb}
-				</Badge>
-			{/if}
-			<span class="truncate font-medium text-sm">{rest}</span>
-			<ToolHeaderStatus {state} />
+	{#if canCollapse}
+		<CollapsibleTrigger
+			class={cn(
+				"flex w-full min-w-0 items-center gap-2 text-left",
+				showIcon ? "p-3" : "px-3 py-1.5",
+				className,
+			)}
+			{...restProps}
+		>
+			<div class="flex min-w-0 items-center gap-2">
+				{#if showIcon}
+					<WrenchIcon class="size-4 shrink-0 text-muted-foreground" />
+				{/if}
+				{#if verb}
+					<Badge
+						variant="secondary"
+						class="rounded-full bg-primary/10 px-2 py-0.5 font-bold text-primary text-xs"
+					>
+						{verb}
+					</Badge>
+				{/if}
+				<span class="truncate font-medium text-sm">{rest}</span>
+				<ToolHeaderStatus {state} />
+			</div>
+		</CollapsibleTrigger>
+	{:else}
+		<div
+			class={cn(
+				"flex w-full min-w-0 items-center gap-2 text-left",
+				showIcon ? "p-3" : "px-3 py-1.5",
+				className,
+			)}
+			{...restProps}
+		>
+			<div class="flex min-w-0 items-center gap-2">
+				{#if showIcon}
+					<WrenchIcon class="size-4 shrink-0 text-muted-foreground" />
+				{/if}
+				{#if verb}
+					<Badge
+						variant="secondary"
+						class="rounded-full bg-primary/10 px-2 py-0.5 font-bold text-primary text-xs"
+					>
+						{verb}
+					</Badge>
+				{/if}
+				<span class="truncate font-medium text-sm">{rest}</span>
+				<ToolHeaderStatus {state} />
+			</div>
 		</div>
-	</CollapsibleTrigger>
-	<ToolHeaderControls {isRaw} {onToggleRaw} />
+	{/if}
+	<ToolHeaderControls {isRaw} {onToggleRaw} {canCollapse} />
 </div>

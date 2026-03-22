@@ -21,6 +21,6 @@ test("getDefaultActiveView falls back to chat without files", () => {
 test("view helpers expose selected file and service ids", () => {
 		assert.equal(getSelectedFileFromView({ kind: "file", path: "src/app.ts" }), "src/app.ts");
 		assert.equal(getSelectedFileFromView({ kind: "chat" }), "");
-		assert.equal(getSelectedServiceIdFromView({ kind: "service", serviceId: "preview" }), "preview");
+	assert.equal(getSelectedServiceIdFromView({ kind: "services" }), null);
 		assert.equal(getSelectedServiceIdFromView({ kind: "terminal" }), null);
 });

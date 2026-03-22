@@ -63,7 +63,6 @@ export type AppContextBootstrap = {
 	ideOptions: IdeOption[];
 	selectedSessionId?: string;
 	windowControls: string[];
-	workflowActions: string[];
 };
 
 export type AppUI = {
@@ -106,7 +105,6 @@ export type AppEnvironment = {
 	isTauri: boolean;
 	windowControlsSide: WindowControlsSide;
 	windowControls: string[];
-	workflowActions: string[];
 };
 
 export type AppSessions = {

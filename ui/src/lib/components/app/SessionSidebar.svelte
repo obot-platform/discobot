@@ -2,6 +2,7 @@
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 	import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
+	import PanelLeftIcon from "@lucide/svelte/icons/panel-left";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import * as Collapsible from "$lib/components/ui/collapsible";
 	import SessionStatus from "$lib/components/app/parts/SessionStatus.svelte";
@@ -28,9 +29,10 @@
 
 	type Props = {
 		onThreadSelect?: () => void;
+		onToggleSidebar?: () => void;
 	};
 
-	let { onThreadSelect }: Props = $props();
+	let { onThreadSelect, onToggleSidebar }: Props = $props();
 
 	const app = useAppContext();
 	const sessions = app.sessions;
@@ -125,11 +127,11 @@
 </script>
 
 {#snippet sessionItem(sessionObj: (typeof sessions.list)[number], isSelected: boolean)}
-	<div class="group flex min-w-0 items-center">
+	<div class="group flex min-w-0 items-center gap-0.5">
 		<button
 			type="button"
 			onclick={() => handleSelectSession(sessionObj.id)}
-			class={`flex min-w-0 flex-1 items-center gap-2 rounded-l-md rounded-r-none px-2 h-8 text-sm font-medium transition-colors ${isSelected ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+			class={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
 		>
 			<SessionStatus status={sessionObj.status} showLabel={false} class="shrink-0" />
 			<span class="truncate">{sessionObj.name || "New Session"}</span>
@@ -138,9 +140,9 @@
 		<DropdownMenu>
 			<DropdownMenuTrigger>
 				<Button
-					variant={isSelected ? "secondary" : "ghost"}
+					variant="ghost"
 					size="icon-xs"
-					class={`h-8 w-6 rounded-l-none transition-colors ${isSelected ? "text-foreground" : "text-muted-foreground group-hover:bg-accent group-hover:text-accent-foreground"}`}
+					class={`h-8 w-7 rounded-md transition-colors ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
 					aria-label={`Session actions for ${sessionObj.name || "New Session"}`}
 					onclick={(event) => event.stopPropagation()}
 				>
@@ -161,15 +163,30 @@
 	</div>
 {/snippet}
 
-<aside class="h-full w-full border-r border-border bg-sidebar flex min-h-0 flex-col">
-	<div class="flex h-10 items-center justify-between border-b border-border px-3">
-		<p class="text-sm font-medium">Sessions</p>
+<aside class="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm">
+	<div class="flex h-10 items-center justify-between border-b border-sidebar-border px-3">
+		<div class="flex min-w-0 items-center gap-1">
+			{#if onToggleSidebar}
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					onclick={onToggleSidebar}
+					aria-label="Collapse sessions panel"
+					title="Collapse sessions panel"
+					class="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+				>
+					<PanelLeftIcon class="size-3.5" />
+				</Button>
+			{/if}
+			<p class="text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70">Sessions</p>
+		</div>
 		<Button
 			variant="ghost"
 			size="icon-xs"
 			onclick={() => sessions.startNew()}
 			aria-label="New session"
 			title="New session"
+			class="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 		>
 			<PlusIcon class="size-3.5" />
 		</Button>
@@ -178,14 +195,14 @@
 	<div class="flex-1 overflow-y-auto p-2">
 		<div class="space-y-0.5">
 			{#if sessions.list.length === 0}
-				<p class="px-2 text-xs text-muted-foreground">No sessions</p>
+				<p class="px-2 text-xs text-sidebar-foreground/50">No sessions</p>
 			{:else}
 				{#if sessions.recent.length > 0}
 					<Collapsible.Root
 						open={preferences.sidebarRecentOpen}
 						onOpenChange={(v) => preferences.setSidebarRecentOpen(v)}
 					>
-						<Collapsible.Trigger class="flex w-full items-center gap-1 px-2 pb-1 pt-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors">
+						<Collapsible.Trigger class="flex w-full items-center gap-1 px-2 pb-1 pt-1 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground">
 							{#if preferences.sidebarRecentOpen}
 								<ChevronDownIcon class="size-3 shrink-0" />
 							{:else}
@@ -206,7 +223,7 @@
 						open={preferences.sidebarAllOpen}
 						onOpenChange={(v) => preferences.setSidebarAllOpen(v)}
 					>
-						<Collapsible.Trigger class="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors">
+						<Collapsible.Trigger class="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground">
 							{#if preferences.sidebarAllOpen}
 								<ChevronDownIcon class="size-3 shrink-0" />
 							{:else}

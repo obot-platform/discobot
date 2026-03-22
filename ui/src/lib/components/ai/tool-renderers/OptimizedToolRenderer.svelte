@@ -13,11 +13,19 @@
 
 	let { toolPart, forceRaw = false, defaultOpen = false, sessionId, threadId }: Props = $props();
 
+	const getInitialOpen = () => defaultOpen || toolPart.toolName === "AskUserQuestion";
+
 	let isRaw = $state(false);
-	let open = $state(defaultOpen);
+	let open = $state(getInitialOpen());
 
 	$effect(() => {
 		isRaw = forceRaw;
+	});
+
+	$effect(() => {
+		if (toolPart.toolName === "AskUserQuestion") {
+			open = true;
+		}
 	});
 
 	const renderedInput = $derived.by(() => toolPart.input);
@@ -25,6 +33,7 @@
 	const renderedError = $derived.by(() => toolPart.errorText);
 	const Renderer = $derived.by(() => getToolRenderer(toolPart.toolName));
 	const hasOptimizedView = $derived.by(() => Boolean(Renderer));
+	const isAlwaysExpanded = $derived.by(() => toolPart.toolName === "AskUserQuestion");
 	const showRaw = $derived.by(() => !hasOptimizedView || isRaw);
 	const title = $derived.by(() => getToolTitle(toolPart));
 </script>
@@ -38,6 +47,7 @@
 			{title}
 			isRaw={showRaw}
 			onToggleRaw={hasOptimizedView ? (() => (isRaw = !isRaw)) : undefined}
+			canCollapse={!isAlwaysExpanded}
 		/>
 		<ToolContent>
 			<ToolInput input={renderedInput} />

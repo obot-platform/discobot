@@ -5,7 +5,12 @@ import type {
 	SettingsDialogTab,
 	UpdateStatus,
 } from "$lib/app/app-context.types";
-import type { PreferredIde, SessionSummary, WindowControlsSide } from "$lib/shell-types";
+import {
+	isPreferredIde,
+	type PreferredIde,
+	type SessionSummary,
+	type WindowControlsSide,
+} from "$lib/shell-types";
 
 export const PREFERRED_IDE_STORAGE_KEY = "preferred.ide";
 export const CHAT_WIDTH_MODE_STORAGE_KEY = "chat.width.mode";
@@ -35,7 +40,7 @@ export function readPreferredIde(): PreferredIde {
 	}
 
 	const stored = window.localStorage.getItem(PREFERRED_IDE_STORAGE_KEY);
-	return stored === "cursor" || stored === "vscode" || stored === "zed" ? stored : "cursor";
+	return isPreferredIde(stored) ? stored : "cursor";
 }
 
 export function readChatWidthMode(): ChatWidthMode {
