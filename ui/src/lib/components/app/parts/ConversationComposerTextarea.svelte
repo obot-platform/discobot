@@ -94,6 +94,10 @@
 	export function closeMentionDropdown() {
 		fileMentionDropdownRef?.closeDropdown();
 	}
+
+	export function focus() {
+		fileMentionTextareaRef?.focus();
+	}
 </script>
 
 <ConversationFileMentionDropdown

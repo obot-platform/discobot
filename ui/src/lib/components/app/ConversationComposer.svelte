@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { generateId } from "ai";
+	import { onMount, tick } from "svelte";
 	import { InputGroup, InputGroupAddon } from "$lib/components/ui/input-group";
 	import ConversationComposerAttachmentButton from "$lib/components/app/parts/ConversationComposerAttachmentButton.svelte";
 	import ConversationComposerAttachments from "$lib/components/app/parts/ConversationComposerAttachments.svelte";
@@ -155,6 +156,15 @@
 		attachmentFiles = [];
 	}
 
+	async function focusComposerTextarea() {
+		await tick();
+		composerTextareaRef?.focus();
+	}
+
+	onMount(() => {
+		void focusComposerTextarea();
+	});
+
 	async function submitComposer() {
 		if (isGenerating()) {
 			await thread.cancel();
@@ -184,8 +194,10 @@
 			clearComposerOverrides();
 			composerTextareaRef?.closeMentionDropdown();
 			clearAttachments();
+			await focusComposerTextarea();
 		} catch {
 			// Error is already surfaced via thread.error in ConversationPane
+			await focusComposerTextarea();
 		}
 	}
 
@@ -235,6 +247,7 @@
 			sessionView.resetPendingWorkspaceSetup();
 		} catch (err) {
 			pendingSubmitError = err instanceof Error ? err.message : "Failed to start session";
+			await focusComposerTextarea();
 		}
 	}
 </script>
