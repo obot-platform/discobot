@@ -138,8 +138,57 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		return validation.data[0];
 	};
 
+	const validateHistoryMessage = (message: unknown): ChatMessage => {
+		if (!message || typeof message !== "object") {
+			throw new Error("History message must be an object");
+		}
+
+		const candidate = message as {
+			id?: unknown;
+			role?: unknown;
+			parts?: unknown;
+		};
+		if (typeof candidate.id !== "string" || candidate.id.length === 0) {
+			throw new Error("History message is missing an id");
+		}
+		if (
+			typeof candidate.role !== "string" ||
+			!["system", "user", "assistant", "tool"].includes(candidate.role)
+		) {
+			throw new Error("History message has an invalid role");
+		}
+		if (!Array.isArray(candidate.parts)) {
+			throw new Error("History message parts must be an array");
+		}
+
+		for (const part of candidate.parts) {
+			if (!part || typeof part !== "object") {
+				throw new Error("History message part must be an object");
+			}
+
+			const partType = (part as { type?: unknown }).type;
+			if (typeof partType !== "string") {
+				throw new Error("History message part is missing a type");
+			}
+			if (
+				partType !== "text" &&
+				partType !== "reasoning" &&
+				partType !== "file" &&
+				partType !== "step-start" &&
+				partType !== "source-url" &&
+				partType !== "source-document" &&
+				partType !== "dynamic-tool" &&
+				!partType.startsWith("data-")
+			) {
+				throw new Error(`Unsupported history message part type: ${partType}`);
+			}
+		}
+
+		return message as ChatMessage;
+	};
+
 	const parseMessageEvent = async (data: string) => {
-		return validateMessage(JSON.parse(data));
+		return validateHistoryMessage(JSON.parse(data));
 	};
 
 	const parseChunkEvent = async (data: string): Promise<UIMessageChunk> => {

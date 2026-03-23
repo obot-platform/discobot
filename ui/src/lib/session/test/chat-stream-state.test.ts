@@ -16,6 +16,39 @@ function makeTextMessage(id: string, role: ChatMessage["role"], text: string): C
 	};
 }
 
+function makeCustomAssistantMessage(id: string): ChatMessage {
+	return {
+		id,
+		role: "assistant",
+		parts: [
+			{
+				type: "reasoning",
+				text: "Thinking through the approval flow.",
+				state: "done",
+			},
+			{
+				type: "dynamic-tool",
+				toolCallId: "tool-123",
+				toolName: "AskUserQuestion",
+				state: "approval-requested",
+				input: {
+					questions: [
+						{
+							header: "Filename",
+							question: "What filename do you want?",
+							multiSelect: false,
+							options: [{ label: "test.db.sql", description: "Keep the SQL extension." }],
+						},
+					],
+				},
+				approval: { id: "approval-123" },
+			},
+			{ type: "step-start" },
+			{ type: "text", text: "Waiting for your answer.", state: "done" },
+		],
+	} as ChatMessage;
+}
+
 class MockChatStreamEventSource {
 	private listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>();
 
@@ -98,6 +131,37 @@ function createHarness(
 		state,
 	};
 }
+
+test("history replay accepts Discobot assistant parts", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "history-start",
+		data: "{}",
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-message",
+		data: JSON.stringify(makeCustomAssistantMessage("assistant-custom")),
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-end",
+		data: "{}",
+	});
+
+	assert.equal(harness.messages.length, 1);
+	assert.equal(harness.messages[0]?.id, "assistant-custom");
+	assert.deepEqual(
+		harness.messages[0]?.parts.map((part) => part.type),
+		["reasoning", "dynamic-tool", "step-start", "text"],
+	);
+	assert.equal(harness.messages[0]?.parts[1]?.type, "dynamic-tool");
+	assert.equal(
+		harness.messages[0]?.parts[1]?.type === "dynamic-tool"
+			? (harness.messages[0]?.parts[1] as { toolName?: string }).toolName
+			: undefined,
+		"AskUserQuestion",
+	);
+});
 
 test("history replay buffers messages until history-end", async () => {
 	const harness = createHarness();
