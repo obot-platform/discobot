@@ -992,3 +992,109 @@ func TestSandboxChatClient_GetQuestion_PreservesQuestionNotes(t *testing.T) {
 		t.Fatalf("Expected notes to be preserved, got %q", result.Question.Questions[0].Notes)
 	}
 }
+
+func TestSandboxChatClient_ListFiles_EncodesPathQuery(t *testing.T) {
+	var gotPath string
+	var gotHidden string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == "/files" {
+			gotPath = r.URL.Query().Get("path")
+			gotHidden = r.URL.Query().Get("hidden")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"path":".","entries":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	path := "ui/src/routes/+layout.svelte"
+	_, err := client.ListFiles(ctx, "test-session", path, true)
+	if err != nil {
+		t.Fatalf("ListFiles failed: %v", err)
+	}
+
+	if gotPath != path {
+		t.Fatalf("expected path %q, got %q", path, gotPath)
+	}
+	if gotHidden != "true" {
+		t.Fatalf("expected hidden=true, got %q", gotHidden)
+	}
+}
+
+func TestSandboxChatClient_SearchFiles_EncodesQuery(t *testing.T) {
+	var gotQuery string
+	var gotLimit string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == "/files/search" {
+			gotQuery = r.URL.Query().Get("q")
+			gotLimit = r.URL.Query().Get("limit")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"query":"","results":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := "+layout.svelte"
+	_, err := client.SearchFiles(ctx, "test-session", query, 25)
+	if err != nil {
+		t.Fatalf("SearchFiles failed: %v", err)
+	}
+
+	if gotQuery != query {
+		t.Fatalf("expected query %q, got %q", query, gotQuery)
+	}
+	if gotLimit != "25" {
+		t.Fatalf("expected limit 25, got %q", gotLimit)
+	}
+}
+
+func TestSandboxChatClient_ReadFile_EncodesPathQuery(t *testing.T) {
+	var gotPath string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == "/files/read" {
+			gotPath = r.URL.Query().Get("path")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"path":"ui/src/routes/+layout.svelte","content":"<script></script>","encoding":"utf8","size":17}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	path := "ui/src/routes/+layout.svelte"
+	result, err := client.ReadFile(ctx, "test-session", path)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+
+	if gotPath != path {
+		t.Fatalf("expected path %q, got %q", path, gotPath)
+	}
+	if result == nil || result.Path != path {
+		t.Fatalf("expected response path %q, got %#v", path, result)
+	}
+}

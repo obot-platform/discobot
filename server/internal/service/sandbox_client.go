@@ -954,13 +954,13 @@ func (c *SandboxChatClient) ListFiles(ctx context.Context, sessionID string, pat
 			return nil, 0, err
 		}
 
-		// Build URL with query parameters
-		url := "http://sandbox/files?path=" + path
+		params := url.Values{}
+		params.Set("path", path)
 		if includeHidden {
-			url += "&hidden=true"
+			params.Set("hidden", "true")
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://sandbox/files?"+params.Encode(), nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -1003,9 +1003,11 @@ func (c *SandboxChatClient) SearchFiles(ctx context.Context, sessionID string, q
 			return nil, 0, err
 		}
 
-		url := fmt.Sprintf("http://sandbox/files/search?q=%s&limit=%d", query, limit)
+		params := url.Values{}
+		params.Set("q", query)
+		params.Set("limit", fmt.Sprintf("%d", limit))
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://sandbox/files/search?"+params.Encode(), nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -1048,9 +1050,10 @@ func (c *SandboxChatClient) ReadFile(ctx context.Context, sessionID string, path
 			return nil, 0, err
 		}
 
-		url := "http://sandbox/files/read?path=" + path
+		params := url.Values{}
+		params.Set("path", path)
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://sandbox/files/read?"+params.Encode(), nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}
