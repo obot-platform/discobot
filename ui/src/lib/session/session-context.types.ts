@@ -163,6 +163,11 @@ export type ThreadContextValue = {
 	cancel: () => Promise<void>;
 	load: () => Promise<void>;
 	refresh: () => Promise<void>;
+	addToolApprovalResponse: (payload: {
+		id: string;
+		approved: boolean;
+		reason?: string;
+	}) => void;
 	dispose: () => void;
 	editorFiles: string[];
 	fileContents: Record<string, string>;

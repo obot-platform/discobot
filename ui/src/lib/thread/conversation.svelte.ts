@@ -5,7 +5,10 @@ import {
 	bindChatStreamEventSource,
 	createChatStreamState,
 } from "$lib/thread/conversation-stream";
-import { createUserMessage } from "$lib/session/domains/session-domain.helpers";
+import {
+	addToolApprovalResponse,
+	createUserMessage,
+} from "$lib/session/domains/session-domain.helpers";
 
 type CreateConversationDomainArgs = {
 	sessionId: string;
@@ -265,6 +268,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			await refresh();
 		},
 		refresh,
+		addToolApprovalResponse: ({ id, approved, reason }: { id: string; approved: boolean; reason?: string }) => {
+			addToolApprovalResponse(messages, { id, approved, reason });
+		},
 		dispose: () => {
 			loadStatus = "idle";
 			streamStatus = null;

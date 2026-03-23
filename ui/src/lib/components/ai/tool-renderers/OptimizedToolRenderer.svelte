@@ -9,9 +9,21 @@
 		defaultOpen?: boolean;
 		sessionId?: string | null;
 		threadId?: string | null;
+		onToolApprovalResponse?: (payload: {
+			id: string;
+			approved: boolean;
+			reason?: string;
+		}) => void;
 	};
 
-	let { toolPart, forceRaw = false, defaultOpen = false, sessionId, threadId }: Props = $props();
+	let {
+		toolPart,
+		forceRaw = false,
+		defaultOpen = false,
+		sessionId,
+		threadId,
+		onToolApprovalResponse,
+	}: Props = $props();
 
 	const getInitialOpen = () => defaultOpen || toolPart.toolName === "AskUserQuestion";
 
@@ -60,6 +72,7 @@
 			{toolPart}
 			{sessionId}
 			{threadId}
+			{onToolApprovalResponse}
 			isRaw={isRaw}
 			onToggleRaw={() => (isRaw = !isRaw)}
 		/>

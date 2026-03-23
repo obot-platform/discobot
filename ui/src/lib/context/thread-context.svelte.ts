@@ -59,6 +59,7 @@ function createThreadContext(
 		cancel: conversation.cancel,
 		load: conversation.load,
 		refresh: conversation.refresh,
+		addToolApprovalResponse: conversation.addToolApprovalResponse,
 		dispose: conversation.dispose,
 		get editorFiles() {
 			return session.files.list;

@@ -86,6 +86,35 @@ export function getDynamicToolParts(message: ChatMessage): DynamicToolPart[] {
 	return message.parts.filter((part) => part.type === "dynamic-tool") as unknown as DynamicToolPart[];
 }
 
+export function addToolApprovalResponse(
+	messages: ChatMessage[],
+	options: { id: string; approved: boolean; reason?: string },
+): boolean {
+	for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+		const message = messages[messageIndex];
+		if (message.role !== "assistant") {
+			continue;
+		}
+
+		for (const part of getDynamicToolParts(message)) {
+			if (
+				part.state === "approval-requested" &&
+				part.approval?.id === options.id
+			) {
+				part.state = "approval-responded";
+				part.approval = {
+					id: options.id,
+					approved: options.approved,
+					...(options.reason ? { reason: options.reason } : {}),
+				};
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 export function getPlanEntries(messages: ChatMessage[]): PlanEntry[] {
 	const latestTodoWrite = [...messages]
 		.reverse()

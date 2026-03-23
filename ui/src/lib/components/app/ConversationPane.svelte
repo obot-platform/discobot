@@ -326,11 +326,12 @@
 												<MessageResponse text={part.text} />
 											{:else if isDynamicToolPart(part)}
 												<OptimizedToolRenderer
-												toolPart={part as DynamicToolPart}
-												sessionId={activeSessionId}
-												threadId={activeThreadId}
-												defaultOpen={toolDefaultOpen}
-											/>
+													toolPart={part as DynamicToolPart}
+													sessionId={activeSessionId}
+													threadId={activeThreadId}
+													onToolApprovalResponse={thread?.addToolApprovalResponse}
+													defaultOpen={toolDefaultOpen}
+												/>
 											{/if}
 										{/each}
 									</MessageContent>

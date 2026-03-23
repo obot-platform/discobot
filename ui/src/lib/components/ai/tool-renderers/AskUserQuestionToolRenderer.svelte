@@ -14,6 +14,7 @@
 		toolPart,
 		sessionId = null,
 		threadId = null,
+		onToolApprovalResponse,
 		isRaw,
 		onToggleRaw,
 	}: ToolRendererComponentProps = $props();
@@ -35,13 +36,55 @@
 	let approvalError = $state<string | null>(null);
 	let localAnswers = $state<Record<string, string> | null>(null);
 
-	function parseAnswersFromText(text: string): Record<string, string> | null {
-		const pairRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"="([^"\\]*(?:\\.[^"\\]*)*)"/g;
-		const pairs: Record<string, string> = {};
-		for (const match of text.matchAll(pairRegex)) {
-			pairs[match[1]] = match[2];
+	function parseAnswers(value: unknown): Record<string, string> | null {
+		const parseCandidate = (candidate: unknown): Record<string, string> | null => {
+			if (Array.isArray(candidate)) {
+				const pairs: Record<string, string> = {};
+				for (const item of candidate) {
+					if (!item || typeof item !== "object") {
+						continue;
+					}
+					const question = (item as { question?: unknown }).question;
+					const answer = (item as { answer?: unknown }).answer;
+					if (typeof question === "string" && typeof answer === "string") {
+						pairs[question] = answer;
+					}
+				}
+				return Object.keys(pairs).length > 0 ? pairs : null;
+			}
+
+			if (candidate && typeof candidate === "object") {
+				const pairs: Record<string, string> = {};
+				for (const [question, answer] of Object.entries(candidate)) {
+					if (typeof answer === "string") {
+						pairs[question] = answer;
+					}
+				}
+				return Object.keys(pairs).length > 0 ? pairs : null;
+			}
+
+			return null;
+		};
+
+		if (typeof value === "string") {
+			const trimmed = value.trim();
+			if (!trimmed) {
+				return null;
+			}
+			try {
+				const parsed = JSON.parse(trimmed);
+				return parseCandidate(parsed);
+			} catch {
+				const pairRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"="([^"\\]*(?:\\.[^"\\]*)*)"/g;
+				const pairs: Record<string, string> = {};
+				for (const match of trimmed.matchAll(pairRegex)) {
+					pairs[match[1]] = match[2];
+				}
+				return Object.keys(pairs).length > 0 ? pairs : null;
+			}
 		}
-		return Object.keys(pairs).length > 0 ? pairs : null;
+
+		return parseCandidate(value);
 	}
 
 	function getApprovalId(): string | null {
@@ -85,9 +128,7 @@
 			return String(toolPart.output);
 		}
 	});
-	const parsedAnswers = $derived.by(() =>
-		outputText ? parseAnswersFromText(outputText) : null,
-	);
+	const parsedAnswers = $derived.by(() => parseAnswers(toolPart.output));
 	const resolvedAnswers = $derived.by(() => parsedAnswers ?? localAnswers);
 	const questions = $derived.by(() => validInput?.questions ?? []);
 	const summaryQuestions = $derived.by(() => pendingQuestion?.questions ?? questions);
@@ -185,6 +226,7 @@
 				answers,
 			});
 
+			onToolApprovalResponse?.({ id: toolUseID, approved: true });
 			approvalStatus = "answered";
 			pendingQuestion = null;
 		} catch (error) {

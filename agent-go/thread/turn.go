@@ -151,38 +151,42 @@ func ResumeTurn(
 		threadID := turnState.ThreadID
 		turnID := turnState.ID
 
-		// Re-emit the user message before the start envelope on resume.
-		if !yield(message.UserMessageChunk{
-			Data: message.UserMessageData{
-				Message:               turnState.Config.UserMessage,
-				InsertBeforeMessageID: turnState.AssistantMsgID,
-			},
-		}, nil) {
-			return
-		}
+		replayPrefix := turnState.Phase != PhaseWaitingForAnswer
 
-		// Re-emit the outer start envelope so the AI SDK can bind the resumed
-		// stream to the same message ID as the original run.
-		if !yield(message.StartChunk{
-			MessageID:       turnState.AssistantMsgID,
-			MessageMetadata: buildMessageMetadata(turnState.Config),
-		}, nil) {
-			return
-		}
+		if replayPrefix {
+			// Re-emit the user message before the start envelope on resume.
+			if !yield(message.UserMessageChunk{
+				Data: message.UserMessageData{
+					Message:               turnState.Config.UserMessage,
+					InsertBeforeMessageID: turnState.AssistantMsgID,
+				},
+			}, nil) {
+				return
+			}
 
-		// If the turn was interrupted mid-stream, try to recover a complete
-		// tool call message from the persisted step file. If the already-streamed
-		// chunks contain tool calls we can proceed directly to tool execution
-		// without re-calling the provider.
-		if turnState.Phase == PhaseStreaming {
-			recoverStreamingStep(store, threadID, turnID, turnState)
-		}
+			// Re-emit the outer start envelope so the AI SDK can bind the resumed
+			// stream to the same message ID as the original run.
+			if !yield(message.StartChunk{
+				MessageID:       turnState.AssistantMsgID,
+				MessageMetadata: buildMessageMetadata(turnState.Config),
+			}, nil) {
+				return
+			}
 
-		// Replay all chunks from previously completed steps and the current
-		// step (if streaming already finished) so the consumer can reconstruct
-		// its in-memory state before the loop continues execution.
-		if !replayCompletedSteps(store, threadID, turnID, turnState, yield) {
-			return
+			// If the turn was interrupted mid-stream, try to recover a complete
+			// tool call message from the persisted step file. If the already-streamed
+			// chunks contain tool calls we can proceed directly to tool execution
+			// without re-calling the provider.
+			if turnState.Phase == PhaseStreaming {
+				recoverStreamingStep(store, threadID, turnID, turnState)
+			}
+
+			// Replay all chunks from previously completed steps and the current
+			// step (if streaming already finished) so the consumer can reconstruct
+			// its in-memory state before the loop continues execution.
+			if !replayCompletedSteps(store, threadID, turnID, turnState, yield) {
+				return
+			}
 		}
 
 		var execToolCtx *ToolContext

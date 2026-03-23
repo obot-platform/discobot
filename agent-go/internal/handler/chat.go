@@ -459,7 +459,8 @@ func (h *Handler) PostAnswer(w http.ResponseWriter, r *http.Request) {
 	h.answeredMu.Unlock()
 
 	// Resume the turn. Prompt() will detect the waiting_for_answer state
-	// with the answer file on disk and continue the turn.
+	// with the answer file on disk and continue the turn on the existing
+	// assistant message without replaying a fresh start envelope.
 	completionID, chatErr := h.completions.Chat(threadID, agent.PromptRequest{})
 	if chatErr != nil {
 		// Answer was saved but resume failed — log but still return success.

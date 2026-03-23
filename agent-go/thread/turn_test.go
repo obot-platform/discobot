@@ -2550,6 +2550,137 @@ func TestResumeTurn_ApprovalAnswered(t *testing.T) {
 	}
 }
 
+func TestResumeTurn_ApprovalAnswered_LiveContinuationSkipsReplayPreamble(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread1"
+	turnID := "turn1"
+
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:      "msg-user",
+		Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "delete it"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assistantMsgID := "msg-asst"
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:       assistantMsgID,
+		ParentID: "msg-user",
+		Message: message.Message{
+			Role: "assistant",
+			Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+				message.ToolApprovalRequest{ApprovalID: "tc1", ToolCallID: "tc1"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sf, _ := store.CreateStepFile(threadID, turnID, 0)
+	sf.Close()
+
+	if err := store.SaveStepResult(threadID, turnID, 0, StepResult{
+		AssistantMessage: message.Message{
+			Role: "assistant",
+			Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+			},
+		},
+		ToolCalls: []ToolCallInfo{
+			{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
+		ToolCallID: "tc1",
+		StepIndex:  0,
+		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveAnswer(threadID, turnID, QuestionAnswer{
+		ToolCallID: "tc1",
+		Answers:    map[string]string{"q1": "yes"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	turnState := &TurnState{
+		ID:                turnID,
+		ThreadID:          threadID,
+		CurrentStep:       0,
+		Phase:             PhaseWaitingForAnswer,
+		LeafMsgID:         assistantMsgID,
+		Config:            TurnConfig{Model: "test-model"},
+		PendingApprovalID: "tc1",
+	}
+	if err := store.SaveTurnState(threadID, *turnState); err != nil {
+		t.Fatal(err)
+	}
+
+	prov := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{{
+			message.StreamStartChunk{},
+			message.TextStartChunk{ID: "t1"},
+			message.TextDeltaChunk{ID: "t1", Delta: "Deleted successfully"},
+			message.TextEndChunk{ID: "t1"},
+			message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+		}},
+	}
+
+	exec := &approvalMockExecutor{
+		resolvedResults: map[string]message.ToolResultPart{
+			"tc1": {
+				ToolCallID: "tc1",
+				ToolName:   "dangerous_tool",
+				Output:     message.TextOutput{Value: "item deleted"},
+			},
+		},
+	}
+
+	chunks := collectChunks(t, ResumeTurn(
+		context.Background(),
+		prov,
+		exec,
+		store,
+		turnState,
+		&ToolContext{},
+	))
+
+	for _, c := range chunks {
+		if _, ok := c.(message.UserMessageChunk); ok {
+			t.Fatal("did not expect UserMessageChunk during live approval continuation")
+		}
+		if _, ok := c.(message.StartChunk); ok {
+			t.Fatal("did not expect StartChunk during live approval continuation")
+		}
+		if _, ok := c.(message.ToolApprovalRequestChunk); ok {
+			t.Fatal("did not expect ToolApprovalRequestChunk during live approval continuation")
+		}
+	}
+
+	var hasToolOutput bool
+	var hasFinalText bool
+	for _, c := range chunks {
+		if v, ok := c.(message.ToolOutputAvailableChunk); ok && v.ToolCallID == "tc1" {
+			hasToolOutput = true
+		}
+		if v, ok := c.(message.TextDeltaChunk); ok && v.Delta == "Deleted successfully" {
+			hasFinalText = true
+		}
+	}
+	if !hasToolOutput {
+		t.Error("expected ToolOutputAvailableChunk for resolved approval result")
+	}
+	if !hasFinalText {
+		t.Error("expected final text after approval resolution")
+	}
+}
+
 // TestResumeTurn_ApprovalNoAnswer verifies that when no answer is available yet,
 // ResumeTurn returns immediately (turn stays paused).
 func TestResumeTurn_ApprovalNoAnswer(t *testing.T) {
@@ -2625,27 +2756,9 @@ func TestResumeTurn_ApprovalNoAnswer(t *testing.T) {
 
 	chunks := collectChunks(t, ResumeTurn(context.Background(), prov, exec, store, turnState))
 
-	// Replay should emit UserMessageChunk + StartChunk + ToolApprovalRequestChunk for the pending question.
-	if len(chunks) != 3 {
-		t.Errorf("expected 3 chunks (user message + start + approval request replay), got %d", len(chunks))
-	}
-	if len(chunks) > 0 {
-		if _, ok := chunks[0].(message.UserMessageChunk); !ok {
-			t.Errorf("expected UserMessageChunk at index 0, got %T", chunks[0])
-		}
-	}
-	if len(chunks) > 1 {
-		if _, ok := chunks[1].(message.StartChunk); !ok {
-			t.Errorf("expected StartChunk at index 1, got %T", chunks[1])
-		}
-	}
-	if len(chunks) > 2 {
-		arc, ok := chunks[2].(message.ToolApprovalRequestChunk)
-		if !ok {
-			t.Errorf("expected ToolApprovalRequestChunk at index 2, got %T", chunks[2])
-		} else if arc.ToolCallID != "tc1" {
-			t.Errorf("expected ToolCallID=tc1, got %q", arc.ToolCallID)
-		}
+	// Waiting-for-answer resumes stay silent on a live stream until an answer arrives.
+	if len(chunks) != 0 {
+		t.Errorf("expected 0 chunks while still waiting for answer, got %d", len(chunks))
 	}
 
 	// Provider should not have been called.
