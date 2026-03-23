@@ -145,7 +145,9 @@ func PerformCommit(ctx, projectID, sessionID) error {
             setCommitFailed(session, "Failed to send commit command: " + err.Error())
             return nil
         }
-        // Wait for stream to close (turn complete)
+        // Wait for the prompt turn to emit a terminal finish/error chunk.
+        // The thread SSE stream itself stays open for future turns, so commit
+        // completion is based on the turn lifecycle, not stream closure.
 
         session.CommitStatus = "committing"
         updateSession(session)

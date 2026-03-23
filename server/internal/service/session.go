@@ -1024,6 +1024,56 @@ func (s *SessionService) tryApplyExistingReplayBundle(ctx context.Context, proje
 	return s.applyReplayBundle(ctx, projectID, workspace, sess, commitsResp.ReplayBundle, commitsResp.CommitCount)
 }
 
+// waitForPromptTerminalEvent waits for a prompt stream to reach a terminal state.
+// Newer agent streams stay open across turns, so commit/rebase operations must
+// stop on terminal chunk types rather than waiting for the SSE connection to close.
+func waitForPromptTerminalEvent(ctx context.Context, streamCh <-chan SSELine) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case line, ok := <-streamCh:
+			if !ok {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return fmt.Errorf("chat stream ended before completion finished")
+			}
+
+			if line.Done {
+				return nil
+			}
+			if line.Data == "" {
+				continue
+			}
+
+			var payload struct {
+				Type      string `json:"type"`
+				ErrorText string `json:"errorText,omitempty"`
+				Reason    string `json:"reason,omitempty"`
+			}
+			if err := json.Unmarshal([]byte(line.Data), &payload); err != nil {
+				continue
+			}
+
+			switch payload.Type {
+			case "finish":
+				return nil
+			case "error":
+				if payload.ErrorText == "" {
+					payload.ErrorText = "agent completion returned an error"
+				}
+				return errors.New(payload.ErrorText)
+			case "abort":
+				if payload.Reason == "" {
+					payload.Reason = "agent completion aborted"
+				}
+				return errors.New(payload.Reason)
+			}
+		}
+	}
+}
+
 // sendCommitPrompt sends the /discobot-commit command to the agent.
 func (s *SessionService) sendCommitPrompt(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session) error {
 	if s.sandboxService == nil {
@@ -1048,8 +1098,10 @@ func (s *SessionService) sendCommitPrompt(ctx context.Context, projectID string,
 
 	// Dereference model pointer; use empty string if nil (agent will use default)
 	modelID := ""
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	streamCh, err := client.SendMessages(ctx, sess.ID, messages, modelID, nil)
+	streamCh, err := client.SendMessages(streamCtx, sess.ID, messages, modelID, nil)
 	if err != nil {
 		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed to send commit message to agent: %v", err))
 		return nil
@@ -1062,11 +1114,9 @@ func (s *SessionService) sendCommitPrompt(ctx context.Context, projectID string,
 	}
 	s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusCommitting)
 
-	// Drain the stream until complete
-	for line := range streamCh {
-		if line.Done {
-			break
-		}
+	if err := waitForPromptTerminalEvent(streamCtx, streamCh); err != nil {
+		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed while waiting for commit prompt to finish: %v", err))
+		return nil
 	}
 
 	log.Printf("Session %s: /discobot-commit message completed", sess.ID)
@@ -1096,8 +1146,10 @@ func (s *SessionService) sendRebasePrompt(ctx context.Context, projectID string,
 	}
 
 	modelID := ""
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	streamCh, err := client.SendMessages(ctx, sess.ID, messages, modelID, nil)
+	streamCh, err := client.SendMessages(streamCtx, sess.ID, messages, modelID, nil)
 	if err != nil {
 		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed to send rebase message to agent: %v", err))
 		return nil
@@ -1109,10 +1161,9 @@ func (s *SessionService) sendRebasePrompt(ctx context.Context, projectID string,
 	}
 	s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusCommitting)
 
-	for line := range streamCh {
-		if line.Done {
-			break
-		}
+	if err := waitForPromptTerminalEvent(streamCtx, streamCh); err != nil {
+		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed while waiting for rebase prompt to finish: %v", err))
+		return nil
 	}
 
 	log.Printf("Session %s: /discobot-rebase message completed", sess.ID)

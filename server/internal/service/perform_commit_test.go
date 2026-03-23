@@ -398,6 +398,114 @@ func TestPerformCommit_WorkspaceUnchangedNoExistingPatches(t *testing.T) {
 	}
 }
 
+func TestPerformCommit_CompletesOnFinishChunkWithoutDoneEvent(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	project := env.createTestProject(t)
+	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
+
+	callCount := 0
+	var mu sync.Mutex
+	streamCancelled := make(chan struct{}, 1)
+
+	env.mockSandbox.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/chat") && r.Method == "POST":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"completionId": "test-123",
+				"status":       "started",
+			})
+			return
+		case strings.HasSuffix(r.URL.Path, "/chat/stream") && r.Method == "GET":
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprintf(w, "event: history-start\n")
+			_, _ = fmt.Fprintf(w, "data: {}\n\n")
+			_, _ = fmt.Fprintf(w, "event: history-end\n")
+			_, _ = fmt.Fprintf(w, "data: {}\n\n")
+			_, _ = fmt.Fprintf(w, "event: chunk\n")
+			_, _ = fmt.Fprintf(w, "data: {\"type\":\"start\"}\n\n")
+			_, _ = fmt.Fprintf(w, "event: chunk\n")
+			_, _ = fmt.Fprintf(w, "data: {\"type\":\"finish\"}\n\n")
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+			select {
+			case streamCancelled <- struct{}{}:
+			default:
+			}
+			return
+		case r.URL.Path == "/commits" && r.Method == "GET":
+			mu.Lock()
+			callCount++
+			currentCall := callCount
+			mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			if currentCall == 1 {
+				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{CommitCount: 0})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{
+				ReplayBundle: addedFileCommitBundle("Test commit", "Test", "test@example.com", "test.txt", "test content\n"),
+				CommitCount:  1,
+			})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	_, err := env.mockSandbox.Create(context.Background(), session.ID, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox: %v", err)
+	}
+	if err := env.mockSandbox.Start(context.Background(), session.ID); err != nil {
+		t.Fatalf("Failed to start sandbox: %v", err)
+	}
+
+	sandboxSvc := NewSandboxService(env.store, env.mockSandbox, &config.Config{}, nil, env.eventBroker, nil, nil)
+	sandboxSvc.SetSessionInitializer(&testSessionInitializer{})
+	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, sandboxSvc, env.eventBroker, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err = sessionSvc.PerformCommit(ctx, project.ID, session.ID)
+	if err != nil {
+		t.Fatalf("PerformCommit failed: %v", err)
+	}
+
+	updatedSession, err := env.store.GetSessionByID(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("Failed to get session: %v", err)
+	}
+	if updatedSession.CommitStatus != model.CommitStatusCompleted {
+		if updatedSession.CommitError != nil {
+			t.Fatalf("Expected commit status %s, got %s with error: %s", model.CommitStatusCompleted, updatedSession.CommitStatus, *updatedSession.CommitError)
+		}
+		t.Fatalf("Expected commit status %s, got %s", model.CommitStatusCompleted, updatedSession.CommitStatus)
+	}
+
+	mu.Lock()
+	finalCount := callCount
+	mu.Unlock()
+	if finalCount != 2 {
+		t.Fatalf("Expected 2 commits requests (optimistic check + fetch), got %d", finalCount)
+	}
+
+	select {
+	case <-streamCancelled:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Expected commit prompt stream to be cancelled after finish chunk")
+	}
+}
+
 // TestPerformCommit_WorkspaceChangedWithPatches tests the optimistic path when
 // workspace commit has changed and agent already has patches available.
 func TestPerformCommit_WorkspaceChangedWithPatches(t *testing.T) {
