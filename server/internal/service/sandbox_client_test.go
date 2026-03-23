@@ -942,6 +942,42 @@ func TestSandboxChatClient_GetDiff_ReturnsCorrectResponseType(t *testing.T) {
 	}
 }
 
+func TestSandboxChatClient_GetDiff_EncodesPathQuery(t *testing.T) {
+	var gotPath string
+	var gotFormat string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == "/diff" {
+			gotPath = r.URL.Query().Get("path")
+			gotFormat = r.URL.Query().Get("format")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"path":"ui/src/routes/+layout.svelte","status":"modified","patch":""}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	path := "ui/src/routes/+layout.svelte"
+	_, err := client.GetDiff(ctx, "test-session", path, "files")
+	if err != nil {
+		t.Fatalf("GetDiff failed: %v", err)
+	}
+
+	if gotPath != path {
+		t.Fatalf("expected path %q, got %q", path, gotPath)
+	}
+	if gotFormat != "files" {
+		t.Fatalf("expected format %q, got %q", "files", gotFormat)
+	}
+}
+
 func TestSandboxChatClient_GetQuestion_PreservesQuestionNotes(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && r.URL.Path == "/threads/test-session/chat/question/tool-123" {

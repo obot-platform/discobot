@@ -1336,19 +1336,20 @@ func (c *SandboxChatClient) GetDiff(ctx context.Context, sessionID string, path 
 		}
 
 		// Build URL with query parameters
-		url := "http://sandbox/diff"
-		params := []string{}
+		params := url.Values{}
 		if path != "" {
-			params = append(params, "path="+path)
+			params.Set("path", path)
 		}
 		if format != "" {
-			params = append(params, "format="+format)
-		}
-		if len(params) > 0 {
-			url += "?" + strings.Join(params, "&")
+			params.Set("format", format)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		requestURL := "http://sandbox/diff"
+		if encoded := params.Encode(); encoded != "" {
+			requestURL += "?" + encoded
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", requestURL, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to create request: %w", err)
 		}
