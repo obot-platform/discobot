@@ -36,7 +36,10 @@
 			case "error":
 				return "text-destructive";
 			case "ready":
+			case "completed":
 				return "text-green-500";
+			case "pending":
+			case "committing":
 			case "initializing":
 			case "reinitializing":
 			case "cloning":
@@ -52,6 +55,8 @@
 
 	function isSpinningStatus(status: SessionStatusValue): boolean {
 		switch (normalizedStatus(status)) {
+			case "pending":
+			case "committing":
 			case "initializing":
 			case "reinitializing":
 			case "cloning":
@@ -73,7 +78,7 @@
 	<span class={cn("inline-flex items-center", statusTone(status), iconClass)}>
 		{#if isSpinningStatus(status)}
 			<Loader2Icon class="size-3.5 animate-spin" />
-		{:else if normalizedStatus(status) === "ready"}
+		{:else if ["ready", "completed"].includes(normalizedStatus(status))}
 			<CircleCheckIcon class="size-3.5" />
 		{:else}
 			<CircleIcon class="size-2.5 fill-current" />

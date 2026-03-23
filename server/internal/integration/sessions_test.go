@@ -710,7 +710,7 @@ func TestGetSession_IncludesCommitStatus(t *testing.T) {
 	}
 }
 
-func TestGetSession_IncludesCommitError(t *testing.T) {
+func TestGetSession_MapsFailedCommitIntoStatusAndError(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -719,7 +719,7 @@ func TestGetSession_IncludesCommitError(t *testing.T) {
 	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
-	// Set commit status to failed with error
+	// Set commit status to failed with error.
 	session.CommitStatus = "failed"
 	commitError := "Patch conflict on file.txt"
 	session.CommitError = &commitError
@@ -727,7 +727,6 @@ func TestGetSession_IncludesCommitError(t *testing.T) {
 		t.Fatalf("Failed to update session: %v", err)
 	}
 
-	// Get session and verify commit error is included
 	resp := client.Get("/api/projects/" + project.ID + "/sessions/" + session.ID)
 	defer resp.Body.Close()
 
@@ -736,15 +735,21 @@ func TestGetSession_IncludesCommitError(t *testing.T) {
 	var result map[string]interface{}
 	ParseJSON(t, resp, &result)
 
-	if result["commitStatus"] != "failed" {
-		t.Errorf("Expected commitStatus 'failed', got %v", result["commitStatus"])
+	if result["status"] != "error" {
+		t.Errorf("Expected status 'error', got %v", result["status"])
 	}
-	if result["commitError"] != "Patch conflict on file.txt" {
-		t.Errorf("Expected commitError 'Patch conflict on file.txt', got %v", result["commitError"])
+	if result["errorMessage"] != "Patch conflict on file.txt" {
+		t.Errorf("Expected errorMessage 'Patch conflict on file.txt', got %v", result["errorMessage"])
+	}
+	if _, ok := result["commitStatus"]; ok {
+		t.Errorf("Expected commitStatus to be omitted, got %v", result["commitStatus"])
+	}
+	if _, ok := result["commitError"]; ok {
+		t.Errorf("Expected commitError to be omitted, got %v", result["commitError"])
 	}
 }
 
-func TestListSessions_IncludesCommitStatus(t *testing.T) {
+func TestListSessions_MapsCommitStatusIntoStatus(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -753,7 +758,7 @@ func TestListSessions_IncludesCommitStatus(t *testing.T) {
 	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
-	// Set commit status
+	// Set commit status.
 	session.CommitStatus = "completed"
 	appliedCommit := "def456"
 	session.AppliedCommit = &appliedCommit
@@ -761,7 +766,6 @@ func TestListSessions_IncludesCommitStatus(t *testing.T) {
 		t.Fatalf("Failed to update session: %v", err)
 	}
 
-	// List sessions and verify commit status is included
 	resp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer resp.Body.Close()
 
@@ -776,11 +780,17 @@ func TestListSessions_IncludesCommitStatus(t *testing.T) {
 		t.Fatalf("Expected 1 session, got %d", len(result.Sessions))
 	}
 
-	if result.Sessions[0]["commitStatus"] != "completed" {
-		t.Errorf("Expected commitStatus 'completed', got %v", result.Sessions[0]["commitStatus"])
+	if result.Sessions[0]["status"] != "completed" {
+		t.Errorf("Expected status 'completed', got %v", result.Sessions[0]["status"])
 	}
 	if result.Sessions[0]["appliedCommit"] != "def456" {
 		t.Errorf("Expected appliedCommit 'def456', got %v", result.Sessions[0]["appliedCommit"])
+	}
+	if _, ok := result.Sessions[0]["commitStatus"]; ok {
+		t.Errorf("Expected commitStatus to be omitted, got %v", result.Sessions[0]["commitStatus"])
+	}
+	if _, ok := result.Sessions[0]["commitError"]; ok {
+		t.Errorf("Expected commitError to be omitted, got %v", result.Sessions[0]["commitError"])
 	}
 }
 

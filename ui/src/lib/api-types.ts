@@ -1,7 +1,6 @@
 // API Types - shared between client and server
 
 import type {
-	CommitStatus as CommitStatusConstants,
 	SessionStatus as SessionStatusConstants,
 	WorkspaceStatus as WorkspaceStatusConstants,
 } from "./api-constants";
@@ -46,11 +45,7 @@ export interface FileNode {
 export type SessionStatus =
 	(typeof SessionStatusConstants)[keyof typeof SessionStatusConstants];
 
-// Commit status values representing the commit state of a session (orthogonal to session status)
-export type CommitStatus =
-	(typeof CommitStatusConstants)[keyof typeof CommitStatusConstants];
-
-// Commit operation values representing which operation owns the commit state
+// Commit operation values representing which operation owns local UI state
 export type CommitOperation = "commit" | "rebase";
 
 export interface Session {
@@ -61,12 +56,6 @@ export interface Session {
 	description: string;
 	timestamp: string;
 	status: SessionStatus;
-	/** Commit status (orthogonal to session status) */
-	commitStatus?: CommitStatus;
-	/** Active operation using commit status fields */
-	commitOperation?: CommitOperation;
-	/** Error message if commit status is "failed" */
-	commitError?: string;
 	/** Workspace commit SHA when commit started (expected parent) */
 	baseCommit?: string;
 	/** Final commit SHA after patches applied to workspace */

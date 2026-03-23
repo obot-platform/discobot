@@ -279,15 +279,18 @@ All API routes require authentication via session cookie (`discobot_session`) un
   "displayName": "string",       // Optional: custom display name (if set, shown in UI)
   "description": "string",
   "timestamp": "string",         // ISO 8601 timestamp
-  "status": "string",            // Session lifecycle status
-  "commitStatus": "string",      // Commit operation status
-  "commitError": "string",       // Error message if commit failed
+  "status": "string",            // Session lifecycle status or commit progress status
   "baseCommit": "string",        // Workspace commit SHA when commit started
   "appliedCommit": "string",     // Final commit SHA after patches applied
-  "errorMessage": "string",      // Error message if status is "error"
+  "errorMessage": "string",      // Present when status is "error" (including failed commits)
   "files": []                    // File tree with diffs
 }
 ```
+
+**Session status semantics:**
+- Normal session lifecycle still uses values like `initializing`, `ready`, `stopped`, and `error`.
+- When a commit or rebase is in progress, the REST API surfaces that state via `status` (`pending`, `committing`, `completed`).
+- A failed commit or rebase is flattened to `status: "error"` with details in `errorMessage`.
 
 **Session Name vs Display Name:**
 - `name`: Automatically derived from the first user message (up to 50 chars). This field is **preserved** and never changes after session creation.

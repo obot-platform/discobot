@@ -185,10 +185,10 @@
 		}),
 	);
 	const operationDisabled = $derived.by(() => !session.current || operationState.showBusy);
-	const commitStatus = $derived.by(() => session.current?.commitStatus ?? "");
+	const sessionStatus = $derived.by(() => session.current?.status ?? "");
 
 	$effect(() => {
-		commitStatus;
+		sessionStatus;
 		if (!waitingForOperationEvent) {
 			return;
 		}

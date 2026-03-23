@@ -97,6 +97,8 @@ This separation allows a session to be `ready` and `committing` at the same time
 
 ### Session Commit Fields
 
+Internal session state still stores commit metadata separately:
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `commitStatus` | string | Current commit/rebase state |
@@ -104,6 +106,19 @@ This separation allows a session to be `ready` and `committing` at the same time
 | `commitError` | string | Error message if `commitStatus = "failed"` |
 | `baseCommit` | string | Workspace commit SHA when operation started (expected parent) |
 | `appliedCommit` | string | Final commit SHA after patches applied to workspace (commit flow only) |
+
+### REST API Projection
+
+The REST API does not expose `commitStatus` or `commitError` directly on session responses.
+Instead it flattens commit state into the existing session fields:
+
+| Internal state | REST `status` | REST `errorMessage` |
+|---|---|---|
+| `commitStatus = "pending"` | `pending` | omitted |
+| `commitStatus = "committing"` | `committing` | omitted |
+| `commitStatus = "completed"` | `completed` | omitted |
+| `commitStatus = "failed"` | `error` | `commitError` |
+| no commit in progress | session lifecycle `status` | session `errorMessage` when applicable |
 
 ---
 
@@ -330,7 +345,7 @@ All `commitStatus` changes fire `session_updated` SSE event:
 }
 ```
 
-Client re-fetches session to get updated `commitStatus`, `commitError`, `appliedCommit`.
+Client re-fetches session to get updated public `status`, `errorMessage`, and `appliedCommit`.
 
 ---
 

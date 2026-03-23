@@ -742,7 +742,7 @@ func (h *Handler) ListWorkspaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.JSON(w, http.StatusOK, map[string]any{"workspaces": workspaces})
+	h.JSON(w, http.StatusOK, map[string]any{"workspaces": mapWorkspaceResponses(workspaces)})
 }
 
 // CreateWorkspace creates a new workspace
@@ -797,7 +797,7 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.JSON(w, http.StatusCreated, workspace)
+	h.JSON(w, http.StatusCreated, mapWorkspaceResponse(workspace))
 }
 
 // GetWorkspace returns a single workspace
@@ -810,7 +810,7 @@ func (h *Handler) GetWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.JSON(w, http.StatusOK, workspace)
+	h.JSON(w, http.StatusOK, mapWorkspaceResponse(workspace))
 }
 
 // UpdateWorkspace updates a workspace
@@ -877,7 +877,7 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusInternalServerError, "Failed to get updated workspace")
 		return
 	}
-	h.JSON(w, http.StatusOK, serviceWorkspace)
+	h.JSON(w, http.StatusOK, mapWorkspaceResponse(serviceWorkspace))
 }
 
 // DeleteWorkspace deletes a workspace

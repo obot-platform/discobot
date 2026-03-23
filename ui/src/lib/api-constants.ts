@@ -1,6 +1,7 @@
-// API Constants - shared string constants that must match server/internal/model/model.go
+// API Constants - shared string constants that must match the public REST API
 
-// Session status constants representing the lifecycle of a session
+// Session status constants representing the lifecycle of a session plus
+// commit/rebase progress states surfaced through the public status field.
 export const SessionStatus = {
 	INITIALIZING: "initializing",
 	REINITIALIZING: "reinitializing",
@@ -9,18 +10,12 @@ export const SessionStatus = {
 	CREATING_SANDBOX: "creating_sandbox",
 	READY: "ready",
 	STOPPED: "stopped",
-	ERROR: "error",
-	REMOVING: "removing",
-	REMOVED: "removed",
-} as const;
-
-// Commit status constants representing the commit state of a session (orthogonal to session status)
-export const CommitStatus = {
-	NONE: "",
 	PENDING: "pending",
 	COMMITTING: "committing",
 	COMPLETED: "completed",
-	FAILED: "failed",
+	ERROR: "error",
+	REMOVING: "removing",
+	REMOVED: "removed",
 } as const;
 
 // Workspace status constants representing the lifecycle of a workspace

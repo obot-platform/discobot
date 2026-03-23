@@ -106,15 +106,15 @@ export const WorkspaceStatus = {
 Import and use the constants instead of hardcoded strings:
 
 ```typescript
-import { CommitStatus, SessionStatus, WorkspaceStatus } from "@/lib/api-constants";
+import { SessionStatus, WorkspaceStatus } from "@/lib/api-constants";
 
 // Good ✓
-if (session.commitStatus === CommitStatus.COMPLETED) {
+if (session.status === SessionStatus.COMPLETED) {
   // ...
 }
 
 // Bad ✗
-if (session.commitStatus === "completed") {
+if (session.status === "completed") {
   // ...
 }
 ```
@@ -140,9 +140,6 @@ The TypeScript types in `lib/api-types.ts` are derived from the constants:
 ```typescript
 export type SessionStatus =
 	| (typeof SessionStatusConstants)[keyof typeof SessionStatusConstants];
-
-export type CommitStatus =
-	| (typeof CommitStatusConstants)[keyof typeof CommitStatusConstants];
 
 export type WorkspaceStatus =
 	| (typeof WorkspaceStatusConstants)[keyof typeof WorkspaceStatusConstants];

@@ -42,7 +42,6 @@ type ProjectEvent<TData> = {
 type SessionUpdatedEventData = {
     sessionId: string;
     status: string;
-    commitStatus?: string;
 };
 
 type WorkspaceUpdatedEventData = {

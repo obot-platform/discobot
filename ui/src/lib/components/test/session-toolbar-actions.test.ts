@@ -61,17 +61,30 @@ test("keeps commit as the primary action while a dropdown-triggered rebase is st
 	assert.equal(state.buttonLabel, "Rebasing...");
 });
 
-test("uses session commit operation for pending rebase updates", () => {
+test("shows pending state from the public session status", () => {
 	const state = getSessionToolbarOperationState({
 		filesChanged: 1,
 		session: makeSession({
-			commitStatus: "pending",
-			commitOperation: "rebase",
+			status: "pending",
 		}),
 		startingOperation: null,
 	});
 
 	assert.equal(state.showPending, true);
-	assert.equal(state.activeOperation, "rebase");
+	assert.equal(state.showBusy, true);
 	assert.equal(state.buttonLabel, "Pending...");
+});
+
+test("uses a generic busy label for server-driven progress without an operation hint", () => {
+	const state = getSessionToolbarOperationState({
+		filesChanged: 1,
+		session: makeSession({
+			status: "committing",
+		}),
+		startingOperation: null,
+	});
+
+	assert.equal(state.showPending, false);
+	assert.equal(state.showBusy, true);
+	assert.equal(state.buttonLabel, "Working...");
 });
