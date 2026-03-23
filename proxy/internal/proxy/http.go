@@ -80,6 +80,20 @@ func (s *responseStream) Read(p []byte) (int, error) {
 	return n, err
 }
 
+func (s *responseStream) Write(p []byte) (int, error) {
+	writer, ok := s.source.(io.Writer)
+	if !ok {
+		return 0, io.ErrClosedPipe
+	}
+	return writer.Write(p)
+}
+
+func (s *responseStream) Flush() {
+	if flusher, ok := s.source.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func (s *responseStream) Close() error {
 	err := s.source.Close()
 	s.finish(!s.sawEOF, err)

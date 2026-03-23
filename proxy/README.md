@@ -5,7 +5,7 @@ A multi-protocol proxy server with HTTP interception, header injection, and dyna
 ## Overview
 
 The proxy provides:
-- HTTP/HTTPS proxy with MITM for traffic inspection and header injection
+- HTTP/HTTPS proxy with MITM for traffic inspection, header injection, and WebSocket upgrades
 - SOCKS5 proxy for non-HTTP TCP tunneling
 - Protocol auto-detection on a single port
 - Domain-based header injection rules

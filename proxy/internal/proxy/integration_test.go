@@ -1,17 +1,21 @@
 package proxy
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/elazarl/goproxy"
+	"github.com/gorilla/websocket"
 
 	"github.com/obot-platform/discobot/proxy/internal/cache"
 	"github.com/obot-platform/discobot/proxy/internal/cert"
@@ -184,6 +188,119 @@ func TestIntegration_HTTPProxy_StreamsCacheMissResponses(t *testing.T) {
 	}
 	if resp2.Header.Get("X-Cache") != "HIT" {
 		t.Fatal("expected second response to come from cache")
+	}
+}
+
+func TestIntegration_HTTPProxy_WSSWebSocketUpgrade(t *testing.T) {
+	serverErrCh := make(chan error, 1)
+	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(*http.Request) bool { return true },
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		defer conn.Close()
+
+		msgType, msg, err := conn.ReadMessage()
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		if msgType != websocket.TextMessage {
+			serverErrCh <- fmt.Errorf("unexpected message type %d", msgType)
+			return
+		}
+		if string(msg) != "ping" {
+			serverErrCh <- fmt.Errorf("unexpected message %q", msg)
+			return
+		}
+		if err := conn.WriteMessage(websocket.TextMessage, []byte("pong")); err != nil {
+			serverErrCh <- err
+			return
+		}
+		serverErrCh <- nil
+	}))
+	defer backend.Close()
+
+	log := testLogger(t)
+	defer log.Close()
+
+	certMgr, err := cert.NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	c, err := cache.New(t.TempDir(), 10*1024*1024, false, log.Zap())
+	if err != nil {
+		t.Fatalf("cache.New failed: %v", err)
+	}
+	rec, err := recorder.New(recorder.Config{Enabled: true, Dir: t.TempDir(), MaxBodySize: 1024})
+	if err != nil {
+		t.Fatalf("recorder.New failed: %v", err)
+	}
+	defer rec.Close()
+
+	httpProxy := NewHTTPProxy(certMgr, injector.New(), filter.New(), log, c, nil, rec)
+	proxyServer := httptest.NewServer(httpProxy.GetProxy())
+	defer proxyServer.Close()
+
+	proxyURL, err := url.Parse(proxyServer.URL)
+	if err != nil {
+		t.Fatalf("Parse proxy URL failed: %v", err)
+	}
+
+	caPEM, err := os.ReadFile(certMgr.GetCACertPath())
+	if err != nil {
+		t.Fatalf("Read proxy CA failed: %v", err)
+	}
+	rootCAs := x509.NewCertPool()
+	if !rootCAs.AppendCertsFromPEM(caPEM) {
+		t.Fatal("AppendCertsFromPEM failed")
+	}
+
+	dialer := websocket.Dialer{
+		Proxy:            http.ProxyURL(proxyURL),
+		HandshakeTimeout: 5 * time.Second,
+		TLSClientConfig: &tls.Config{
+			RootCAs: rootCAs,
+		},
+	}
+
+	wsURL := "wss" + strings.TrimPrefix(backend.URL, "https")
+	conn, resp, err := dialer.Dial(wsURL, nil)
+	if err != nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		t.Fatalf("WebSocket dial through proxy failed: %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.WriteMessage(websocket.TextMessage, []byte("ping")); err != nil {
+		t.Fatalf("WriteMessage failed: %v", err)
+	}
+
+	msgType, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("ReadMessage failed: %v", err)
+	}
+	if msgType != websocket.TextMessage {
+		t.Fatalf("unexpected message type %d", msgType)
+	}
+	if string(msg) != "pong" {
+		t.Fatalf("unexpected websocket response %q", msg)
+	}
+
+	select {
+	case err := <-serverErrCh:
+		if err != nil {
+			t.Fatalf("backend websocket handler failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for backend websocket handler")
 	}
 }
 
