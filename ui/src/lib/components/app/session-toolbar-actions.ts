@@ -20,8 +20,8 @@ export function getSessionToolbarOperationState(args: {
 	startingOperation: CommitOperation | null;
 }): SessionToolbarOperationState {
 	const hasChanges = args.filesChanged > 0;
-	const primaryAction = hasChanges ? "commit" : "rebase";
-	const primaryLabel = hasChanges ? "Commit" : "Rebase";
+	const primaryAction = "commit";
+	const primaryLabel = "Commit";
 	const isPending = args.session?.status === SessionStatus.PENDING;
 	const isCommitting = args.session?.status === SessionStatus.COMMITTING;
 	const showBusy = args.startingOperation !== null || isPending || isCommitting;
@@ -35,11 +35,11 @@ export function getSessionToolbarOperationState(args: {
 
 	return {
 		hasChanges,
-		showSplitButton: hasChanges,
+		showSplitButton: true,
 		primaryAction,
 		primaryLabel,
-		secondaryAction: hasChanges ? "rebase" : null,
-		secondaryLabel: hasChanges ? "Rebase" : null,
+		secondaryAction: "rebase",
+		secondaryLabel: "Rebase",
 		activeOperation,
 		showPending: isPending,
 		showBusy,

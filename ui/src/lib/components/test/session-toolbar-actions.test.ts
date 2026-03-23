@@ -33,19 +33,19 @@ test("shows commit as the primary action when changes exist", () => {
 	assert.equal(state.showBusy, false);
 });
 
-test("shows only rebase when there are no changes", () => {
+test("keeps commit and rebase available even when there are no changes", () => {
 	const state = getSessionToolbarOperationState({
 		filesChanged: 0,
 		session: makeSession(),
 		startingOperation: null,
 	});
 
-	assert.equal(state.showSplitButton, false);
-	assert.equal(state.primaryAction, "rebase");
-	assert.equal(state.primaryLabel, "Rebase");
-	assert.equal(state.secondaryAction, null);
-	assert.equal(state.secondaryLabel, null);
-	assert.equal(state.buttonLabel, "Rebase");
+	assert.equal(state.showSplitButton, true);
+	assert.equal(state.primaryAction, "commit");
+	assert.equal(state.primaryLabel, "Commit");
+	assert.equal(state.secondaryAction, "rebase");
+	assert.equal(state.secondaryLabel, "Rebase");
+	assert.equal(state.buttonLabel, "Commit");
 });
 
 test("keeps commit as the primary action while a dropdown-triggered rebase is starting", () => {
