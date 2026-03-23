@@ -29,7 +29,7 @@ const configUseWebSocket = "use_websocket"
 const (
 	providerID            = "openai"
 	defaultBaseURL        = "wss://api.openai.com/v1"
-	codexDefaultBaseURL   = "https://chatgpt.com/backend-api/codex"
+	codexDefaultBaseURL   = "wss://chatgpt.com/backend-api/codex"
 	codexProviderID       = "codex"
 	missingToolOutputText = "interrupted by transient system failure"
 )
@@ -93,6 +93,8 @@ func New(cfg providers.Config, isCodex bool, defaultURL string) (providers.Provi
 	useWS := cfg[configUseWebSocket] == "true" ||
 		strings.HasPrefix(baseURL, "wss://") ||
 		strings.HasPrefix(baseURL, "ws://")
+
+	useWS = false
 
 	// Normalise base_url to http(s) so REST endpoints (CountTokens, ListModels)
 	// work regardless of which scheme the caller provided.
