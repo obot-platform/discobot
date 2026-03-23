@@ -5,6 +5,7 @@
 	import ZoomInIcon from "@lucide/svelte/icons/zoom-in";
 	import ZoomOutIcon from "@lucide/svelte/icons/zoom-out";
 	import { Button } from "$lib/components/ui/button";
+	import { downloadFile } from "$lib/tauri";
 	import { cn } from "$lib/utils";
 
 	type Props = {
@@ -31,16 +32,27 @@
 		zoom = 1;
 	}
 
-	function handleDownload() {
-		if (typeof document === "undefined") {
+	function decodeBase64(content: string): Uint8Array {
+		const decoded = globalThis.atob(content);
+		const bytes = new Uint8Array(decoded.length);
+		for (let index = 0; index < decoded.length; index += 1) {
+			bytes[index] = decoded.charCodeAt(index);
+		}
+		return bytes;
+	}
+
+	async function handleDownload() {
+		const [metadata, content] = src.split(",", 2);
+		if (!metadata || !content) {
 			return;
 		}
-		const link = document.createElement("a");
-		link.href = src;
-		link.download = filename;
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
+
+		const mimeType = metadata.match(/^data:([^;]+);base64$/)?.[1] ?? "application/octet-stream";
+		await downloadFile({
+			filename,
+			content: decodeBase64(content),
+			mimeType,
+		});
 	}
 
 	function zoomIn() {

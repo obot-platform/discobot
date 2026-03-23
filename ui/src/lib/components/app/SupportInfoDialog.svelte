@@ -7,6 +7,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { useAppContext } from "$lib/context/app-context.svelte";
+	import { downloadFile } from "$lib/tauri";
 
 	const app = useAppContext();
 	const supportInfo = app.supportInfo;
@@ -39,21 +40,17 @@
 		}, 1800);
 	}
 
-	function downloadSupportInfo() {
-		if (!supportJson || typeof window === "undefined") {
+	async function downloadSupportInfo() {
+		if (!supportJson) {
 			return;
 		}
 
 		const filename = `discobot-support-info-${new Date().toISOString().split("T")[0]}.json`;
-		const blob = new Blob([supportJson], { type: "application/json" });
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement("a");
-		link.href = url;
-		link.download = filename;
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-		URL.revokeObjectURL(url);
+		await downloadFile({
+			filename,
+			content: supportJson,
+			mimeType: "application/json",
+		});
 	}
 
 	function resetCopiedState() {

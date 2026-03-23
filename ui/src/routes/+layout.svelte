@@ -5,6 +5,7 @@
 
 	import { onMount } from "svelte";
 	import { ideOptions, windowControls } from "$lib/app/app-shell-config";
+	import { Toaster } from "$lib/components/ui/sonner";
 	import { setAppContext } from "$lib/context/app-context.svelte";
 
 	const app = setAppContext({
@@ -18,4 +19,5 @@
 	});
 </script>
 
+<Toaster />
 <slot />

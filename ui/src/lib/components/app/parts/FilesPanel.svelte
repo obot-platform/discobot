@@ -2,6 +2,9 @@
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+	import Columns2Icon from "@lucide/svelte/icons/columns-2";
+	import DownloadIcon from "@lucide/svelte/icons/download";
+	import EyeIcon from "@lucide/svelte/icons/eye";
 	import FileCodeIcon from "@lucide/svelte/icons/file-code";
 	import FileImageIcon from "@lucide/svelte/icons/file-image";
 	import FileMinusIcon from "@lucide/svelte/icons/file-minus";
@@ -57,6 +60,7 @@
 		SessionFilesDomain,
 	} from "$lib/session/session-context.types";
 	import type { ResolvedTheme, ThemeColorScheme } from "$lib/theme";
+	import { downloadFile } from "$lib/tauri";
 	import { cn } from "$lib/utils";
 	import type * as Monaco from "monaco-editor";
 
@@ -212,6 +216,44 @@
 			default:
 				return "image/png";
 		}
+	}
+
+	function getDownloadMimeType(path: string, encoding: "utf8" | "base64"): string {
+		if (encoding === "utf8") {
+			return "text/plain;charset=utf-8";
+		}
+		if (isImageFile(path)) {
+			return getImageMimeType(path);
+		}
+		if (isPdfFile(path)) {
+			return "application/pdf";
+		}
+		return "application/octet-stream";
+	}
+
+	function decodeBase64(content: string): Uint8Array {
+		const decoded = globalThis.atob(content);
+		const bytes = new Uint8Array(decoded.length);
+		for (let index = 0; index < decoded.length; index += 1) {
+			bytes[index] = decoded.charCodeAt(index);
+		}
+		return bytes;
+	}
+
+	async function downloadActiveFile() {
+		if (!activePath || !activeBuffer) {
+			return;
+		}
+
+		const mimeType = getDownloadMimeType(activePath, activeBuffer.encoding);
+		await downloadFile({
+			filename: fileLabel(activePath),
+			content:
+				activeBuffer.encoding === "utf8"
+					? activeBuffer.content
+					: decodeBase64(activeBuffer.content),
+			mimeType,
+		});
 	}
 
 	function componentToHex(value: number): string {
@@ -872,6 +914,16 @@
 								{#if activeBuffer.saveError && !activeBuffer.hasConflict}
 									<span class="text-xs text-destructive">{activeBuffer.saveError}</span>
 								{/if}
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									onclick={downloadActiveFile}
+									class="text-sidebar-foreground/55 hover:text-sidebar-accent-foreground"
+									aria-label="Download file"
+									title="Download file"
+								>
+									<DownloadIcon class="size-3.5" />
+								</Button>
 								{#if isMarkdownPreview}
 									<ToggleGroup
 										type="single"
@@ -881,28 +933,34 @@
 												markdownViewMode = value;
 											}
 										}}
-										variant="outline"
+										variant="default"
 										size="sm"
 										spacing={1}
-										class="rounded-md border border-border bg-background p-1"
+										class="rounded-md bg-transparent"
 									>
 										<ToggleGroupItem
 											value="preview"
-											class="px-2.5 data-[state=off]:border-transparent data-[state=off]:bg-transparent data-[state=off]:text-muted-foreground"
+											class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+											aria-label="Preview markdown"
+											title="Preview"
 										>
-											Preview
+											<EyeIcon class="size-3.5" />
 										</ToggleGroupItem>
 										<ToggleGroupItem
 											value="split"
-											class="px-2.5 data-[state=off]:border-transparent data-[state=off]:bg-transparent data-[state=off]:text-muted-foreground"
+											class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+											aria-label="Split markdown view"
+											title="Split"
 										>
-											Split
+											<Columns2Icon class="size-3.5" />
 										</ToggleGroupItem>
 										<ToggleGroupItem
 											value="editor"
-											class="px-2.5 data-[state=off]:border-transparent data-[state=off]:bg-transparent data-[state=off]:text-muted-foreground"
+											class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+											aria-label="Edit markdown"
+											title="Editor"
 										>
-											Editor
+											<FileCodeIcon class="size-3.5" />
 										</ToggleGroupItem>
 									</ToggleGroup>
 								{/if}
