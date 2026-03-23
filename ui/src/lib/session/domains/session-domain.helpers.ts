@@ -121,11 +121,11 @@ export function getPlanEntries(messages: ChatMessage[]): PlanEntry[] {
 		.flatMap((message) => getDynamicToolParts(message))
 		.find((part) => part.toolName === "TodoWrite" && part.state === "output-available");
 
-	if (!latestTodoWrite || !latestTodoWrite.output || typeof latestTodoWrite.output !== "object") {
+	if (!latestTodoWrite || !latestTodoWrite.input || typeof latestTodoWrite.input !== "object") {
 		return [];
 	}
 
-	const todos = (latestTodoWrite.output as { todos?: unknown }).todos;
+	const todos = (latestTodoWrite.input as { todos?: unknown }).todos;
 	if (!Array.isArray(todos)) {
 		return [];
 	}
