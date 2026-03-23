@@ -34,20 +34,17 @@ func TestNewWSPool_URLDerivation(t *testing.T) {
 }
 
 func TestNew_WebSocketMode(t *testing.T) {
-	t.Run("enabled by default", func(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
 		p, err := New(providers.Config{"api_key": "key"}, false, defaultBaseURL)
 		if err != nil {
 			t.Fatal(err)
 		}
 		op := p.(*Provider)
-		if op.ws == nil {
-			t.Fatal("expected ws!=nil for default config")
+		if op.ws != nil {
+			t.Fatal("expected ws=nil for default config")
 		}
 		if op.baseURL != "https://api.openai.com/v1" {
-			t.Errorf("expected normalised baseURL %q, got %q", "https://api.openai.com/v1", op.baseURL)
-		}
-		if op.ws.wsURL != "wss://api.openai.com/v1/responses" {
-			t.Errorf("unexpected wsURL: %q", op.ws.wsURL)
+			t.Errorf("expected baseURL %q, got %q", "https://api.openai.com/v1", op.baseURL)
 		}
 	})
 

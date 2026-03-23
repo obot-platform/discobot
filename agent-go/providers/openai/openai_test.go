@@ -28,13 +28,10 @@ func TestNew(t *testing.T) {
 		}
 		op := p.(*Provider)
 		if op.baseURL != "https://api.openai.com/v1" {
-			t.Errorf("expected normalised base URL %q, got %q", "https://api.openai.com/v1", op.baseURL)
+			t.Errorf("expected base URL %q, got %q", "https://api.openai.com/v1", op.baseURL)
 		}
-		if op.ws == nil {
-			t.Fatal("expected default config to enable WebSocket mode")
-		}
-		if op.ws.wsURL != "wss://api.openai.com/v1/responses" {
-			t.Errorf("expected ws URL %q, got %q", "wss://api.openai.com/v1/responses", op.ws.wsURL)
+		if op.ws != nil {
+			t.Fatal("expected default config to use HTTP SSE")
 		}
 	})
 

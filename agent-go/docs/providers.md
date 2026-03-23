@@ -94,7 +94,7 @@ These all speak the Anthropic Messages API (`POST /v1/messages`). The `anthropic
 
 ### Via `providers/openai` — OpenAI native (2 providers)
 
-These use the OpenAI Responses API (`POST /v1/responses`). The Go implementation defaults to pooled WebSocket mode (`wss://api.openai.com/v1`) for lower-latency response chains, still supports HTTP SSE when an explicit `https://...` base URL is configured, raises the WebSocket per-message read limit so large response events do not fail at the transport layer, automatically replaces stale pooled sockets, and falls back to replaying full history when a `previous_response_id` cache entry is gone.
+These use the OpenAI Responses API (`POST /v1/responses`). The Go implementation defaults to HTTP SSE (`https://api.openai.com/v1`) because it is more stable, and still supports pooled WebSocket mode when `use_websocket=true` is configured or the base URL uses a `ws://`/`wss://` scheme. In WebSocket mode it raises the per-message read limit so large response events do not fail at the transport layer, automatically replaces stale pooled sockets, and falls back to replaying full history when a `previous_response_id` cache entry is gone.
 
 | Provider ID | Notes |
 |---|---|

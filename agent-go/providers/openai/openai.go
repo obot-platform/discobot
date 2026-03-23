@@ -22,13 +22,13 @@ import (
 // configUseWebSocket is the Config key that opts the provider into WebSocket
 // mode. Set to "true" to enable. WebSocket mode is also enabled automatically
 // when base_url begins with "wss://" or "ws://". The default OpenAI base URL
-// is `wss://api.openai.com/v1`, so WebSocket mode is the default transport;
-// specify an explicit `https://...` base_url to force HTTP SSE instead.
+// is `https://api.openai.com/v1`, so HTTP SSE is the default transport unless
+// WebSocket mode is explicitly requested.
 const configUseWebSocket = "use_websocket"
 
 const (
 	providerID            = "openai"
-	defaultBaseURL        = "wss://api.openai.com/v1"
+	defaultBaseURL        = "https://api.openai.com/v1"
 	codexDefaultBaseURL   = "wss://chatgpt.com/backend-api/codex"
 	codexProviderID       = "codex"
 	missingToolOutputText = "interrupted by transient system failure"
@@ -44,11 +44,11 @@ func init() {
 }
 
 // Provider implements providers.Provider using the OpenAI Responses API.
-// It supports both HTTP SSE streaming (POST /v1/responses) and a persistent
-// WebSocket connection (wss://…/v1/responses). WebSocket mode is enabled when
-// the "use_websocket" config key is "true" or the base_url uses a ws(s)://
-// scheme; it maintains a pool of per-session connections that reuse server-side
-// cached state and make repeated tool-call loops ~40 % faster.
+// It supports both HTTP SSE streaming (POST /v1/responses) and an optional
+// persistent WebSocket connection (wss://…/v1/responses). WebSocket mode is
+// enabled when the "use_websocket" config key is "true" or the base_url uses a
+// ws(s):// scheme; it maintains a pool of per-session connections that reuse
+// server-side cached state and make repeated tool-call loops ~40 % faster.
 type Provider struct {
 	apiKey    string
 	baseURL   string
