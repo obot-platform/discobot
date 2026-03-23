@@ -94,8 +94,6 @@ func New(cfg providers.Config, isCodex bool, defaultURL string) (providers.Provi
 		strings.HasPrefix(baseURL, "wss://") ||
 		strings.HasPrefix(baseURL, "ws://")
 
-	useWS = false
-
 	// Normalise base_url to http(s) so REST endpoints (CountTokens, ListModels)
 	// work regardless of which scheme the caller provided.
 	httpBaseURL := baseURL
