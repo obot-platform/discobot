@@ -1,4 +1,4 @@
-import { lazy, type ReactNode, Suspense, useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Route, Routes } from "react-router";
 import { AppShell } from "@/components/app-shell";
 import { MonacoEditorFix } from "@/components/monaco-editor-fix";
@@ -7,22 +7,12 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { isTauri } from "@/lib/api-config";
+import { UpdateProvider } from "@/lib/contexts/update-context";
 import { HomePage } from "./pages/HomePage";
-
-// Lazy load UpdateProvider only for Tauri
-const UpdateProvider = lazy(() =>
-	import("@/lib/contexts/update-context").then((mod) => ({
-		default: mod.UpdateProvider,
-	})),
-);
 
 function MaybeUpdateProvider({ children }: { children: ReactNode }) {
 	if (!isTauri()) return <>{children}</>;
-	return (
-		<Suspense fallback={children}>
-			<UpdateProvider>{children}</UpdateProvider>
-		</Suspense>
-	);
+	return <UpdateProvider>{children}</UpdateProvider>;
 }
 
 export function App() {

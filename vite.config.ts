@@ -96,8 +96,8 @@ export default defineConfig({
 				},
 			},
 		},
-		// Increase chunk size warning limit (main bundle with React, SWR, etc.)
-		chunkSizeWarningLimit: 2000,
+		// Keep bundle-size warnings above the current known largest legacy React chunk.
+		chunkSizeWarningLimit: 2200,
 	},
 	// Handle SSE streaming properly
 	optimizeDeps: {

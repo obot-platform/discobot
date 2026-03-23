@@ -2,6 +2,7 @@ import RFB from "@novnc/novnc/lib/rfb";
 import { Loader2, Monitor } from "lucide-react";
 import * as React from "react";
 import { getApiRootBase, isTauri } from "@/lib/api-config";
+import { readClipboardText } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -61,10 +62,7 @@ export function DesktopView({ sessionId, className }: DesktopViewProps) {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if ((e.ctrlKey || e.metaKey) && e.key === "v") {
 				e.stopPropagation();
-				(isTauri()
-					? import("@/lib/tauri").then((m) => m.readClipboardText())
-					: navigator.clipboard.readText()
-				)
+				(isTauri() ? readClipboardText() : navigator.clipboard.readText())
 					.then((text) => {
 						rfb.clipboardPasteFrom(text);
 						// Send Ctrl+V to the Linux remote to trigger the paste now
@@ -127,10 +125,7 @@ export function DesktopView({ sessionId, className }: DesktopViewProps) {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if ((e.ctrlKey || e.metaKey) && e.key === "v") {
 				e.stopPropagation();
-				(isTauri()
-					? import("@/lib/tauri").then((m) => m.readClipboardText())
-					: navigator.clipboard.readText()
-				)
+				(isTauri() ? readClipboardText() : navigator.clipboard.readText())
 					.then((text) => {
 						rfb.clipboardPasteFrom(text);
 						rfb.sendKey(0xffe3, "ControlLeft", true);

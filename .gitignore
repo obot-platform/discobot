@@ -59,3 +59,7 @@ server/ssh_host_key
 
 # Test DB script
 /test.db.sql
+
+# misc
+/TODO
+/dev.log
