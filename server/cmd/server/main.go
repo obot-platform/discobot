@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -30,10 +29,7 @@ import (
 	"github.com/obot-platform/discobot/server/internal/model"
 	"github.com/obot-platform/discobot/server/internal/routes"
 	"github.com/obot-platform/discobot/server/internal/sandbox"
-	"github.com/obot-platform/discobot/server/internal/sandbox/docker"
 	"github.com/obot-platform/discobot/server/internal/sandbox/local"
-	"github.com/obot-platform/discobot/server/internal/sandbox/vm"
-	"github.com/obot-platform/discobot/server/internal/sandbox/vz"
 	"github.com/obot-platform/discobot/server/internal/service"
 	"github.com/obot-platform/discobot/server/internal/ssh"
 	"github.com/obot-platform/discobot/server/internal/startup"
@@ -128,39 +124,7 @@ func main() {
 		return session.ProjectID, nil
 	}
 
-	if runtime.GOOS == "darwin" {
-		// On macOS, use VZ (Virtualization.framework) provider
-		vzCfg := &vm.Config{
-			DataDir:       cfg.VZDataDir,
-			ConsoleLogDir: cfg.VZConsoleLogDir,
-			KernelPath:    cfg.VZKernelPath,
-			InitrdPath:    cfg.VZInitrdPath,
-			BaseDiskPath:  cfg.VZBaseDiskPath,
-			ImageRef:      cfg.VZImageRef,
-			HomeDir:       cfg.VZHomeDir,
-			CPUCount:      cfg.VZCPUCount,
-			MemoryMB:      cfg.VZMemoryMB,
-			DataDiskGB:    cfg.VZDataDiskGB,
-		}
-		if vmProvider, vzErr := vz.NewProvider(cfg, vzCfg, sessionProjectResolver, systemManager); vzErr != nil {
-			log.Printf("Warning: Failed to initialize VZ sandbox provider: %v", vzErr)
-		} else {
-			sandboxManager.RegisterProvider("vz", vmProvider)
-			if vmProvider.IsReady() {
-				log.Printf("VZ sandbox provider initialized and ready")
-			} else {
-				log.Printf("VZ sandbox provider registered (images downloading in background)")
-			}
-		}
-	} else {
-		// On non-macOS, use Docker provider
-		if dockerProvider, dockerErr := docker.NewProvider(cfg, sessionProjectResolver, docker.WithSystemManager(systemManager)); dockerErr != nil {
-			log.Printf("Warning: Failed to initialize Docker sandbox provider: %v", dockerErr)
-		} else {
-			sandboxManager.RegisterProvider("docker", dockerProvider)
-			log.Printf("Docker sandbox provider initialized (image: %s)", cfg.SandboxImage)
-		}
-	}
+	registerPrimarySandboxProvider(cfg, sandboxManager, sessionProjectResolver, systemManager)
 	//
 	// Initialize local provider (only if enabled via config)
 	if cfg.LocalProviderEnabled {
