@@ -139,6 +139,12 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				return;
 			}
 			streamError = null;
+			void Promise.all([
+				args.refreshThread(),
+				args.refreshSessionState?.(),
+			]).catch((error) => {
+				console.error("Failed to refresh thread state after chat stream connected", error);
+			});
 		};
 		unbindStream = bindChatStreamEventSource(source, streamState, {
 			onError: (error) => {

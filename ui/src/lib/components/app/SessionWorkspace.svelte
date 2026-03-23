@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { onDestroy, onMount } from "svelte";
 	import type { PaneAPI } from "paneforge";
 	import AppHeader from "$lib/components/app/AppHeader.svelte";
 	import StartupTasksBanner from "$lib/components/app/parts/StartupTasksBanner.svelte";
@@ -22,6 +22,14 @@
 
 	onMount(() => {
 		void session.load();
+	});
+
+	onDestroy(() => {
+		if (app.sessions.sessionContexts.get(session.sessionId) !== session) {
+			return;
+		}
+		session.dispose();
+		app.sessions.sessionContexts.delete(session.sessionId);
 	});
 
 	function sidebarOpen() {
