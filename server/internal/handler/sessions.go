@@ -13,6 +13,7 @@ import (
 
 	"github.com/obot-platform/discobot/server/internal/jobs"
 	"github.com/obot-platform/discobot/server/internal/middleware"
+	"github.com/obot-platform/discobot/server/internal/model"
 	"github.com/obot-platform/discobot/server/internal/service"
 )
 
@@ -49,18 +50,23 @@ type workspaceResponse struct {
 
 func deriveSessionStatusAndError(sess *service.Session) (string, string) {
 	commitStatus := strings.TrimSpace(sess.CommitStatus)
+	commitOperation := strings.TrimSpace(sess.CommitOperation)
 	switch {
 	case commitStatus == "":
-		if sess.Status == "error" {
+		if sess.Status == model.SessionStatusError {
 			return sess.Status, sess.ErrorMessage
 		}
 		return sess.Status, ""
-	case strings.EqualFold(commitStatus, "failed"), strings.EqualFold(commitStatus, "false"):
+	case strings.EqualFold(commitStatus, model.CommitStatusFailed), strings.EqualFold(commitStatus, "false"):
 		errorMessage := sess.CommitError
 		if errorMessage == "" {
 			errorMessage = sess.ErrorMessage
 		}
-		return "error", errorMessage
+		return model.SessionStatusError, errorMessage
+	case strings.EqualFold(commitStatus, model.CommitStatusCompleted) && strings.EqualFold(commitOperation, service.CommitOperationCommit):
+		return "committed", ""
+	case strings.EqualFold(commitStatus, model.CommitStatusCompleted) && strings.EqualFold(commitOperation, service.CommitOperationRebase):
+		return "rebased", ""
 	default:
 		return commitStatus, ""
 	}

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
 	import CircleIcon from "@lucide/svelte/icons/circle";
+	import GitBranchIcon from "@lucide/svelte/icons/git-branch";
+	import GitCommitIcon from "@lucide/svelte/icons/git-commit";
 	import Loader2Icon from "@lucide/svelte/icons/loader-2";
 	import type { SessionStatusValue } from "$lib/shell-types";
 	import { cn } from "$lib/utils";
@@ -37,7 +39,10 @@
 				return "text-destructive";
 			case "ready":
 			case "completed":
+			case "committed":
 				return "text-green-500";
+			case "rebased":
+				return "text-sky-500";
 			case "pending":
 			case "committing":
 			case "initializing":
@@ -78,6 +83,10 @@
 	<span class={cn("inline-flex items-center", statusTone(status), iconClass)}>
 		{#if isSpinningStatus(status)}
 			<Loader2Icon class="size-3.5 animate-spin" />
+		{:else if normalizedStatus(status) === "committed"}
+			<GitCommitIcon class="size-3.5" />
+		{:else if normalizedStatus(status) === "rebased"}
+			<GitBranchIcon class="size-3.5" />
 		{:else if ["ready", "completed"].includes(normalizedStatus(status))}
 			<CircleCheckIcon class="size-3.5" />
 		{:else}

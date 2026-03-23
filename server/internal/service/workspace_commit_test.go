@@ -327,11 +327,11 @@ func TestMarkCommitCompleted_RebaseClearsCommitState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get session: %v", err)
 	}
-	if updated.CommitStatus != model.CommitStatusNone {
-		t.Fatalf("Expected commit status %q, got %q", model.CommitStatusNone, updated.CommitStatus)
+	if updated.CommitStatus != model.CommitStatusCompleted {
+		t.Fatalf("Expected commit status %q, got %q", model.CommitStatusCompleted, updated.CommitStatus)
 	}
-	if updated.CommitOperation != nil {
-		t.Fatalf("Expected commit operation to be cleared, got %v", updated.CommitOperation)
+	if updated.CommitOperation == nil || *updated.CommitOperation != model.CommitOperationRebase {
+		t.Fatalf("Expected commit operation %q, got %v", model.CommitOperationRebase, updated.CommitOperation)
 	}
 	if updated.CommitError != nil {
 		t.Fatalf("Expected commit error to be cleared, got %v", updated.CommitError)

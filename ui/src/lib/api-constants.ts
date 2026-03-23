@@ -1,7 +1,8 @@
 // API Constants - shared string constants that must match the public REST API
 
 // Session status constants representing the lifecycle of a session plus
-// commit/rebase progress states surfaced through the public status field.
+// commit/rebase progress states surfaced through the public status field,
+// including completed terminal states for successful operations.
 export const SessionStatus = {
 	INITIALIZING: "initializing",
 	REINITIALIZING: "reinitializing",
@@ -13,6 +14,8 @@ export const SessionStatus = {
 	PENDING: "pending",
 	COMMITTING: "committing",
 	COMPLETED: "completed",
+	COMMITTED: "committed",
+	REBASED: "rebased",
 	ERROR: "error",
 	REMOVING: "removing",
 	REMOVED: "removed",

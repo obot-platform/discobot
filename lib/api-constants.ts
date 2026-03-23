@@ -10,6 +10,8 @@ export const SessionStatus = {
 	READY: "ready",
 	RUNNING: "running",
 	STOPPED: "stopped",
+	COMMITTED: "committed",
+	REBASED: "rebased",
 	ERROR: "error",
 	REMOVING: "removing",
 	REMOVED: "removed",

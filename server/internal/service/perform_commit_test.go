@@ -925,11 +925,11 @@ func TestPerformRebase_ParentMismatchPrecheckContinuesToPrompt(t *testing.T) {
 		t.Fatalf("Failed to get session: %v", err)
 	}
 
-	if updatedSession.CommitStatus != model.CommitStatusNone {
-		t.Fatalf("Expected commit status %q, got %q", model.CommitStatusNone, updatedSession.CommitStatus)
+	if updatedSession.CommitStatus != model.CommitStatusCompleted {
+		t.Fatalf("Expected commit status %q, got %q", model.CommitStatusCompleted, updatedSession.CommitStatus)
 	}
-	if updatedSession.CommitOperation != nil {
-		t.Fatalf("Expected commit operation cleared after rebase, got %v", updatedSession.CommitOperation)
+	if updatedSession.CommitOperation == nil || *updatedSession.CommitOperation != model.CommitOperationRebase {
+		t.Fatalf("Expected commit operation %q after rebase, got %v", model.CommitOperationRebase, updatedSession.CommitOperation)
 	}
 	if updatedSession.CommitError != nil {
 		t.Fatalf("Expected commit error to be cleared, got %v", updatedSession.CommitError)

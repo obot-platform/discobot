@@ -1274,14 +1274,6 @@ func (s *SessionService) applyReplayBundle(ctx context.Context, projectID string
 func (s *SessionService) markCommitCompleted(ctx context.Context, projectID string, sess *model.Session) error {
 	if sess.CommitOperation != nil && *sess.CommitOperation == CommitOperationRebase {
 		sess.WorkspaceCommit = sess.BaseCommit
-		sess.CommitStatus = model.CommitStatusNone
-		sess.CommitOperation = nil
-		sess.CommitError = nil
-		if err := s.store.UpdateSession(ctx, sess); err != nil {
-			return fmt.Errorf("failed to clear session rebase state: %w", err)
-		}
-		s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusNone)
-		return nil
 	}
 
 	sess.CommitStatus = model.CommitStatusCompleted
