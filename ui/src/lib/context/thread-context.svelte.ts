@@ -15,6 +15,15 @@ function createThreadContext(
 	const app = useAppContext();
 	const hasSession = $derived.by(() => session.current !== null);
 	const sessionStatus = $derived.by(() => session.current?.status ?? null);
+	const refreshSessionState = async () => {
+		await Promise.all([
+			session.files.refresh(),
+			session.services.refresh(),
+			session.envSets.refresh(),
+			session.hooks.refresh(),
+		]);
+		await app.sessions.reloadSession(session.sessionId);
+	};
 
 	const conversation = createConversationDomain({
 		sessionId: session.sessionId,
@@ -24,15 +33,10 @@ function createThreadContext(
 		refreshThread: async () => {
 			await session.threads.refreshThread(threadId);
 		},
+		refreshSessionState,
 		afterTurn: async () => {
 			await session.threads.refreshThread(threadId);
-			await Promise.all([
-				session.files.refresh(),
-				session.services.refresh(),
-				session.envSets.refresh(),
-				session.hooks.refresh(),
-			]);
-			await app.sessions.reloadSession(session.sessionId);
+			await refreshSessionState();
 		},
 	});
 

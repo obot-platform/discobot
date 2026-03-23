@@ -86,11 +86,15 @@ function createHarness(
 	modeChanges: string[];
 	modelChanges: string[];
 	reasoningChanges: string[];
+	actionableQuestionCount: number;
+	meaningfulToolOutputCount: number;
 	setCount: number;
 	state: ReturnType<typeof createChatStreamState>;
 } {
 	let currentMessages: ChatMessage[] = initialMessages;
 	let setCount = 0;
+	let actionableQuestionCount = 0;
+	let meaningfulToolOutputCount = 0;
 	const modeChanges: string[] = [];
 	const modelChanges: string[] = [];
 	const reasoningChanges: string[] = [];
@@ -100,6 +104,12 @@ function createHarness(
 		setMessages: (nextMessages) => {
 			currentMessages = nextMessages;
 			setCount += 1;
+		},
+		onActionableQuestion: () => {
+			actionableQuestionCount += 1;
+		},
+		onMeaningfulToolOutput: () => {
+			meaningfulToolOutputCount += 1;
 		},
 		setMode: (mode) => {
 			modeChanges.push(mode);
@@ -124,6 +134,12 @@ function createHarness(
 		},
 		get reasoningChanges() {
 			return reasoningChanges;
+		},
+		get actionableQuestionCount() {
+			return actionableQuestionCount;
+		},
+		get meaningfulToolOutputCount() {
+			return meaningfulToolOutputCount;
 		},
 		get setCount() {
 			return setCount;
@@ -376,6 +392,126 @@ test("chunk events surface mode, model, and reasoning updates", async () => {
 	]);
 	assert.deepEqual(harness.reasoningChanges, ["enabled", "disabled"]);
 	assert.equal(harness.messages[0]?.id, "assistant-1");
+});
+
+test("AskUserQuestion becoming answerable triggers a single actionable callback", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "start", messageId: "assistant-ask" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-start",
+			toolCallId: "ask-tool-1",
+			toolName: "AskUserQuestion",
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-available",
+			toolCallId: "ask-tool-1",
+			toolName: "AskUserQuestion",
+			input: {
+				questions: [
+					{
+						header: "Scope",
+						question: "Which scope should I use?",
+						multiSelect: false,
+						options: [{ label: "This file", description: "Change only the active file." }],
+					},
+				],
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-approval-request",
+			toolCallId: "ask-tool-1",
+			approvalId: "approval-1",
+		}),
+	});
+
+	assert.equal(harness.actionableQuestionCount, 1);
+	assert.equal(
+		harness.messages[0]?.parts[0]?.type === "tool-AskUserQuestion" ||
+			harness.messages[0]?.parts[0]?.type === "dynamic-tool",
+		true,
+	);
+	assert.equal(
+		typeof (harness.messages[0]?.parts[0] as { state?: unknown } | undefined)?.state === "string"
+			? (harness.messages[0]?.parts[0] as { state: string }).state
+			: undefined,
+		"approval-requested",
+	);
+});
+
+test("only the first non-preliminary tool output triggers a meaningful output callback", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "start", messageId: "assistant-tool" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-start",
+			toolCallId: "tool-1",
+			toolName: "Read",
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-available",
+			toolCallId: "tool-1",
+			toolName: "Read",
+			input: { file_path: "/tmp/demo.txt" },
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-output-available",
+			toolCallId: "tool-1",
+			output: { file: "/tmp/demo.txt" },
+			preliminary: true,
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-output-available",
+			toolCallId: "tool-1",
+			output: { file: "/tmp/demo.txt", contents: "hello" },
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-output-available",
+			toolCallId: "tool-1",
+			output: { file: "/tmp/demo.txt", contents: "hello again" },
+		}),
+	});
+
+	assert.equal(harness.meaningfulToolOutputCount, 1);
+	assert.equal(
+		harness.messages[0]?.parts[0]?.type === "tool-Read" ||
+			harness.messages[0]?.parts[0]?.type === "dynamic-tool",
+		true,
+	);
+	assert.equal(
+		typeof (harness.messages[0]?.parts[0] as { state?: unknown } | undefined)?.state === "string"
+			? (harness.messages[0]?.parts[0] as { state: string }).state
+			: undefined,
+		"output-available",
+	);
 });
 
 test("bindChatStreamEventSource wires EventSource events into the reducer", async () => {

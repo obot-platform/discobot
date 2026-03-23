@@ -47,6 +47,12 @@ export type ChatStreamStateOptions = {
 	setMessages: (messages: ChatMessage[]) => void;
 	onStart?: () => void;
 	onFinish?: () => void;
+	// Fires once per streamed assistant response for the first non-preliminary
+	// tool result. This is the earliest stable point where session-derived state
+	// like files, hooks, env sets, or services may need a refresh without waiting
+	// for the whole turn to finish.
+	onMeaningfulToolOutput?: () => void;
+	onActionableQuestion?: () => void;
 	onChunkError?: (errorText: string) => void;
 	setMode?: (mode: string) => void;
 	setModel?: (model: string) => void;
@@ -73,12 +79,28 @@ type UserMessageChunk = {
 	};
 };
 
+type ToolOutputAvailableChunk = UIMessageChunk & {
+	type: "tool-output-available";
+	preliminary?: boolean;
+};
+type ToolInputAvailableChunk = UIMessageChunk & {
+	type: "tool-input-available";
+	toolCallId: string;
+	toolName: string;
+};
+type ToolApprovalRequestChunk = UIMessageChunk & {
+	type: "tool-approval-request";
+	toolCallId: string;
+};
+
 const terminalChunkTypes = new Set<UIMessageChunk["type"]>(["abort", "finish"]);
 
 export function createChatStreamState(options: ChatStreamStateOptions) {
 	let activeAssistantStream: ActiveAssistantStream | null = null;
 	let historyMessages: ChatMessage[] | null = null;
 	let updateQueue = Promise.resolve();
+	let hasNotifiedMeaningfulToolOutput = false;
+	let actionableQuestionToolCallIds = new Set<string>();
 
 	const getTargetMessages = () => historyMessages ?? options.getMessages();
 
@@ -344,6 +366,90 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		return chunk.type === "data-user-message";
 	};
 
+	const isToolOutputAvailableChunk = (
+		chunk: UIMessageChunk,
+	): chunk is ToolOutputAvailableChunk => {
+		return chunk.type === "tool-output-available";
+	};
+
+	const isToolInputAvailableChunk = (
+		chunk: UIMessageChunk,
+	): chunk is ToolInputAvailableChunk => {
+		return (
+			chunk.type === "tool-input-available" &&
+			typeof (chunk as { toolCallId?: unknown }).toolCallId === "string" &&
+			typeof (chunk as { toolName?: unknown }).toolName === "string"
+		);
+	};
+
+	const isToolApprovalRequestChunk = (
+		chunk: UIMessageChunk,
+	): chunk is ToolApprovalRequestChunk => {
+		return (
+			chunk.type === "tool-approval-request" &&
+			typeof (chunk as { toolCallId?: unknown }).toolCallId === "string"
+		);
+	};
+
+	const getToolLikePart = (part: ChatMessage["parts"][number]) => {
+		if (
+			typeof part !== "object" ||
+			part === null ||
+			typeof (part as { toolCallId?: unknown }).toolCallId !== "string" ||
+			typeof (part as { toolName?: unknown }).toolName !== "string" ||
+			typeof (part as { state?: unknown }).state !== "string"
+		) {
+			return null;
+		}
+		return part as {
+			toolCallId: string;
+			toolName: string;
+			state: string;
+		};
+	};
+
+	const getAssistantMessage = (messageId: string): ChatMessage | undefined => {
+		return getTargetMessages().find((message) => message.id === messageId);
+	};
+
+	const notifyMeaningfulMilestones = (chunk: UIMessageChunk, stream: ActiveAssistantStream) => {
+		if (isToolOutputAvailableChunk(chunk) && chunk.preliminary !== true) {
+			if (!hasNotifiedMeaningfulToolOutput) {
+				hasNotifiedMeaningfulToolOutput = true;
+				options.onMeaningfulToolOutput?.();
+			}
+		}
+
+		const actionableQuestionToolCallId = isToolInputAvailableChunk(chunk)
+			? chunk.toolName === "AskUserQuestion"
+				? chunk.toolCallId
+				: null
+			: isToolApprovalRequestChunk(chunk)
+				? chunk.toolCallId
+				: null;
+		if (actionableQuestionToolCallId && !actionableQuestionToolCallIds.has(actionableQuestionToolCallId)) {
+			actionableQuestionToolCallIds.add(actionableQuestionToolCallId);
+			options.onActionableQuestion?.();
+		}
+
+		const assistantMessage = getAssistantMessage(stream.messageId);
+		if (!assistantMessage) {
+			return;
+		}
+		for (const part of assistantMessage.parts) {
+			const toolPart = getToolLikePart(part);
+			if (
+				toolPart &&
+				toolPart.toolName === "AskUserQuestion" &&
+				(toolPart.state === "input-available" || toolPart.state === "approval-requested") &&
+				!actionableQuestionToolCallIds.has(toolPart.toolCallId)
+			) {
+				actionableQuestionToolCallIds.add(toolPart.toolCallId);
+				options.onActionableQuestion?.();
+			}
+		}
+	};
+
 	const applyChunkEvent = async (chunk: UIMessageChunk) => {
 		if (isModeChangeChunk(chunk) && typeof chunk.data?.mode === "string") {
 			options.setMode?.(chunk.data.mode);
@@ -368,6 +474,8 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 		if (isStartChunk(chunk)) {
 			applyStreamMetadata(parseMessageMetadata(chunk.messageMetadata));
+			hasNotifiedMeaningfulToolOutput = false;
+			actionableQuestionToolCallIds = new Set();
 			options.onStart?.();
 			await startAssistantStream(chunk.messageId);
 		}
@@ -386,6 +494,7 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		}
 
 		await waitForStreamingUpdate(activeStream);
+		notifyMeaningfulMilestones(chunk, activeStream);
 	};
 
 	const applyEvent = async (event: ChatStreamEvent) => {

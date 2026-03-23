@@ -16,6 +16,7 @@ type CreateConversationDomainArgs = {
 	getSessionStatus: () => Session["status"] | null;
 	threadId: string;
 	refreshThread: () => Promise<void>;
+	refreshSessionState?: () => Promise<void>;
 	afterTurn?: () => Promise<void>;
 };
 
@@ -71,6 +72,12 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		onFinish: () => {
 			streamStatus = null;
 			void args.afterTurn?.();
+		},
+		onMeaningfulToolOutput: () => {
+			void args.refreshSessionState?.();
+		},
+		onActionableQuestion: () => {
+			void args.refreshThread();
 		},
 		onChunkError: (errorText) => {
 			streamStatus = null;
