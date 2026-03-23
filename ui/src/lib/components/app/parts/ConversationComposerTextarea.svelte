@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConversationPromptHistoryDropdown from "$lib/components/app/ConversationPromptHistoryDropdown.svelte";
 	import ConversationFileMentionDropdown from "$lib/components/app/parts/ConversationFileMentionDropdown.svelte";
 	import { InputGroupTextarea } from "$lib/components/ui/input-group";
 
@@ -6,6 +7,11 @@
 		handleInput: (value: string, cursor: number) => void;
 		handleKeydown: (event: KeyboardEvent) => boolean;
 		closeDropdown: () => void;
+	};
+
+	type PromptHistoryDropdownHandle = {
+		handleKeydown: (event: KeyboardEvent) => boolean;
+		closePromptHistoryDropdown: () => void;
 	};
 
 	type Props = {
@@ -30,6 +36,7 @@
 
 	let isComposing = $state(false);
 	let fileMentionDropdownRef = $state<FileMentionDropdownHandle | null>(null);
+	let promptHistoryDropdownRef = $state<PromptHistoryDropdownHandle | null>(null);
 	let fileMentionTextareaRef = $state<HTMLTextAreaElement | null>(null);
 
 	function shouldSubmitComposerOnEnter(draft: string): boolean {
@@ -38,6 +45,10 @@
 
 	function handleTextareaKeydown(event: KeyboardEvent) {
 		if (fileMentionDropdownRef?.handleKeydown(event)) {
+			return;
+		}
+
+		if (promptHistoryDropdownRef?.handleKeydown(event)) {
 			return;
 		}
 
@@ -62,6 +73,7 @@
 	function handleTextareaInput(event: Event) {
 		const textarea = event.currentTarget as HTMLTextAreaElement;
 		onDraftChange(textarea.value);
+		promptHistoryDropdownRef?.closePromptHistoryDropdown();
 		fileMentionDropdownRef?.handleInput(
 			textarea.value,
 			textarea.selectionStart ?? textarea.value.length,
@@ -95,6 +107,10 @@
 		fileMentionDropdownRef?.closeDropdown();
 	}
 
+	export function closePromptHistoryDropdown() {
+		promptHistoryDropdownRef?.closePromptHistoryDropdown();
+	}
+
 	export function focus() {
 		fileMentionTextareaRef?.focus();
 	}
@@ -103,6 +119,12 @@
 <ConversationFileMentionDropdown
 	bind:this={fileMentionDropdownRef}
 	files={sessionFiles}
+	textareaRef={fileMentionTextareaRef}
+	onDraftChange={(value) => onDraftChange(value)}
+/>
+
+<ConversationPromptHistoryDropdown
+	bind:this={promptHistoryDropdownRef}
 	textareaRef={fileMentionTextareaRef}
 	onDraftChange={(value) => onDraftChange(value)}
 />

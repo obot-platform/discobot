@@ -169,6 +169,7 @@
 		if (isGenerating()) {
 			await thread.cancel();
 			composerTextareaRef?.closeMentionDropdown();
+			composerTextareaRef?.closePromptHistoryDropdown();
 			return;
 		}
 
@@ -190,9 +191,11 @@
 				modelId: effectiveModelId,
 				reasoning: effectiveReasoning,
 			});
+			preferences.addPromptToHistory(nextMessageText);
 			sessionView.setComposerDraft("");
 			clearComposerOverrides();
 			composerTextareaRef?.closeMentionDropdown();
+			composerTextareaRef?.closePromptHistoryDropdown();
 			clearAttachments();
 			await focusComposerTextarea();
 		} catch {
@@ -238,11 +241,15 @@
 				...(effectiveReasoning ? { reasoning: "enabled" } : {}),
 				mode: effectiveMode === "plan" ? "plan" : "",
 			});
+			if (trimmedText) {
+				preferences.addPromptToHistory(trimmedText);
+			}
 			sessions.select(response.sessionId);
 
 			sessionView.setComposerDraft("");
 			clearComposerOverrides();
 			composerTextareaRef?.closeMentionDropdown();
+			composerTextareaRef?.closePromptHistoryDropdown();
 			clearAttachments();
 			sessionView.resetPendingWorkspaceSetup();
 		} catch (err) {

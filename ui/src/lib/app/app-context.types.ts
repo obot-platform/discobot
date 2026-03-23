@@ -84,6 +84,8 @@ export type AppPreferences = {
 	resolvedTheme: ResolvedTheme;
 	colorScheme: ThemeColorScheme;
 	availableThemes: ThemeMetadata[];
+	promptHistory: string[];
+	pinnedPrompts: string[];
 	preferredIde: PreferredIde;
 	ideOptions: IdeOption[];
 	chatWidthMode: ChatWidthMode;
@@ -93,6 +95,11 @@ export type AppPreferences = {
 	setTheme: (theme: ThemeMode) => void;
 	setColorScheme: (scheme: ThemeColorScheme) => void;
 	toggleTheme: () => void;
+	addPromptToHistory: (prompt: string) => void;
+	removePromptFromHistory: (prompt: string) => void;
+	pinPrompt: (prompt: string) => void;
+	unpinPrompt: (prompt: string) => void;
+	isPromptPinned: (prompt: string) => boolean;
 	setPreferredIde: (ide: PreferredIde) => void;
 	setChatWidthMode: (mode: ChatWidthMode) => void;
 	setDefaultModel: (modelId: string) => void;

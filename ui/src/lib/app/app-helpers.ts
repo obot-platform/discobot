@@ -18,6 +18,8 @@ export const DEFAULT_MODEL_STORAGE_KEY = "chat.default.model";
 export const IGNORED_UPDATE_VERSION_STORAGE_KEY = "update.ignored.version";
 export const SIDEBAR_RECENT_OPEN_STORAGE_KEY = "sidebar.recent.open";
 export const SIDEBAR_ALL_OPEN_STORAGE_KEY = "sidebar.all.open";
+export const PROMPT_HISTORY_STORAGE_KEY = "discobot:composer-history";
+export const PINNED_PROMPTS_STORAGE_KEY = "discobot:composer-history:pinned";
 export const RECENT_SESSIONS_LIMIT = 4;
 
 export function detectWindowControlsSide(): WindowControlsSide {
@@ -82,6 +84,46 @@ export function readSidebarAllOpen(): boolean {
 	}
 	const stored = window.localStorage.getItem(SIDEBAR_ALL_OPEN_STORAGE_KEY);
 	return stored === null ? true : stored === "true";
+}
+
+export function readPinnedPrompts(): string[] {
+	if (typeof window === "undefined") {
+		return [];
+	}
+
+	const stored = window.localStorage.getItem(PINNED_PROMPTS_STORAGE_KEY);
+	if (!stored) {
+		return [];
+	}
+
+	try {
+		const parsed = JSON.parse(stored);
+		return Array.isArray(parsed)
+			? parsed.filter((item): item is string => typeof item === "string")
+			: [];
+	} catch {
+		return [];
+	}
+}
+
+export function readPromptHistory(): string[] {
+	if (typeof window === "undefined") {
+		return [];
+	}
+
+	const stored = window.localStorage.getItem(PROMPT_HISTORY_STORAGE_KEY);
+	if (!stored) {
+		return [];
+	}
+
+	try {
+		const parsed = JSON.parse(stored);
+		return Array.isArray(parsed)
+			? parsed.filter((item): item is string => typeof item === "string")
+			: [];
+	} catch {
+		return [];
+	}
 }
 
 export function writeStorage(key: string, value: string | null) {

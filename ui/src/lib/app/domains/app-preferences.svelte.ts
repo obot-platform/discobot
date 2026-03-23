@@ -1,7 +1,11 @@
 import {
 	CHAT_WIDTH_MODE_STORAGE_KEY,
 	DEFAULT_MODEL_STORAGE_KEY,
+	PINNED_PROMPTS_STORAGE_KEY,
+	PROMPT_HISTORY_STORAGE_KEY,
 	PREFERRED_IDE_STORAGE_KEY,
+	readPinnedPrompts,
+	readPromptHistory,
 	SIDEBAR_ALL_OPEN_STORAGE_KEY,
 	SIDEBAR_RECENT_OPEN_STORAGE_KEY,
 	readChatWidthMode,
@@ -13,6 +17,12 @@ import {
 } from "$lib/app/app-helpers";
 import type { AppContextBootstrap, AppPreferences, ChatWidthMode } from "$lib/app/app-context.types";
 import type { ThemeColorScheme } from "$lib/api-types";
+import {
+	appendPromptHistoryEntry,
+	appendPinnedPrompt,
+	removePinnedPrompt,
+	removePromptHistoryEntry,
+} from "$lib/prompt-history-storage";
 import type { PreferredIde } from "$lib/shell-types";
 import {
 	applyColorScheme,
@@ -38,6 +48,8 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 	let defaultModel = $state("");
 	let sidebarRecentOpen = $state(true);
 	let sidebarAllOpen = $state(true);
+	let promptHistory = $state<string[]>([]);
+	let pinnedPrompts = $state<string[]>([]);
 
 	const availableThemes = $derived.by(() => getAvailableThemes(resolvedTheme));
 
@@ -68,6 +80,8 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 		defaultModel = readDefaultModel();
 		sidebarRecentOpen = readSidebarRecentOpen();
 		sidebarAllOpen = readSidebarAllOpen();
+		promptHistory = readPromptHistory();
+		pinnedPrompts = readPinnedPrompts();
 	};
 
 	// Initialize on construction
@@ -94,6 +108,12 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 		get availableThemes() {
 			return availableThemes;
 		},
+		get promptHistory() {
+			return promptHistory;
+		},
+		get pinnedPrompts() {
+			return pinnedPrompts;
+		},
 		get preferredIde() {
 			return preferredIde;
 		},
@@ -116,6 +136,23 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 			colorScheme = applyColorScheme(scheme);
 		},
 		toggleTheme: () => applyThemeState(resolvedTheme === "dark" ? "light" : "dark"),
+		addPromptToHistory: (prompt) => {
+			promptHistory = appendPromptHistoryEntry(promptHistory, prompt);
+			writeStorage(PROMPT_HISTORY_STORAGE_KEY, JSON.stringify(promptHistory));
+		},
+		removePromptFromHistory: (prompt) => {
+			promptHistory = removePromptHistoryEntry(promptHistory, prompt);
+			writeStorage(PROMPT_HISTORY_STORAGE_KEY, JSON.stringify(promptHistory));
+		},
+		pinPrompt: (prompt) => {
+			pinnedPrompts = appendPinnedPrompt(pinnedPrompts, prompt);
+			writeStorage(PINNED_PROMPTS_STORAGE_KEY, JSON.stringify(pinnedPrompts));
+		},
+		unpinPrompt: (prompt) => {
+			pinnedPrompts = removePinnedPrompt(pinnedPrompts, prompt);
+			writeStorage(PINNED_PROMPTS_STORAGE_KEY, JSON.stringify(pinnedPrompts));
+		},
+		isPromptPinned: (prompt) => pinnedPrompts.includes(prompt),
 		setPreferredIde: (ide) => {
 			preferredIde = ide;
 			writeStorage(PREFERRED_IDE_STORAGE_KEY, ide);
