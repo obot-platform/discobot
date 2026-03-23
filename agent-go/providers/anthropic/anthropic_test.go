@@ -526,6 +526,31 @@ func TestToolResultToAnthropicContent(t *testing.T) {
 			t.Errorf("expected document media_type application/pdf, got %v", docSource["media_type"])
 		}
 	})
+
+	t.Run("content output with unsupported image falls back to text", func(t *testing.T) {
+		result := toolResultToAnthropicContent(message.ContentOutput{
+			Value: []message.ToolResultContentItem{
+				message.ContentImageDataItem{Data: "PHN2Zz48L3N2Zz4=", MediaType: "image/svg+xml"},
+			},
+		})
+
+		blocks, ok := result.([]any)
+		if !ok {
+			t.Fatalf("expected []any, got %T", result)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 block, got %d", len(blocks))
+		}
+
+		textBlock := blocks[0].(map[string]any)
+		if textBlock["type"] != "text" {
+			t.Fatalf("expected fallback block type text, got %v", textBlock["type"])
+		}
+		text, _ := textBlock["text"].(string)
+		if !strings.Contains(text, "image/svg+xml") {
+			t.Fatalf("expected fallback text to mention image/svg+xml, got %q", text)
+		}
+	})
 }
 
 func TestParseSSEStream(t *testing.T) {

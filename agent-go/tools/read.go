@@ -61,6 +61,19 @@ func (e *Executor) executeRead(toolCtx *thread.ToolContext, call message.ToolCal
 	e.recordFileRead(path, info)
 
 	mediaType := detectReadMediaType(path, data)
+	if shouldReadFileAsText(mediaType) {
+		content := string(data)
+
+		// Apply line offset and limit if requested.
+		if input.Offset > 0 || input.Limit > 0 {
+			content = sliceLines(content, input.Offset, input.Limit)
+		}
+
+		// Format output with line numbers (matching Claude Code's cat -n style).
+		output := addLineNumbers(content, maxOf(input.Offset, 1))
+
+		return textResult(call, output), nil
+	}
 	if strings.HasPrefix(mediaType, "image/") {
 		if e.modelSupportsInputModality(toolCtx, "image") {
 			return contentResult(call,
@@ -233,6 +246,15 @@ func mediaTypeByExtension(ext string) (string, bool) {
 		return "application/pdf", true
 	default:
 		return "", false
+	}
+}
+
+func shouldReadFileAsText(mediaType string) bool {
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "image/svg+xml":
+		return true
+	default:
+		return false
 	}
 }
 

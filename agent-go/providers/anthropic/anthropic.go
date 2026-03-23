@@ -511,9 +511,13 @@ func toolResultToAnthropicContent(output message.ToolResultOutput) any {
 			if strings.TrimSpace(v.Data) == "" {
 				continue
 			}
-			mediaType := v.MediaType
-			if mediaType == "" {
-				mediaType = "image/jpeg"
+			mediaType, ok := anthropicToolResultImageMediaType(v.MediaType)
+			if !ok {
+				blocks = append(blocks, map[string]any{
+					"type": "text",
+					"text": unsupportedAnthropicToolResultImageText(v.MediaType),
+				})
+				continue
 			}
 			blocks = append(blocks, map[string]any{
 				"type": "image",
@@ -583,6 +587,25 @@ func toolResultToString(output message.ToolResultOutput) string {
 	default:
 		return ""
 	}
+}
+
+func anthropicToolResultImageMediaType(mediaType string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "", "image/jpeg", "image/jpg":
+		return "image/jpeg", true
+	case "image/png", "image/gif", "image/webp":
+		return mediaType, true
+	default:
+		return "", false
+	}
+}
+
+func unsupportedAnthropicToolResultImageText(mediaType string) string {
+	mediaType = strings.TrimSpace(mediaType)
+	if mediaType == "" {
+		mediaType = "unknown image format"
+	}
+	return fmt.Sprintf("[image omitted: Anthropic tool_result image blocks only support image/jpeg, image/png, image/gif, or image/webp; got %s]", mediaType)
 }
 
 // stripDataURL strips a data URL prefix (e.g. "data:image/png;base64,") from

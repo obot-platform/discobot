@@ -161,6 +161,31 @@ func TestRead_ImageWithoutSupportedModelReturnsTextSummary(t *testing.T) {
 	}
 }
 
+func TestRead_SVGReturnsTextContent(t *testing.T) {
+	cwd := t.TempDir()
+	svgPath := filepath.Join(cwd, "sample.svg")
+	svgData := []byte("<svg viewBox=\"0 0 10 10\">\n  <rect width=\"10\" height=\"10\" />\n</svg>\n")
+	if err := os.WriteFile(svgPath, svgData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e := New(cwd, t.TempDir(), t.Name())
+	output := executeRead(t, e, &thread.ToolContext{ProviderID: "anthropic", ModelID: "claude-3-7-sonnet-20250219"}, map[string]any{
+		"file_path": svgPath,
+	})
+
+	text, ok := output.(message.TextOutput)
+	if !ok {
+		t.Fatalf("expected TextOutput for SVG, got %T", output)
+	}
+	if !strings.Contains(text.Value, "<svg viewBox=\"0 0 10 10\">") {
+		t.Fatalf("expected SVG source in output, got %q", text.Value)
+	}
+	if !strings.Contains(text.Value, "1→<svg viewBox=\"0 0 10 10\">") {
+		t.Fatalf("expected numbered SVG output, got %q", text.Value)
+	}
+}
+
 func TestRead_PDFWithSupportedModelReturnsMultimodalContent(t *testing.T) {
 	cwd := t.TempDir()
 	pdfPath := filepath.Join(cwd, "sample.pdf")
