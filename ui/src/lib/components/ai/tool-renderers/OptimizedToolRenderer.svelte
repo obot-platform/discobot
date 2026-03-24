@@ -32,7 +32,10 @@
 	}: Props = $props();
 
 	const getInitialOpen = () =>
-		defaultOpen || toolPart.toolName === "AskUserQuestion";
+		defaultOpen ||
+		toolPart.toolName === "AskUserQuestion" ||
+		(toolPart.toolName === "ExitPlanMode" &&
+			toolPart.state === "approval-requested");
 
 	let isRaw = $state(false);
 	let open = $state(getInitialOpen());
@@ -42,7 +45,11 @@
 	});
 
 	$effect(() => {
-		if (toolPart.toolName === "AskUserQuestion") {
+		if (
+			toolPart.toolName === "AskUserQuestion" ||
+			(toolPart.toolName === "ExitPlanMode" &&
+				toolPart.state === "approval-requested")
+		) {
 			open = true;
 		}
 	});
@@ -53,7 +60,10 @@
 	const Renderer = $derived.by(() => getToolRenderer(toolPart.toolName));
 	const hasOptimizedView = $derived.by(() => Boolean(Renderer));
 	const isAlwaysExpanded = $derived.by(
-		() => toolPart.toolName === "AskUserQuestion",
+		() =>
+			toolPart.toolName === "AskUserQuestion" ||
+			(toolPart.toolName === "ExitPlanMode" &&
+				toolPart.state === "approval-requested"),
 	);
 	const showRaw = $derived.by(() => !hasOptimizedView || isRaw);
 	const title = $derived.by(() => getToolTitle(toolPart));

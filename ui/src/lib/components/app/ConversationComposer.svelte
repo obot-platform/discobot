@@ -6,6 +6,7 @@
 	import ConversationComposerHooksControl from "$lib/components/app/parts/ConversationComposerHooksControl.svelte";
 	import ConversationComposerModelControl from "$lib/components/app/parts/ConversationComposerModelControl.svelte";
 	import ConversationComposerModeControl from "$lib/components/app/parts/ConversationComposerModeControl.svelte";
+	import ConversationComposerPlanControl from "$lib/components/app/parts/ConversationComposerPlanControl.svelte";
 	import ConversationComposerQueueControl from "$lib/components/app/parts/ConversationComposerQueueControl.svelte";
 	import ConversationComposerSessionSetupStatus from "$lib/components/app/ConversationComposerSessionSetupStatus.svelte";
 	import ConversationComposerSubmitButton from "$lib/components/app/parts/ConversationComposerSubmitButton.svelte";
@@ -28,6 +29,7 @@
 		buildUserMessageParts,
 		createUserMessageAttachment,
 		createUserMessageFromParts,
+		getLatestPlanState,
 	} from "$lib/session/domains/session-domain.helpers";
 
 	const app = useAppContext();
@@ -101,6 +103,7 @@
 	const effectiveReasoning = $derived.by(() =>
 		composerModelUsesReasoning(effectiveModelId),
 	);
+	const latestPlan = $derived.by(() => getLatestPlanState(thread.messages));
 	const sessionSetupDisabled = $derived.by(
 		() =>
 			sessionView.pendingWorkspaceRequiresSourceInput &&
@@ -384,6 +387,11 @@
 								<ConversationComposerQueueControl
 									bind:expanded={sessionView.queueExpanded}
 									entries={thread.planEntries}
+								/>
+								<ConversationComposerPlanControl
+									{latestPlan}
+									sessionId={session.sessionId}
+									threadId={thread.threadId}
 								/>
 							{/if}
 							<ConversationComposerSubmitButton

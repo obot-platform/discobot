@@ -4,6 +4,8 @@ import ApplyPatchToolRenderer from "./ApplyPatchToolRenderer.svelte";
 import AskUserQuestionToolRenderer from "./AskUserQuestionToolRenderer.svelte";
 import BashToolRenderer from "./BashToolRenderer.svelte";
 import EditToolRenderer from "./EditToolRenderer.svelte";
+import EnterPlanModeToolRenderer from "./EnterPlanModeToolRenderer.svelte";
+import ExitPlanModeToolRenderer from "./ExitPlanModeToolRenderer.svelte";
 import GlobToolRenderer from "./GlobToolRenderer.svelte";
 import GrepToolRenderer from "./GrepToolRenderer.svelte";
 import ReadToolRenderer from "./ReadToolRenderer.svelte";
@@ -25,6 +27,8 @@ const TOOL_RENDERERS: Record<string, RendererComponent> = {
 	Read: ReadToolRenderer,
 	Write: WriteToolRenderer,
 	Edit: EditToolRenderer,
+	EnterPlanMode: EnterPlanModeToolRenderer,
+	ExitPlanMode: ExitPlanModeToolRenderer,
 	Grep: GrepToolRenderer,
 	Glob: GlobToolRenderer,
 	apply_patch: ApplyPatchToolRenderer,
@@ -126,6 +130,12 @@ export function getToolTitle(toolPart: DynamicToolPart): string | undefined {
 			}
 			break;
 		}
+
+		case "EnterPlanMode":
+			return "Enter Plan Mode";
+
+		case "ExitPlanMode":
+			return "Exit Plan Mode";
 
 		case "Task": {
 			const description = safeInput.description;

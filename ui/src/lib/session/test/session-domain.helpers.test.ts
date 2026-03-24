@@ -8,6 +8,7 @@ import {
 	buildUserMessageParts,
 	createUserMessage,
 	createUserMessageAttachment,
+	getLatestPlanState,
 	getPlanEntries,
 	hasUserMessageContent,
 } from "../domains/session-domain.helpers";
@@ -65,6 +66,172 @@ test("addToolApprovalResponse updates a pending dynamic tool in place", () => {
 			: undefined,
 		{ id: "call-1", approved: true },
 	);
+});
+
+test("getLatestPlanState returns the latest EnterPlanMode plan file path", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "enter-1",
+					toolName: "EnterPlanMode",
+					state: "output-available",
+					input: {},
+					output:
+						"Plan mode activated. Plan file: /tmp/old-plan.md\n\nDo something",
+				},
+				{
+					type: "dynamic-tool",
+					toolCallId: "enter-2",
+					toolName: "EnterPlanMode",
+					state: "output-available",
+					input: {},
+					output:
+						"Plan mode activated. Plan file: /tmp/latest-plan.md\n\nDo something else",
+				},
+			],
+		},
+	];
+
+	assert.deepEqual(getLatestPlanState(messages), {
+		toolName: "EnterPlanMode",
+		toolCallId: "enter-2",
+		approvalId: "enter-2",
+		partState: "output-available",
+		phase: "entered",
+		planFilePath: "/tmp/latest-plan.md",
+		planMarkdown: null,
+		feedback: null,
+		errorText: null,
+	});
+});
+
+test("getLatestPlanState parses approved ExitPlanMode plan markdown", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "exit-1",
+					toolName: "ExitPlanMode",
+					state: "output-available",
+					input: {},
+					approval: { id: "approval-1", approved: true },
+					output:
+						"Plan approved. Continue forward and implement the plan now.\n\nApproved plan:\n\n## Plan\n- Ship it\n",
+				},
+			],
+		},
+	];
+
+	assert.deepEqual(getLatestPlanState(messages), {
+		toolName: "ExitPlanMode",
+		toolCallId: "exit-1",
+		approvalId: "approval-1",
+		partState: "output-available",
+		phase: "approved",
+		planFilePath: null,
+		planMarkdown: "## Plan\n- Ship it",
+		feedback: null,
+		errorText: null,
+	});
+});
+
+test("getLatestPlanState parses pending approval and keeps the approval id", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "exit-1",
+					toolName: "ExitPlanMode",
+					state: "approval-requested",
+					input: {},
+					approval: { id: "approval-1" },
+				},
+			],
+		},
+	];
+
+	assert.deepEqual(getLatestPlanState(messages), {
+		toolName: "ExitPlanMode",
+		toolCallId: "exit-1",
+		approvalId: "approval-1",
+		partState: "approval-requested",
+		phase: "awaiting_approval",
+		planFilePath: null,
+		planMarkdown: null,
+		feedback: null,
+		errorText: null,
+	});
+});
+
+test("getLatestPlanState parses feedback and errors", () => {
+	const feedbackMessages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "exit-feedback",
+					toolName: "ExitPlanMode",
+					state: "output-available",
+					input: {},
+					output:
+						"Plan feedback from user: tighten the test plan\n\nRevise your plan file and call ExitPlanMode again when ready.",
+				},
+			],
+		},
+	];
+	assert.deepEqual(getLatestPlanState(feedbackMessages), {
+		toolName: "ExitPlanMode",
+		toolCallId: "exit-feedback",
+		approvalId: "exit-feedback",
+		partState: "output-available",
+		phase: "feedback",
+		planFilePath: null,
+		planMarkdown: null,
+		feedback: "tighten the test plan",
+		errorText: null,
+	});
+
+	const errorMessages: ChatMessage[] = [
+		{
+			id: "assistant-2",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "exit-error",
+					toolName: "ExitPlanMode",
+					state: "output-error",
+					input: {},
+					errorText:
+						"No plan written yet. Write your complete plan to /tmp/plan.md before calling ExitPlanMode.",
+				},
+			],
+		},
+	];
+	assert.deepEqual(getLatestPlanState(errorMessages), {
+		toolName: "ExitPlanMode",
+		toolCallId: "exit-error",
+		approvalId: "exit-error",
+		partState: "output-error",
+		phase: "error",
+		planFilePath: "/tmp/plan.md",
+		planMarkdown: null,
+		feedback: null,
+		errorText:
+			"No plan written yet. Write your complete plan to /tmp/plan.md before calling ExitPlanMode.",
+	});
 });
 
 test("addToolApprovalResponse ignores already-resolved tools", () => {

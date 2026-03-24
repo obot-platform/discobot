@@ -2,6 +2,8 @@ import ApplyPatchToolRenderer from "./ApplyPatchToolRenderer.svelte";
 import AskUserQuestionToolRenderer from "./AskUserQuestionToolRenderer.svelte";
 import BashToolRenderer from "./BashToolRenderer.svelte";
 import EditToolRenderer from "./EditToolRenderer.svelte";
+import EnterPlanModeToolRenderer from "./EnterPlanModeToolRenderer.svelte";
+import ExitPlanModeToolRenderer from "./ExitPlanModeToolRenderer.svelte";
 import GlobToolRenderer from "./GlobToolRenderer.svelte";
 import GrepToolRenderer from "./GrepToolRenderer.svelte";
 import OptimizedToolRenderer from "./OptimizedToolRenderer.svelte";
@@ -18,6 +20,8 @@ export {
 	AskUserQuestionToolRenderer,
 	BashToolRenderer,
 	EditToolRenderer,
+	EnterPlanModeToolRenderer,
+	ExitPlanModeToolRenderer,
 	GlobToolRenderer,
 	GrepToolRenderer,
 	OptimizedToolRenderer,

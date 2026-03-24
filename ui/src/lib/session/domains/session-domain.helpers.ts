@@ -25,6 +25,34 @@ export type UserMessageAttachment = {
 	url: string;
 };
 
+const PLAN_FILE_LINE_PATTERN = /Plan file:\s+([^\n]+)/;
+const PLAN_FILE_GUIDANCE_PATTERN =
+	/Write your complete plan to\s+(.+?)\s+before calling ExitPlanMode\./;
+const APPROVED_PLAN_MARKER = "Approved plan:\n\n";
+const CURRENT_PLAN_MARKER = "Current plan:\n\n";
+const PLAN_FEEDBACK_PREFIX = "Plan feedback from user: ";
+
+export type LatestPlanPhase =
+	| "entered"
+	| "awaiting_approval"
+	| "approved"
+	| "auto_exited"
+	| "feedback"
+	| "rejected"
+	| "error";
+
+export type LatestPlanState = {
+	toolName: "EnterPlanMode" | "ExitPlanMode";
+	toolCallId: string;
+	approvalId: string | null;
+	partState: DynamicToolPart["state"];
+	phase: LatestPlanPhase;
+	planFilePath: string | null;
+	planMarkdown: string | null;
+	feedback: string | null;
+	errorText: string | null;
+};
+
 export function buildImplicitThread(session: Session | null): ThreadSummary[] {
 	if (!session) {
 		return [];
@@ -213,6 +241,135 @@ export function addToolApprovalResponse(
 	}
 
 	return false;
+}
+
+function getToolOutputText(value: unknown): string | null {
+	if (typeof value === "string") {
+		return value;
+	}
+
+	return null;
+}
+
+function parsePlanFilePath(text: string | null | undefined): string | null {
+	if (!text) {
+		return null;
+	}
+
+	const lineMatch = text.match(PLAN_FILE_LINE_PATTERN);
+	if (lineMatch?.[1]) {
+		return lineMatch[1].trim();
+	}
+
+	const guidanceMatch = text.match(PLAN_FILE_GUIDANCE_PATTERN);
+	if (guidanceMatch?.[1]) {
+		return guidanceMatch[1].trim();
+	}
+
+	return null;
+}
+
+function parsePlanMarkdown(text: string | null | undefined): string | null {
+	if (!text) {
+		return null;
+	}
+
+	for (const marker of [APPROVED_PLAN_MARKER, CURRENT_PLAN_MARKER]) {
+		const markerIndex = text.indexOf(marker);
+		if (markerIndex !== -1) {
+			return text.slice(markerIndex + marker.length).trim() || null;
+		}
+	}
+
+	return null;
+}
+
+function parsePlanFeedback(text: string | null | undefined): string | null {
+	if (!text?.startsWith(PLAN_FEEDBACK_PREFIX)) {
+		return null;
+	}
+
+	const [feedback] = text.slice(PLAN_FEEDBACK_PREFIX.length).split("\n\n", 1);
+	return feedback?.trim() || null;
+}
+
+function getPlanApprovalId(part: DynamicToolPart): string | null {
+	const approval = part.approval;
+	if (approval && typeof approval === "object" && "id" in approval) {
+		return typeof approval.id === "string" ? approval.id : null;
+	}
+	return part.toolCallId || null;
+}
+
+export function getPlanToolState(
+	part: DynamicToolPart,
+): LatestPlanState | null {
+	if (part.toolName !== "EnterPlanMode" && part.toolName !== "ExitPlanMode") {
+		return null;
+	}
+
+	const outputText = getToolOutputText(part.output);
+	const errorText = part.errorText ?? null;
+	const planFilePath =
+		parsePlanFilePath(outputText) ?? parsePlanFilePath(errorText);
+	const planMarkdown = parsePlanMarkdown(outputText);
+	const approvalId = getPlanApprovalId(part);
+
+	if (part.toolName === "EnterPlanMode") {
+		return {
+			toolName: "EnterPlanMode",
+			toolCallId: part.toolCallId,
+			approvalId,
+			partState: part.state,
+			phase: part.state === "output-error" ? "error" : "entered",
+			planFilePath,
+			planMarkdown: null,
+			feedback: null,
+			errorText,
+		};
+	}
+
+	let phase: LatestPlanPhase = "awaiting_approval";
+	if (part.state === "output-error") {
+		phase = "error";
+	} else if (outputText?.startsWith("Plan approved.")) {
+		phase = "approved";
+	} else if (outputText?.startsWith("Plan mode exited.")) {
+		phase = "auto_exited";
+	} else if (outputText?.startsWith(PLAN_FEEDBACK_PREFIX)) {
+		phase = "feedback";
+	} else if (outputText?.startsWith("Plan rejected.")) {
+		phase = "rejected";
+	} else if (part.state === "approval-requested") {
+		phase = "awaiting_approval";
+	}
+
+	return {
+		toolName: "ExitPlanMode",
+		toolCallId: part.toolCallId,
+		approvalId,
+		partState: part.state,
+		phase,
+		planFilePath,
+		planMarkdown,
+		feedback: parsePlanFeedback(outputText),
+		errorText,
+	};
+}
+
+export function getLatestPlanState(
+	messages: ChatMessage[],
+): LatestPlanState | null {
+	for (const message of [...messages].reverse()) {
+		for (const part of [...getDynamicToolParts(message)].reverse()) {
+			const planState = getPlanToolState(part);
+			if (planState) {
+				return planState;
+			}
+		}
+	}
+
+	return null;
 }
 
 export function getPlanEntries(messages: ChatMessage[]): PlanEntry[] {
