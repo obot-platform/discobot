@@ -29,9 +29,9 @@ logging:
   format: text
 
 # Record all HTTP request/response metadata to disk for later inspection.
-# Files are written as JSONL to the session user's home directory so they
-# remain accessible from outside the container via the discobot filesystem.
+# Files are written under the proxy's /.data directory so they remain owned by
+# the sandbox infrastructure rather than the discobot user home.
 recording:
   enabled: true
-  dir: /home/discobot/.discobot/proxy/data
+  dir: /.data/proxy/recordings
   max_body_size: 10485760  # 10MB per request/response body
