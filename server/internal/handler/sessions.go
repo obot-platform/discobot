@@ -49,6 +49,10 @@ type workspaceResponse struct {
 }
 
 func deriveSessionStatusAndError(sess *service.Session) (string, string) {
+	if sess.Status == model.SessionStatusRemoving || sess.Status == model.SessionStatusRemoved {
+		return sess.Status, ""
+	}
+
 	commitStatus := strings.TrimSpace(sess.CommitStatus)
 	commitOperation := strings.TrimSpace(sess.CommitOperation)
 	switch {
