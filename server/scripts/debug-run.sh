@@ -1,12 +1,10 @@
 #!/bin/bash
-# Wrapper script for air: starts the server binary and generates .zed/debug.json with the PID
+# Wrapper script for air: writes .zed/debug.json, then execs the server binary so air signals the real process
 set -e
 
 BINARY="./build/discobot"
 DEBUG_JSON="../.zed/debug.json"
-
-"$BINARY" "$@" &
-PID=$!
+PID=$$
 
 mkdir -p "$(dirname "$DEBUG_JSON")"
 cat > "$DEBUG_JSON" <<EOF
@@ -23,4 +21,4 @@ cat > "$DEBUG_JSON" <<EOF
 ]
 EOF
 
-wait $PID
+exec "$BINARY" "$@"
