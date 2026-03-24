@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick } from "svelte";
+	import { onDestroy, onMount, tick } from "svelte";
 	import { InputGroup, InputGroupAddon } from "$lib/components/ui/input-group";
 	import ConversationComposerAttachmentButton from "$lib/components/app/parts/ConversationComposerAttachmentButton.svelte";
 	import ConversationComposerAttachments from "$lib/components/app/parts/ConversationComposerAttachments.svelte";
@@ -50,6 +50,7 @@
 	);
 	let sessionSetupRef = $state<WorkspaceSelectorHandle | null>(null);
 	let pendingSubmitError = $state<string | null>(null);
+	let mounted = true;
 
 	function normalizeComposerMode(
 		mode: string | null | undefined,
@@ -194,6 +195,10 @@
 		void focusComposerTextarea();
 	});
 
+	onDestroy(() => {
+		mounted = false;
+	});
+
 	async function submitComposer() {
 		if (isGenerating()) {
 			await thread.cancel();
@@ -280,7 +285,9 @@
 				preferences.addPromptToHistory(trimmedText);
 			}
 			thread.clearComposerDraft();
-			sessions.select(response.sessionId);
+			if (mounted) {
+				sessions.select(response.sessionId);
+			}
 
 			sessionView.setComposerDraft("");
 			clearComposerOverrides();
