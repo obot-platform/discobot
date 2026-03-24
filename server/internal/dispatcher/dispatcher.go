@@ -39,10 +39,15 @@ type Service struct {
 	// When a job is enqueued, send to this channel to wake up the processor
 	notifyCh chan struct{}
 
+	// Drain state
+	draining   bool
+	drainingMu sync.RWMutex
+
 	// Lifecycle management
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+	jobWg  sync.WaitGroup
 }
 
 // NewService creates a new dispatcher service.
@@ -89,6 +94,26 @@ func (d *Service) NotifyNewJob() {
 	}
 }
 
+// IsDraining returns whether the dispatcher is draining and refusing to start
+// new jobs.
+func (d *Service) IsDraining() bool {
+	d.drainingMu.RLock()
+	defer d.drainingMu.RUnlock()
+	return d.draining
+}
+
+// BeginDrain stops the dispatcher from claiming any new jobs while allowing
+// in-flight jobs to keep running.
+func (d *Service) BeginDrain() {
+	d.drainingMu.Lock()
+	defer d.drainingMu.Unlock()
+	if d.draining {
+		return
+	}
+	d.draining = true
+	log.Println("Dispatcher entering drain mode")
+}
+
 // Start begins the dispatcher service.
 func (d *Service) Start(parentCtx context.Context) {
 	d.ctx, d.cancel = context.WithCancel(parentCtx)
@@ -126,12 +151,66 @@ func (d *Service) Start(parentCtx context.Context) {
 
 // Stop gracefully stops the dispatcher.
 func (d *Service) Stop() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := d.DrainAndStop(ctx); err != nil {
+		log.Printf("Dispatcher stop warning: %v", err)
+	}
+}
+
+// DrainAndStop drains in-flight jobs, then stops dispatcher background loops.
+func (d *Service) DrainAndStop(ctx context.Context) error {
 	log.Println("Dispatcher stopping...")
+	d.BeginDrain()
 
-	// Signal all goroutines to stop
-	d.cancel()
+	var retErr error
+	if err := d.waitForInFlightJobs(ctx); err != nil {
+		retErr = err
+	}
 
-	// Wait for in-flight jobs to complete (with timeout)
+	if d.cancel != nil {
+		d.cancel()
+	}
+
+	if err := d.waitForLoops(ctx); err != nil && retErr == nil {
+		retErr = err
+	}
+
+	// Release leadership (skip for single-node since we never wrote a DB row)
+	if !d.singleNode && d.IsLeader() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := d.store.ReleaseLeadership(releaseCtx, d.serverID); err != nil {
+			if retErr == nil {
+				retErr = err
+			}
+			log.Printf("Failed to release leadership: %v", err)
+		} else {
+			log.Println("Leadership released")
+		}
+	}
+
+	return retErr
+}
+
+func (d *Service) waitForInFlightJobs(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		d.jobWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All in-flight dispatcher jobs completed")
+		return nil
+	case <-ctx.Done():
+		log.Println("Timeout waiting for in-flight dispatcher jobs")
+		return ctx.Err()
+	}
+}
+
+func (d *Service) waitForLoops(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		d.wg.Wait()
@@ -141,19 +220,10 @@ func (d *Service) Stop() {
 	select {
 	case <-done:
 		log.Println("All dispatcher goroutines stopped")
-	case <-time.After(30 * time.Second):
+		return nil
+	case <-ctx.Done():
 		log.Println("Timeout waiting for dispatcher goroutines")
-	}
-
-	// Release leadership (skip for single-node since we never wrote a DB row)
-	if !d.singleNode && d.IsLeader() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := d.store.ReleaseLeadership(ctx, d.serverID); err != nil {
-			log.Printf("Failed to release leadership: %v", err)
-		} else {
-			log.Println("Leadership released")
-		}
+		return ctx.Err()
 	}
 }
 
@@ -238,6 +308,10 @@ func (d *Service) processAvailableJobs() {
 
 	// Keep processing while there are jobs and capacity
 	for {
+		if d.IsDraining() {
+			return
+		}
+
 		// Get job types that have available capacity
 		availableTypes := d.getAvailableJobTypes()
 		if len(availableTypes) == 0 {
@@ -264,8 +338,10 @@ func (d *Service) processAvailableJobs() {
 
 		// Process job in goroutine
 		d.wg.Add(1)
+		d.jobWg.Add(1)
 		go func(j *model.Job, jt jobs.JobType) {
 			defer d.wg.Done()
+			defer d.jobWg.Done()
 			defer d.decrementRunning(jt)
 			d.executeJob(j)
 		}(job, jobType)

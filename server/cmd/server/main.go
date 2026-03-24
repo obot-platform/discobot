@@ -38,6 +38,8 @@ import (
 	"github.com/obot-platform/discobot/server/static"
 )
 
+const gracefulShutdownTimeout = 10 * time.Minute
+
 func main() {
 	// Load .env file if present
 	_ = godotenv.Load()
@@ -1625,14 +1627,19 @@ func main() {
 
 	<-quit
 
-	// Hard deadline: if graceful shutdown takes longer than 10s, force exit.
-	go func() {
-		time.Sleep(10 * time.Second)
-		log.Println("Graceful shutdown timed out, forcing exit")
-		os.Exit(1)
-	}()
-
 	log.Println("Shutting down server...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
+	defer shutdownCancel()
+
+	// Stop dispatcher first by entering drain mode and waiting for in-flight jobs.
+	// Keep the rest of the server running so existing background jobs can finish.
+	if disp != nil {
+		log.Println("Draining in-flight background jobs before shutdown...")
+		if err := disp.DrainAndStop(shutdownCtx); err != nil {
+			log.Printf("Warning: dispatcher drain did not complete cleanly: %v", err)
+		}
+	}
 
 	// Stop debug Docker proxy
 	if debugDockerServer != nil {
@@ -1667,18 +1674,13 @@ func main() {
 		}
 	}
 
-	// Stop dispatcher first (finish in-flight jobs)
-	if disp != nil {
-		disp.Stop()
-	}
-
 	// Stop event poller
 	eventPoller.Stop()
 
 	// Close handler resources (stops Codex callback server, etc.)
 	h.Close()
 
-	// Graceful shutdown with timeout
+	// Graceful HTTP shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
