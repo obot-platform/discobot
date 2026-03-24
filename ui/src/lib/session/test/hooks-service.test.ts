@@ -49,8 +49,8 @@ test("toHooksStatus maps API hook response fields into session hook state", () =
 			result: hook.lastResult,
 		})),
 		[
-			{ id: "hook-1", type: "user_prompt_submit", result: "success" },
-			{ id: "hook-2", type: "post_tool_use", result: "failure" },
+			{ id: "hook-1", type: "session", result: "success" },
+			{ id: "hook-2", type: "file", result: "failure" },
 		],
 	);
 });

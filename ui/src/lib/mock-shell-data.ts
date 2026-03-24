@@ -355,7 +355,7 @@ function makeHooksStatus(index: number): SessionData["hooksStatus"] {
 		{
 			hookId: "hook-format-check",
 			hookName: "Format check",
-			type: "pre_tool_use",
+			type: "pre-commit",
 			command: "pnpm format --check",
 			lastResult: first,
 			lastRunAt: new Date(now - 90_000).toISOString(),
@@ -366,7 +366,7 @@ function makeHooksStatus(index: number): SessionData["hooksStatus"] {
 		{
 			hookId: "hook-lint-summary",
 			hookName: "Lint summary",
-			type: "post_tool_use",
+			type: "file",
 			command: "pnpm check:frontend",
 			lastResult: second,
 			lastRunAt: new Date(now - 55_000).toISOString(),
@@ -377,7 +377,7 @@ function makeHooksStatus(index: number): SessionData["hooksStatus"] {
 		{
 			hookId: "hook-policy-guard",
 			hookName: "Policy guard",
-			type: "user_prompt_submit",
+			type: "session",
 			command: "validate-user-intent --strict",
 			lastResult: third,
 			lastRunAt: new Date(now - 30_000).toISOString(),

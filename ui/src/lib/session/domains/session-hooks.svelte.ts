@@ -16,8 +16,30 @@ export function createSessionHooksDomain(
 ): SessionHooksService & { refresh: () => Promise<void> } {
 	let outputById = $state<Record<string, string>>({});
 	let hooksData = $state<HooksStatusResponse | null>(null);
+	let rerunningHookIds = $state<string[]>([]);
 
-	const status = $derived(toHooksStatus(hooksData));
+	const status = $derived.by(() => {
+		const baseStatus = toHooksStatus(hooksData);
+		if (rerunningHookIds.length === 0) {
+			return baseStatus;
+		}
+
+		return {
+			...baseStatus,
+			pendingHookIds: baseStatus.pendingHookIds.filter(
+				(hookId) => !rerunningHookIds.includes(hookId),
+			),
+			hooks: baseStatus.hooks.map((hook) => {
+				if (!rerunningHookIds.includes(hook.hookId)) {
+					return hook;
+				}
+				return {
+					...hook,
+					lastResult: "running" as const,
+				};
+			}),
+		};
+	});
 
 	async function loadOutputs(nextStatus: HooksStatusResponse | null) {
 		if (!nextStatus) {
@@ -40,6 +62,18 @@ export function createSessionHooksDomain(
 		);
 	}
 
+	async function refresh() {
+		if (!args.hasSession()) {
+			hooksData = null;
+			outputById = {};
+			rerunningHookIds = [];
+			return;
+		}
+		const nextStatus = await api.getHooksStatus(args.sessionId);
+		hooksData = nextStatus;
+		await loadOutputs(nextStatus);
+	}
+
 	return {
 		get status() {
 			return status;
@@ -48,28 +82,19 @@ export function createSessionHooksDomain(
 			return outputById;
 		},
 		rerun: (hookId: string) => {
-			if (!args.hasSession()) {
+			if (!args.hasSession() || rerunningHookIds.includes(hookId)) {
 				return;
 			}
+			rerunningHookIds = [...rerunningHookIds, hookId];
 			void (async () => {
-				await api.rerunHook(args.sessionId, hookId);
-				const [nextStatus, nextOutput] = await Promise.all([
-					api.getHooksStatus(args.sessionId),
-					api.getHookOutput(args.sessionId, hookId),
-				]);
-				hooksData = nextStatus;
-				outputById = mergeHookOutput(outputById, hookId, nextOutput);
+				try {
+					await api.rerunHook(args.sessionId, hookId);
+				} finally {
+					rerunningHookIds = rerunningHookIds.filter((id) => id !== hookId);
+					await refresh();
+				}
 			})();
 		},
-		refresh: async () => {
-			if (!args.hasSession()) {
-				hooksData = null;
-				outputById = {};
-				return;
-			}
-			const nextStatus = await api.getHooksStatus(args.sessionId);
-			hooksData = nextStatus;
-			await loadOutputs(nextStatus);
-		},
+		refresh,
 	};
 }

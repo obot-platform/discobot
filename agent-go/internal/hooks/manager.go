@@ -162,6 +162,9 @@ func (m *Manager) HasFileHooks() bool {
 
 // GetStatus returns the current hook status.
 func (m *Manager) GetStatus() StatusFile {
+	m.mu.Lock()
+	m.reloadHooks()
+	m.mu.Unlock()
 	return LoadStatus(m.hooksDataDir)
 }
 
@@ -181,6 +184,7 @@ func (m *Manager) GetHookOutput(hookID string) (string, error) {
 // RerunHook manually reruns a file hook against current dirty files.
 func (m *Manager) RerunHook(hookID string) (*HookResult, error) {
 	m.mu.Lock()
+	m.reloadHooks()
 	var hook *Hook
 	for i := range m.fileHooks {
 		if m.fileHooks[i].ID == hookID {

@@ -134,7 +134,7 @@ export type PlanEntry = {
 export type HookRunStatus = {
 	hookId: string;
 	hookName: string;
-	type: "pre_tool_use" | "post_tool_use" | "user_prompt_submit";
+	type: "session" | "file" | "pre-commit";
 	command?: string;
 	lastResult: HookLastResult;
 	lastRunAt?: string;

@@ -468,12 +468,7 @@ export function toHooksStatus(
 		hooks: Object.values(response.hooks).map((hook) => ({
 			hookId: hook.hookId,
 			hookName: hook.hookName,
-			type:
-				hook.type === "session"
-					? "user_prompt_submit"
-					: hook.type === "file"
-						? "post_tool_use"
-						: "pre_tool_use",
+			type: hook.type,
 			lastResult: hook.lastResult,
 			lastRunAt: hook.lastRunAt,
 			lastExitCode: hook.lastExitCode,
