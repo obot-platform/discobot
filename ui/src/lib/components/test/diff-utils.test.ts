@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	buildEditDiffRows,
 	countDiffLinesFast,
 	parseUnifiedDiff,
 	reconstructOriginalFromPatch,
@@ -88,4 +89,94 @@ test("countDiffLinesFast counts only hunk content lines", () => {
 	].join("\n");
 
 	assert.equal(countDiffLinesFast(patch), 4);
+});
+
+test("buildEditDiffRows returns numbered edit rows with inline highlights", () => {
+	const rows = buildEditDiffRows(
+		[
+			"export function example() {",
+			"\treturn oldValue;",
+			"}",
+		].join("\n"),
+		[
+			"export function example() {",
+			"\treturn newValue;",
+			"}",
+		].join("\n"),
+	);
+
+	assert.deepEqual(rows, [
+		{
+			kind: "context",
+			oldLineNumber: 1,
+			newLineNumber: 1,
+			segments: [{ text: "export function example() {", changed: false }],
+		},
+		{
+			kind: "remove",
+			oldLineNumber: 2,
+			newLineNumber: null,
+			segments: [
+				{ text: "\treturn ", changed: false },
+				{ text: "old", changed: true },
+				{ text: "Value;", changed: false },
+			],
+		},
+		{
+			kind: "add",
+			oldLineNumber: null,
+			newLineNumber: 2,
+			segments: [
+				{ text: "\treturn ", changed: false },
+				{ text: "new", changed: true },
+				{ text: "Value;", changed: false },
+			],
+		},
+		{
+			kind: "context",
+			oldLineNumber: 3,
+			newLineNumber: 3,
+			segments: [{ text: "}", changed: false }],
+		},
+	]);
+});
+
+test("buildEditDiffRows preserves unmatched insertions and deletions", () => {
+	const rows = buildEditDiffRows(
+		["alpha", "beta"].join("\n"),
+		["alpha", "gamma", "delta"].join("\n"),
+	);
+
+	assert.deepEqual(rows, [
+		{
+			kind: "context",
+			oldLineNumber: 1,
+			newLineNumber: 1,
+			segments: [{ text: "alpha", changed: false }],
+		},
+		{
+			kind: "remove",
+			oldLineNumber: 2,
+			newLineNumber: null,
+			segments: [
+				{ text: "bet", changed: true },
+				{ text: "a", changed: false },
+			],
+		},
+		{
+			kind: "add",
+			oldLineNumber: null,
+			newLineNumber: 2,
+			segments: [
+				{ text: "gamm", changed: true },
+				{ text: "a", changed: false },
+			],
+		},
+		{
+			kind: "add",
+			oldLineNumber: null,
+			newLineNumber: 3,
+			segments: [{ text: "delta", changed: true }],
+		},
+	]);
 });

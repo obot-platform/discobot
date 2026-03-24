@@ -1,5 +1,6 @@
 <script lang="ts">
 	import FilePenIcon from "@lucide/svelte/icons/file-pen";
+	import { buildEditDiffRows, type EditDiffRow } from "$lib/diff-utils";
 	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
 	import {
 		type EditToolOutput,
@@ -7,6 +8,7 @@
 		validateEditOutput,
 	} from "$lib/components/ai/tool-schemas/edit-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
+	import { cn } from "$lib/utils";
 	import type { ToolRendererComponentProps } from "./types";
 	import { countLines, renderToolValue, shortenPath } from "./utils";
 
@@ -28,6 +30,55 @@
 	);
 	const editError = $derived.by(() => toolPart.errorText || validOutput?.error);
 	const rawOutputText = $derived.by(() => renderToolValue(toolPart.output));
+	const diffRows = $derived.by(() =>
+		buildEditDiffRows(validInput?.old_string ?? "", validInput?.new_string ?? ""),
+	);
+	const changedRowCount = $derived.by(
+		() => diffRows.filter((row) => row.kind !== "context").length,
+	);
+
+	function getRowClasses(kind: EditDiffRow["kind"]): string {
+		if (kind === "add") {
+			return "bg-green-500/5";
+		}
+		if (kind === "remove") {
+			return "bg-red-500/5";
+		}
+		return "bg-background/70";
+	}
+
+	function getMarker(kind: EditDiffRow["kind"]): string {
+		if (kind === "add") {
+			return "+";
+		}
+		if (kind === "remove") {
+			return "-";
+		}
+		return " ";
+	}
+
+	function getMarkerClasses(kind: EditDiffRow["kind"]): string {
+		if (kind === "add") {
+			return "text-green-700 dark:text-green-400";
+		}
+		if (kind === "remove") {
+			return "text-red-700 dark:text-red-400";
+		}
+		return "text-muted-foreground";
+	}
+
+	function getSegmentClasses(kind: EditDiffRow["kind"], changed: boolean): string {
+		if (!changed) {
+			return "";
+		}
+		if (kind === "add") {
+			return "rounded-sm bg-green-500/15 text-green-950 dark:text-green-50";
+		}
+		if (kind === "remove") {
+			return "rounded-sm bg-red-500/15 text-red-950 dark:text-red-50";
+		}
+		return "";
+	}
 </script>
 
 <div class="flex items-center justify-between gap-4 px-4 pt-4">
@@ -72,21 +123,63 @@
 						<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
 							new {countLines(validInput.new_string ?? "")} lines
 						</span>
+						{#if changedRowCount > 0}
+							<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+								{changedRowCount} changed {changedRowCount === 1 ? "row" : "rows"}
+							</span>
+						{/if}
 					</div>
 				</div>
 
-				<div class="grid gap-3 md:grid-cols-2">
-					<div class="space-y-1.5">
-						<h5 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Old text</h5>
-						<div class="rounded-md border bg-background/80">
-							<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs"><code>{validInput.old_string}</code></pre>
-						</div>
-					</div>
-					<div class="space-y-1.5">
-						<h5 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">New text</h5>
-						<div class="rounded-md border bg-background/80">
-							<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs"><code>{validInput.new_string}</code></pre>
-						</div>
+				<div class="space-y-1.5">
+					<h5 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Changes</h5>
+					<div class="overflow-auto rounded-md border bg-background/80">
+						{#if changedRowCount === 0}
+							<div class="p-3 text-muted-foreground text-xs">No text changes to preview.</div>
+						{:else}
+							<div class="min-w-max font-mono text-xs">
+								<div class="grid grid-cols-[3rem_3rem_1.5rem_minmax(0,1fr)] border-b bg-muted/40 text-[11px] text-muted-foreground uppercase tracking-wide">
+									<div class="border-r px-2 py-1 text-right">Old</div>
+									<div class="border-r px-2 py-1 text-right">New</div>
+									<div class="border-r px-1 py-1 text-center">±</div>
+									<div class="px-3 py-1">Content</div>
+								</div>
+								{#each diffRows as row, rowIndex (`${row.kind}-${row.oldLineNumber ?? "x"}-${row.newLineNumber ?? "x"}-${rowIndex}`)}
+									<div
+										class={cn(
+											"grid grid-cols-[3rem_3rem_1.5rem_minmax(0,1fr)] border-t first:border-t-0",
+											getRowClasses(row.kind),
+										)}
+									>
+										<div class="border-r px-2 py-1 text-right text-muted-foreground">
+											{row.oldLineNumber ?? ""}
+										</div>
+										<div class="border-r px-2 py-1 text-right text-muted-foreground">
+											{row.newLineNumber ?? ""}
+										</div>
+										<div
+											class={cn(
+												"border-r px-1 py-1 text-center font-semibold",
+												getMarkerClasses(row.kind),
+											)}
+										>
+											{getMarker(row.kind)}
+										</div>
+										<div class="min-h-6 px-3 py-1 whitespace-pre">
+											{#if row.segments.every((segment) => segment.text.length === 0)}
+												<span aria-hidden="true" class="opacity-0">·</span>
+											{:else}
+												{#each row.segments as segment, segmentIndex (`${rowIndex}-${segmentIndex}`)}
+													<span class={cn(getSegmentClasses(row.kind, segment.changed), segment.changed && "px-0.5")}>
+														{segment.text}
+													</span>
+												{/each}
+											{/if}
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
