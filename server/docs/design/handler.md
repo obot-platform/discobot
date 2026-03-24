@@ -176,9 +176,9 @@ The chat handler provides thread-scoped endpoints for AI SDK integration:
 Fresh stream requests (no `Last-Event-ID`, or an invalid one) now emit:
 1. `event: history-start`
 2. one `event: message` per persisted UI message in session history
-3. any currently buffered in-memory delta events for the active completion
+3. the initial in-memory chunk snapshot for the current completion, if one exists (even if that completion has already finished)
 4. `event: history-end`
-5. then live chunk events as they arrive
+5. then any later live chunk events or idle pings
 
 Valid `Last-Event-ID` reconnects skip the history replay and continue from the requested chunk offset.
 

@@ -562,6 +562,72 @@ func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
 	}
 }
 
+func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *testing.T) {
+	historyMsg := message.UIMessage{
+		ID:    "hist-done-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "prompt"}},
+	}
+	historyMsgJSON, err := json.Marshal(historyMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cachedChunk := message.TextDeltaChunk{ID: "delta-done-1", Delta: "completed"}
+	cachedChunkJSON, err := message.MarshalChunk(cachedChunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{
+		promptFn: yieldChunksAndFinish(cachedChunk),
+		messagesFn: func(_, _ string) ([]message.UIMessage, error) {
+			return []message.UIMessage{historyMsg}, nil
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	completionID, err := cm.Chat("thread-done", agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 10 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-done/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	frames := readFrames(t, resp.Body, 5, false)
+	if len(frames) != 5 {
+		t.Fatalf("expected 5 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
+		t.Fatalf("unexpected history message frame: %+v", frames[1])
+	}
+	if frames[2].Event != "chunk" || frames[2].ID != completionID+":0" || frames[2].Data != string(cachedChunkJSON) {
+		t.Fatalf("expected completed snapshot chunk before history-end, got %+v", frames[2])
+	}
+	if frames[3].Event != "history-end" {
+		t.Fatalf("expected history-end after completed snapshot chunk, got %+v", frames[3])
+	}
+	if frames[4].Event != "ping" {
+		t.Fatalf("expected ping after replay completes, got %+v", frames[4])
+	}
+}
+
 func TestChatStream_ValidLastEventID_ResumesWithoutHistory(t *testing.T) {
 	chunk1 := message.TextDeltaChunk{ID: "delta-1", Delta: "one"}
 	chunk2 := message.TextDeltaChunk{ID: "delta-1", Delta: "two"}

@@ -178,8 +178,9 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 
 // ChatStream handles GET /threads/{id}/chat/stream — streams SSE events for a thread.
 // Fresh requests (no Last-Event-ID, or an invalid one) replay the full persisted
-// UI message history first using named SSE events, then continue with any live
-// in-memory deltas. Valid Last-Event-ID reconnects keep the existing resume-only
+// UI message history first using named SSE events, then send the current
+// in-memory chunk snapshot before history-end, and finally continue with live
+// deltas. Valid Last-Event-ID reconnects keep the existing resume-only
 // behavior. The SSE protocol is explicit:
 //   - history-start / history-message / history-end for replayed UIMessage values
 //   - chunk for UIMessageChunk deltas
@@ -250,7 +251,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 
-		if snapshot != nil && (!snapshot.Done || snapshot.Err != nil) {
+		if snapshot != nil {
 			for index, chunk := range snapshot.Chunks {
 				data, err := message.MarshalChunk(chunk)
 				if err != nil {
