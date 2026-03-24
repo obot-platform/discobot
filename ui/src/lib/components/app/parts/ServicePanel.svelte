@@ -467,26 +467,6 @@
 				/>
 				<span>{statusLabel}</span>
 			</div>
-			{#if isRunnable}
-				<Button
-					variant="ghost"
-					size="xs"
-					class="gap-1"
-					disabled={isMutatingService ||
-						service.status === "starting" ||
-						service.status === "stopping"}
-					onclick={handleServiceAction}
-				>
-					{#if service.status === "starting" || service.status === "stopping" || isMutatingService}
-						<Loader2Icon class="size-3 animate-spin" />
-					{:else if canStop}
-						<SquareIcon class="size-3 fill-current" />
-					{:else}
-						<PlayIcon class="size-3 fill-current" />
-					{/if}
-					{actionLabel}
-				</Button>
-			{/if}
 		</div>
 	{/snippet}
 
@@ -512,19 +492,48 @@
 							: "border-transparent bg-sidebar-accent/60 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
 					)}
 				>
-					<span class="truncate max-w-40">{item.label}</span>
-					<div
-						class={cn(
-							"size-2 shrink-0 rounded-full",
-							item.status === "running" && "bg-green-500",
-							item.status === "starting" && "bg-yellow-500",
-							item.status === "stopping" && "bg-yellow-500",
-							item.status === "stopped" &&
-								(item.exitCode !== undefined && item.exitCode !== 0
-									? "bg-red-500"
-									: "bg-sidebar-foreground/30"),
-						)}
-					></div>
+					<div class="flex min-w-0 items-center gap-2">
+						<span class="max-w-40 truncate">{item.label}</span>
+						<div
+							class={cn(
+								"size-2 shrink-0 rounded-full",
+								item.status === "running" && "bg-green-500",
+								item.status === "starting" && "bg-yellow-500",
+								item.status === "stopping" && "bg-yellow-500",
+								item.status === "stopped" &&
+									(item.exitCode !== undefined && item.exitCode !== 0
+										? "bg-red-500"
+										: "bg-sidebar-foreground/30"),
+							)}
+						></div>
+					</div>
+					{#if activeServiceId === item.id && service?.id === item.id && isRunnable}
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							class="size-5 rounded-sm p-0 text-foreground/60 hover:text-foreground"
+							title={`${actionLabel} ${item.label}`}
+							aria-label={`${actionLabel} ${item.label}`}
+							disabled={isMutatingService ||
+								service.status === "starting" ||
+								service.status === "stopping"}
+							onclick={(event) => {
+								event.stopPropagation();
+								void handleServiceAction();
+							}}
+							onkeydown={(event) => {
+								event.stopPropagation();
+							}}
+						>
+							{#if service.status === "starting" || service.status === "stopping" || isMutatingService}
+								<Loader2Icon class="size-3 animate-spin" />
+							{:else if canStop}
+								<SquareIcon class="size-3 fill-current" />
+							{:else}
+								<PlayIcon class="size-3 fill-current" />
+							{/if}
+						</Button>
+					{/if}
 				</div>
 			{/each}
 		</div>
