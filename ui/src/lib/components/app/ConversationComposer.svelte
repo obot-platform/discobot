@@ -220,6 +220,7 @@
 				reasoning: effectiveReasoning,
 			});
 			preferences.addPromptToHistory(nextMessageText);
+			thread.clearComposerDraft();
 			sessionView.setComposerDraft("");
 			clearComposerOverrides();
 			composerTextareaRef?.closeMentionDropdown();
@@ -275,6 +276,7 @@
 			if (trimmedText) {
 				preferences.addPromptToHistory(trimmedText);
 			}
+			thread.clearComposerDraft();
 			sessions.select(response.sessionId);
 
 			sessionView.setComposerDraft("");

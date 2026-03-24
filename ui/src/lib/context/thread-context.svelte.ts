@@ -1,5 +1,11 @@
 import { getContext, hasContext, setContext } from "svelte";
 
+import {
+	clearComposerDraft,
+	readComposerDraft,
+	resolveComposerDraftStorageKey,
+	writeComposerDraft,
+} from "$lib/composer-draft-storage";
 import { useAppContext } from "$lib/context/app-context.svelte";
 import { useSessionContext } from "$lib/context/session-context.svelte";
 import { createConversationDomain } from "$lib/thread/conversation.svelte";
@@ -10,6 +16,7 @@ import type {
 } from "$lib/session/session-context.types";
 
 const THREAD_CONTEXT_KEY = Symbol.for("discobot-ui-thread-context");
+const COMPOSER_DRAFT_PERSIST_DELAY_MS = 300;
 
 function createThreadContext(
 	threadId: string,
@@ -42,6 +49,59 @@ function createThreadContext(
 			await refreshSessionState();
 		},
 	});
+	let loadedComposerDraftStorageKey = $state<string | null>(null);
+	let lastStoredComposerDraft = $state("");
+	let composerDraftPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const composerDraftStorageKey = $derived.by(() =>
+		resolveComposerDraftStorageKey({
+			isPending: session.isPending,
+			threadId,
+		}),
+	);
+
+	$effect(() => {
+		const storageKey = composerDraftStorageKey;
+		if (loadedComposerDraftStorageKey !== storageKey) {
+			loadedComposerDraftStorageKey = storageKey;
+			lastStoredComposerDraft = readComposerDraft(storageKey);
+			if (session.ui.composerDraft !== lastStoredComposerDraft) {
+				session.ui.setComposerDraft(lastStoredComposerDraft);
+			}
+			return;
+		}
+
+		const draft = session.ui.composerDraft;
+		if (draft === lastStoredComposerDraft) {
+			return;
+		}
+
+		if (composerDraftPersistTimer !== null) {
+			clearTimeout(composerDraftPersistTimer);
+		}
+
+		composerDraftPersistTimer = setTimeout(() => {
+			writeComposerDraft(storageKey, draft);
+			lastStoredComposerDraft = draft;
+			composerDraftPersistTimer = null;
+		}, COMPOSER_DRAFT_PERSIST_DELAY_MS);
+
+		return () => {
+			if (composerDraftPersistTimer !== null) {
+				clearTimeout(composerDraftPersistTimer);
+				composerDraftPersistTimer = null;
+			}
+		};
+	});
+
+	const clearStoredComposerDraft = () => {
+		if (composerDraftPersistTimer !== null) {
+			clearTimeout(composerDraftPersistTimer);
+			composerDraftPersistTimer = null;
+		}
+		clearComposerDraft(composerDraftStorageKey);
+		lastStoredComposerDraft = "";
+	};
 
 	return {
 		get threadId() {
@@ -65,12 +125,19 @@ function createThreadContext(
 		get error() {
 			return conversation.error;
 		},
+		clearComposerDraft: clearStoredComposerDraft,
 		submit: conversation.submit,
 		cancel: conversation.cancel,
 		load: conversation.load,
 		refresh: conversation.refresh,
 		addToolApprovalResponse: conversation.addToolApprovalResponse,
-		dispose: conversation.dispose,
+		dispose: () => {
+			if (composerDraftPersistTimer !== null) {
+				clearTimeout(composerDraftPersistTimer);
+				composerDraftPersistTimer = null;
+			}
+			conversation.dispose();
+		},
 		get editorFiles() {
 			return session.files.list;
 		},
