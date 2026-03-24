@@ -216,10 +216,18 @@ export function addToolApprovalResponse(
 }
 
 export function getPlanEntries(messages: ChatMessage[]): PlanEntry[] {
-	for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+	for (
+		let messageIndex = messages.length - 1;
+		messageIndex >= 0;
+		messageIndex -= 1
+	) {
 		const message = messages[messageIndex];
 
-		for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+		for (
+			let partIndex = message.parts.length - 1;
+			partIndex >= 0;
+			partIndex -= 1
+		) {
 			const part = message.parts[partIndex];
 			if (
 				part.type !== "dynamic-tool" ||
