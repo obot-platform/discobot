@@ -429,6 +429,28 @@
 				},
 			}),
 		]),
+		createMessage("assistant-tool-then-text", "assistant", [
+			createToolPart({
+				toolCallId: "tool-collapse-demo",
+				toolName: "Grep",
+				state: "output-available",
+				input: {
+					pattern: "ConversationPane",
+					path: "/home/discobot/workspace/ui/src/lib/components/app",
+					glob: "**/*.svelte",
+					output_mode: "files_with_matches",
+				},
+				output: {
+					files: [
+						"/home/discobot/workspace/ui/src/lib/components/app/ConversationPane.svelte",
+					],
+				},
+			}),
+			{
+				type: "text",
+				text: "This completed assistant turn should now collapse the earlier tool step into a single summary row while keeping this final reply visible.",
+			},
+		]),
 		createMessage("assistant-3", "assistant", [
 			{
 				type: "text",

@@ -2,6 +2,11 @@
 	import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 	import { tick } from "svelte";
 	import type { ChatMessage } from "$lib/api-types";
+	import type { ConversationPaneRenderablePart } from "$lib/components/app/conversation-pane-message-parts";
+	import {
+		getAssistantMessagePartGroups,
+		isConversationPaneMessageStreaming,
+	} from "$lib/components/app/conversation-pane-message-parts";
 	import type { ChatWidthMode } from "$lib/app/app-context.types";
 	import { Loader } from "$lib/components/ai";
 	import {
@@ -21,6 +26,11 @@
 	import LazyMount from "$lib/components/app/parts/LazyMount.svelte";
 	import { Alert, AlertDescription } from "$lib/components/ui/alert";
 	import { Button } from "$lib/components/ui/button";
+	import {
+		Collapsible,
+		CollapsibleContent,
+		CollapsibleTrigger,
+	} from "$lib/components/ui/collapsible";
 	import { getAppContextIfPresent } from "$lib/context/app-context.svelte";
 	import { getSessionContextIfPresent } from "$lib/context/session-context.svelte";
 	import { getThreadContextIfPresent } from "$lib/context/thread-context.svelte";
@@ -90,8 +100,9 @@
 	const canShowComposer = $derived.by(
 		() => showComposer && Boolean(app) && Boolean(session) && Boolean(thread),
 	);
-
-	type MessagePart = ChatMessage["parts"][number];
+	const latestConversationMessageId = $derived.by(
+		() => conversationMessages.at(-1)?.id ?? null,
+	);
 
 	let viewport = $state<HTMLDivElement | null>(null);
 	let content = $state<HTMLDivElement | null>(null);
@@ -99,28 +110,7 @@
 	let lastAutoScrolledMessageId = $state<string | null>(null);
 	let hasInitialBottomScroll = $state(false);
 	let isNearBottom = $state(true);
-
-	function isTextPart(
-		part: MessagePart,
-	): part is Extract<MessagePart, { type: "text" }> {
-		return part.type === "text";
-	}
-
-	function isReasoningPart(
-		part: MessagePart,
-	): part is Extract<MessagePart, { type: "reasoning" }> {
-		return part.type === "reasoning";
-	}
-
-	function isDynamicToolPart(
-		part: MessagePart,
-	): part is Extract<MessagePart, { type: "dynamic-tool" }> {
-		return part.type === "dynamic-tool";
-	}
-
-	function isStreamingMessage(message: ChatMessage): boolean {
-		return (message as { status?: string } | undefined)?.status === "streaming";
-	}
+	let expandedAssistantStepMessages = $state<Record<string, boolean>>({});
 
 	function isProvisionalUserMessage(
 		message: ChatMessage | undefined,
@@ -132,6 +122,29 @@
 		return message.role === "assistant"
 			? ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT
 			: USER_MESSAGE_PLACEHOLDER_HEIGHT;
+	}
+
+	function isAssistantStepMessageExpanded(messageId: string): boolean {
+		return expandedAssistantStepMessages[messageId] ?? false;
+	}
+
+	function setAssistantStepMessageExpanded(messageId: string, open: boolean) {
+		expandedAssistantStepMessages = {
+			...expandedAssistantStepMessages,
+			[messageId]: open,
+		};
+	}
+
+	function getCollapsedStepLabel(stepCount: number): string {
+		return `${stepCount} ${stepCount === 1 ? "step" : "steps"}`;
+	}
+
+	function isActiveStreamingAssistantMessage(message: ChatMessage): boolean {
+		return (
+			isStreaming &&
+			message.role === "assistant" &&
+			message.id === latestConversationMessageId
+		);
 	}
 
 	function updateIsNearBottom() {
@@ -304,6 +317,33 @@
 	});
 </script>
 
+{#snippet renderMessageParts(
+	message: ChatMessage,
+	parts: ConversationPaneRenderablePart[],
+)}
+	{#each parts as part, index (`${message.id}-${part.type}-${index}`)}
+		{#if part.type === "reasoning"}
+			<Reasoning
+				defaultOpen={false}
+				isStreaming={isConversationPaneMessageStreaming(message)}
+			>
+				<ReasoningTrigger />
+				<ReasoningContent text={part.text} />
+			</Reasoning>
+		{:else if part.type === "text"}
+			<MessageResponse text={part.text} />
+		{:else if part.type === "dynamic-tool"}
+			<OptimizedToolRenderer
+				toolPart={part as DynamicToolPart}
+				sessionId={activeSessionId}
+				threadId={activeThreadId}
+				onToolApprovalResponse={thread?.addToolApprovalResponse}
+				defaultOpen={toolDefaultOpen}
+			/>
+		{/if}
+	{/each}
+{/snippet}
+
 <div class="flex h-full min-h-0 flex-col overflow-hidden bg-background">
 	{#if sessionError || threadError}
 		<div class="flex flex-col gap-2 p-3">
@@ -333,6 +373,9 @@
 						class={`w-full space-y-4 ${effectiveChatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
 					>
 						{#each conversationMessages as message (message.id)}
+							{@const partGroups = getAssistantMessagePartGroups(message, {
+								isMessageComplete: !isActiveStreamingAssistantMessage(message),
+							})}
 							<Message
 								data-conversation-message-id={message.id}
 								from={message.role === "assistant" ? "assistant" : "user"}
@@ -342,27 +385,41 @@
 									root={viewport}
 								>
 									<MessageContent>
-										{#each message.parts as part, index (`${message.id}-${index}`)}
-											{#if isReasoningPart(part) && part.text.length > 0}
-												<Reasoning
-													defaultOpen={false}
-													isStreaming={isStreamingMessage(message)}
+										{#if partGroups.hasCollapsedSteps}
+											<Collapsible
+												open={isAssistantStepMessageExpanded(message.id)}
+												onOpenChange={(open) =>
+													setAssistantStepMessageExpanded(message.id, open)}
+											>
+												<CollapsibleTrigger
+													aria-label={`${isAssistantStepMessageExpanded(message.id) ? "Hide" : "Show"} ${getCollapsedStepLabel(partGroups.collapsedStepCount)}`}
+													class="flex w-full items-center gap-3 py-1 text-left"
+													type="button"
 												>
-													<ReasoningTrigger />
-													<ReasoningContent text={part.text} />
-												</Reasoning>
-											{:else if isTextPart(part) && part.text.length > 0}
-												<MessageResponse text={part.text} />
-											{:else if isDynamicToolPart(part)}
-												<OptimizedToolRenderer
-													toolPart={part as DynamicToolPart}
-													sessionId={activeSessionId}
-													threadId={activeThreadId}
-													onToolApprovalResponse={thread?.addToolApprovalResponse}
-													defaultOpen={toolDefaultOpen}
-												/>
-											{/if}
-										{/each}
+													<span class="h-px flex-1 bg-border"></span>
+													<span
+														class="rounded-full border border-border/70 bg-background px-3 py-1 font-medium text-[11px] text-muted-foreground uppercase tracking-[0.14em] transition-colors hover:border-border hover:text-foreground"
+													>
+														{getCollapsedStepLabel(
+															partGroups.collapsedStepCount,
+														)}
+													</span>
+													<span class="h-px flex-1 bg-border"></span>
+												</CollapsibleTrigger>
+												<CollapsibleContent
+													class="flex min-w-0 flex-col gap-2 overflow-hidden [&>[data-ai-stack]+[data-ai-stack]]:-mt-8"
+												>
+													{@render renderMessageParts(
+														message,
+														partGroups.collapsedParts,
+													)}
+												</CollapsibleContent>
+											</Collapsible>
+										{/if}
+										{@render renderMessageParts(
+											message,
+											partGroups.visibleParts,
+										)}
 									</MessageContent>
 								</LazyMount>
 							</Message>
