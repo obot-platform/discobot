@@ -487,12 +487,28 @@ func TestListSessionsByProject_WithData(t *testing.T) {
 	AssertStatus(t, resp, http.StatusOK)
 
 	var result struct {
-		Sessions []interface{} `json:"sessions"`
+		Sessions []struct {
+			ID        string `json:"id"`
+			CreatedAt string `json:"createdAt"`
+			Timestamp string `json:"timestamp"`
+		} `json:"sessions"`
 	}
 	ParseJSON(t, resp, &result)
 
 	if len(result.Sessions) != 3 {
 		t.Errorf("Expected 3 sessions, got %d", len(result.Sessions))
+	}
+
+	for _, session := range result.Sessions {
+		if session.CreatedAt == "" {
+			t.Fatalf("Expected session %s to include createdAt", session.ID)
+		}
+		if _, err := time.Parse(time.RFC3339, session.CreatedAt); err != nil {
+			t.Fatalf("Expected session %s createdAt to be RFC3339, got %q: %v", session.ID, session.CreatedAt, err)
+		}
+		if session.Timestamp == "" {
+			t.Fatalf("Expected session %s to include timestamp", session.ID)
+		}
 	}
 }
 

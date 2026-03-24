@@ -152,7 +152,10 @@ function compareIsoDatesDesc(left: string, right: string) {
 	return rightTime - leftTime;
 }
 
-function toSessionSummary(session: Session, recentIds: Set<string>): SessionSummary {
+function toSessionSummary(
+	session: Session,
+	recentIds: Set<string>,
+): SessionSummary {
 	return {
 		id: session.id,
 		name: session.displayName || session.name,
@@ -177,7 +180,9 @@ export function toSessionSummaries(sessions: Session[]): SessionSummary[] {
 		.map((session) => toSessionSummary(session, recentIds));
 }
 
-export function toRecentSessionSummaries(sessions: Session[]): SessionSummary[] {
+export function toRecentSessionSummaries(
+	sessions: Session[],
+): SessionSummary[] {
 	const recentIds = getRecentSessionIds(sessions);
 	return [...sessions]
 		.filter((session) => recentIds.has(session.id))

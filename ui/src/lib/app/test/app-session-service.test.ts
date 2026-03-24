@@ -55,9 +55,21 @@ test("getNextSelectedSessionId returns null when the last session is deleted", (
 
 test("toSessionSummaries sorts all sessions by createdAt descending", () => {
 	const summaries = toSessionSummaries([
-		makeSession({ id: "session-1", name: "Oldest", createdAt: "2026-01-01T00:00:00Z" }),
-		makeSession({ id: "session-2", name: "Newest", createdAt: "2026-01-03T00:00:00Z" }),
-		makeSession({ id: "session-3", name: "Middle", createdAt: "2026-01-02T00:00:00Z" }),
+		makeSession({
+			id: "session-1",
+			name: "Oldest",
+			createdAt: "2026-01-01T00:00:00Z",
+		}),
+		makeSession({
+			id: "session-2",
+			name: "Newest",
+			createdAt: "2026-01-03T00:00:00Z",
+		}),
+		makeSession({
+			id: "session-3",
+			name: "Middle",
+			createdAt: "2026-01-02T00:00:00Z",
+		}),
 	]);
 
 	assert.deepEqual(

@@ -1,7 +1,10 @@
 import { generateId } from "ai";
 import { SvelteMap } from "svelte/reactivity";
 
-import { toRecentSessionSummaries, toSessionSummaries } from "$lib/app/app-helpers";
+import {
+	toRecentSessionSummaries,
+	toSessionSummaries,
+} from "$lib/app/app-helpers";
 import type { AppSessions } from "$lib/app/app-context.types";
 import type { SessionContextValue } from "$lib/session/session-context.types";
 import type { SessionStore } from "$lib/store/sessions.store.svelte";
