@@ -13,7 +13,12 @@
 	} from "$lib/components/ai/tool-schemas/read-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
-	import { countLines, renderToolValue, shortenPath } from "./utils";
+	import {
+		countLines,
+		parseNumberedToolOutput,
+		renderToolValue,
+		shortenPath,
+	} from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -37,36 +42,10 @@
 	const content = $derived.by(
 		() => validOutput?.content || validOutput?.lines?.join("\n") || "",
 	);
-	const parsedContentLines = $derived.by(() => {
-		if (!content) {
-			return [] as Array<{ lineNumber: string; text: string }>;
-		}
-
-		const parsed: Array<{ lineNumber: string; text: string } | null> = [];
-
-		for (const line of content.split(/\r\n|\n|\r/)) {
-			if (line.trim() === "") {
-				continue;
-			}
-
-			const match = line.match(/^\s*(\d+)→(.*)$/u);
-			if (!match) {
-				parsed.push(null);
-				continue;
-			}
-
-			parsed.push({
-				lineNumber: match[1],
-				text: match[2],
-			});
-		}
-
-		return parsed.every((line) => line !== null)
-			? (parsed as Array<{ lineNumber: string; text: string }>)
-			: [];
-	});
-	const hasParsedContentLines = $derived.by(
-		() => parsedContentLines.length > 0,
+	const parsedContent = $derived.by(() => parseNumberedToolOutput(content));
+	const hasParsedContentLines = $derived.by(() => parsedContent.lines.length > 0);
+	const displayedLineCount = $derived.by(() =>
+		hasParsedContentLines ? parsedContent.lines.length : countLines(content),
 	);
 	const fileName = $derived.by(() => {
 		if (!validInput?.file_path) {
@@ -150,16 +129,28 @@
 							Content
 						</h4>
 						<span class="text-muted-foreground text-xs"
-							>{countLines(content)} lines</span
+							>{displayedLineCount} lines</span
 						>
+						{#if parsedContent.isTruncated}
+							<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs">
+								Truncated
+							</span>
+						{/if}
 					</div>
 					<div class="rounded-md border bg-muted/30">
+						{#if parsedContent.isTruncated}
+							<div class="border-b px-3 py-2 text-muted-foreground text-xs">
+								Output truncated{#if parsedContent.truncationFilePath}
+									— full output written to {shortenPath(parsedContent.truncationFilePath)}
+								{/if}
+							</div>
+						{/if}
 						{#if hasParsedContentLines}
 							<div
 								class="overflow-x-auto p-3 font-mono text-xs text-foreground"
 							>
 								<div class="grid min-w-max grid-cols-[auto_1fr] gap-x-3">
-									{#each parsedContentLines as line}
+									{#each parsedContent.lines as line}
 										<div
 											class="select-none text-muted-foreground/60 text-right"
 										>

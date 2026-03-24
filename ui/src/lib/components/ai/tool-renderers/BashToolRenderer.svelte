@@ -15,7 +15,12 @@
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import { cn } from "$lib/utils";
 	import type { ToolRendererComponentProps } from "./types";
-	import { countLines, renderToolValue } from "./utils";
+	import {
+		countLines,
+		parseNumberedToolOutput,
+		renderToolValue,
+		shortenPath,
+	} from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -38,6 +43,11 @@
 	);
 	const stdout = $derived.by(
 		() => validOutput?.output || validOutput?.stdout || "",
+	);
+	const parsedStdout = $derived.by(() => parseNumberedToolOutput(stdout));
+	const hasParsedStdoutLines = $derived.by(() => parsedStdout.lines.length > 0);
+	const displayedLineCount = $derived.by(() =>
+		hasParsedStdoutLines ? parsedStdout.lines.length : countLines(stdout),
 	);
 	const rawOutputText = $derived.by(() => renderToolValue(toolPart.output));
 	const executionError = $derived.by(
@@ -144,6 +154,11 @@
 							exit {validOutput.exitCode}
 						</span>
 					{/if}
+					{#if parsedStdout.isTruncated}
+						<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs">
+							Truncated
+						</span>
+					{/if}
 				</div>
 
 				{#if stdout}
@@ -152,12 +167,30 @@
 							class="flex items-center justify-between border-b px-3 py-2 text-muted-foreground text-xs uppercase tracking-wide"
 						>
 							<span>Stdout</span>
-							<span>{countLines(stdout)} lines</span>
+							<span>{displayedLineCount} lines</span>
 						</div>
-						<pre
-							class="overflow-x-auto whitespace-pre-wrap break-words p-3 font-mono text-xs text-foreground"><code
-								>{stdout}</code
-							></pre>
+						{#if parsedStdout.isTruncated}
+							<div class="border-b px-3 py-2 text-[11px] text-muted-foreground normal-case tracking-normal">
+								Output truncated{#if parsedStdout.truncationFilePath}
+									— full output written to {shortenPath(parsedStdout.truncationFilePath)}
+								{/if}
+							</div>
+						{/if}
+						{#if hasParsedStdoutLines}
+							<div class="overflow-x-auto p-3 font-mono text-xs text-foreground">
+								<div class="grid min-w-max grid-cols-[auto_1fr] gap-x-3">
+									{#each parsedStdout.lines as line}
+										<div class="select-none text-muted-foreground/60 text-right">{line.lineNumber}</div>
+										<div class="whitespace-pre-wrap break-words">{line.text || " "}</div>
+									{/each}
+								</div>
+							</div>
+						{:else}
+							<pre
+								class="overflow-x-auto whitespace-pre-wrap break-words p-3 font-mono text-xs text-foreground"><code
+									>{stdout}</code
+								></pre>
+						{/if}
 					</div>
 				{:else if !executionError && outputValidation?.success}
 					<div
