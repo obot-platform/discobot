@@ -93,6 +93,7 @@
 
 <Collapsible
 	data-ai-reasoning
+	data-ai-stack
 	class={cn(
 		"group group/reasoning not-prose mb-4 w-full rounded-md",
 		className,

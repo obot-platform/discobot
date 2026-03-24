@@ -23,6 +23,7 @@
 <Collapsible
 	bind:open
 	data-ai-tool
+	data-ai-stack
 	class={cn(
 		"group group/tool not-prose mb-4 w-full rounded-md",
 		showBorder ? "border" : "",
