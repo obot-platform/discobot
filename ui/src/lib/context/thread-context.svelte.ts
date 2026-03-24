@@ -22,6 +22,20 @@ import type {
 const THREAD_CONTEXT_KEY = Symbol.for("discobot-ui-thread-context");
 const COMPOSER_DRAFT_PERSIST_DELAY_MS = 300;
 
+export function clearComposerDraftState({
+	cancelPersist,
+	clearStoredDraft,
+	clearInMemoryDraft,
+}: {
+	cancelPersist: () => void;
+	clearStoredDraft: () => void;
+	clearInMemoryDraft: () => void;
+}): void {
+	cancelPersist();
+	clearStoredDraft();
+	clearInMemoryDraft();
+}
+
 function createThreadContext(
 	threadId: string,
 	session: SessionContextValue,
@@ -95,12 +109,20 @@ function createThreadContext(
 	});
 
 	const clearStoredComposerDraft = () => {
-		if (composerDraftPersistTimer !== null) {
-			clearTimeout(composerDraftPersistTimer);
-			composerDraftPersistTimer = null;
-		}
-		clearComposerDraft(composerDraftStorageKey);
-		lastStoredComposerDraft = "";
+		clearComposerDraftState({
+			cancelPersist: () => {
+				if (composerDraftPersistTimer !== null) {
+					clearTimeout(composerDraftPersistTimer);
+					composerDraftPersistTimer = null;
+				}
+			},
+			clearStoredDraft: () => {
+				clearComposerDraft(composerDraftStorageKey);
+			},
+			clearInMemoryDraft: () => {
+				session.ui.setComposerDraft("");
+			},
+		});
 	};
 	const loadConversation = createCoalescedReload(async () => {
 		await conversation.load();

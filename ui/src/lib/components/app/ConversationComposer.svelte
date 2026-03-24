@@ -228,7 +228,6 @@
 			});
 			preferences.addPromptToHistory(nextMessageText);
 			thread.clearComposerDraft();
-			sessionView.setComposerDraft("");
 			clearComposerOverrides();
 			composerTextareaRef?.closeMentionDropdown();
 			composerTextareaRef?.closePromptHistoryDropdown();
@@ -288,7 +287,6 @@
 				sessions.openThread(response.sessionId, response.threadId);
 			}
 
-			sessionView.setComposerDraft("");
 			clearComposerOverrides();
 			composerTextareaRef?.closeMentionDropdown();
 			composerTextareaRef?.closePromptHistoryDropdown();
