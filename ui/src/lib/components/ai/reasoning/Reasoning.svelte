@@ -92,6 +92,7 @@
 </script>
 
 <Collapsible
+	data-ai-reasoning
 	class={cn(
 		"group group/reasoning not-prose mb-4 w-full rounded-md",
 		className,
