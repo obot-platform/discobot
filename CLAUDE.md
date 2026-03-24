@@ -29,11 +29,11 @@ pnpm typecheck          # TypeScript type checking
 ### Lint & Format
 
 ```bash
-pnpm check              # Run all checks (frontend + backend)
-pnpm check:fix          # Same but auto-fix biome + golangci-lint issues
-pnpm check:frontend     # Biome + eslint react-compiler + typecheck
+pnpm check              # Run active frontend checks, backend checks, and shellcheck
+pnpm check:fix          # Run UI Prettier + ESLint fixes, backend autofixes, and shellcheck
+pnpm check:frontend     # Delegate to the Svelte UI's Prettier + ESLint + typecheck flow
 pnpm check:backend      # golangci-lint (server + proxy)
-pnpm format             # Biome format only
+pnpm format             # Run the Svelte UI Prettier formatter
 ```
 
 ### Tests
@@ -183,7 +183,7 @@ node --import ./test/setup.js --import tsx --test <test-file>
 ## Formatting & Style
 
 - **Package manager**: pnpm only (never npm or yarn)
-- **TypeScript**: Biome formatter — tabs, double quotes, organized imports
+- **TypeScript / Svelte UI**: Prettier + ESLint — tabs, double quotes, organized imports where applicable
 - **Go**: gofmt + goimports with local prefix `github.com/obot-platform/discobot`
 - **Go version**: 1.26 — use `new(value)` to create a pointer to a value (e.g. `new(true)` for `*bool`); avoid `boolPtr`/`intPtr` helper functions
 - **Go linters**: golangci-lint (errcheck, govet, staticcheck, revive, unused, etc.)

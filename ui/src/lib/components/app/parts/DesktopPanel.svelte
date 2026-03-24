@@ -16,7 +16,11 @@
 		onToggleDockMaximized: () => void;
 	};
 
-	type ConnectionStatus = "connecting" | "connected" | "disconnected" | "unavailable";
+	type ConnectionStatus =
+		| "connecting"
+		| "connected"
+		| "disconnected"
+		| "unavailable";
 
 	type RFBEventMap = {
 		connect: CustomEvent;
@@ -42,9 +46,18 @@
 		) => void;
 	};
 
-	type RFBConstructor = new (target: HTMLElement, urlOrChannel: string | WebSocket) => RFBInstance;
+	type RFBConstructor = new (
+		target: HTMLElement,
+		urlOrChannel: string | WebSocket,
+	) => RFBInstance;
 
-	let { sessionId, desktopAvailable, dockMaximized, onClose, onToggleDockMaximized }: Props = $props();
+	let {
+		sessionId,
+		desktopAvailable,
+		dockMaximized,
+		onClose,
+		onToggleDockMaximized,
+	}: Props = $props();
 
 	let desktopHost = $state<HTMLDivElement | null>(null);
 	let connectionStatus = $state<ConnectionStatus>("connecting");
@@ -89,7 +102,9 @@
 				return "Connecting to desktop...";
 		}
 	});
-	const canReconnect = $derived.by(() => desktopAvailable && connectionStatus === "disconnected");
+	const canReconnect = $derived.by(
+		() => desktopAvailable && connectionStatus === "disconnected",
+	);
 	const titleLabel = $derived.by(() => desktopName.trim() || statusLabel);
 
 	function getDesktopWsUrl(sessionId: string) {
@@ -114,7 +129,7 @@
 		const host = desktopHost;
 		const currentSessionId = sessionId;
 		const available = desktopAvailable;
-		reconnectVersion;
+		const reconnectAttempt = reconnectVersion;
 
 		if (!host) {
 			return;
@@ -181,7 +196,7 @@
 
 		void import("@novnc/novnc/lib/rfb")
 			.then((module) => {
-				if (disposed) {
+				if (disposed || reconnectAttempt !== reconnectVersion) {
 					return;
 				}
 
@@ -221,12 +236,12 @@
 </script>
 
 <DockWindowChrome
-	dockMaximized={dockMaximized}
-	onClose={onClose}
-	onToggleDockMaximized={onToggleDockMaximized}
+	{dockMaximized}
+	{onClose}
+	{onToggleDockMaximized}
 	closeLabel="Close desktop panel"
 	minimizeLabel="Minimize desktop panel"
-	maximizeTitle={maximizeTitle}
+	{maximizeTitle}
 	shellClass="min-h-[28rem]"
 >
 	{#snippet title()}
@@ -239,7 +254,9 @@
 
 	<div class="relative h-full min-h-0 overflow-hidden p-3">
 		{#if connectionStatus !== "connected"}
-			<div class="absolute inset-3 z-10 flex items-center justify-center rounded-md bg-black/35">
+			<div
+				class="absolute inset-3 z-10 flex items-center justify-center rounded-md bg-black/35"
+			>
 				<div class="flex max-w-xs flex-col items-center gap-3 px-4 text-center">
 					{#if connectionStatus === "connecting"}
 						<Loader2Icon class="size-8 animate-spin text-white/70" />
@@ -248,7 +265,12 @@
 					{/if}
 					<span class="text-xs text-white/70">{overlayMessage}</span>
 					{#if canReconnect}
-						<Button variant="outline" size="xs" onclick={reconnectDesktop} class="gap-2">
+						<Button
+							variant="outline"
+							size="xs"
+							onclick={reconnectDesktop}
+							class="gap-2"
+						>
 							<RotateCcwIcon class="size-3.5" />
 							Reconnect
 						</Button>

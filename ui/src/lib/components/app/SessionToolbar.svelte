@@ -34,19 +34,25 @@
 	const session = useSessionContext();
 	const sessionView = session.ui;
 	const sessionServices = $derived.by(() =>
-		session.services.list.filter((service) => service.id !== DESKTOP_SERVICE_ID),
+		session.services.list.filter(
+			(service) => service.id !== DESKTOP_SERVICE_ID,
+		),
 	);
 
 	let startingOperation = $state<CommitOperation | null>(null);
 	let waitingForOperationEvent = $state(false);
 
-	function isJetBrainsIdeOption(option: IdeOption): option is JetBrainsIdeOption {
+	function isJetBrainsIdeOption(
+		option: IdeOption,
+	): option is JetBrainsIdeOption {
 		return option.family === "jetbrains";
 	}
 
 	function preferredIdeOption() {
 		return (
-			preferences.ideOptions.find((option) => option.id === preferences.preferredIde) ??
+			preferences.ideOptions.find(
+				(option) => option.id === preferences.preferredIde,
+			) ??
 			preferences.ideOptions[0] ??
 			null
 		);
@@ -184,12 +190,14 @@
 			startingOperation,
 		}),
 	);
-	const operationDisabled = $derived.by(() => !session.current || operationState.showBusy);
-	const sessionStatus = $derived.by(() => session.current?.status ?? "");
+	const operationDisabled = $derived.by(
+		() => !session.current || operationState.showBusy,
+	);
+	const sessionStatus = $derived.by(() => session.current?.status);
 
 	$effect(() => {
-		sessionStatus;
-		if (!waitingForOperationEvent) {
+		const currentSessionStatus = sessionStatus;
+		if (currentSessionStatus === undefined || !waitingForOperationEvent) {
 			return;
 		}
 
@@ -235,17 +243,23 @@
 	}
 </script>
 
-<div class="flex h-10 w-full min-w-0 items-center justify-end gap-2 bg-background px-2">
+<div
+	class="flex h-10 w-full min-w-0 items-center justify-end gap-2 bg-background px-2"
+>
 	<div class="inline-flex rounded-md border border-border bg-background p-0.5">
 		<Button
-			variant={sessionView.activeView.kind === "terminal" ? "secondary" : "ghost"}
+			variant={sessionView.activeView.kind === "terminal"
+				? "secondary"
+				: "ghost"}
 			size="xs"
 			onclick={toggleTerminal}
 		>
 			Terminal
 		</Button>
 		<Button
-			variant={sessionView.activeView.kind === "desktop" ? "secondary" : "ghost"}
+			variant={sessionView.activeView.kind === "desktop"
+				? "secondary"
+				: "ghost"}
 			size="xs"
 			onclick={toggleDesktop}
 		>
@@ -260,7 +274,9 @@
 		</Button>
 		{#if diffStats.filesChanged > 0}
 			<Button
-				variant={sessionView.activeView.kind === "diff-review" ? "secondary" : "ghost"}
+				variant={sessionView.activeView.kind === "diff-review"
+					? "secondary"
+					: "ghost"}
 				size="xs"
 				onclick={toggleDiffReview}
 				class="gap-1"
@@ -271,7 +287,9 @@
 			</Button>
 		{/if}
 		<Button
-			variant={sessionView.activeView.kind === "services" ? "secondary" : "ghost"}
+			variant={sessionView.activeView.kind === "services"
+				? "secondary"
+				: "ghost"}
 			size="xs"
 			onclick={toggleServices}
 			disabled={sessionServices.length === 0}
@@ -317,7 +335,9 @@
 					</DropdownMenuTrigger>
 				</div>
 				<DropdownMenuContent align="end" sideOffset={8} class="min-w-[8rem]">
-					<DropdownMenuLabel class="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+					<DropdownMenuLabel
+						class="text-xs uppercase tracking-[0.16em] text-muted-foreground"
+					>
 						Git actions
 					</DropdownMenuLabel>
 					<DropdownMenuItem onclick={handleRebase} class="gap-2">
@@ -357,7 +377,9 @@
 		size="xs"
 		contentClass="min-w-[11rem]"
 	>
-		<DropdownMenuLabel class="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+		<DropdownMenuLabel
+			class="text-xs uppercase tracking-[0.16em] text-muted-foreground"
+		>
 			Preferred IDE
 		</DropdownMenuLabel>
 		{#each standardIdeOptions as option}

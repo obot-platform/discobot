@@ -1,3 +1,5 @@
+import { SvelteSet } from "svelte/reactivity";
+
 import { api } from "$lib/api-client";
 import type { EnvSetWithVars } from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
@@ -5,7 +7,7 @@ import type { AsyncStatus } from "$lib/shell-types";
 export class EnvSetStore {
 	#items = $state<EnvSetWithVars[]>([]);
 	#status = $state<AsyncStatus>("idle");
-	#inflight = new Set<string>();
+	#inflight = new SvelteSet<string>();
 
 	get list(): EnvSetWithVars[] {
 		return this.#items;
@@ -53,13 +55,20 @@ export class EnvSetStore {
 		}
 	}
 
-	async create(name: string, envVars: Record<string, string>): Promise<EnvSetWithVars> {
+	async create(
+		name: string,
+		envVars: Record<string, string>,
+	): Promise<EnvSetWithVars> {
 		const created = await api.createEnvSet(name.trim(), envVars);
 		await this.fetchOne(created.id);
 		return this.#items.find((e) => e.id === created.id)!;
 	}
 
-	async update(id: string, name: string, envVars: Record<string, string>): Promise<EnvSetWithVars> {
+	async update(
+		id: string,
+		name: string,
+		envVars: Record<string, string>,
+	): Promise<EnvSetWithVars> {
 		await api.updateEnvSet(id, name.trim(), envVars);
 		await this.fetchOne(id);
 		return this.#items.find((e) => e.id === id)!;

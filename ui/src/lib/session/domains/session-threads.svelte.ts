@@ -23,7 +23,9 @@ export function createSessionThreadsDomain(
 	const { store } = args;
 
 	function currentList() {
-		return store.list.length > 0 ? store.list : buildImplicitThread(args.getSession());
+		return store.list.length > 0
+			? store.list
+			: buildImplicitThread(args.getSession());
 	}
 
 	function syncSelectedThread(nextList = currentList()) {
@@ -65,12 +67,12 @@ export function createSessionThreadsDomain(
 				syncSelectedThread([]);
 				return;
 			}
-			try {
-				await store.fetch(args.sessionId);
-				syncSelectedThread(store.list.length > 0 ? store.list : buildImplicitThread(args.getSession()));
-			} catch (error) {
-				throw error;
-			}
+			await store.fetch(args.sessionId);
+			syncSelectedThread(
+				store.list.length > 0
+					? store.list
+					: buildImplicitThread(args.getSession()),
+			);
 		},
 		select: (threadId: string) => {
 			if (list.some((thread) => thread.id === threadId)) {
@@ -84,7 +86,8 @@ export function createSessionThreadsDomain(
 				}
 
 				const trimmedName = name?.trim();
-				const threadId = store.list.length === 0 ? args.sessionId : generateId();
+				const threadId =
+					store.list.length === 0 ? args.sessionId : generateId();
 				const created = await store.create(args.sessionId, {
 					id: threadId,
 					name: trimmedName && trimmedName.length > 0 ? trimmedName : undefined,
@@ -103,7 +106,10 @@ export function createSessionThreadsDomain(
 				}
 
 				if (store.list.length === 0 && threadId === args.sessionId) {
-					await store.create(args.sessionId, { id: threadId, name: trimmedName });
+					await store.create(args.sessionId, {
+						id: threadId,
+						name: trimmedName,
+					});
 				} else {
 					await store.update(args.sessionId, threadId, { name: trimmedName });
 				}
@@ -121,7 +127,13 @@ export function createSessionThreadsDomain(
 			}
 			void (async () => {
 				await store.remove(args.sessionId, threadId);
-				args.setSelectedId(getNextSelectedThreadId(currentList(), threadId, args.getSelectedId()));
+				args.setSelectedId(
+					getNextSelectedThreadId(
+						currentList(),
+						threadId,
+						args.getSelectedId(),
+					),
+				);
 				syncSelectedThread();
 			})();
 		},

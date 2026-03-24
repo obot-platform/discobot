@@ -1,11 +1,17 @@
+import { SvelteSet } from "svelte/reactivity";
+
 import { api } from "$lib/api-client";
-import type { CreateWorkspaceRequest, Workspace, WorkspaceValidationResult } from "$lib/api-types";
+import type {
+	CreateWorkspaceRequest,
+	Workspace,
+	WorkspaceValidationResult,
+} from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
 
 export class WorkspaceStore {
 	#items = $state<Workspace[]>([]);
 	#status = $state<AsyncStatus>("idle");
-	#inflight = new Set<string>();
+	#inflight = new SvelteSet<string>();
 
 	get list(): Workspace[] {
 		return this.#items;
@@ -53,7 +59,10 @@ export class WorkspaceStore {
 		}
 	}
 
-	async validate(path: string, sourceType: "local" | "git"): Promise<WorkspaceValidationResult> {
+	async validate(
+		path: string,
+		sourceType: "local" | "git",
+	): Promise<WorkspaceValidationResult> {
 		return api.validateWorkspace({ path, sourceType });
 	}
 

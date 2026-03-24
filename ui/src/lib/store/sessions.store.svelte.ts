@@ -1,3 +1,5 @@
+import { SvelteSet } from "svelte/reactivity";
+
 import { generateId } from "ai";
 
 import { api } from "$lib/api-client";
@@ -13,7 +15,7 @@ export type CreateSessionData = {
 export class SessionStore {
 	#items = $state<Session[]>([]);
 	#status = $state<AsyncStatus>("idle");
-	#inflight = new Set<string>();
+	#inflight = new SvelteSet<string>();
 
 	get list(): Session[] {
 		return this.#items;

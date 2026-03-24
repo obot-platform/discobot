@@ -6,9 +6,12 @@
 		"dev": "vite dev --port 3100 --strictPort",
 		"build": "vite build",
 		"preview": "vite preview --port 3100 --strictPort",
+		"format": "prettier . --write",
+		"format:check": "prettier . --check",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
-		"check": "pnpm lint && pnpm typecheck",
+		"check": "pnpm format:check && pnpm lint && pnpm typecheck",
+		"check:fix": "pnpm format && pnpm lint:fix && pnpm typecheck",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
@@ -51,6 +54,8 @@
 		"layerchart": "2.0.0-next.43",
 		"mode-watcher": "^1.1.0",
 		"paneforge": "^1.0.2",
+		"prettier": "^3.8.1",
+		"prettier-plugin-svelte": "^3.5.1",
 		"svelte-check": "latest",
 		"svelte-sonner": "^1.0.7",
 		"sveltekit-superforms": "^2.30.0",
