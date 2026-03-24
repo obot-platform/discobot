@@ -6,6 +6,8 @@ export type ReasoningContextValue = {
 	isStreaming: boolean;
 	isOpen: boolean;
 	setIsOpen: (open: boolean) => void;
+	setPreviewText: (previewText?: string) => void;
+	previewText?: string;
 	duration?: number;
 };
 

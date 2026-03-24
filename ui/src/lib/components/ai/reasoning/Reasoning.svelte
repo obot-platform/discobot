@@ -37,6 +37,10 @@
 		setIsOpen: (next: boolean) => {
 			open = next;
 		},
+		setPreviewText: (next?: string) => {
+			reasoning.previewText = next;
+		},
+		previewText: undefined as string | undefined,
 		duration: undefined as number | undefined,
 	});
 
@@ -75,12 +79,22 @@
 	});
 
 	$effect(() => {
+		if (isStreaming && !open) {
+			open = true;
+		}
+	});
+
+	$effect(() => {
 		onOpenChange?.(open);
 	});
 
 	setReasoningContext(reasoning);
 </script>
 
-<Collapsible class={cn("not-prose mb-4", className)} bind:open {...restProps}>
+<Collapsible
+	class={cn("group group/reasoning not-prose mb-4 w-full rounded-md", className)}
+	bind:open
+	{...restProps}
+>
 	{@render children?.()}
 </Collapsible>

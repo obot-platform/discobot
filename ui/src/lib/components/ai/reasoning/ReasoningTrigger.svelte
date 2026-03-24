@@ -34,31 +34,48 @@
 
 	const reasoning = useReasoningContext();
 	const message = $derived.by(() =>
-		getThinkingMessage(reasoning.isStreaming, reasoning.duration),
+		!reasoning.isStreaming && reasoning.previewText
+			? reasoning.previewText
+			: getThinkingMessage(reasoning.isStreaming, reasoning.duration),
 	);
 </script>
 
-<CollapsibleTrigger
-	class={cn(
-		"flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
-		className,
-	)}
-	{...restProps}
->
-	{#if children}
-		{@render children()}
+<div class={cn("flex items-center justify-between gap-4 px-4 pt-4", className)}>
+	{#if reasoning.isStreaming}
+		<div class="flex min-w-0 flex-1 items-center gap-2 text-left">
+			<BrainIcon class="size-4 shrink-0 text-muted-foreground" />
+			<span class="truncate font-medium text-sm">
+				{#if children}
+					{@render children()}
+				{:else}
+					<Shimmer duration={1}>{message}</Shimmer>
+				{/if}
+			</span>
+		</div>
+		<div class="size-7 shrink-0" aria-hidden="true"></div>
 	{:else}
-		<BrainIcon class="size-4" />
-		{#if reasoning.isStreaming || reasoning.duration === 0}
-			<Shimmer duration={1}>{message}</Shimmer>
-		{:else}
-			<p>{message}</p>
-		{/if}
-		<ChevronDownIcon
-			class={cn(
-				"size-4 transition-transform",
-				reasoning.isOpen ? "rotate-180" : "rotate-0",
-			)}
-		/>
+		<CollapsibleTrigger
+			class="flex min-w-0 flex-1 items-center gap-2 text-left"
+			{...restProps}
+		>
+			<BrainIcon class="size-4 shrink-0 text-muted-foreground" />
+			<span class="truncate font-medium text-sm">
+				{#if children}
+					{@render children()}
+				{:else}
+					{message}
+				{/if}
+			</span>
+		</CollapsibleTrigger>
+		<CollapsibleTrigger
+			class="inline-flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground group-hover/reasoning:opacity-100 group-data-[state=open]/reasoning:opacity-100 focus-visible:opacity-100"
+		>
+			<ChevronDownIcon
+				class={cn(
+					"size-4 text-muted-foreground transition-transform",
+					reasoning.isOpen ? "rotate-180" : "rotate-0",
+				)}
+			/>
+		</CollapsibleTrigger>
 	{/if}
-</CollapsibleTrigger>
+</div>
