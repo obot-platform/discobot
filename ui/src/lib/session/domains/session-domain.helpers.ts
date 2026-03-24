@@ -216,55 +216,58 @@ export function addToolApprovalResponse(
 }
 
 export function getPlanEntries(messages: ChatMessage[]): PlanEntry[] {
-	const latestTodoWrite = [...messages]
-		.reverse()
-		.flatMap((message) => getDynamicToolParts(message))
-		.find(
-			(part) =>
-				part.toolName === "TodoWrite" && part.state === "output-available",
-		);
+	for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+		const message = messages[messageIndex];
 
-	if (
-		!latestTodoWrite ||
-		!latestTodoWrite.input ||
-		typeof latestTodoWrite.input !== "object"
-	) {
-		return [];
+		for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+			const part = message.parts[partIndex];
+			if (
+				part.type !== "dynamic-tool" ||
+				part.toolName !== "TodoWrite" ||
+				part.state !== "output-available" ||
+				!part.input ||
+				typeof part.input !== "object"
+			) {
+				continue;
+			}
+
+			const todos = (part.input as { todos?: unknown }).todos;
+			if (!Array.isArray(todos)) {
+				return [];
+			}
+
+			return todos.flatMap((todo) => {
+				if (!todo || typeof todo !== "object") {
+					return [];
+				}
+
+				const candidate = todo as {
+					content?: unknown;
+					activeForm?: unknown;
+					status?: unknown;
+				};
+				if (
+					typeof candidate.content !== "string" ||
+					typeof candidate.activeForm !== "string" ||
+					(candidate.status !== "pending" &&
+						candidate.status !== "in_progress" &&
+						candidate.status !== "completed")
+				) {
+					return [];
+				}
+
+				return [
+					{
+						content: candidate.content,
+						activeForm: candidate.activeForm,
+						status: candidate.status,
+					},
+				];
+			});
+		}
 	}
 
-	const todos = (latestTodoWrite.input as { todos?: unknown }).todos;
-	if (!Array.isArray(todos)) {
-		return [];
-	}
-
-	return todos.flatMap((todo) => {
-		if (!todo || typeof todo !== "object") {
-			return [];
-		}
-
-		const candidate = todo as {
-			content?: unknown;
-			activeForm?: unknown;
-			status?: unknown;
-		};
-		if (
-			typeof candidate.content !== "string" ||
-			typeof candidate.activeForm !== "string" ||
-			(candidate.status !== "pending" &&
-				candidate.status !== "in_progress" &&
-				candidate.status !== "completed")
-		) {
-			return [];
-		}
-
-		return [
-			{
-				content: candidate.content,
-				activeForm: candidate.activeForm,
-				status: candidate.status,
-			},
-		];
-	});
+	return [];
 }
 
 export function toServiceItem(service: Service): ServiceItem {

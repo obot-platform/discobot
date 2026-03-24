@@ -52,7 +52,9 @@ export function parseNumberedToolOutput(
 	let isTruncated = false;
 	let truncationFilePath: string | undefined;
 
-	const firstNonEmptyLineIndex = rawLines.findIndex((line) => line.trim() !== "");
+	const firstNonEmptyLineIndex = rawLines.findIndex(
+		(line) => line.trim() !== "",
+	);
 	if (firstNonEmptyLineIndex >= 0) {
 		const truncationMatch = rawLines[firstNonEmptyLineIndex]?.match(
 			TRUNCATED_OUTPUT_PREFIX,

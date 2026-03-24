@@ -8,6 +8,7 @@ import {
 	buildUserMessageParts,
 	createUserMessage,
 	createUserMessageAttachment,
+	getPlanEntries,
 	hasUserMessageContent,
 } from "../domains/session-domain.helpers";
 
@@ -120,6 +121,57 @@ test("buildUserMessageParts includes attachments without dropping text", () => {
 	]);
 });
 
+test("getPlanEntries returns the last TodoWrite update from the same assistant message", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "todo-1",
+					toolName: "TodoWrite",
+					state: "output-available",
+					input: {
+						todos: [
+							{
+								content: "Use the first todo update",
+								activeForm: "Using the first todo update",
+								status: "in_progress",
+							},
+						],
+					},
+					output: {},
+				},
+				{
+					type: "dynamic-tool",
+					toolCallId: "todo-2",
+					toolName: "TodoWrite",
+					state: "output-available",
+					input: {
+						todos: [
+							{
+								content: "Use the last todo update",
+								activeForm: "Using the last todo update",
+								status: "completed",
+							},
+						],
+					},
+					output: {},
+				},
+			],
+		},
+	];
+
+	assert.deepEqual(getPlanEntries(messages), [
+		{
+			content: "Use the last todo update",
+			activeForm: "Using the last todo update",
+			status: "completed",
+		},
+	]);
+});
+
 test("hasUserMessageContent treats attachment-only messages as non-empty", () => {
 	assert.equal(
 		hasUserMessageContent([
@@ -147,4 +199,61 @@ test("createUserMessageAttachment encodes files as data URLs", async () => {
 		mediaType: "text/plain",
 		url: "data:text/plain;base64,aGk=",
 	});
+});
+
+test("getPlanEntries returns the last TodoWrite update across messages", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "todo-1",
+					toolName: "TodoWrite",
+					state: "output-available",
+					input: {
+						todos: [
+							{
+								content: "Earlier todo update",
+								activeForm: "Using the earlier todo update",
+								status: "pending",
+							},
+						],
+					},
+					output: {},
+				},
+			],
+		},
+		{
+			id: "assistant-2",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "todo-2",
+					toolName: "TodoWrite",
+					state: "output-available",
+					input: {
+						todos: [
+							{
+								content: "Latest todo update",
+								activeForm: "Using the latest todo update",
+								status: "in_progress",
+							},
+						],
+					},
+					output: {},
+				},
+			],
+		},
+	];
+
+	assert.deepEqual(getPlanEntries(messages), [
+		{
+			content: "Latest todo update",
+			activeForm: "Using the latest todo update",
+			status: "in_progress",
+		},
+	]);
 });

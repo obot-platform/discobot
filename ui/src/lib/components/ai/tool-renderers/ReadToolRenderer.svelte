@@ -43,7 +43,9 @@
 		() => validOutput?.content || validOutput?.lines?.join("\n") || "",
 	);
 	const parsedContent = $derived.by(() => parseNumberedToolOutput(content));
-	const hasParsedContentLines = $derived.by(() => parsedContent.lines.length > 0);
+	const hasParsedContentLines = $derived.by(
+		() => parsedContent.lines.length > 0,
+	);
 	const displayedLineCount = $derived.by(() =>
 		hasParsedContentLines ? parsedContent.lines.length : countLines(content),
 	);
@@ -132,7 +134,9 @@
 							>{displayedLineCount} lines</span
 						>
 						{#if parsedContent.isTruncated}
-							<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs">
+							<span
+								class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs"
+							>
 								Truncated
 							</span>
 						{/if}
@@ -141,7 +145,9 @@
 						{#if parsedContent.isTruncated}
 							<div class="border-b px-3 py-2 text-muted-foreground text-xs">
 								Output truncated{#if parsedContent.truncationFilePath}
-									— full output written to {shortenPath(parsedContent.truncationFilePath)}
+									— full output written to {shortenPath(
+										parsedContent.truncationFilePath,
+									)}
 								{/if}
 							</div>
 						{/if}

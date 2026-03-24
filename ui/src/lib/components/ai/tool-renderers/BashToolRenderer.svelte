@@ -155,7 +155,9 @@
 						</span>
 					{/if}
 					{#if parsedStdout.isTruncated}
-						<span class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs">
+						<span
+							class="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs"
+						>
 							Truncated
 						</span>
 					{/if}
@@ -170,18 +172,30 @@
 							<span>{displayedLineCount} lines</span>
 						</div>
 						{#if parsedStdout.isTruncated}
-							<div class="border-b px-3 py-2 text-[11px] text-muted-foreground normal-case tracking-normal">
+							<div
+								class="border-b px-3 py-2 text-[11px] text-muted-foreground normal-case tracking-normal"
+							>
 								Output truncated{#if parsedStdout.truncationFilePath}
-									— full output written to {shortenPath(parsedStdout.truncationFilePath)}
+									— full output written to {shortenPath(
+										parsedStdout.truncationFilePath,
+									)}
 								{/if}
 							</div>
 						{/if}
 						{#if hasParsedStdoutLines}
-							<div class="overflow-x-auto p-3 font-mono text-xs text-foreground">
+							<div
+								class="overflow-x-auto p-3 font-mono text-xs text-foreground"
+							>
 								<div class="grid min-w-max grid-cols-[auto_1fr] gap-x-3">
 									{#each parsedStdout.lines as line}
-										<div class="select-none text-muted-foreground/60 text-right">{line.lineNumber}</div>
-										<div class="whitespace-pre-wrap break-words">{line.text || " "}</div>
+										<div
+											class="select-none text-muted-foreground/60 text-right"
+										>
+											{line.lineNumber}
+										</div>
+										<div class="whitespace-pre-wrap break-words">
+											{line.text || " "}
+										</div>
 									{/each}
 								</div>
 							</div>
