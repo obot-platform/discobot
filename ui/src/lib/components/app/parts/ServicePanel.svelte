@@ -65,6 +65,7 @@
 	}: Props = $props();
 
 	let isLoading = $state(true);
+	let hasLoadedOnce = $state(false);
 	let error = $state<string | null>(null);
 	let internalRefreshKey = $state(0);
 	let currentPath = $state("/");
@@ -203,6 +204,7 @@
 	}
 
 	function handleIframeLoad() {
+		hasLoadedOnce = true;
 		isLoading = false;
 		error = null;
 	}
@@ -294,6 +296,7 @@
 		void currentService?.https;
 		currentPath = normalizePath(currentService?.urlPath);
 		inputPath = normalizePath(currentService?.urlPath);
+		hasLoadedOnce = false;
 		isLoading = true;
 		error = null;
 		internalRefreshKey = 0;
@@ -653,7 +656,7 @@
 					</div>
 				{/if}
 
-				{#if shouldShowIframe && isLoading}
+				{#if shouldShowIframe && isLoading && !hasLoadedOnce}
 					<div
 						class="absolute inset-0 z-10 flex items-center justify-center bg-background/80"
 					>
