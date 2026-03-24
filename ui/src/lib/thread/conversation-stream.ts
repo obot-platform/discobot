@@ -57,6 +57,7 @@ export type ChatStreamStateOptions = {
 	// for the whole turn to finish.
 	onMeaningfulToolOutput?: () => void;
 	onActionableQuestion?: () => void;
+	onHistoryReplayEnd?: () => void;
 	onChunkError?: (errorText: string) => void;
 	setMode?: (mode: string) => void;
 	setModel?: (model: string) => void;
@@ -561,6 +562,7 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			if (historyMessages !== null) {
 				options.setMessages(historyMessages);
 				historyMessages = null;
+				options.onHistoryReplayEnd?.();
 			}
 			return;
 		}

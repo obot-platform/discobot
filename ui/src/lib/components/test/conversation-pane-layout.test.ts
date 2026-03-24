@@ -1,34 +1,107 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getBottomSpacerHeight } from "../app/conversation-pane-layout";
+import type { ChatMessage } from "$lib/api-types";
+import {
+	getReservedTurnMinHeight,
+	groupMessagesIntoTurns,
+} from "../app/conversation-pane-layout";
 
-test("getBottomSpacerHeight rounds down fractional spacer values to avoid short-conversation overflow", () => {
+function makeUserMessage(id: string, text: string): ChatMessage {
+	return {
+		id,
+		role: "user",
+		parts: [{ type: "text", text }],
+	};
+}
+
+function makeAssistantMessage(id: string, text: string): ChatMessage {
+	return {
+		id,
+		role: "assistant",
+		parts: [{ type: "text", text }],
+	};
+}
+
+test("groupMessagesIntoTurns groups adjacent user messages into one turn", () => {
+	const turns = groupMessagesIntoTurns([
+		makeUserMessage("user-1", "first"),
+		makeUserMessage("user-2", "second"),
+	]);
+
+	assert.deepEqual(turns, [
+		{
+			id: "user-1",
+			userMessages: [
+				makeUserMessage("user-1", "first"),
+				makeUserMessage("user-2", "second"),
+			],
+			assistantMessage: null,
+		},
+	]);
+});
+
+test("groupMessagesIntoTurns closes a turn with the first assistant message", () => {
+	const turns = groupMessagesIntoTurns([
+		makeUserMessage("user-1", "prompt"),
+		makeAssistantMessage("assistant-1", "reply"),
+		makeUserMessage("user-2", "follow-up"),
+	]);
+
+	assert.deepEqual(turns, [
+		{
+			id: "user-1",
+			userMessages: [makeUserMessage("user-1", "prompt")],
+			assistantMessage: makeAssistantMessage("assistant-1", "reply"),
+		},
+		{
+			id: "user-2",
+			userMessages: [makeUserMessage("user-2", "follow-up")],
+			assistantMessage: null,
+		},
+	]);
+});
+
+test("groupMessagesIntoTurns leaves a user-only trailing turn open", () => {
+	const turns = groupMessagesIntoTurns([
+		makeUserMessage("user-1", "prompt"),
+		makeAssistantMessage("assistant-1", "reply"),
+		makeUserMessage("user-2", "queued follow-up"),
+		makeUserMessage("user-3", "more context"),
+	]);
+
+	assert.deepEqual(turns.at(-1), {
+		id: "user-2",
+		userMessages: [
+			makeUserMessage("user-2", "queued follow-up"),
+			makeUserMessage("user-3", "more context"),
+		],
+		assistantMessage: null,
+	});
+});
+
+test("getReservedTurnMinHeight fills the visible viewport when the turn is short", () => {
 	assert.equal(
-		getBottomSpacerHeight({
-			contentHeight: 123.8,
-			existingSpacerHeight: 0,
-			anchorOffsetTop: 0.2,
-			contentTopPadding: 0,
-			viewportClientHeight: 400,
+		getReservedTurnMinHeight({
+			currentTurnHeight: 124.2,
+			contentTopPadding: 12,
+			viewportClientHeight: 640,
 			viewportPaddingBottom: 16,
 			viewportPaddingTop: 16,
 		}),
-		244,
+		596,
 	);
 });
 
-test("getBottomSpacerHeight excludes the existing spacer before measuring the current turn", () => {
+test("getReservedTurnMinHeight preserves taller turns", () => {
 	assert.equal(
-		getBottomSpacerHeight({
-			contentHeight: 500,
-			existingSpacerHeight: 120,
-			anchorOffsetTop: 200,
+		getReservedTurnMinHeight({
+			currentTurnHeight: 712.4,
 			contentTopPadding: 24,
-			viewportClientHeight: 440,
+			viewportClientHeight: 640,
 			viewportPaddingBottom: 16,
 			viewportPaddingTop: 16,
 		}),
-		204,
+		713,
 	);
 });

@@ -2,12 +2,12 @@
 	import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 	import { tick } from "svelte";
 	import type { ChatMessage } from "$lib/api-types";
+	import type { ChatWidthMode } from "$lib/app/app-context.types";
 	import type { ConversationPaneRenderablePart } from "$lib/components/app/conversation-pane-message-parts";
 	import {
 		getAssistantMessagePartGroups,
 		isConversationPaneMessageStreaming,
 	} from "$lib/components/app/conversation-pane-message-parts";
-	import type { ChatWidthMode } from "$lib/app/app-context.types";
 	import { Loader } from "$lib/components/ai";
 	import {
 		Message,
@@ -22,7 +22,10 @@
 	import OptimizedToolRenderer from "$lib/components/ai/tool-renderers/OptimizedToolRenderer.svelte";
 	import type { DynamicToolPart } from "$lib/components/ai/types";
 	import ConversationComposer from "$lib/components/app/ConversationComposer.svelte";
-	import { getBottomSpacerHeight } from "$lib/components/app/conversation-pane-layout";
+	import {
+		getReservedTurnMinHeight,
+		groupMessagesIntoTurns,
+	} from "$lib/components/app/conversation-pane-layout";
 	import LazyMount from "$lib/components/app/parts/LazyMount.svelte";
 	import { Alert, AlertDescription } from "$lib/components/ui/alert";
 	import { Button } from "$lib/components/ui/button";
@@ -73,21 +76,19 @@
 	const conversationMessages = $derived.by(
 		() => messages ?? thread?.messages ?? [],
 	);
+	const conversationHistoryReplayVersion = $derived.by(() =>
+		messages ? 0 : (thread?.historyReplayVersion ?? 0),
+	);
 	const conversationStatus = $derived.by(
 		() => status ?? thread?.status ?? "ready",
 	);
+	const conversationTurns = $derived.by(() =>
+		groupMessagesIntoTurns(conversationMessages),
+	);
+	const activeTurnId = $derived.by(() => conversationTurns.at(-1)?.id ?? null);
 	const effectiveChatWidthMode = $derived.by(
 		() => chatWidthMode ?? app?.preferences.chatWidthMode ?? "full",
 	);
-	const turnStartMessageId = $derived.by(() => {
-		for (let index = conversationMessages.length - 1; index >= 0; index -= 1) {
-			const message = conversationMessages[index];
-			if (message?.role === "user") {
-				return message.id;
-			}
-		}
-		return null;
-	});
 	const hasMessages = $derived.by(() => conversationMessages.length > 0);
 	const isLoading = $derived.by(() => conversationStatus === "loading");
 	const isStreaming = $derived.by(() => conversationStatus === "streaming");
@@ -105,12 +106,12 @@
 	);
 
 	let viewport = $state<HTMLDivElement | null>(null);
-	let content = $state<HTMLDivElement | null>(null);
-	let bottomSpacerHeight = $state(0);
-	let lastAutoScrolledMessageId = $state<string | null>(null);
 	let hasInitialBottomScroll = $state(false);
+	let hasInitialHistoryReplayBottomScroll = $state(false);
 	let isNearBottom = $state(true);
 	let expandedAssistantStepMessages = $state<Record<string, boolean>>({});
+	let lastReservedSubmitMessageId = $state<string | null>(null);
+	let reservedTurnMinHeight = $state(0);
 
 	function isProvisionalUserMessage(
 		message: ChatMessage | undefined,
@@ -173,49 +174,42 @@
 		}
 	}
 
-	function getAnchorMessageElement() {
-		const anchorMessageId = turnStartMessageId;
-		if (!anchorMessageId) {
+	function getTurnElement(turnId: string) {
+		if (!viewport) {
 			return null;
 		}
 
-		const messageElements = content?.querySelectorAll<HTMLElement>(
-			"[data-conversation-message-id]",
-		);
-		return (
-			Array.from(messageElements ?? []).find(
-				(candidate) =>
-					candidate.dataset.conversationMessageId === anchorMessageId,
-			) ?? null
+		return viewport.querySelector<HTMLElement>(
+			`[data-conversation-turn-id="${CSS.escape(turnId)}"]`,
 		);
 	}
 
-	function updateBottomSpacer() {
+	function captureReservedTurnHeight(turnId: string) {
 		const element = viewport;
-		const contentElement = content;
-		const anchorElement = getAnchorMessageElement();
-		if (!element || !contentElement || !anchorElement) {
-			bottomSpacerHeight = 0;
-			updateIsNearBottom();
-			return;
+		const turnElement = getTurnElement(turnId);
+		if (!element || !turnElement) {
+			return 0;
 		}
 
 		const styles = window.getComputedStyle(element);
 		const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
 		const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
-		const contentRect = contentElement.getBoundingClientRect();
-		const anchorRect = anchorElement.getBoundingClientRect();
 
-		bottomSpacerHeight = getBottomSpacerHeight({
-			contentHeight: contentRect.height,
-			existingSpacerHeight: bottomSpacerHeight,
-			anchorOffsetTop: anchorRect.top - contentRect.top,
+		return getReservedTurnMinHeight({
+			currentTurnHeight: turnElement.getBoundingClientRect().height,
 			contentTopPadding,
 			viewportClientHeight: element.clientHeight,
 			viewportPaddingBottom: paddingBottom,
 			viewportPaddingTop: paddingTop,
 		});
-		updateIsNearBottom();
+	}
+
+	function getTurnStyle(isLastTurn: boolean) {
+		if (!isLastTurn || reservedTurnMinHeight <= 0) {
+			return undefined;
+		}
+
+		return `min-height: ${reservedTurnMinHeight}px;`;
 	}
 
 	$effect(() => {
@@ -238,38 +232,15 @@
 	});
 
 	$effect(() => {
-		const latestMessageId = conversationMessages.at(-1)?.id;
-		const anchorMessageId = turnStartMessageId;
-		const element = viewport;
-		const contentElement = content;
-		if (!latestMessageId || !anchorMessageId || !element || !contentElement) {
-			bottomSpacerHeight = 0;
-			updateIsNearBottom();
+		if (conversationMessages.length > 0) {
 			return;
 		}
 
-		let frame = 0;
-		let observer: ResizeObserver | null = null;
-		const scheduleUpdate = () => {
-			cancelAnimationFrame(frame);
-			frame = requestAnimationFrame(() => {
-				updateBottomSpacer();
-			});
-		};
-
-		void tick().then(() => {
-			scheduleUpdate();
-			observer = new ResizeObserver(() => {
-				scheduleUpdate();
-			});
-			observer.observe(element);
-			observer.observe(contentElement);
-		});
-
-		return () => {
-			cancelAnimationFrame(frame);
-			observer?.disconnect();
-		};
+		hasInitialBottomScroll = false;
+		hasInitialHistoryReplayBottomScroll = false;
+		lastReservedSubmitMessageId = null;
+		reservedTurnMinHeight = 0;
+		updateIsNearBottom();
 	});
 
 	$effect(() => {
@@ -284,31 +255,41 @@
 		}
 
 		hasInitialBottomScroll = true;
-		void tick()
-			.then(() => {
-				updateBottomSpacer();
-				return tick();
-			})
-			.then(() => {
-				if (conversationMessages.length > 0) {
-					scrollToBottom("auto");
-				}
-			});
+		void tick().then(() => {
+			if (conversationMessages.length > 0) {
+				scrollToBottom("auto");
+			}
+		});
+	});
+
+	$effect(() => {
+		if (!viewport || hasInitialHistoryReplayBottomScroll) {
+			return;
+		}
+		if (conversationHistoryReplayVersion === 0) {
+			return;
+		}
+
+		hasInitialHistoryReplayBottomScroll = true;
+		void tick().then(() => {
+			scrollToBottom("auto");
+		});
 	});
 
 	$effect(() => {
 		const latestMessage = conversationMessages.at(-1);
-		if (!isProvisionalUserMessage(latestMessage)) {
+		const turnId = activeTurnId;
+		if (!viewport || !turnId || !isProvisionalUserMessage(latestMessage)) {
 			return;
 		}
-		if (latestMessage.id === lastAutoScrolledMessageId) {
+		if (latestMessage.id === lastReservedSubmitMessageId) {
 			return;
 		}
 
-		lastAutoScrolledMessageId = latestMessage.id;
+		lastReservedSubmitMessageId = latestMessage.id;
 		void tick()
 			.then(() => {
-				updateBottomSpacer();
+				reservedTurnMinHeight = captureReservedTurnHeight(turnId);
 				return tick();
 			})
 			.then(() => {
@@ -369,79 +350,117 @@
 					class="scrollbar-gutter-stable h-full overflow-auto p-4"
 				>
 					<div
-						bind:this={content}
 						class={`w-full space-y-4 ${effectiveChatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
 					>
-						{#each conversationMessages as message (message.id)}
-							{@const partGroups = getAssistantMessagePartGroups(message, {
-								isMessageComplete: !isActiveStreamingAssistantMessage(message),
-							})}
-							<Message
-								data-conversation-message-id={message.id}
-								from={message.role === "assistant" ? "assistant" : "user"}
+						{#each conversationTurns as turn (turn.id)}
+							<div
+								data-active-turn={turn.id === activeTurnId}
+								data-conversation-turn-id={turn.id}
+								class="space-y-4"
+								style={getTurnStyle(turn.id === activeTurnId)}
 							>
-								<LazyMount
-									estimatedHeight={getMessagePlaceholderHeight(message)}
-									root={viewport}
-								>
-									<MessageContent>
-										{#if partGroups.hasCollapsedSteps}
-											<Collapsible
-												open={isAssistantStepMessageExpanded(message.id)}
-												onOpenChange={(open) =>
-													setAssistantStepMessageExpanded(message.id, open)}
-											>
-												<CollapsibleTrigger
-													aria-label={`${isAssistantStepMessageExpanded(message.id) ? "Hide" : "Show"} ${getCollapsedStepLabel(partGroups.collapsedStepCount)}`}
-													class="flex w-full items-center gap-3 py-1 text-left"
-													type="button"
-												>
-													<span class="h-px flex-1 bg-border"></span>
-													<span
-														class="rounded-full border border-border/70 bg-background px-3 py-1 font-medium text-[11px] text-muted-foreground uppercase tracking-[0.14em] transition-colors hover:border-border hover:text-foreground"
-													>
-														{getCollapsedStepLabel(
-															partGroups.collapsedStepCount,
+								{#each turn.userMessages as message (message.id)}
+									{@const partGroups = getAssistantMessagePartGroups(message, {
+										isMessageComplete:
+											!isActiveStreamingAssistantMessage(message),
+									})}
+									<Message
+										data-conversation-message-id={message.id}
+										from="user"
+									>
+										<LazyMount
+											estimatedHeight={getMessagePlaceholderHeight(message)}
+											root={viewport}
+										>
+											<MessageContent>
+												{@render renderMessageParts(
+													message,
+													partGroups.visibleParts,
+												)}
+											</MessageContent>
+										</LazyMount>
+									</Message>
+								{/each}
+								{#if turn.assistantMessage}
+									{@const assistantMessage = turn.assistantMessage}
+									{@const partGroups = getAssistantMessagePartGroups(
+										assistantMessage,
+										{
+											isMessageComplete:
+												!isActiveStreamingAssistantMessage(assistantMessage),
+										},
+									)}
+									<Message
+										data-conversation-message-id={assistantMessage.id}
+										from="assistant"
+									>
+										<LazyMount
+											estimatedHeight={getMessagePlaceholderHeight(
+												assistantMessage,
+											)}
+											root={viewport}
+										>
+											<MessageContent>
+												{#if partGroups.hasCollapsedSteps}
+													<Collapsible
+														open={isAssistantStepMessageExpanded(
+															assistantMessage.id,
 														)}
-													</span>
-													<span class="h-px flex-1 bg-border"></span>
-												</CollapsibleTrigger>
-												<CollapsibleContent
-													class="flex min-w-0 flex-col gap-2 overflow-hidden [&>[data-ai-stack]+[data-ai-stack]]:-mt-8"
-												>
-													{@render renderMessageParts(
-														message,
-														partGroups.collapsedParts,
-													)}
-												</CollapsibleContent>
-											</Collapsible>
-										{/if}
-										{@render renderMessageParts(
-											message,
-											partGroups.visibleParts,
-										)}
-									</MessageContent>
-								</LazyMount>
-							</Message>
+														onOpenChange={(open) =>
+															setAssistantStepMessageExpanded(
+																assistantMessage.id,
+																open,
+															)}
+													>
+														<CollapsibleTrigger
+															aria-label={`${isAssistantStepMessageExpanded(assistantMessage.id) ? "Hide" : "Show"} ${getCollapsedStepLabel(partGroups.collapsedStepCount)}`}
+															class="flex w-full items-center gap-3 py-1 text-left"
+															type="button"
+														>
+															<span class="h-px flex-1 bg-border"></span>
+															<span
+																class="rounded-full border border-border/70 bg-background px-3 py-1 font-medium text-[11px] text-muted-foreground uppercase tracking-[0.14em] transition-colors hover:border-border hover:text-foreground"
+															>
+																{getCollapsedStepLabel(
+																	partGroups.collapsedStepCount,
+																)}
+															</span>
+															<span class="h-px flex-1 bg-border"></span>
+														</CollapsibleTrigger>
+														<CollapsibleContent
+															class="flex min-w-0 flex-col gap-2 overflow-hidden [&>[data-ai-stack]+[data-ai-stack]]:-mt-8"
+														>
+															{@render renderMessageParts(
+																assistantMessage,
+																partGroups.collapsedParts,
+															)}
+														</CollapsibleContent>
+													</Collapsible>
+												{/if}
+												{@render renderMessageParts(
+													assistantMessage,
+													partGroups.visibleParts,
+												)}
+											</MessageContent>
+										</LazyMount>
+									</Message>
+								{/if}
+								{#if isStreaming && turn.id === activeTurnId}
+									<Message from="assistant">
+										<LazyMount
+											estimatedHeight={ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT}
+											root={viewport}
+										>
+											<MessageContent>
+												<div class="text-muted-foreground">
+													<Loader size={18} />
+												</div>
+											</MessageContent>
+										</LazyMount>
+									</Message>
+								{/if}
+							</div>
 						{/each}
-						{#if isStreaming}
-							<Message from="assistant">
-								<LazyMount
-									estimatedHeight={ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT}
-									root={viewport}
-								>
-									<MessageContent>
-										<div class="text-muted-foreground">
-											<Loader size={18} />
-										</div>
-									</MessageContent>
-								</LazyMount>
-							</Message>
-						{/if}
-						<div
-							aria-hidden="true"
-							style={`height: ${bottomSpacerHeight}px;`}
-						></div>
 					</div>
 				</div>
 				{#if !isNearBottom}

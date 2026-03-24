@@ -53,6 +53,9 @@ function createThreadContext(
 		get messages() {
 			return conversation.messages;
 		},
+		get historyReplayVersion() {
+			return conversation.historyReplayVersion;
+		},
 		get planEntries() {
 			return getPlanEntries(conversation.messages);
 		},

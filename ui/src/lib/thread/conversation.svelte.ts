@@ -38,6 +38,7 @@ export function getSubmitMessages(userMessage: ChatMessage): ChatMessage[] {
 export function createConversationDomain(args: CreateConversationDomainArgs) {
 	const app = useAppContext();
 	let messages = $state<ChatMessage[]>([]);
+	let historyReplayVersion = $state(0);
 	let streamError = $state<string | null>(null);
 	let streamStatus = $state<"idle" | "streaming" | null>(null);
 	let loadStatus = $state<"idle" | "loading" | "ready" | "error">("idle");
@@ -81,6 +82,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		},
 		onActionableQuestion: () => {
 			void args.refreshThread();
+		},
+		onHistoryReplayEnd: () => {
+			historyReplayVersion += 1;
 		},
 		onChunkError: (errorText) => {
 			streamStatus = null;
@@ -235,6 +239,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	return {
 		get messages() {
 			return messages;
+		},
+		get historyReplayVersion() {
+			return historyReplayVersion;
 		},
 		get status() {
 			return status;
