@@ -24,7 +24,8 @@ export function createAppSupportInfoDomain(): AppSupportInfo {
 				data = await api.getSupportInfo();
 				status = "ready";
 			} catch (err) {
-				error = err instanceof Error ? err.message : "Failed to load support info";
+				error =
+					err instanceof Error ? err.message : "Failed to load support info";
 				status = "error";
 			}
 		},

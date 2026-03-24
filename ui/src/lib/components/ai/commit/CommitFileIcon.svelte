@@ -9,4 +9,7 @@
 	let { class: className, ...restProps }: Props = $props();
 </script>
 
-<FileIcon class={cn("size-3.5 shrink-0 text-muted-foreground", className)} {...restProps} />
+<FileIcon
+	class={cn("size-3.5 shrink-0 text-muted-foreground", className)}
+	{...restProps}
+/>

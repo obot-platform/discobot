@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { cn } from "$lib/utils";
-	import {
-		type WebPreviewViewport,
-		setWebPreviewContext,
-	} from "./context";
+	import { type WebPreviewViewport, setWebPreviewContext } from "./context";
 
 	type Props = {
 		defaultUrl?: string;

@@ -27,9 +27,15 @@
 
 <div class="relative overflow-auto">
 	<pre class={cn("m-0 p-4 text-sm", className)}>
-		<code class={cn("font-mono text-sm", showLineNumbers && "[counter-increment:line_0] [counter-reset:line]")}>
+		<code
+			class={cn(
+				"font-mono text-sm",
+				showLineNumbers && "[counter-increment:line_0] [counter-reset:line]",
+			)}>
 			{#each lines as line}
-				<span class={showLineNumbers ? lineNumberClasses : "block"}>{line || "\n"}</span>
+				<span class={showLineNumbers ? lineNumberClasses : "block"}
+					>{line || "\n"}</span
+				>
 			{/each}
 		</code>
 	</pre>

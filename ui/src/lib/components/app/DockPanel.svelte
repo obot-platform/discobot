@@ -12,7 +12,9 @@
 	const session = useSessionContext();
 	const sessionView = session.ui;
 	const visibleServices = $derived.by(() =>
-		session.services.list.filter((service) => service.id !== DESKTOP_SERVICE_ID),
+		session.services.list.filter(
+			(service) => service.id !== DESKTOP_SERVICE_ID,
+		),
 	);
 	const desktopAvailable = $derived.by(() =>
 		session.services.list.some((service) => service.id === DESKTOP_SERVICE_ID),
@@ -35,7 +37,7 @@
 	{:else if sessionView.activeView.kind === "desktop"}
 		<DesktopPanel
 			sessionId={session.sessionId}
-			desktopAvailable={desktopAvailable}
+			{desktopAvailable}
 			onClose={sessionView.openChat}
 			dockMaximized={sessionView.dockMaximized}
 			onToggleDockMaximized={sessionView.toggleDockMaximized}

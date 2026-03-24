@@ -51,6 +51,9 @@
 	setSchemaDisplayContext(schemaDisplay);
 </script>
 
-<div class={cn("overflow-hidden rounded-lg border bg-background", className)} {...restProps}>
+<div
+	class={cn("overflow-hidden rounded-lg border bg-background", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </div>

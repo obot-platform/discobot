@@ -11,15 +11,20 @@ type CreateAppSessionsDomainArgs = {
 	initialSelectedSessionId?: string;
 };
 
-export function createAppSessionsDomain(args: CreateAppSessionsDomainArgs): AppSessions {
+export function createAppSessionsDomain(
+	args: CreateAppSessionsDomainArgs,
+): AppSessions {
 	const { store } = args;
-	let currentSelectedSessionId = $state<string | null>(args.initialSelectedSessionId ?? null);
+	let currentSelectedSessionId = $state<string | null>(
+		args.initialSelectedSessionId ?? null,
+	);
 	let pendingSessionId = $state<string>(generateId());
 
 	const list = $derived.by(() => toSessionSummaries(store.list));
 	const recent = $derived.by(() => list.filter((session) => session.isRecent));
 	const selected = $derived.by(
-		() => list.find((session) => session.id === currentSelectedSessionId) ?? null,
+		() =>
+			list.find((session) => session.id === currentSelectedSessionId) ?? null,
 	);
 
 	const sessionContexts = new SvelteMap<string, SessionContextValue>();
@@ -88,7 +93,9 @@ export function createAppSessionsDomain(args: CreateAppSessionsDomainArgs): AppS
 		refresh,
 		reloadSession,
 		create: async (workspaceId) => {
-			const session = await store.create(workspaceId ? { workspaceId } : undefined);
+			const session = await store.create(
+				workspaceId ? { workspaceId } : undefined,
+			);
 			currentSelectedSessionId = session.id;
 			await refresh();
 			return session.id;

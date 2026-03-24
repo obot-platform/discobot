@@ -79,12 +79,23 @@
 	let isMutatingService = $state(false);
 	let previousStatus = $state<ServiceItem["status"]>("stopped");
 
-	const service = $derived.by(() => services.find((item) => item.id === activeServiceId) ?? services[0] ?? null);
-	const hasHttp = $derived.by(() => (service ? hasHttpService(service) : false));
+	const service = $derived.by(
+		() =>
+			services.find((item) => item.id === activeServiceId) ??
+			services[0] ??
+			null,
+	);
+	const hasHttp = $derived.by(() =>
+		service ? hasHttpService(service) : false,
+	);
 	const passive = $derived.by(() => service?.passive === true);
 	const showViewTabs = $derived.by(() => hasHttp && !passive);
-	const shouldShowIframe = $derived.by(() => !!service && (passive || service.status === "running"));
-	const baseUrl = $derived.by(() => (service ? buildServiceBaseUrl(sessionId, service) : ""));
+	const shouldShowIframe = $derived.by(
+		() => !!service && (passive || service.status === "running"),
+	);
+	const baseUrl = $derived.by(() =>
+		service ? buildServiceBaseUrl(sessionId, service) : "",
+	);
 	const serviceUrl = $derived.by(() => {
 		if (!baseUrl) {
 			return "";
@@ -92,10 +103,16 @@
 		return `${baseUrl}${normalizePath(currentPath)}`;
 	});
 	const constrainedWidth = $derived.by(() => VIEWPORT_WIDTHS[viewport]);
-	const iframeKey = $derived.by(() => `${service?.id ?? "service"}-${internalRefreshKey}-${currentPath}`);
+	const iframeKey = $derived.by(
+		() => `${service?.id ?? "service"}-${internalRefreshKey}-${currentPath}`,
+	);
 	const isRunnable = $derived.by(() => !!service && !passive);
-	const canStart = $derived.by(() => !!service && isRunnable && service.status === "stopped");
-	const canStop = $derived.by(() => !!service && isRunnable && service.status === "running");
+	const canStart = $derived.by(
+		() => !!service && isRunnable && service.status === "stopped",
+	);
+	const canStop = $derived.by(
+		() => !!service && isRunnable && service.status === "running",
+	);
 	const actionLabel = $derived.by(() => {
 		if (!service) {
 			return "Start";
@@ -148,7 +165,10 @@
 		return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 	}
 
-	function buildServiceBaseUrl(nextSessionId: string, nextService: ServiceItem): string {
+	function buildServiceBaseUrl(
+		nextSessionId: string,
+		nextService: ServiceItem,
+	): string {
 		if (!hasHttpService(nextService) || typeof window === "undefined") {
 			return "";
 		}
@@ -156,7 +176,8 @@
 		const apiRoot = getApiRootBase();
 		const parsed = new URL(apiRoot);
 		const subdomain = `${nextSessionId}-svc-${nextService.id}`;
-		const protocol = typeof nextService.https === "number" ? "https:" : parsed.protocol;
+		const protocol =
+			typeof nextService.https === "number" ? "https:" : parsed.protocol;
 		return `${protocol}//${subdomain}.${parsed.host}`;
 	}
 
@@ -221,14 +242,21 @@
 		if (service.status === "starting" || service.status === "stopping") {
 			return Loader2Icon;
 		}
-		if (service.exitCode !== undefined && service.exitCode !== 0 && service.status === "stopped") {
+		if (
+			service.exitCode !== undefined &&
+			service.exitCode !== 0 &&
+			service.status === "stopped"
+		) {
 			return XCircleIcon;
 		}
 		return CircleIcon;
 	}
 
 	function isNearBottom(element: HTMLDivElement): boolean {
-		return element.scrollHeight - element.clientHeight - element.scrollTop <= LOG_SCROLL_THRESHOLD_PX;
+		return (
+			element.scrollHeight - element.clientHeight - element.scrollTop <=
+			LOG_SCROLL_THRESHOLD_PX
+		);
 	}
 
 	function scrollLogsToBottom() {
@@ -274,7 +302,8 @@
 		isLogsNearBottom = true;
 		hasUnreadLogs = false;
 		isMutatingService = false;
-		viewMode = currentService && hasHttpService(currentService) ? "preview" : "logs";
+		viewMode =
+			currentService && hasHttpService(currentService) ? "preview" : "logs";
 		previousStatus = untrack(() => currentService?.status ?? "stopped");
 	});
 
@@ -344,7 +373,9 @@
 		void service.status;
 		logEvents = [];
 		logsConnected = false;
-		const source = new EventSource(api.getServiceOutputUrl(sessionId, service.id));
+		const source = new EventSource(
+			api.getServiceOutputUrl(sessionId, service.id),
+		);
 
 		source.onopen = () => {
 			logsConnected = true;
@@ -354,23 +385,23 @@
 			logsConnected = false;
 		};
 
-			source.onmessage = (event) => {
-				if (event.data === "[DONE]") {
-					source.close();
-					logsConnected = false;
-					return;
-				}
+		source.onmessage = (event) => {
+			if (event.data === "[DONE]") {
+				source.close();
+				logsConnected = false;
+				return;
+			}
 
-				try {
-					const parsed = JSON.parse(event.data) as ServiceOutputEvent;
-					if (!isLogsNearBottom) {
-						hasUnreadLogs = true;
-					}
-					logEvents = [...logEvents, parsed];
-				} catch (nextError) {
-					console.error("Failed to parse service output event:", nextError);
+			try {
+				const parsed = JSON.parse(event.data) as ServiceOutputEvent;
+				if (!isLogsNearBottom) {
+					hasUnreadLogs = true;
 				}
-			};
+				logEvents = [...logEvents, parsed];
+			} catch (nextError) {
+				console.error("Failed to parse service output event:", nextError);
+			}
+		};
 
 		return () => {
 			source.close();
@@ -380,12 +411,12 @@
 </script>
 
 <DockWindowChrome
-	dockMaximized={dockMaximized}
-	onClose={onClose}
-	onToggleDockMaximized={onToggleDockMaximized}
+	{dockMaximized}
+	{onClose}
+	{onToggleDockMaximized}
 	closeLabel="Close service panel"
 	minimizeLabel="Minimize service panel"
-	maximizeTitle={maximizeTitle}
+	{maximizeTitle}
 	contentClass="flex min-h-0 flex-1 flex-col overflow-hidden"
 >
 	{#snippet title()}
@@ -430,7 +461,8 @@
 				<CurrentStatusIcon
 					class={cn(
 						"size-3.5",
-						(service.status === "starting" || service.status === "stopping") && "animate-spin",
+						(service.status === "starting" || service.status === "stopping") &&
+							"animate-spin",
 					)}
 				/>
 				<span>{statusLabel}</span>
@@ -440,7 +472,9 @@
 					variant="ghost"
 					size="xs"
 					class="gap-1"
-					disabled={isMutatingService || service.status === "starting" || service.status === "stopping"}
+					disabled={isMutatingService ||
+						service.status === "starting" ||
+						service.status === "stopping"}
 					onclick={handleServiceAction}
 				>
 					{#if service.status === "starting" || service.status === "stopping" || isMutatingService}
@@ -457,7 +491,9 @@
 	{/snippet}
 
 	{#if services.length > 0}
-		<div class="flex min-h-10 items-end gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar px-2 py-2">
+		<div
+			class="flex min-h-10 items-end gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar px-2 py-2"
+		>
 			{#each services as item (item.id)}
 				<div
 					role="button"
@@ -477,19 +513,34 @@
 					)}
 				>
 					<span class="truncate max-w-40">{item.label}</span>
-					<div class={cn("size-2 shrink-0 rounded-full", item.status === "running" && "bg-green-500", item.status === "starting" && "bg-yellow-500", item.status === "stopping" && "bg-yellow-500", item.status === "stopped" && (item.exitCode !== undefined && item.exitCode !== 0 ? "bg-red-500" : "bg-sidebar-foreground/30"))}></div>
+					<div
+						class={cn(
+							"size-2 shrink-0 rounded-full",
+							item.status === "running" && "bg-green-500",
+							item.status === "starting" && "bg-yellow-500",
+							item.status === "stopping" && "bg-yellow-500",
+							item.status === "stopped" &&
+								(item.exitCode !== undefined && item.exitCode !== 0
+									? "bg-red-500"
+									: "bg-sidebar-foreground/30"),
+						)}
+					></div>
 				</div>
 			{/each}
 		</div>
 	{:else}
-		<div class="flex min-h-10 items-center border-b border-sidebar-border bg-sidebar px-3 py-2 text-sm text-sidebar-foreground/60">
+		<div
+			class="flex min-h-10 items-center border-b border-sidebar-border bg-sidebar px-3 py-2 text-sm text-sidebar-foreground/60"
+		>
 			No services available.
 		</div>
 	{/if}
 
 	{#if service && hasHttp && (passive || viewMode === "preview")}
 		<div class="flex items-center gap-1 border-b bg-muted/50 px-2 py-1.5">
-			<span class="max-w-[18rem] shrink-0 truncate font-mono text-xs text-muted-foreground">
+			<span
+				class="max-w-[18rem] shrink-0 truncate font-mono text-xs text-muted-foreground"
+			>
 				{baseUrl}
 			</span>
 			<Input
@@ -515,8 +566,19 @@
 					<option.Icon class="size-3.5" />
 				</Button>
 			{/each}
-			<Button variant="ghost" size="icon-xs" title="Refresh" aria-label="Refresh preview" onclick={refreshPreview}>
-				<RefreshCwIcon class={cn("size-3.5", shouldShowIframe && isLoading && "animate-spin")} />
+			<Button
+				variant="ghost"
+				size="icon-xs"
+				title="Refresh"
+				aria-label="Refresh preview"
+				onclick={refreshPreview}
+			>
+				<RefreshCwIcon
+					class={cn(
+						"size-3.5",
+						shouldShowIframe && isLoading && "animate-spin",
+					)}
+				/>
 			</Button>
 			<Button
 				variant="ghost"
@@ -532,7 +594,9 @@
 
 	<div class="relative min-h-0 flex-1">
 		{#if !service}
-			<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+			<div
+				class="flex h-full items-center justify-center text-sm text-muted-foreground"
+			>
 				Select a service to view its preview or logs.
 			</div>
 		{:else if hasHttp && (passive || viewMode === "preview")}
@@ -543,8 +607,12 @@
 				)}
 			>
 				{#if !passive && service.status !== "running"}
-					<div class="absolute inset-0 z-10 flex items-center justify-center bg-background">
-						<div class="flex flex-col items-center gap-3 text-center text-muted-foreground">
+					<div
+						class="absolute inset-0 z-10 flex items-center justify-center bg-background"
+					>
+						<div
+							class="flex flex-col items-center gap-3 text-center text-muted-foreground"
+						>
 							{#if service.status === "starting" || service.status === "stopping"}
 								<Loader2Icon class="size-6 animate-spin" />
 								<span class="text-sm">
@@ -555,8 +623,12 @@
 							{:else}
 								<PlayIcon class="size-8 text-foreground" />
 								<div class="space-y-1">
-									<p class="text-sm font-medium text-foreground">Service is not running</p>
-									<p class="text-xs text-muted-foreground">Start it to load the preview.</p>
+									<p class="text-sm font-medium text-foreground">
+										Service is not running
+									</p>
+									<p class="text-xs text-muted-foreground">
+										Start it to load the preview.
+									</p>
 								</div>
 								<Button
 									size="sm"
@@ -573,7 +645,9 @@
 				{/if}
 
 				{#if shouldShowIframe && isLoading}
-					<div class="absolute inset-0 z-10 flex items-center justify-center bg-background/80">
+					<div
+						class="absolute inset-0 z-10 flex items-center justify-center bg-background/80"
+					>
 						<div class="flex flex-col items-center gap-2 text-muted-foreground">
 							<RefreshCwIcon class="size-6 animate-spin" />
 							<span class="text-sm">Loading service...</span>
@@ -582,7 +656,9 @@
 				{/if}
 
 				{#if shouldShowIframe && error}
-					<div class="absolute inset-0 z-10 flex items-center justify-center bg-background">
+					<div
+						class="absolute inset-0 z-10 flex items-center justify-center bg-background"
+					>
 						<div class="flex flex-col items-center gap-2 text-destructive">
 							<AlertCircleIcon class="size-6" />
 							<span class="text-sm">{error}</span>
@@ -596,7 +672,9 @@
 				{#if shouldShowIframe && serviceUrl}
 					<div
 						class="h-full shrink-0"
-						style={constrainedWidth ? `width: ${constrainedWidth};` : "width: 100%;"}
+						style={constrainedWidth
+							? `width: ${constrainedWidth};`
+							: "width: 100%;"}
 					>
 						{#key iframeKey}
 							<iframe
@@ -632,7 +710,7 @@
 							{event.data ??
 								(event.type === "exit"
 									? `Process exited with code ${event.exitCode ?? "unknown"}`
-									: event.error ?? "")}
+									: (event.error ?? ""))}
 						</div>
 					{/each}
 				</div>

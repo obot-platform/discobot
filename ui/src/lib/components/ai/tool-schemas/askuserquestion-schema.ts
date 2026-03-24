@@ -20,7 +20,9 @@ export const AskUserQuestionToolInputSchema = z.object({
 	metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-export type AskUserQuestionToolInput = z.infer<typeof AskUserQuestionToolInputSchema>;
+export type AskUserQuestionToolInput = z.infer<
+	typeof AskUserQuestionToolInputSchema
+>;
 
 export const AskUserQuestionToolOutputSchema = z.union([
 	z.string(),
@@ -28,7 +30,9 @@ export const AskUserQuestionToolOutputSchema = z.union([
 	z.array(z.unknown()),
 ]);
 
-export type AskUserQuestionToolOutput = z.infer<typeof AskUserQuestionToolOutputSchema>;
+export type AskUserQuestionToolOutput = z.infer<
+	typeof AskUserQuestionToolOutputSchema
+>;
 
 export const validateAskUserQuestionInput = createValidator(
 	AskUserQuestionToolInputSchema,

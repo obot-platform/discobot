@@ -11,7 +11,10 @@
 	const stackTrace = useStackTraceContext();
 </script>
 
-<span class={cn("shrink-0 font-semibold text-destructive", className)} {...restProps}>
+<span
+	class={cn("shrink-0 font-semibold text-destructive", className)}
+	{...restProps}
+>
 	{#if children}
 		{@render children()}
 	{:else}

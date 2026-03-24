@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from "$lib/utils";
-	import {onMount} from "svelte";
+	import { onMount } from "svelte";
 
 	type Props = {
 		class?: string;

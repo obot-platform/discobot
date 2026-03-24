@@ -1,6 +1,9 @@
 import { api } from "$lib/api-client";
 import type { HooksStatusResponse } from "$lib/api-types";
-import { mergeHookOutput, toHooksStatus } from "$lib/session/domains/session-domain.helpers";
+import {
+	mergeHookOutput,
+	toHooksStatus,
+} from "$lib/session/domains/session-domain.helpers";
 import type { SessionHooksService } from "$lib/session/session-context.types";
 
 type CreateSessionHooksDomainArgs = {
@@ -29,9 +32,12 @@ export function createSessionHooksDomain(
 			}),
 		);
 
-		outputById = outputs.reduce<Record<string, string>>((nextOutputById, [hookId, response]) => {
-			return mergeHookOutput(nextOutputById, hookId, response);
-		}, {});
+		outputById = outputs.reduce<Record<string, string>>(
+			(nextOutputById, [hookId, response]) => {
+				return mergeHookOutput(nextOutputById, hookId, response);
+			},
+			{},
+		);
 	}
 
 	return {

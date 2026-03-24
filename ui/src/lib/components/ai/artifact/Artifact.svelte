@@ -12,7 +12,10 @@
 
 <div
 	bind:this={ref}
-	class={cn("flex flex-col overflow-hidden rounded-lg border bg-background shadow-sm", className)}
+	class={cn(
+		"flex flex-col overflow-hidden rounded-lg border bg-background shadow-sm",
+		className,
+	)}
 	{...restProps}
 >
 	{@render children?.()}

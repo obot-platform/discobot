@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { HooksStatusResponse } from "../../api-types";
-import { mergeHookOutput, toHooksStatus } from "../domains/session-domain.helpers";
+import {
+	mergeHookOutput,
+	toHooksStatus,
+} from "../domains/session-domain.helpers";
 
 const hooksStatusResponse: HooksStatusResponse = {
 	hooks: {
@@ -40,7 +43,11 @@ test("toHooksStatus maps API hook response fields into session hook state", () =
 
 	assert.deepEqual(hooksStatus.pendingHookIds, ["hook-2"]);
 	assert.deepEqual(
-		hooksStatus.hooks.map((hook) => ({ id: hook.hookId, type: hook.type, result: hook.lastResult })),
+		hooksStatus.hooks.map((hook) => ({
+			id: hook.hookId,
+			type: hook.type,
+			result: hook.lastResult,
+		})),
 		[
 			{ id: "hook-1", type: "user_prompt_submit", result: "success" },
 			{ id: "hook-2", type: "post_tool_use", result: "failure" },
@@ -50,7 +57,9 @@ test("toHooksStatus maps API hook response fields into session hook state", () =
 
 test("mergeHookOutput replaces the latest output for the given hook", () => {
 	assert.deepEqual(
-		mergeHookOutput({ "hook-1": "previous output" }, "hook-1", { output: "latest output" }),
+		mergeHookOutput({ "hook-1": "previous output" }, "hook-1", {
+			output: "latest output",
+		}),
 		{ "hook-1": "latest output" },
 	);
 });

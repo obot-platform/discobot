@@ -39,11 +39,15 @@
 	let attachmentFiles = $state<ComposerAttachment[]>([]);
 	let modeOverride = $state<ComposerMode | undefined>(undefined);
 	let modelIdOverride = $state<string | null | undefined>(undefined);
-	let composerTextareaRef = $state<ConversationComposerTextareaHandle | null>(null);
+	let composerTextareaRef = $state<ConversationComposerTextareaHandle | null>(
+		null,
+	);
 	let sessionSetupRef = $state<WorkspaceSelectorHandle | null>(null);
 	let pendingSubmitError = $state<string | null>(null);
 
-	function normalizeComposerMode(mode: string | null | undefined): ComposerMode {
+	function normalizeComposerMode(
+		mode: string | null | undefined,
+	): ComposerMode {
 		if (!mode || mode === "" || mode === "build") {
 			return "build";
 		}
@@ -52,7 +56,9 @@
 
 	function normalizeModelId(modelId: string | null): string | undefined {
 		if (!modelId) return undefined;
-		return modelId.endsWith(":thinking") ? modelId.slice(0, -":thinking".length) : modelId;
+		return modelId.endsWith(":thinking")
+			? modelId.slice(0, -":thinking".length)
+			: modelId;
 	}
 
 	function composerModelUsesReasoning(modelId: string | null | undefined) {
@@ -65,12 +71,14 @@
 	}
 
 	// When pending, thread.thread is null so these fall back to defaults ("build", preferences.defaultModel).
-	const sessionMode = $derived.by(() => normalizeComposerMode(thread.thread?.mode));
+	const sessionMode = $derived.by(() =>
+		normalizeComposerMode(thread.thread?.mode),
+	);
 
 	const sessionModelId = $derived.by(() => {
 		const t = thread.thread;
 		if (!t?.model) {
-			return session.isPending ? (preferences.defaultModel || null) : null;
+			return session.isPending ? preferences.defaultModel || null : null;
 		}
 
 		const supportsReasoning = models.list.some(
@@ -83,12 +91,16 @@
 	});
 
 	const effectiveMode = $derived.by(() => modeOverride ?? sessionMode);
-	const effectiveModelId = $derived.by(
-		() => (modelIdOverride !== undefined ? modelIdOverride : sessionModelId),
+	const effectiveModelId = $derived.by(() =>
+		modelIdOverride !== undefined ? modelIdOverride : sessionModelId,
 	);
-	const effectiveReasoning = $derived.by(() => composerModelUsesReasoning(effectiveModelId));
+	const effectiveReasoning = $derived.by(() =>
+		composerModelUsesReasoning(effectiveModelId),
+	);
 	const sessionSetupDisabled = $derived.by(
-		() => sessionView.pendingWorkspaceRequiresSourceInput && !sessionView.pendingWorkspaceSourceIsValid,
+		() =>
+			sessionView.pendingWorkspaceRequiresSourceInput &&
+			!sessionView.pendingWorkspaceSourceIsValid,
 	);
 
 	function handleModeSelect(nextMode: ComposerMode) {
@@ -108,7 +120,10 @@
 	});
 
 	function isGenerating() {
-		return !session.isPending && (thread.status === "loading" || thread.status === "streaming");
+		return (
+			!session.isPending &&
+			(thread.status === "loading" || thread.status === "streaming")
+		);
 	}
 
 	function inputEmpty() {
@@ -178,7 +193,8 @@
 			return;
 		}
 
-		const emptyWithoutAttachments = inputEmpty() && attachmentFiles.length === 0;
+		const emptyWithoutAttachments =
+			inputEmpty() && attachmentFiles.length === 0;
 		if (emptyWithoutAttachments) {
 			return;
 		}
@@ -207,15 +223,14 @@
 	async function submitNewSession() {
 		pendingSubmitError = null;
 
-		const workspaceSelection = await (
-			sessionSetupRef?.getWorkspaceSelection() ??
-			Promise.resolve<WorkspaceSelectionResult>({
-				ready: false,
-				workspaceId: null,
-				workspaceType: null,
-				workspacePath: null,
-			})
-		);
+		const workspaceSelection =
+			await (sessionSetupRef?.getWorkspaceSelection() ??
+				Promise.resolve<WorkspaceSelectionResult>({
+					ready: false,
+					workspaceId: null,
+					workspaceType: null,
+					workspacePath: null,
+				}));
 		if (!workspaceSelection.ready) {
 			return;
 		}
@@ -228,9 +243,17 @@
 				sessionId: session.sessionId,
 				threadId: thread.threadId,
 				messages: trimmedText
-					? [{ id: generateId(), role: "user", parts: [{ type: "text", text: trimmedText }] }]
+					? [
+							{
+								id: generateId(),
+								role: "user",
+								parts: [{ type: "text", text: trimmedText }],
+							},
+						]
 					: [],
-				...(workspaceSelection.workspaceId ? { workspaceId: workspaceSelection.workspaceId } : {}),
+				...(workspaceSelection.workspaceId
+					? { workspaceId: workspaceSelection.workspaceId }
+					: {}),
 				...(workspaceSelection.workspaceType && workspaceSelection.workspacePath
 					? {
 							workspaceType: workspaceSelection.workspaceType,
@@ -253,16 +276,22 @@
 			clearAttachments();
 			sessionView.resetPendingWorkspaceSetup();
 		} catch (err) {
-			pendingSubmitError = err instanceof Error ? err.message : "Failed to start session";
+			pendingSubmitError =
+				err instanceof Error ? err.message : "Failed to start session";
 			await focusComposerTextarea();
 		}
 	}
 </script>
 
 <div class="shrink-0 bg-background p-0 md:p-3">
-	<div class={`w-full ${preferences.chatWidthMode === "constrained" ? "md:mx-auto md:max-w-3xl" : ""}`}>
+	<div
+		class={`w-full ${preferences.chatWidthMode === "constrained" ? "md:mx-auto md:max-w-3xl" : ""}`}
+	>
 		{#if !session.isPending}
-			<ConversationQueuePanel expanded={sessionView.queueExpanded} entries={thread.planEntries} />
+			<ConversationQueuePanel
+				expanded={sessionView.queueExpanded}
+				entries={thread.planEntries}
+			/>
 
 			<ConversationHooksPanel
 				expanded={sessionView.hooksExpanded}
@@ -275,7 +304,10 @@
 		{#if session.isPending}
 			<ConversationComposerSessionSetupStatus />
 			<div class="mb-2 flex w-full items-center gap-2 px-1 md:hidden">
-				<ConversationWorkspaceSelector bind:this={sessionSetupRef} fullWidth={true} />
+				<ConversationWorkspaceSelector
+					bind:this={sessionSetupRef}
+					fullWidth={true}
+				/>
 			</div>
 		{/if}
 
@@ -291,7 +323,10 @@
 				}}
 			>
 				<InputGroup class="rounded-t-md rounded-b-none md:rounded-md">
-					<ConversationComposerAttachments files={attachmentFiles} onRemove={removeAttachment} />
+					<ConversationComposerAttachments
+						files={attachmentFiles}
+						onRemove={removeAttachment}
+					/>
 
 					<ConversationComposerTextarea
 						bind:this={composerTextareaRef}
@@ -305,16 +340,25 @@
 					/>
 
 					<InputGroupAddon align="block-end" class="justify-between gap-1">
-						<div class="tauri-no-drag flex min-w-0 flex-1 flex-wrap items-center gap-1">
+						<div
+							class="tauri-no-drag flex min-w-0 flex-1 flex-wrap items-center gap-1"
+						>
 							<ConversationComposerAttachmentButton onFilesAdd={addFiles} />
-							<ConversationComposerModeControl value={effectiveMode} onSelect={handleModeSelect} />
+							<ConversationComposerModeControl
+								value={effectiveMode}
+								onSelect={handleModeSelect}
+							/>
 							{#if !session.isPending}
 								<ConversationEnvSetsControl
 									sessionEnvSets={session.envSets}
 									threadEnvSets={thread.envSets}
 								/>
 							{/if}
-							<ConversationComposerModelControl value={effectiveModelId} onSelect={handleModelSelect} models={models.list} />
+							<ConversationComposerModelControl
+								value={effectiveModelId}
+								onSelect={handleModelSelect}
+								models={models.list}
+							/>
 						</div>
 
 						<div class="tauri-no-drag flex items-center justify-end gap-2">
@@ -323,8 +367,14 @@
 									<ConversationWorkspaceSelector />
 								</div>
 							{:else}
-								<ConversationComposerHooksControl bind:expanded={sessionView.hooksExpanded} hooksStatus={sessionHooks.status} />
-								<ConversationComposerQueueControl bind:expanded={sessionView.queueExpanded} entries={thread.planEntries} />
+								<ConversationComposerHooksControl
+									bind:expanded={sessionView.hooksExpanded}
+									hooksStatus={sessionHooks.status}
+								/>
+								<ConversationComposerQueueControl
+									bind:expanded={sessionView.queueExpanded}
+									entries={thread.planEntries}
+								/>
 							{/if}
 							<ConversationComposerSubmitButton
 								status={submitStatus}

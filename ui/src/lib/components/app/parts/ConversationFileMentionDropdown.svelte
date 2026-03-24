@@ -44,7 +44,9 @@
 			}
 		}
 
-		return Object.values(entriesByPath).sort((a, b) => a.path.localeCompare(b.path));
+		return Object.values(entriesByPath).sort((a, b) =>
+			a.path.localeCompare(b.path),
+		);
 	}
 
 	const suggestions = $derived.by(() => {
@@ -76,8 +78,12 @@
 			.slice(0, 50);
 	});
 
-	const showEmpty = $derived.by(() => suggestions.length === 0 && query.length > 0);
-	const shouldRender = $derived.by(() => open && (suggestions.length > 0 || showEmpty));
+	const showEmpty = $derived.by(
+		() => suggestions.length === 0 && query.length > 0,
+	);
+	const shouldRender = $derived.by(
+		() => open && (suggestions.length > 0 || showEmpty),
+	);
 
 	function updateMentionState(value: string, cursor: number) {
 		const beforeCursor = value.slice(0, cursor);
@@ -169,7 +175,9 @@
 			return;
 		}
 
-		const selectedItem = dropdownRef.querySelector(`[data-index="${selectedIndex}"]`);
+		const selectedItem = dropdownRef.querySelector(
+			`[data-index="${selectedIndex}"]`,
+		);
 		if (selectedItem && "scrollIntoView" in selectedItem) {
 			(selectedItem as HTMLElement).scrollIntoView({ block: "nearest" });
 		}
@@ -200,14 +208,20 @@
 		bind:this={dropdownRef}
 		class="absolute bottom-full left-0 right-0 z-50 mb-1 flex max-h-64 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
 	>
-		<div class="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-popover px-3 py-2">
+		<div
+			class="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-popover px-3 py-2"
+		>
 			<FileIcon class="size-4 text-muted-foreground" />
 			<span class="text-xs font-medium text-muted-foreground">Files</span>
-			<span class="ml-auto text-xs text-muted-foreground">↑/↓ navigate · Tab to select</span>
+			<span class="ml-auto text-xs text-muted-foreground"
+				>↑/↓ navigate · Tab to select</span
+			>
 		</div>
 
 		{#if showEmpty}
-			<div class="px-3 py-3 text-xs text-muted-foreground">No results for &ldquo;{query}&rdquo;</div>
+			<div class="px-3 py-3 text-xs text-muted-foreground">
+				No results for &ldquo;{query}&rdquo;
+			</div>
 		{:else}
 			<div class="overflow-y-auto py-1">
 				{#each suggestions as item, index (item.path)}
@@ -221,7 +235,9 @@
 						}}
 					>
 						{#if item.type === "directory"}
-							<FolderIcon class="size-3.5 shrink-0 text-blue-400 dark:text-blue-300" />
+							<FolderIcon
+								class="size-3.5 shrink-0 text-blue-400 dark:text-blue-300"
+							/>
 						{:else}
 							<FileIcon class="size-3.5 shrink-0 text-muted-foreground" />
 						{/if}

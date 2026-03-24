@@ -5,7 +5,9 @@ type CreateAppModelsDomainArgs = {
 	store: ModelStore;
 };
 
-export function createAppModelsDomain(args: CreateAppModelsDomainArgs): AppModels {
+export function createAppModelsDomain(
+	args: CreateAppModelsDomainArgs,
+): AppModels {
 	const { store } = args;
 
 	return {

@@ -58,7 +58,8 @@
 		return createElement(
 			"div",
 			{
-				className: "fixed inset-0 z-50 flex items-center justify-center bg-black/50",
+				className:
+					"fixed inset-0 z-50 flex items-center justify-center bg-black/50",
 			},
 			createElement(
 				"div",
@@ -66,7 +67,11 @@
 					className:
 						"mx-4 w-full max-w-md rounded-xl border bg-background p-6 shadow-lg",
 				},
-				createElement("h3", { className: "font-semibold text-base" }, "Open external link?"),
+				createElement(
+					"h3",
+					{ className: "font-semibold text-base" },
+					"Open external link?",
+				),
 				createElement(
 					"p",
 					{ className: "mt-1 text-muted-foreground text-sm" },

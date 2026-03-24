@@ -10,7 +10,12 @@
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 </script>
 
-<div bind:this={ref} data-slot="input-otp-separator" role="separator" {...restProps}>
+<div
+	bind:this={ref}
+	data-slot="input-otp-separator"
+	role="separator"
+	{...restProps}
+>
 	{#if children}
 		{@render children?.()}
 	{:else}

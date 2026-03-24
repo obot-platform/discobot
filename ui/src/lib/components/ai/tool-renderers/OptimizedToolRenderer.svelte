@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "$lib/components/ai/tool";
+	import {
+		Tool,
+		ToolContent,
+		ToolHeader,
+		ToolInput,
+		ToolOutput,
+	} from "$lib/components/ai/tool";
 	import type { DynamicToolPart } from "$lib/components/ai/types";
 	import { getToolRenderer, getToolTitle } from "./registry";
 
@@ -25,7 +31,8 @@
 		onToolApprovalResponse,
 	}: Props = $props();
 
-	const getInitialOpen = () => defaultOpen || toolPart.toolName === "AskUserQuestion";
+	const getInitialOpen = () =>
+		defaultOpen || toolPart.toolName === "AskUserQuestion";
 
 	let isRaw = $state(false);
 	let open = $state(getInitialOpen());
@@ -45,7 +52,9 @@
 	const renderedError = $derived.by(() => toolPart.errorText);
 	const Renderer = $derived.by(() => getToolRenderer(toolPart.toolName));
 	const hasOptimizedView = $derived.by(() => Boolean(Renderer));
-	const isAlwaysExpanded = $derived.by(() => toolPart.toolName === "AskUserQuestion");
+	const isAlwaysExpanded = $derived.by(
+		() => toolPart.toolName === "AskUserQuestion",
+	);
 	const showRaw = $derived.by(() => !hasOptimizedView || isRaw);
 	const title = $derived.by(() => getToolTitle(toolPart));
 </script>
@@ -58,7 +67,7 @@
 			state={toolPart.state}
 			{title}
 			isRaw={showRaw}
-			onToggleRaw={hasOptimizedView ? (() => (isRaw = !isRaw)) : undefined}
+			onToggleRaw={hasOptimizedView ? () => (isRaw = !isRaw) : undefined}
 			canCollapse={!isAlwaysExpanded}
 		/>
 		<ToolContent>
@@ -73,7 +82,7 @@
 			{sessionId}
 			{threadId}
 			{onToolApprovalResponse}
-			isRaw={isRaw}
+			{isRaw}
 			onToggleRaw={() => (isRaw = !isRaw)}
 		/>
 	</Tool>

@@ -93,16 +93,8 @@ test("countDiffLinesFast counts only hunk content lines", () => {
 
 test("buildEditDiffRows returns numbered edit rows with inline highlights", () => {
 	const rows = buildEditDiffRows(
-		[
-			"export function example() {",
-			"\treturn oldValue;",
-			"}",
-		].join("\n"),
-		[
-			"export function example() {",
-			"\treturn newValue;",
-			"}",
-		].join("\n"),
+		["export function example() {", "\treturn oldValue;", "}"].join("\n"),
+		["export function example() {", "\treturn newValue;", "}"].join("\n"),
 	);
 
 	assert.deepEqual(rows, [

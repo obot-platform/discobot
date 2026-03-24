@@ -17,7 +17,9 @@
 
 {#each VIEWPORT_OPTIONS as option}
 	<WebPreviewNavigationButton
-		class={cn(webPreview.viewport === option.value && "bg-muted text-foreground")}
+		class={cn(
+			webPreview.viewport === option.value && "bg-muted text-foreground",
+		)}
 		onclick={() => webPreview.setViewport(option.value)}
 		tooltip={option.label}
 	>

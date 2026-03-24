@@ -43,6 +43,10 @@ export function getSessionToolbarOperationState(args: {
 		activeOperation,
 		showPending: isPending,
 		showBusy,
-		buttonLabel: isPending ? "Pending..." : showBusy ? progressLabel : primaryLabel,
+		buttonLabel: isPending
+			? "Pending..."
+			: showBusy
+				? progressLabel
+				: primaryLabel,
 	};
 }

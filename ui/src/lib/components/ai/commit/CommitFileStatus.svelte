@@ -27,7 +27,11 @@
 </script>
 
 <span
-	class={cn("font-medium font-mono text-xs", fileStatusStyles[status], className)}
+	class={cn(
+		"font-medium font-mono text-xs",
+		fileStatusStyles[status],
+		className,
+	)}
 	{...restProps}
 >
 	{#if children}

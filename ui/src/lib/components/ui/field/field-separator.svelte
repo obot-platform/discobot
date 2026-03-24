@@ -22,7 +22,7 @@
 	data-content={hasContent}
 	class={cn(
 		"relative -my-2 h-5 text-sm group-data-[variant=outline]/field-group:-mb-2",
-		className
+		className,
 	)}
 	{...restProps}
 >

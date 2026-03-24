@@ -12,7 +12,10 @@
 </script>
 
 {#if count > 0}
-	<span class={cn("text-green-600 dark:text-green-400", className)} {...restProps}>
+	<span
+		class={cn("text-green-600 dark:text-green-400", className)}
+		{...restProps}
+	>
 		{#if children}
 			{@render children()}
 		{:else}

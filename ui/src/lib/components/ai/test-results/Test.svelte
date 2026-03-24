@@ -10,9 +10,20 @@
 		children?: () => any;
 	};
 
-	let { name, status, duration, class: className, children, ...restProps }: Props = $props();
+	let {
+		name,
+		status,
+		duration,
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 
-	const test = $state({ name: "", status: "passed" as TestStatus, duration: undefined as number | undefined });
+	const test = $state({
+		name: "",
+		status: "passed" as TestStatus,
+		duration: undefined as number | undefined,
+	});
 	$effect(() => {
 		test.name = name;
 		test.status = status;
@@ -21,6 +32,9 @@
 	setTestContext(test);
 </script>
 
-<div class={cn("flex items-center gap-2 px-4 py-2 text-sm", className)} {...restProps}>
+<div
+	class={cn("flex items-center gap-2 px-4 py-2 text-sm", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </div>

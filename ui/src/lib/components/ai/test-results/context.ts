@@ -1,6 +1,8 @@
 import { getContext, setContext } from "svelte";
 
-const TEST_RESULTS_CONTEXT_KEY = Symbol.for("discobot-ui-ai-test-results-context");
+const TEST_RESULTS_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-test-results-context",
+);
 const TEST_SUITE_CONTEXT_KEY = Symbol.for("discobot-ui-ai-test-suite-context");
 const TEST_CONTEXT_KEY = Symbol.for("discobot-ui-ai-test-context");
 
@@ -36,15 +38,22 @@ export function setTestResultsContext(
 }
 
 export function useTestResultsContext(): TestResultsContextValue {
-	return getContext<TestResultsContextValue | undefined>(TEST_RESULTS_CONTEXT_KEY) ?? {};
+	return (
+		getContext<TestResultsContextValue | undefined>(TEST_RESULTS_CONTEXT_KEY) ??
+		{}
+	);
 }
 
-export function setTestSuiteContext(value: TestSuiteContextValue): TestSuiteContextValue {
+export function setTestSuiteContext(
+	value: TestSuiteContextValue,
+): TestSuiteContextValue {
 	return setContext(TEST_SUITE_CONTEXT_KEY, value);
 }
 
 export function useTestSuiteContext(): TestSuiteContextValue {
-	const context = getContext<TestSuiteContextValue | undefined>(TEST_SUITE_CONTEXT_KEY);
+	const context = getContext<TestSuiteContextValue | undefined>(
+		TEST_SUITE_CONTEXT_KEY,
+	);
 	if (!context) {
 		throw new Error("TestSuite components must be used within TestSuite");
 	}

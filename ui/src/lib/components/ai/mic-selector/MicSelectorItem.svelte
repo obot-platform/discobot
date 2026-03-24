@@ -18,6 +18,6 @@
 	}
 </script>
 
-<CommandItem value={value} onSelect={handleSelect} {...restProps}>
+<CommandItem {value} onSelect={handleSelect} {...restProps}>
 	{@render children?.()}
 </CommandItem>

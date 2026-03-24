@@ -42,7 +42,10 @@
 		const duration = Number.isFinite(player.audio.duration)
 			? player.audio.duration
 			: 0;
-		const next = Math.min(Math.max(time, 0), duration || Number.POSITIVE_INFINITY);
+		const next = Math.min(
+			Math.max(time, 0),
+			duration || Number.POSITIVE_INFINITY,
+		);
 		player.audio.currentTime = Number.isFinite(next) ? next : 0;
 	}
 

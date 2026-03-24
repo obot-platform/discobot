@@ -108,15 +108,22 @@
 
 		sessionView.startEnvSetEdit(envSet.id);
 		envSetNameDraft = envSet.name;
-		envVarRows = Object.entries(envSet.envVars).map(([key, value]) => makeEnvVarRow(key, value));
+		envVarRows = Object.entries(envSet.envVars).map(([key, value]) =>
+			makeEnvVarRow(key, value),
+		);
 		showEnvVarValues = false;
 		if (envVarRows.length === 0) {
 			envVarRows = [makeEnvVarRow()];
 		}
 	}
 
-	function updateEnvVarRow(rowId: string, patch: Partial<Omit<EnvVarRow, "id">>) {
-		envVarRows = envVarRows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
+	function updateEnvVarRow(
+		rowId: string,
+		patch: Partial<Omit<EnvVarRow, "id">>,
+	) {
+		envVarRows = envVarRows.map((row) =>
+			row.id === rowId ? { ...row, ...patch } : row,
+		);
 	}
 
 	function addEnvVarRow() {
@@ -149,7 +156,10 @@
 			return;
 		}
 
-		if (sessionView.envSetEditorMode === "edit" && sessionView.editingEnvSetId) {
+		if (
+			sessionView.envSetEditorMode === "edit" &&
+			sessionView.editingEnvSetId
+		) {
 			sessionEnvSets.update(sessionView.editingEnvSetId, trimmedName, envVars);
 			closeEnvSetManager();
 		}
@@ -197,7 +207,12 @@
 
 <DropdownMenu>
 	<DropdownMenuTrigger class="tauri-no-drag">
-		<Button variant="ghost" size="xs" class="h-6 gap-1.5 px-2 text-xs" aria-label="Select env sets">
+		<Button
+			variant="ghost"
+			size="xs"
+			class="h-6 gap-1.5 px-2 text-xs"
+			aria-label="Select env sets"
+		>
 			<LayersIcon
 				class={`size-3.5 ${activeEnvSetCount() > 0 ? "text-yellow-500" : "text-muted-foreground"}`}
 			/>
@@ -207,14 +222,21 @@
 		</Button>
 	</DropdownMenuTrigger>
 	<DropdownMenuContent align="start" class="w-72">
-		<DropdownMenuLabel class="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+		<DropdownMenuLabel
+			class="text-xs uppercase tracking-[0.16em] text-muted-foreground"
+		>
 			Env sets
 		</DropdownMenuLabel>
 		{#if sessionEnvSets.list.length === 0}
-			<DropdownMenuItem disabled class="text-muted-foreground">No env sets</DropdownMenuItem>
+			<DropdownMenuItem disabled class="text-muted-foreground"
+				>No env sets</DropdownMenuItem
+			>
 		{:else}
 			{#each sessionEnvSets.list as envSet (envSet.id)}
-				<DropdownMenuItem onclick={() => threadEnvSets.toggle(envSet.id)} class="justify-between gap-3">
+				<DropdownMenuItem
+					onclick={() => threadEnvSets.toggle(envSet.id)}
+					class="justify-between gap-3"
+				>
 					<div class="min-w-0 flex-1">
 						<div class="truncate">{envSet.name}</div>
 						<div class="truncate text-[11px] text-muted-foreground">
@@ -235,8 +257,13 @@
 	</DropdownMenuContent>
 </DropdownMenu>
 
-<Dialog.Root open={sessionView.envSetDialogOpen} onOpenChange={handleEnvSetDialogOpenChange}>
-	<Dialog.Content class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+<Dialog.Root
+	open={sessionView.envSetDialogOpen}
+	onOpenChange={handleEnvSetDialogOpenChange}
+>
+	<Dialog.Content
+		class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
+	>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
 				<LayersIcon class="size-4" />
@@ -268,9 +295,13 @@
 				</Button>
 			</div>
 
-			<div class="mt-2 min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-2">
+			<div
+				class="mt-2 min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-2"
+			>
 				{#if sessionEnvSets.list.length === 0}
-					<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+					<div
+						class="flex h-full items-center justify-center text-sm text-muted-foreground"
+					>
 						No env sets yet.
 					</div>
 				{:else}
@@ -290,13 +321,19 @@
 											{/if}
 										</div>
 										<p class="mt-1 text-xs text-muted-foreground">
-											{envSetVariableCount(envSet)} vars · updated {formatRelativeTime(envSet.updatedAt)}
+											{envSetVariableCount(envSet)} vars · updated {formatRelativeTime(
+												envSet.updatedAt,
+											)}
 										</p>
-										<p class="mt-1 truncate text-xs text-muted-foreground">{envSetPreview(envSet)}</p>
+										<p class="mt-1 truncate text-xs text-muted-foreground">
+											{envSetPreview(envSet)}
+										</p>
 									</div>
 									<div class="flex items-center gap-1">
 										<Button
-											variant={isEnvSetActive(envSet.id) ? "secondary" : "outline"}
+											variant={isEnvSetActive(envSet.id)
+												? "secondary"
+												: "outline"}
 											size="xs"
 											onclick={() => threadEnvSets.toggle(envSet.id)}
 										>
@@ -326,7 +363,9 @@
 				{/if}
 			</div>
 		{:else}
-			<div class="mt-1 min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-3">
+			<div
+				class="mt-1 min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-3"
+			>
 				<div class="space-y-4">
 					<div class="space-y-1.5">
 						<Label for="env-set-name">Name</Label>
@@ -334,7 +373,8 @@
 							id="env-set-name"
 							value={envSetNameDraft}
 							oninput={(event) =>
-								(envSetNameDraft = (event.currentTarget as HTMLInputElement).value)}
+								(envSetNameDraft = (event.currentTarget as HTMLInputElement)
+									.value)}
 							placeholder="Preview environment"
 						/>
 					</div>
@@ -402,11 +442,7 @@
 			</div>
 
 			<Dialog.Footer class="mt-3">
-				<Button
-					variant="ghost"
-					size="sm"
-					onclick={closeEnvSetManager}
-				>
+				<Button variant="ghost" size="sm" onclick={closeEnvSetManager}>
 					Cancel
 				</Button>
 				<Button

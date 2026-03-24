@@ -45,9 +45,9 @@
 		confidence: number;
 	}
 
-interface SpeechRecognitionErrorEvent extends Event {
-	error: string;
-}
+	interface SpeechRecognitionErrorEvent extends Event {
+		error: string;
+	}
 
 	type SpeechRecognitionConstructor = new () => SpeechRecognition;
 
@@ -87,7 +87,9 @@ interface SpeechRecognitionErrorEvent extends Event {
 		| SpeechRecognitionConstructor
 		| undefined {
 		const speechWindow = window as SpeechRecognitionWindow;
-		return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+		return (
+			speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
+		);
 	}
 
 	function detectSpeechInputMode(): SpeechInputMode {

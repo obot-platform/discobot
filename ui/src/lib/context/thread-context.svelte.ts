@@ -4,7 +4,10 @@ import { useAppContext } from "$lib/context/app-context.svelte";
 import { useSessionContext } from "$lib/context/session-context.svelte";
 import { createConversationDomain } from "$lib/thread/conversation.svelte";
 import { getPlanEntries } from "$lib/session/domains/session-domain.helpers";
-import type { SessionContextValue, ThreadContextValue } from "$lib/session/session-context.types";
+import type {
+	SessionContextValue,
+	ThreadContextValue,
+} from "$lib/session/session-context.types";
 
 const THREAD_CONTEXT_KEY = Symbol.for("discobot-ui-thread-context");
 
@@ -105,9 +108,13 @@ export function setThreadContext(threadId: string): ThreadContextValue {
 }
 
 export function useThreadContext(): ThreadContextValue {
-	const context = getContext<ThreadContextValue | undefined>(THREAD_CONTEXT_KEY);
+	const context = getContext<ThreadContextValue | undefined>(
+		THREAD_CONTEXT_KEY,
+	);
 	if (!context) {
-		throw new Error("useThreadContext must be used within a ThreadContext provider");
+		throw new Error(
+			"useThreadContext must be used within a ThreadContext provider",
+		);
 	}
 	return context;
 }

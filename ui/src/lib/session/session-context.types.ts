@@ -26,7 +26,11 @@ export type SessionStores = {
 export type SessionEnvSetsService = {
 	list: EnvSetWithVars[];
 	create: (name: string, envVars: Record<string, string>) => void;
-	update: (envSetId: string, name: string, envVars: Record<string, string>) => void;
+	update: (
+		envSetId: string,
+		name: string,
+		envVars: Record<string, string>,
+	) => void;
 	remove: (envSetId: string) => void;
 };
 

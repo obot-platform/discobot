@@ -10,7 +10,9 @@ export function getNextSelectedSessionId(
 		return currentSelectedSessionId;
 	}
 
-	return sessions.find((session) => session.id !== removedSessionId)?.id ?? null;
+	return (
+		sessions.find((session) => session.id !== removedSessionId)?.id ?? null
+	);
 }
 
 export function getReconciledSelectedSessionId(
@@ -18,19 +20,30 @@ export function getReconciledSelectedSessionId(
 	currentSelectedSessionId: string | null,
 	explicitSelectedSessionId?: string | null,
 ): string | null {
-	if (explicitSelectedSessionId && sessions.some((session) => session.id === explicitSelectedSessionId)) {
+	if (
+		explicitSelectedSessionId &&
+		sessions.some((session) => session.id === explicitSelectedSessionId)
+	) {
 		return explicitSelectedSessionId;
 	}
 
-	if (currentSelectedSessionId && sessions.some((session) => session.id === currentSelectedSessionId)) {
+	if (
+		currentSelectedSessionId &&
+		sessions.some((session) => session.id === currentSelectedSessionId)
+	) {
 		return currentSelectedSessionId;
 	}
 
 	return null;
 }
 
-export function upsertSession(sessions: Session[], nextSession: Session): Session[] {
-	const existingIndex = sessions.findIndex((session) => session.id === nextSession.id);
+export function upsertSession(
+	sessions: Session[],
+	nextSession: Session,
+): Session[] {
+	const existingIndex = sessions.findIndex(
+		(session) => session.id === nextSession.id,
+	);
 	if (existingIndex === -1) {
 		return [...sessions, nextSession];
 	}

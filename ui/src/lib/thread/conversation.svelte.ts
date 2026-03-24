@@ -24,7 +24,9 @@ function normalizeModelId(modelId: string | null): string | undefined {
 	if (!modelId) {
 		return undefined;
 	}
-	return modelId.endsWith(":thinking") ? modelId.slice(0, -":thinking".length) : modelId;
+	return modelId.endsWith(":thinking")
+		? modelId.slice(0, -":thinking".length)
+		: modelId;
 }
 
 export function getSubmitMessages(userMessage: ChatMessage): ChatMessage[] {
@@ -143,12 +145,18 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				args.refreshThread(),
 				args.refreshSessionState?.(),
 			]).catch((error) => {
-				console.error("Failed to refresh thread state after chat stream connected", error);
+				console.error(
+					"Failed to refresh thread state after chat stream connected",
+					error,
+				);
 			});
 		};
 		unbindStream = bindChatStreamEventSource(source, streamState, {
 			onError: (error) => {
-				streamError = error instanceof Error ? error.message : "Failed to process chat stream";
+				streamError =
+					error instanceof Error
+						? error.message
+						: "Failed to process chat stream";
 			},
 		});
 		source.onerror = () => {
@@ -167,7 +175,10 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	}
 
 	async function refreshMessages() {
-		const { messages: nextMessages } = await api.getThreadMessages(args.sessionId, args.threadId);
+		const { messages: nextMessages } = await api.getThreadMessages(
+			args.sessionId,
+			args.threadId,
+		);
 		messages = nextMessages;
 	}
 
@@ -187,7 +198,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				loadStatus = "ready";
 			} catch (error) {
 				loadStatus = "error";
-				streamError = error instanceof Error ? error.message : "Failed to load messages";
+				streamError =
+					error instanceof Error ? error.message : "Failed to load messages";
 				throw error;
 			}
 		}
@@ -210,7 +222,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			syncStream();
 		} catch (error) {
 			loadStatus = "error";
-			streamError = error instanceof Error ? error.message : "Failed to load messages";
+			streamError =
+				error instanceof Error ? error.message : "Failed to load messages";
 			throw error;
 		}
 	}
@@ -266,7 +279,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				});
 			} catch (error) {
 				streamStatus = null;
-				const errorMessage = error instanceof Error ? error.message : "Failed to start chat";
+				const errorMessage =
+					error instanceof Error ? error.message : "Failed to start chat";
 				await refresh();
 				streamError = errorMessage;
 				throw error;
@@ -281,7 +295,15 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			await refresh();
 		},
 		refresh,
-		addToolApprovalResponse: ({ id, approved, reason }: { id: string; approved: boolean; reason?: string }) => {
+		addToolApprovalResponse: ({
+			id,
+			approved,
+			reason,
+		}: {
+			id: string;
+			approved: boolean;
+			reason?: string;
+		}) => {
 			addToolApprovalResponse(messages, { id, approved, reason });
 		},
 		dispose: () => {

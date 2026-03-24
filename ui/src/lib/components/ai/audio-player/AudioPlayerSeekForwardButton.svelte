@@ -9,12 +9,7 @@
 		children?: () => any;
 	};
 
-	let {
-		seekOffset = 10,
-		onclick,
-		children,
-		...restProps
-	}: Props = $props();
+	let { seekOffset = 10, onclick, children, ...restProps }: Props = $props();
 
 	const player = useAudioPlayerContext();
 

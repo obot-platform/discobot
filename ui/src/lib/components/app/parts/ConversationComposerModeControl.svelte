@@ -17,10 +17,10 @@
 		description: string;
 	};
 
-type Props = {
-	value?: ComposerMode;
-	onSelect?: (value: ComposerMode) => void;
-};
+	type Props = {
+		value?: ComposerMode;
+		onSelect?: (value: ComposerMode) => void;
+	};
 
 	const modeOptions: ModeOption[] = [
 		{
@@ -35,10 +35,12 @@ type Props = {
 		},
 	];
 
-let { value = "build", onSelect = () => {} }: Props = $props();
+	let { value = "build", onSelect = () => {} }: Props = $props();
 
 	const selectedModeOption = $derived.by(
-		() => modeOptions.find((modeOption) => modeOption.id === value) ?? modeOptions[0],
+		() =>
+			modeOptions.find((modeOption) => modeOption.id === value) ??
+			modeOptions[0],
 	);
 </script>
 
@@ -73,7 +75,9 @@ let { value = "build", onSelect = () => {} }: Props = $props();
 					{/if}
 					<div class="min-w-0">
 						<div class="font-medium">{modeOption.label}</div>
-						<div class="text-xs text-muted-foreground">{modeOption.description}</div>
+						<div class="text-xs text-muted-foreground">
+							{modeOption.description}
+						</div>
 					</div>
 				</div>
 				{#if value === modeOption.id}

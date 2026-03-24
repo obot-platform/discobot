@@ -96,7 +96,8 @@
 			typeof maxFiles === "number"
 				? Math.max(0, maxFiles - files.length)
 				: undefined;
-		const capped = typeof capacity === "number" ? sized.slice(0, capacity) : sized;
+		const capped =
+			typeof capacity === "number" ? sized.slice(0, capacity) : sized;
 
 		if (typeof capacity === "number" && sized.length > capacity) {
 			onError?.({

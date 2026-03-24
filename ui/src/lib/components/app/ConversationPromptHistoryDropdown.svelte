@@ -22,10 +22,14 @@
 	let dropdownRef = $state<HTMLDivElement | null>(null);
 
 	const visibleHistory = $derived.by(() =>
-		[...app.preferences.promptHistory.slice(0, MAX_VISIBLE_PROMPT_HISTORY)].reverse(),
+		[
+			...app.preferences.promptHistory.slice(0, MAX_VISIBLE_PROMPT_HISTORY),
+		].reverse(),
 	);
 	const pinnedPrompts = $derived.by(() => app.preferences.pinnedPrompts);
-	const hasItems = $derived.by(() => pinnedPrompts.length > 0 || visibleHistory.length > 0);
+	const hasItems = $derived.by(
+		() => pinnedPrompts.length > 0 || visibleHistory.length > 0,
+	);
 
 	function closeDropdown() {
 		open = false;
@@ -42,7 +46,9 @@
 		if (historyIndex < 0) {
 			return null;
 		}
-		return isPinnedSelection ? (pinnedPrompts[historyIndex] ?? null) : (visibleHistory[historyIndex] ?? null);
+		return isPinnedSelection
+			? (pinnedPrompts[historyIndex] ?? null)
+			: (visibleHistory[historyIndex] ?? null);
 	}
 
 	function selectPrompt(prompt: string) {
@@ -99,7 +105,11 @@
 			return false;
 		}
 
-		if ((event.key === "Enter" || event.key === "Tab") && open && historyIndex >= 0) {
+		if (
+			(event.key === "Enter" || event.key === "Tab") &&
+			open &&
+			historyIndex >= 0
+		) {
 			event.preventDefault();
 			const prompt = selectedPrompt();
 			if (prompt) {
@@ -203,10 +213,16 @@
 		bind:this={dropdownRef}
 		class="absolute bottom-full left-0 right-0 z-50 mb-1 flex max-h-96 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
 	>
-		<div class="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-popover px-3 py-2">
+		<div
+			class="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-popover px-3 py-2"
+		>
 			<HistoryIcon class="size-4 text-muted-foreground" />
-			<span class="text-xs font-medium text-muted-foreground">Prompt history</span>
-			<span class="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+			<span class="text-xs font-medium text-muted-foreground"
+				>Prompt history</span
+			>
+			<span
+				class="ml-auto flex items-center gap-1 text-xs text-muted-foreground"
+			>
 				<ChevronUpIcon class="size-3" />
 				/
 				<ChevronDownIcon class="size-3" />
@@ -216,7 +232,9 @@
 
 		<div class="overflow-y-auto py-1">
 			{#if pinnedPrompts.length > 0}
-				<div class="px-3 py-1.5 text-xs font-medium text-muted-foreground">Pinned</div>
+				<div class="px-3 py-1.5 text-xs font-medium text-muted-foreground">
+					Pinned
+				</div>
 				{#each pinnedPrompts as prompt, index (prompt)}
 					<div
 						data-pinned-index={index}
@@ -243,14 +261,18 @@
 								unpinHistoryPrompt(prompt);
 							}}
 						>
-							<PinIcon class="size-3.5 fill-current text-muted-foreground hover:text-foreground" />
+							<PinIcon
+								class="size-3.5 fill-current text-muted-foreground hover:text-foreground"
+							/>
 						</button>
 					</div>
 				{/each}
 			{/if}
 
 			{#if visibleHistory.length > 0}
-				<div class={`px-3 py-1.5 text-xs font-medium text-muted-foreground ${pinnedPrompts.length > 0 ? "border-t border-border" : ""}`}>
+				<div
+					class={`px-3 py-1.5 text-xs font-medium text-muted-foreground ${pinnedPrompts.length > 0 ? "border-t border-border" : ""}`}
+				>
 					Recent
 				</div>
 				{#each visibleHistory as prompt, index (prompt)}
@@ -269,7 +291,9 @@
 						>
 							<span class="line-clamp-2 break-words">{prompt}</span>
 						</button>
-						<div class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+						<div
+							class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+						>
 							<button
 								type="button"
 								title={app.preferences.isPromptPinned(prompt) ? "Unpin" : "Pin"}
@@ -296,7 +320,9 @@
 									removeHistoryPrompt(prompt, index);
 								}}
 							>
-								<Trash2Icon class="size-3.5 text-muted-foreground hover:text-foreground" />
+								<Trash2Icon
+									class="size-3.5 text-muted-foreground hover:text-foreground"
+								/>
 							</button>
 						</div>
 					</div>

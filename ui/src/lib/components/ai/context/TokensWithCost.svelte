@@ -8,7 +8,9 @@
 		if (tokens === undefined) {
 			return "—";
 		}
-		return new Intl.NumberFormat("en-US", { notation: "compact" }).format(tokens);
+		return new Intl.NumberFormat("en-US", { notation: "compact" }).format(
+			tokens,
+		);
 	});
 </script>
 

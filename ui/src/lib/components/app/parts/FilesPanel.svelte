@@ -20,7 +20,7 @@
 	import htmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
 	import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 	import tsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
-	
+
 	import DockWindowChrome from "$lib/components/app/parts/DockWindowChrome.svelte";
 	import ImageAttachment from "$lib/components/ai/image-attachment/ImageAttachment.svelte";
 	import { MessageResponse } from "$lib/components/ai/message";
@@ -53,7 +53,10 @@
 	import { Input } from "$lib/components/ui/input";
 	import * as Resizable from "$lib/components/ui/resizable";
 	import { Switch } from "$lib/components/ui/switch";
-	import { ToggleGroup, ToggleGroupItem } from "$lib/components/ui/toggle-group";
+	import {
+		ToggleGroup,
+		ToggleGroupItem,
+	} from "$lib/components/ui/toggle-group";
 	import type { FileStatus } from "$lib/api-types";
 	import type {
 		SessionFileTreeNode,
@@ -75,7 +78,14 @@
 		resolvedTheme: ResolvedTheme;
 	};
 
-	let { colorScheme, dockMaximized, files, onClose, onToggleDockMaximized, resolvedTheme }: Props = $props();
+	let {
+		colorScheme,
+		dockMaximized,
+		files,
+		onClose,
+		onToggleDockMaximized,
+		resolvedTheme,
+	}: Props = $props();
 
 	const MONACO_THEME_PREFIX = "discobot";
 	let monacoLoader: Promise<typeof import("monaco-editor")> | null = null;
@@ -180,7 +190,19 @@
 
 	function isImageFile(path: string): boolean {
 		const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
-		return ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif", "tif", "tiff"].includes(extension);
+		return [
+			"png",
+			"jpg",
+			"jpeg",
+			"gif",
+			"webp",
+			"svg",
+			"ico",
+			"bmp",
+			"avif",
+			"tif",
+			"tiff",
+		].includes(extension);
 	}
 
 	function isPdfFile(path: string): boolean {
@@ -218,7 +240,10 @@
 		}
 	}
 
-	function getDownloadMimeType(path: string, encoding: "utf8" | "base64"): string {
+	function getDownloadMimeType(
+		path: string,
+		encoding: "utf8" | "base64",
+	): string {
 		if (encoding === "utf8") {
 			return "text/plain;charset=utf-8";
 		}
@@ -282,7 +307,11 @@
 		return `#${componentToHex(Number(red))}${componentToHex(Number(green))}${componentToHex(Number(blue))}${alphaHex}`;
 	}
 
-	function readThemeValue(style: CSSStyleDeclaration, property: string, fallback: string): string {
+	function readThemeValue(
+		style: CSSStyleDeclaration,
+		property: string,
+		fallback: string,
+	): string {
 		const value = style.getPropertyValue(property).trim();
 		return value.length > 0 ? value : fallback;
 	}
@@ -306,8 +335,15 @@
 		return rgbStringToHex(resolved) ?? fallback;
 	}
 
-	function readThemeColor(style: CSSStyleDeclaration, property: string, fallback: string): string {
-		return resolveColorToHex(readThemeValue(style, property, fallback), fallback);
+	function readThemeColor(
+		style: CSSStyleDeclaration,
+		property: string,
+		fallback: string,
+	): string {
+		return resolveColorToHex(
+			readThemeValue(style, property, fallback),
+			fallback,
+		);
 	}
 
 	function tokenColor(value: string): string {
@@ -324,29 +360,77 @@
 		}
 
 		const style = window.getComputedStyle(document.documentElement);
-		const background = readThemeColor(style, "--background", mode === "dark" ? "#1E1E1E" : "#FFFFFF");
-		const foreground = readThemeColor(style, "--foreground", mode === "dark" ? "#D4D4D4" : "#24292E");
-		const border = readThemeColor(style, "--border", mode === "dark" ? "#3F3F46" : "#D0D7DE");
-		const primary = readThemeColor(style, "--primary", mode === "dark" ? "#88C0D0" : "#0969DA");
+		const background = readThemeColor(
+			style,
+			"--background",
+			mode === "dark" ? "#1E1E1E" : "#FFFFFF",
+		);
+		const foreground = readThemeColor(
+			style,
+			"--foreground",
+			mode === "dark" ? "#D4D4D4" : "#24292E",
+		);
+		const border = readThemeColor(
+			style,
+			"--border",
+			mode === "dark" ? "#3F3F46" : "#D0D7DE",
+		);
+		const primary = readThemeColor(
+			style,
+			"--primary",
+			mode === "dark" ? "#88C0D0" : "#0969DA",
+		);
 		const mutedForeground = readThemeColor(
 			style,
 			"--muted-foreground",
 			mode === "dark" ? "#8B949E" : "#57606A",
 		);
-		const accent = readThemeColor(style, "--accent", mode === "dark" ? "#2A2D2E" : "#F6F8FA");
-		const popover = readThemeColor(style, "--popover", mode === "dark" ? "#1F2328" : "#FFFFFF");
+		const accent = readThemeColor(
+			style,
+			"--accent",
+			mode === "dark" ? "#2A2D2E" : "#F6F8FA",
+		);
+		const popover = readThemeColor(
+			style,
+			"--popover",
+			mode === "dark" ? "#1F2328" : "#FFFFFF",
+		);
 		const popoverForeground = readThemeColor(
 			style,
 			"--popover-foreground",
 			mode === "dark" ? "#D4D4D4" : "#24292E",
 		);
-		const selection = readThemeColor(style, "--tree-selected", mode === "dark" ? "#264F78" : "#ADD6FF");
+		const selection = readThemeColor(
+			style,
+			"--tree-selected",
+			mode === "dark" ? "#264F78" : "#ADD6FF",
+		);
 		const chart1 = readThemeColor(style, "--chart-1", primary);
-		const chart2 = readThemeColor(style, "--chart-2", mode === "dark" ? "#A6E3A1" : "#0A7A45");
-		const chart3 = readThemeColor(style, "--chart-3", mode === "dark" ? "#EBCB8B" : "#B35900");
-		const chart4 = readThemeColor(style, "--chart-4", mode === "dark" ? "#B48EAD" : "#7C3AED");
-		const chart5 = readThemeColor(style, "--chart-5", mode === "dark" ? "#81A1C1" : "#0550AE");
-		const destructive = readThemeColor(style, "--destructive", mode === "dark" ? "#BF616A" : "#CF222E");
+		const chart2 = readThemeColor(
+			style,
+			"--chart-2",
+			mode === "dark" ? "#A6E3A1" : "#0A7A45",
+		);
+		const chart3 = readThemeColor(
+			style,
+			"--chart-3",
+			mode === "dark" ? "#EBCB8B" : "#B35900",
+		);
+		const chart4 = readThemeColor(
+			style,
+			"--chart-4",
+			mode === "dark" ? "#B48EAD" : "#7C3AED",
+		);
+		const chart5 = readThemeColor(
+			style,
+			"--chart-5",
+			mode === "dark" ? "#81A1C1" : "#0550AE",
+		);
+		const destructive = readThemeColor(
+			style,
+			"--destructive",
+			mode === "dark" ? "#BF616A" : "#CF222E",
+		);
 		const themeName = `${MONACO_THEME_PREFIX}-${mode}-${scheme}`;
 
 		monaco.editor.defineTheme(themeName, {
@@ -354,7 +438,11 @@
 			inherit: true,
 			rules: [
 				{ token: "", foreground: tokenColor(foreground) },
-				{ token: "comment", foreground: tokenColor(mutedForeground), fontStyle: "italic" },
+				{
+					token: "comment",
+					foreground: tokenColor(mutedForeground),
+					fontStyle: "italic",
+				},
 				{ token: "keyword", foreground: tokenColor(primary) },
 				{ token: "operator", foreground: tokenColor(foreground) },
 				{ token: "string", foreground: tokenColor(chart2) },
@@ -397,7 +485,9 @@
 	}
 
 	function applyMonacoTheme(monaco: typeof import("monaco-editor")) {
-		monaco.editor.setTheme(defineMonacoTheme(monaco, resolvedTheme, colorScheme));
+		monaco.editor.setTheme(
+			defineMonacoTheme(monaco, resolvedTheme, colorScheme),
+		);
 	}
 
 	async function loadMonaco() {
@@ -416,7 +506,11 @@
 							if (label === "css" || label === "scss" || label === "less") {
 								return new cssWorker();
 							}
-							if (label === "html" || label === "handlebars" || label === "razor") {
+							if (
+								label === "html" ||
+								label === "handlebars" ||
+								label === "razor"
+							) {
 								return new htmlWorker();
 							}
 							if (label === "typescript" || label === "javascript") {
@@ -425,7 +519,8 @@
 							return new editorWorker();
 						},
 					};
-					const typescriptLanguage = loadedMonaco.languages.typescript as unknown as {
+					const typescriptLanguage = loadedMonaco.languages
+						.typescript as unknown as {
 						typescriptDefaults: {
 							setDiagnosticsOptions: (options: {
 								noSemanticValidation: boolean;
@@ -467,42 +562,68 @@
 
 	const openPaths = $derived.by(() => files.openPaths);
 	const activePath = $derived.by(() => files.activePath);
-	const activeBuffer = $derived.by(() => (activePath ? files.getBuffer(activePath) : null));
-	const activeDiff = $derived.by(() => files.diff.find((entry) => entry.path === activePath) ?? null);
+	const activeBuffer = $derived.by(() =>
+		activePath ? files.getBuffer(activePath) : null,
+	);
+	const activeDiff = $derived.by(
+		() => files.diff.find((entry) => entry.path === activePath) ?? null,
+	);
 	const activeStatus = $derived.by(() => activeDiff?.status);
-	const canRenderTextEditor = $derived.by(
-		() => Boolean(activePath && activeBuffer && activeBuffer.encoding === "utf8"),
+	const canRenderTextEditor = $derived.by(() =>
+		Boolean(activePath && activeBuffer && activeBuffer.encoding === "utf8"),
 	);
-	const canEditActiveFile = $derived.by(
-		() => Boolean(activePath && activeBuffer && activeBuffer.encoding === "utf8" && !activeBuffer.fromBase),
+	const canEditActiveFile = $derived.by(() =>
+		Boolean(
+			activePath &&
+			activeBuffer &&
+			activeBuffer.encoding === "utf8" &&
+			!activeBuffer.fromBase,
+		),
 	);
-	const isMarkdownPreview = $derived.by(
-		() => Boolean(activePath && activeBuffer && activeBuffer.encoding === "utf8" && isMarkdownFile(activePath)),
+	const isMarkdownPreview = $derived.by(() =>
+		Boolean(
+			activePath &&
+			activeBuffer &&
+			activeBuffer.encoding === "utf8" &&
+			isMarkdownFile(activePath),
+		),
 	);
-	const showMarkdownPreview = $derived.by(
-		() => Boolean(isMarkdownPreview && markdownViewMode !== "editor"),
+	const showMarkdownPreview = $derived.by(() =>
+		Boolean(isMarkdownPreview && markdownViewMode !== "editor"),
 	);
-	const showMarkdownSplitView = $derived.by(
-		() => Boolean(isMarkdownPreview && markdownViewMode === "split"),
+	const showMarkdownSplitView = $derived.by(() =>
+		Boolean(isMarkdownPreview && markdownViewMode === "split"),
 	);
-	const showTextEditor = $derived.by(
-		() => Boolean(canRenderTextEditor && (!isMarkdownPreview || markdownViewMode !== "preview")),
+	const showTextEditor = $derived.by(() =>
+		Boolean(
+			canRenderTextEditor &&
+			(!isMarkdownPreview || markdownViewMode !== "preview"),
+		),
 	);
-	const isImagePreview = $derived.by(
-		() => Boolean(activePath && activeBuffer && activeBuffer.encoding === "base64" && isImageFile(activePath)),
+	const isImagePreview = $derived.by(() =>
+		Boolean(
+			activePath &&
+			activeBuffer &&
+			activeBuffer.encoding === "base64" &&
+			isImageFile(activePath),
+		),
 	);
-	const isPdfPreview = $derived.by(
-		() => Boolean(activePath && activeBuffer && activeBuffer.encoding === "base64" && isPdfFile(activePath)),
+	const isPdfPreview = $derived.by(() =>
+		Boolean(
+			activePath &&
+			activeBuffer &&
+			activeBuffer.encoding === "base64" &&
+			isPdfFile(activePath),
+		),
 	);
-	const isBinaryPreview = $derived.by(
-		() =>
-			Boolean(
-				activePath &&
-				activeBuffer &&
-				activeBuffer.encoding === "base64" &&
-				!isImageFile(activePath) &&
-				!isPdfFile(activePath),
-			),
+	const isBinaryPreview = $derived.by(() =>
+		Boolean(
+			activePath &&
+			activeBuffer &&
+			activeBuffer.encoding === "base64" &&
+			!isImageFile(activePath) &&
+			!isPdfFile(activePath),
+		),
 	);
 	const imageSource = $derived.by(() => {
 		if (!activePath || !activeBuffer || !isImagePreview) {
@@ -527,7 +648,11 @@
 	let deleting = $state(false);
 
 	function canManageNode(node: SessionFileTreeNode): boolean {
-		return node.type === "file" && node.status !== "deleted" && !files.hasDirtyChanges(node.path);
+		return (
+			node.type === "file" &&
+			node.status !== "deleted" &&
+			!files.hasDirtyChanges(node.path)
+		);
 	}
 
 	function openRenameDialog(node: SessionFileTreeNode) {
@@ -644,7 +769,9 @@
 			return;
 		}
 
-		let model = files.getEditorModel(activePath) as Monaco.editor.ITextModel | null;
+		let model = files.getEditorModel(
+			activePath,
+		) as Monaco.editor.ITextModel | null;
 		if (!model) {
 			model = monacoInstance.editor.createModel(
 				activeBuffer.content,
@@ -661,9 +788,9 @@
 			saveCurrentViewState();
 			activeEditorPath = activePath;
 			editorInstance.setModel(model);
-			const savedViewState = files.getEditorViewState(activePath) as
-				| Monaco.editor.ICodeEditorViewState
-				| null;
+			const savedViewState = files.getEditorViewState(
+				activePath,
+			) as Monaco.editor.ICodeEditorViewState | null;
 			if (savedViewState) {
 				editorInstance.restoreViewState(savedViewState);
 			}
@@ -720,7 +847,11 @@
 		editorDisposed = false;
 
 		const handleKeyDown = async (event: KeyboardEvent) => {
-			if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s" || !activePath) {
+			if (
+				!(event.metaKey || event.ctrlKey) ||
+				event.key.toLowerCase() !== "s" ||
+				!activePath
+			) {
 				return;
 			}
 			event.preventDefault();
@@ -754,7 +885,8 @@
 			return;
 		}
 		markdownModePath = activePath;
-		markdownViewMode = activePath && isMarkdownFile(activePath) ? "preview" : "editor";
+		markdownViewMode =
+			activePath && isMarkdownFile(activePath) ? "preview" : "editor";
 	});
 
 	$effect(() => {
@@ -793,19 +925,20 @@
 	function treeButtonClass(node: SessionFileTreeNode, selected: boolean) {
 		return cn(
 			"flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-			selected && "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner",
+			selected &&
+				"bg-sidebar-accent text-sidebar-accent-foreground shadow-inner",
 			node.status === "deleted" && "text-sidebar-foreground/40 line-through",
 		);
 	}
 </script>
 
 <DockWindowChrome
-	dockMaximized={dockMaximized}
-	onClose={onClose}
-	onToggleDockMaximized={onToggleDockMaximized}
+	{dockMaximized}
+	{onClose}
+	{onToggleDockMaximized}
 	closeLabel="Close files panel"
 	minimizeLabel="Minimize files panel"
-	maximizeTitle={maximizeTitle}
+	{maximizeTitle}
 	contentClass="min-h-0 flex-1 overflow-hidden p-3"
 >
 	{#snippet title()}
@@ -815,7 +948,9 @@
 		<div
 			class={cn(
 				"size-2 shrink-0 rounded-full",
-				activeBuffer?.isDirty ? "bg-sidebar-primary" : "bg-sidebar-foreground/30",
+				activeBuffer?.isDirty
+					? "bg-sidebar-primary"
+					: "bg-sidebar-foreground/30",
 			)}
 			title={activeBuffer?.isDirty ? "Unsaved changes" : "No unsaved changes"}
 		></div>
@@ -840,408 +975,509 @@
 		</Button>
 	{/snippet}
 
-		<Resizable.PaneGroup
-			direction="horizontal"
-			autoSaveId="discobot-ui-files-panel-layout-right"
-			class="min-h-0 h-full flex-1"
-		>
-			<Resizable.Pane minSize={35} class="min-h-0">
-				<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-sidebar-border bg-sidebar shadow-sm">
-					<div class="flex min-h-10 items-end gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar px-2 py-2">
-						{#if openPaths.length === 0}
-							<p class="px-2 text-sm text-sidebar-foreground/50">Open a file from the explorer.</p>
-						{:else}
-							{#each openPaths as path (path)}
-								{@const status = files.diff.find((entry) => entry.path === path)?.status}
-								<div
-									role="button"
-									tabindex={0}
-									onclick={() => files.open(path)}
-									onkeydown={(event) => {
-										if (event.key === "Enter" || event.key === " ") {
-											event.preventDefault();
-											void files.open(path);
-										}
-									}}
-									class={cn(
-										"flex shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition",
-										activePath === path
-											? "border-sidebar-border bg-background text-foreground shadow-sm"
-											: "border-transparent bg-sidebar-accent/60 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-									)}
-								>
-									<span class="truncate max-w-36">{fileLabel(path)}</span>
-									{#if isDirty(path)}
-										<span class="size-2 rounded-full bg-sidebar-primary"></span>
-									{/if}
-									{#if status}
-										<Badge variant="outline" class={cn("px-1 py-0 text-[10px]", statusBadgeClass(status))}>
-											{statusLetter(status)}
-										</Badge>
-									{/if}
-									<button
-										type="button"
-										onclick={(event) => {
-											event.stopPropagation();
-											requestCloseTab(path);
-										}}
-										class="rounded p-0.5 text-sidebar-foreground/45 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-									>
-										<XIcon class="size-3.5" />
-									</button>
-								</div>
-							{/each}
-						{/if}
-					</div>
-
-					{#if activePath && activeBuffer}
-						<div class="flex flex-wrap items-center justify-between gap-3 border-b border-sidebar-border bg-sidebar px-3 py-2 text-sm">
-							<div class="min-w-0">
-								<p class="truncate font-mono text-sidebar-foreground">{activePath}</p>
-								<div class="mt-1 flex items-center gap-2 text-xs text-sidebar-foreground/70">
-									{#if activeStatus}
-										<span>{statusLetter(activeStatus)} · {activeStatus}</span>
-									{/if}
-									{#if activeBuffer.fromBase}
-										<span>Deleted file · read only</span>
-									{/if}
-									{#if activeBuffer.isDirty}
-										<span>Unsaved changes</span>
-									{/if}
-								</div>
-							</div>
-							<div class="flex flex-wrap items-center justify-end gap-2">
-								{#if activeBuffer.saveError && !activeBuffer.hasConflict}
-									<span class="text-xs text-destructive">{activeBuffer.saveError}</span>
+	<Resizable.PaneGroup
+		direction="horizontal"
+		autoSaveId="discobot-ui-files-panel-layout-right"
+		class="min-h-0 h-full flex-1"
+	>
+		<Resizable.Pane minSize={35} class="min-h-0">
+			<div
+				class="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-sidebar-border bg-sidebar shadow-sm"
+			>
+				<div
+					class="flex min-h-10 items-end gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar px-2 py-2"
+				>
+					{#if openPaths.length === 0}
+						<p class="px-2 text-sm text-sidebar-foreground/50">
+							Open a file from the explorer.
+						</p>
+					{:else}
+						{#each openPaths as path (path)}
+							{@const status = files.diff.find(
+								(entry) => entry.path === path,
+							)?.status}
+							<div
+								role="button"
+								tabindex={0}
+								onclick={() => files.open(path)}
+								onkeydown={(event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										void files.open(path);
+									}
+								}}
+								class={cn(
+									"flex shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition",
+									activePath === path
+										? "border-sidebar-border bg-background text-foreground shadow-sm"
+										: "border-transparent bg-sidebar-accent/60 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+								)}
+							>
+								<span class="truncate max-w-36">{fileLabel(path)}</span>
+								{#if isDirty(path)}
+									<span class="size-2 rounded-full bg-sidebar-primary"></span>
 								{/if}
-								<Button
-									variant="ghost"
-									size="icon-xs"
-									onclick={downloadActiveFile}
-									class="text-sidebar-foreground/55 hover:text-sidebar-accent-foreground"
-									aria-label="Download file"
-									title="Download file"
-								>
-									<DownloadIcon class="size-3.5" />
-								</Button>
-								{#if isMarkdownPreview}
-									<ToggleGroup
-										type="single"
-										value={markdownViewMode}
-										onValueChange={(value) => {
-											if (value === "preview" || value === "split" || value === "editor") {
-												markdownViewMode = value;
-											}
-										}}
-										variant="default"
-										size="sm"
-										spacing={1}
-										class="rounded-md bg-transparent"
+								{#if status}
+									<Badge
+										variant="outline"
+										class={cn(
+											"px-1 py-0 text-[10px]",
+											statusBadgeClass(status),
+										)}
 									>
-										<ToggleGroupItem
-											value="preview"
-											class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
-											aria-label="Preview markdown"
-											title="Preview"
-										>
-											<EyeIcon class="size-3.5" />
-										</ToggleGroupItem>
-										<ToggleGroupItem
-											value="split"
-											class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
-											aria-label="Split markdown view"
-											title="Split"
-										>
-											<Columns2Icon class="size-3.5" />
-										</ToggleGroupItem>
-										<ToggleGroupItem
-											value="editor"
-											class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
-											aria-label="Edit markdown"
-											title="Editor"
-										>
-											<FileCodeIcon class="size-3.5" />
-										</ToggleGroupItem>
-									</ToggleGroup>
+										{statusLetter(status)}
+									</Badge>
+								{/if}
+								<button
+									type="button"
+									onclick={(event) => {
+										event.stopPropagation();
+										requestCloseTab(path);
+									}}
+									class="rounded p-0.5 text-sidebar-foreground/45 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+								>
+									<XIcon class="size-3.5" />
+								</button>
+							</div>
+						{/each}
+					{/if}
+				</div>
+
+				{#if activePath && activeBuffer}
+					<div
+						class="flex flex-wrap items-center justify-between gap-3 border-b border-sidebar-border bg-sidebar px-3 py-2 text-sm"
+					>
+						<div class="min-w-0">
+							<p class="truncate font-mono text-sidebar-foreground">
+								{activePath}
+							</p>
+							<div
+								class="mt-1 flex items-center gap-2 text-xs text-sidebar-foreground/70"
+							>
+								{#if activeStatus}
+									<span>{statusLetter(activeStatus)} · {activeStatus}</span>
+								{/if}
+								{#if activeBuffer.fromBase}
+									<span>Deleted file · read only</span>
 								{/if}
 								{#if activeBuffer.isDirty}
-									<Button variant="outline" size="sm" onclick={() => files.discard(activePath)}>
-										<XIcon class="size-4" />
-										Discard
-									</Button>
-									<Button
-										size="sm"
-										disabled={!canEditActiveFile || activeBuffer.isSaving}
-										onclick={() => files.save(activePath)}
-									>
-										{#if activeBuffer.isSaving}
-											<RefreshCwIcon class="size-4 animate-spin" />
-										{:else}
-											<SaveIcon class="size-4" />
-										{/if}
-										Save
-									</Button>
+									<span>Unsaved changes</span>
 								{/if}
 							</div>
 						</div>
-					{/if}
-
-					{#if activeBuffer?.hasConflict && activePath}
-						<Dialog open={true}>
-							<DialogContent class="max-w-xl">
-								<DialogHeader>
-									<DialogTitle>File modified externally</DialogTitle>
-									<DialogDescription>
-										{activePath} changed on disk while you were editing it.
-									</DialogDescription>
-								</DialogHeader>
-								<div class="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-900 dark:text-yellow-100">
-									Choose whether to keep the disk version or overwrite it with your local changes.
-								</div>
-								<DialogFooter>
-									<Button variant="outline" onclick={() => files.acceptConflict(activePath)}>
-										<CheckIcon class="size-4" />
-										Use disk version
-									</Button>
-									<Button onclick={() => files.forceSave(activePath)}>
+						<div class="flex flex-wrap items-center justify-end gap-2">
+							{#if activeBuffer.saveError && !activeBuffer.hasConflict}
+								<span class="text-xs text-destructive"
+									>{activeBuffer.saveError}</span
+								>
+							{/if}
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								onclick={downloadActiveFile}
+								class="text-sidebar-foreground/55 hover:text-sidebar-accent-foreground"
+								aria-label="Download file"
+								title="Download file"
+							>
+								<DownloadIcon class="size-3.5" />
+							</Button>
+							{#if isMarkdownPreview}
+								<ToggleGroup
+									type="single"
+									value={markdownViewMode}
+									onValueChange={(value) => {
+										if (
+											value === "preview" ||
+											value === "split" ||
+											value === "editor"
+										) {
+											markdownViewMode = value;
+										}
+									}}
+									variant="default"
+									size="sm"
+									spacing={1}
+									class="rounded-md bg-transparent"
+								>
+									<ToggleGroupItem
+										value="preview"
+										class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+										aria-label="Preview markdown"
+										title="Preview"
+									>
+										<EyeIcon class="size-3.5" />
+									</ToggleGroupItem>
+									<ToggleGroupItem
+										value="split"
+										class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+										aria-label="Split markdown view"
+										title="Split"
+									>
+										<Columns2Icon class="size-3.5" />
+									</ToggleGroupItem>
+									<ToggleGroupItem
+										value="editor"
+										class="w-7 px-0 text-sidebar-foreground/55 hover:text-sidebar-accent-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+										aria-label="Edit markdown"
+										title="Editor"
+									>
+										<FileCodeIcon class="size-3.5" />
+									</ToggleGroupItem>
+								</ToggleGroup>
+							{/if}
+							{#if activeBuffer.isDirty}
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => files.discard(activePath)}
+								>
+									<XIcon class="size-4" />
+									Discard
+								</Button>
+								<Button
+									size="sm"
+									disabled={!canEditActiveFile || activeBuffer.isSaving}
+									onclick={() => files.save(activePath)}
+								>
+									{#if activeBuffer.isSaving}
+										<RefreshCwIcon class="size-4 animate-spin" />
+									{:else}
 										<SaveIcon class="size-4" />
-										Save my changes
-									</Button>
-								</DialogFooter>
-							</DialogContent>
-						</Dialog>
-					{/if}
+									{/if}
+									Save
+								</Button>
+							{/if}
+						</div>
+					</div>
+				{/if}
 
-					<Dialog bind:open={renameDialogOpen}>
-						<DialogContent class="sm:max-w-md">
+				{#if activeBuffer?.hasConflict && activePath}
+					<Dialog open={true}>
+						<DialogContent class="max-w-xl">
 							<DialogHeader>
-								<DialogTitle>Rename file</DialogTitle>
+								<DialogTitle>File modified externally</DialogTitle>
 								<DialogDescription>
-									Choose a new name for {renamePath ? `"${renamePath}"` : "this file"}.
+									{activePath} changed on disk while you were editing it.
 								</DialogDescription>
 							</DialogHeader>
-							<Input
-								value={renameDraft}
-								oninput={(event) => {
-									renameDraft = (event.currentTarget as HTMLInputElement).value;
-								}}
-								onkeydown={handleRenameInputKeydown}
-								maxlength={255}
-								placeholder="File name"
-							/>
+							<div
+								class="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-900 dark:text-yellow-100"
+							>
+								Choose whether to keep the disk version or overwrite it with
+								your local changes.
+							</div>
 							<DialogFooter>
-								<Button variant="ghost" size="sm" onclick={closeRenameDialog} disabled={renaming}>
-									Cancel
+								<Button
+									variant="outline"
+									onclick={() => files.acceptConflict(activePath)}
+								>
+									<CheckIcon class="size-4" />
+									Use disk version
 								</Button>
-								<Button size="sm" onclick={() => void handleRename()} disabled={renaming || renameDraft.trim().length === 0}>
-									Save
+								<Button onclick={() => files.forceSave(activePath)}>
+									<SaveIcon class="size-4" />
+									Save my changes
 								</Button>
 							</DialogFooter>
 						</DialogContent>
 					</Dialog>
+				{/if}
 
-					<AlertDialog bind:open={deleteDialogOpen}>
-						<AlertDialogContent>
-							<AlertDialogHeader>
-								<AlertDialogTitle>Delete file?</AlertDialogTitle>
-								<AlertDialogDescription>
-									Delete {deletePath ? `"${deletePath}"` : "this file"}? This action cannot be undone.
-								</AlertDialogDescription>
-							</AlertDialogHeader>
-							<AlertDialogFooter>
-								<AlertDialogCancel onclick={closeDeleteDialog} disabled={deleting}>
-									Cancel
-								</AlertDialogCancel>
-								<AlertDialogAction onclick={() => void handleDelete()} disabled={deleting}>
-									Delete
-								</AlertDialogAction>
-							</AlertDialogFooter>
-						</AlertDialogContent>
-					</AlertDialog>
+				<Dialog bind:open={renameDialogOpen}>
+					<DialogContent class="sm:max-w-md">
+						<DialogHeader>
+							<DialogTitle>Rename file</DialogTitle>
+							<DialogDescription>
+								Choose a new name for {renamePath
+									? `"${renamePath}"`
+									: "this file"}.
+							</DialogDescription>
+						</DialogHeader>
+						<Input
+							value={renameDraft}
+							oninput={(event) => {
+								renameDraft = (event.currentTarget as HTMLInputElement).value;
+							}}
+							onkeydown={handleRenameInputKeydown}
+							maxlength={255}
+							placeholder="File name"
+						/>
+						<DialogFooter>
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={closeRenameDialog}
+								disabled={renaming}
+							>
+								Cancel
+							</Button>
+							<Button
+								size="sm"
+								onclick={() => void handleRename()}
+								disabled={renaming || renameDraft.trim().length === 0}
+							>
+								Save
+							</Button>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
 
-					<AlertDialog bind:open={closeTabDialogOpen}>
-						<AlertDialogContent>
-							<AlertDialogHeader>
-								<AlertDialogTitle>Close tab with unsaved changes?</AlertDialogTitle>
-								<AlertDialogDescription>
-									{#if closeTabPath}
-										Close "{fileLabel(closeTabPath)}"? Your unsaved draft will be kept in memory and restored if you reopen the file.
-									{:else}
-										Close this tab? Your unsaved draft will be kept in memory and restored if you reopen the file.
-									{/if}
-								</AlertDialogDescription>
-							</AlertDialogHeader>
-							<AlertDialogFooter>
-								<AlertDialogCancel onclick={closeCloseTabDialog}>
-									Keep open
-								</AlertDialogCancel>
-								<AlertDialogAction onclick={confirmCloseTab}>
-									Close tab
-								</AlertDialogAction>
-							</AlertDialogFooter>
-						</AlertDialogContent>
-					</AlertDialog>
+				<AlertDialog bind:open={deleteDialogOpen}>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Delete file?</AlertDialogTitle>
+							<AlertDialogDescription>
+								Delete {deletePath ? `"${deletePath}"` : "this file"}? This
+								action cannot be undone.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel
+								onclick={closeDeleteDialog}
+								disabled={deleting}
+							>
+								Cancel
+							</AlertDialogCancel>
+							<AlertDialogAction
+								onclick={() => void handleDelete()}
+								disabled={deleting}
+							>
+								Delete
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
 
-					<div class="relative min-h-0 flex-1 overflow-hidden bg-background">
-						<div
-							class={cn(
-								"absolute inset-0 z-0 grid min-h-0",
-								showMarkdownSplitView ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid-cols-1",
-							)}
-						>
-							<div class={cn("relative min-w-0", !showTextEditor && "hidden")}>
-								<div bind:this={editorContainer} class="absolute inset-0"></div>
+				<AlertDialog bind:open={closeTabDialogOpen}>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle
+								>Close tab with unsaved changes?</AlertDialogTitle
+							>
+							<AlertDialogDescription>
+								{#if closeTabPath}
+									Close "{fileLabel(closeTabPath)}"? Your unsaved draft will be
+									kept in memory and restored if you reopen the file.
+								{:else}
+									Close this tab? Your unsaved draft will be kept in memory and
+									restored if you reopen the file.
+								{/if}
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel onclick={closeCloseTabDialog}>
+								Keep open
+							</AlertDialogCancel>
+							<AlertDialogAction onclick={confirmCloseTab}>
+								Close tab
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+
+				<div class="relative min-h-0 flex-1 overflow-hidden bg-background">
+					<div
+						class={cn(
+							"absolute inset-0 z-0 grid min-h-0",
+							showMarkdownSplitView
+								? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+								: "grid-cols-1",
+						)}
+					>
+						<div class={cn("relative min-w-0", !showTextEditor && "hidden")}>
+							<div bind:this={editorContainer} class="absolute inset-0"></div>
+						</div>
+						{#if showMarkdownPreview && activeBuffer}
+							<div
+								class={cn(
+									"min-w-0 overflow-auto bg-card/10",
+									showMarkdownSplitView && "border-l border-border",
+								)}
+							>
+								<div class="mx-auto flex min-h-full w-full max-w-4xl p-6">
+									<MessageResponse
+										text={activeBuffer.content}
+										class="w-full text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+									/>
+								</div>
 							</div>
-							{#if showMarkdownPreview && activeBuffer}
-								<div
+						{/if}
+					</div>
+					{#if !activePath}
+						<div
+							class="relative z-10 flex h-full items-center justify-center p-6 text-sm text-muted-foreground"
+						>
+							Select a file to start editing.
+						</div>
+					{:else if isImagePreview}
+						<div
+							class="relative z-10 flex h-full items-center justify-center overflow-auto bg-card/20 p-4"
+						>
+							<ImageAttachment
+								src={imageSource}
+								filename={fileLabel(activePath)}
+								class="max-w-full rounded-md border border-border bg-background shadow-sm [&_img]:max-h-[calc(100vh-12rem)] [&_img]:object-contain"
+							/>
+						</div>
+					{:else if isPdfPreview}
+						<div class="relative z-10 h-full bg-card/10 p-4">
+							<iframe
+								src={pdfSource}
+								title={`PDF preview: ${activePath}`}
+								class="size-full rounded-md border border-border bg-background shadow-sm"
+							></iframe>
+						</div>
+					{:else if isBinaryPreview}
+						<div
+							class="relative z-10 flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
+						>
+							Binary file preview is not supported for {activePath}.
+						</div>
+					{:else if !canRenderTextEditor}
+						<div
+							class="relative z-10 flex h-full items-center justify-center p-6 text-sm text-muted-foreground"
+						>
+							Loading file contents…
+						</div>
+					{/if}
+				</div>
+			</div>
+		</Resizable.Pane>
+		<Resizable.Handle class="w-3 bg-transparent after:w-3" />
+		<Resizable.Pane defaultSize={24} minSize={16} maxSize={40} class="min-h-0">
+			<div
+				class="h-full min-h-0 overflow-auto rounded-md border border-sidebar-border bg-sidebar shadow-sm"
+			>
+				<div
+					class="flex items-center justify-between gap-2 border-b border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/70"
+				>
+					<span>Explorer</span>
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							class="hover:text-sidebar-accent-foreground"
+							onclick={() => files.expandAll()}
+						>
+							Expand all
+						</button>
+						<button
+							type="button"
+							class="hover:text-sidebar-accent-foreground"
+							onclick={files.collapseAll}
+						>
+							Collapse
+						</button>
+					</div>
+				</div>
+				<div class="space-y-0.5 p-2 font-mono text-xs">
+					{#snippet treeRow(
+						node: SessionFileTreeNode,
+						depth: number,
+						selected: boolean,
+						expanded: boolean,
+						Icon: typeof FolderIcon,
+					)}
+						<button
+							type="button"
+							onclick={() =>
+								node.type === "directory"
+									? files.toggleDirectory(node.path)
+									: files.open(node.path)}
+							class={treeButtonClass(node, selected)}
+							style={`padding-left: ${8 + depth * 14}px`}
+						>
+							{#if node.type === "directory"}
+								{#if files.isPathLoading(node.path)}
+									<RefreshCwIcon
+										class="size-3.5 animate-spin text-sidebar-foreground/40"
+									/>
+								{:else if expanded}
+									<ChevronDownIcon
+										class="size-3.5 text-sidebar-foreground/40"
+									/>
+								{:else}
+									<ChevronRightIcon
+										class="size-3.5 text-sidebar-foreground/40"
+									/>
+								{/if}
+							{:else}
+								<span class="size-3.5 shrink-0"></span>
+							{/if}
+							<Icon
+								class={cn(
+									"size-4 shrink-0",
+									node.type === "directory" &&
+										node.changed &&
+										"text-yellow-500",
+									node.type === "directory" &&
+										!node.changed &&
+										"text-sidebar-foreground/55",
+									node.status === "added" && "text-green-500",
+									node.status === "modified" && "text-yellow-500",
+									node.status === "deleted" && "text-red-500",
+									node.status === "renamed" && "text-purple-500",
+									node.type === "file" &&
+										!node.status &&
+										"text-sidebar-foreground/55",
+								)}
+							/>
+							<span class="min-w-0 flex-1 truncate">{node.name}</span>
+							{#if node.type === "file" && node.status}
+								<span
 									class={cn(
-										"min-w-0 overflow-auto bg-card/10",
-										showMarkdownSplitView && "border-l border-border",
+										"text-[10px] font-semibold",
+										statusBadgeClass(node.status),
 									)}
 								>
-									<div class="mx-auto flex min-h-full w-full max-w-4xl p-6">
-										<MessageResponse
-											text={activeBuffer.content}
-											class="w-full text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-										/>
-									</div>
-								</div>
+									{statusLetter(node.status)}
+								</span>
 							{/if}
-						</div>
-						{#if !activePath}
-							<div class="relative z-10 flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-								Select a file to start editing.
-							</div>
-						{:else if isImagePreview}
-							<div class="relative z-10 flex h-full items-center justify-center overflow-auto bg-card/20 p-4">
-								<ImageAttachment
-									src={imageSource}
-									filename={fileLabel(activePath)}
-									class="max-w-full rounded-md border border-border bg-background shadow-sm [&_img]:max-h-[calc(100vh-12rem)] [&_img]:object-contain"
-								/>
-							</div>
-						{:else if isPdfPreview}
-							<div class="relative z-10 h-full bg-card/10 p-4">
-								<iframe
-									src={pdfSource}
-									title={`PDF preview: ${activePath}`}
-									class="size-full rounded-md border border-border bg-background shadow-sm"
-								></iframe>
-							</div>
-						{:else if isBinaryPreview}
-							<div class="relative z-10 flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-								Binary file preview is not supported for {activePath}.
-							</div>
-						{:else if !canRenderTextEditor}
-							<div class="relative z-10 flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-								Loading file contents…
-							</div>
-						{/if}
-					</div>
+						</button>
+					{/snippet}
+					{#snippet renderTree(nodes: SessionFileTreeNode[], depth: number)}
+						{#each nodes as node (node.path)}
+							{@const selected = isSelected(node.path)}
+							{@const expanded =
+								node.type === "directory" && isExpanded(node.path)}
+							{@const Icon = nodeIcon(node, expanded)}
+							{#if node.type === "file"}
+								<ContextMenu>
+									<ContextMenuTrigger>
+										{@render treeRow(node, depth, selected, expanded, Icon)}
+									</ContextMenuTrigger>
+									<ContextMenuContent class="w-36">
+										<ContextMenuItem
+											onclick={() => openRenameDialog(node)}
+											disabled={!canManageNode(node)}
+										>
+											Rename
+										</ContextMenuItem>
+										<ContextMenuItem
+											variant="destructive"
+											onclick={() => openDeleteDialog(node)}
+											disabled={!canManageNode(node)}
+										>
+											Delete
+										</ContextMenuItem>
+									</ContextMenuContent>
+								</ContextMenu>
+							{:else}
+								{@render treeRow(node, depth, selected, expanded, Icon)}
+							{/if}
+							{#if node.type === "directory" && expanded && node.children?.length}
+								{@render renderTree(node.children, depth + 1)}
+							{/if}
+						{/each}
+					{/snippet}
+					{#if files.tree.length === 0}
+						<p class="px-2 py-6 text-center text-sm text-sidebar-foreground/50">
+							{files.showChangedOnly ? "No changed files" : "No files"}
+						</p>
+					{:else}
+						{@render renderTree(files.tree, 0)}
+					{/if}
 				</div>
-			</Resizable.Pane>
-			<Resizable.Handle class="w-3 bg-transparent after:w-3" />
-			<Resizable.Pane defaultSize={24} minSize={16} maxSize={40} class="min-h-0">
-				<div class="h-full min-h-0 overflow-auto rounded-md border border-sidebar-border bg-sidebar shadow-sm">
-					<div class="flex items-center justify-between gap-2 border-b border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/70">
-						<span>Explorer</span>
-						<div class="flex items-center gap-2">
-							<button type="button" class="hover:text-sidebar-accent-foreground" onclick={() => files.expandAll()}>
-								Expand all
-							</button>
-							<button type="button" class="hover:text-sidebar-accent-foreground" onclick={files.collapseAll}>
-								Collapse
-							</button>
-						</div>
-					</div>
-					<div class="space-y-0.5 p-2 font-mono text-xs">
-						{#snippet treeRow(
-							node: SessionFileTreeNode,
-							depth: number,
-							selected: boolean,
-							expanded: boolean,
-							Icon: typeof FolderIcon,
-						)}
-							<button
-								type="button"
-								onclick={() =>
-									node.type === "directory"
-										? files.toggleDirectory(node.path)
-										: files.open(node.path)}
-								class={treeButtonClass(node, selected)}
-								style={`padding-left: ${8 + depth * 14}px`}
-							>
-								{#if node.type === "directory"}
-									{#if files.isPathLoading(node.path)}
-										<RefreshCwIcon class="size-3.5 animate-spin text-sidebar-foreground/40" />
-									{:else if expanded}
-										<ChevronDownIcon class="size-3.5 text-sidebar-foreground/40" />
-									{:else}
-										<ChevronRightIcon class="size-3.5 text-sidebar-foreground/40" />
-									{/if}
-								{:else}
-									<span class="size-3.5 shrink-0"></span>
-								{/if}
-								<Icon
-									class={cn(
-										"size-4 shrink-0",
-										node.type === "directory" && node.changed && "text-yellow-500",
-										node.type === "directory" && !node.changed && "text-sidebar-foreground/55",
-										node.status === "added" && "text-green-500",
-										node.status === "modified" && "text-yellow-500",
-										node.status === "deleted" && "text-red-500",
-										node.status === "renamed" && "text-purple-500",
-										node.type === "file" && !node.status && "text-sidebar-foreground/55",
-									)}
-								/>
-								<span class="min-w-0 flex-1 truncate">{node.name}</span>
-								{#if node.type === "file" && node.status}
-									<span class={cn("text-[10px] font-semibold", statusBadgeClass(node.status))}>
-										{statusLetter(node.status)}
-									</span>
-								{/if}
-							</button>
-						{/snippet}
-						{#snippet renderTree(nodes: SessionFileTreeNode[], depth: number)}
-							{#each nodes as node (node.path)}
-								{@const selected = isSelected(node.path)}
-								{@const expanded = node.type === "directory" && isExpanded(node.path)}
-								{@const Icon = nodeIcon(node, expanded)}
-								{#if node.type === "file"}
-									<ContextMenu>
-										<ContextMenuTrigger>
-											{@render treeRow(node, depth, selected, expanded, Icon)}
-										</ContextMenuTrigger>
-										<ContextMenuContent class="w-36">
-											<ContextMenuItem onclick={() => openRenameDialog(node)} disabled={!canManageNode(node)}>
-												Rename
-											</ContextMenuItem>
-											<ContextMenuItem
-												variant="destructive"
-												onclick={() => openDeleteDialog(node)}
-												disabled={!canManageNode(node)}
-											>
-												Delete
-											</ContextMenuItem>
-										</ContextMenuContent>
-									</ContextMenu>
-								{:else}
-									{@render treeRow(node, depth, selected, expanded, Icon)}
-								{/if}
-								{#if node.type === "directory" && expanded && node.children?.length}
-									{@render renderTree(node.children, depth + 1)}
-								{/if}
-							{/each}
-						{/snippet}
-						{#if files.tree.length === 0}
-							<p class="px-2 py-6 text-center text-sm text-sidebar-foreground/50">
-								{files.showChangedOnly ? "No changed files" : "No files"}
-							</p>
-						{:else}
-							{@render renderTree(files.tree, 0)}
-						{/if}
-					</div>
-				</div>
-			</Resizable.Pane>
-		</Resizable.PaneGroup>
+			</div>
+		</Resizable.Pane>
+	</Resizable.PaneGroup>
 </DockWindowChrome>

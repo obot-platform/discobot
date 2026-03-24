@@ -38,8 +38,12 @@
 		</button>
 	{/if}
 	{#if canCollapse}
-		<CollapsibleTrigger class="inline-flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground group-hover/tool:opacity-100 group-data-[state=open]/tool:opacity-100 focus-visible:opacity-100">
-			<ChevronDownIcon class="size-4 text-muted-foreground transition-transform group-data-[state=open]/tool:rotate-180" />
+		<CollapsibleTrigger
+			class="inline-flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground group-hover/tool:opacity-100 group-data-[state=open]/tool:opacity-100 focus-visible:opacity-100"
+		>
+			<ChevronDownIcon
+				class="size-4 text-muted-foreground transition-transform group-data-[state=open]/tool:rotate-180"
+			/>
 		</CollapsibleTrigger>
 	{/if}
 </div>

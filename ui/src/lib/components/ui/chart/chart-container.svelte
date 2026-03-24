@@ -71,7 +71,7 @@
 		"[&_.lc-tooltip-rects-g]:fill-transparent",
 		"[&_.lc-layout-svg-g]:fill-transparent",
 		"[&_.lc-root-container]:w-full",
-		className
+		className,
 	)}
 	{...restProps}
 >

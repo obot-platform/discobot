@@ -30,9 +30,7 @@
 >
 	<div
 		class="h-full shrink-0"
-		style={constrainedWidth
-			? `width: ${constrainedWidth};`
-			: "width: 100%;"}
+		style={constrainedWidth ? `width: ${constrainedWidth};` : "width: 100%;"}
 	>
 		<iframe
 			class={cn("size-full", className)}

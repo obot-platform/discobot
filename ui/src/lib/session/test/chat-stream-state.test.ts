@@ -8,7 +8,11 @@ import {
 	createChatStreamState,
 } from "$lib/thread/conversation-stream";
 
-function makeTextMessage(id: string, role: ChatMessage["role"], text: string): ChatMessage {
+function makeTextMessage(
+	id: string,
+	role: ChatMessage["role"],
+	text: string,
+): ChatMessage {
 	return {
 		id,
 		role,
@@ -37,7 +41,12 @@ function makeCustomAssistantMessage(id: string): ChatMessage {
 							header: "Filename",
 							question: "What filename do you want?",
 							multiSelect: false,
-							options: [{ label: "test.db.sql", description: "Keep the SQL extension." }],
+							options: [
+								{
+									label: "test.db.sql",
+									description: "Keep the SQL extension.",
+								},
+							],
 						},
 					],
 				},
@@ -50,7 +59,10 @@ function makeCustomAssistantMessage(id: string): ChatMessage {
 }
 
 class MockChatStreamEventSource {
-	private listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>();
+	private listeners = new Map<
+		string,
+		Set<(event: MessageEvent<string>) => void>
+	>();
 
 	addEventListener(
 		type: string,
@@ -79,9 +91,7 @@ async function flushStreamEvents() {
 	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function createHarness(
-	initialMessages: ChatMessage[] = [],
-): {
+function createHarness(initialMessages: ChatMessage[] = []): {
 	messages: ChatMessage[];
 	modeChanges: string[];
 	modelChanges: string[];
@@ -188,7 +198,9 @@ test("history replay buffers messages until history-end", async () => {
 	});
 	await harness.state.handleStreamEvent({
 		event: "history-message",
-		data: JSON.stringify(makeTextMessage("history-user", "user", "old message")),
+		data: JSON.stringify(
+			makeTextMessage("history-user", "user", "old message"),
+		),
 	});
 	await harness.state.handleStreamEvent({
 		event: "chunk",
@@ -200,7 +212,11 @@ test("history replay buffers messages until history-end", async () => {
 	});
 	await harness.state.handleStreamEvent({
 		event: "chunk",
-		data: JSON.stringify({ type: "text-delta", id: "part-1", delta: "live reply" }),
+		data: JSON.stringify({
+			type: "text-delta",
+			id: "part-1",
+			delta: "live reply",
+		}),
 	});
 	await harness.state.handleStreamEvent({
 		event: "chunk",
@@ -315,7 +331,10 @@ test("appending a new message removes all provisional messages first", async () 
 	});
 
 	assert.deepEqual(
-		harness.messages.map((message) => ({ id: message.id, provisional: message.provisional })),
+		harness.messages.map((message) => ({
+			id: message.id,
+			provisional: message.provisional,
+		})),
 		[{ id: "user-2", provisional: undefined }],
 	);
 });
@@ -421,7 +440,12 @@ test("AskUserQuestion becoming answerable triggers a single actionable callback"
 						header: "Scope",
 						question: "Which scope should I use?",
 						multiSelect: false,
-						options: [{ label: "This file", description: "Change only the active file." }],
+						options: [
+							{
+								label: "This file",
+								description: "Change only the active file.",
+							},
+						],
 					},
 				],
 			},
@@ -443,7 +467,8 @@ test("AskUserQuestion becoming answerable triggers a single actionable callback"
 		true,
 	);
 	assert.equal(
-		typeof (harness.messages[0]?.parts[0] as { state?: unknown } | undefined)?.state === "string"
+		typeof (harness.messages[0]?.parts[0] as { state?: unknown } | undefined)
+			?.state === "string"
 			? (harness.messages[0]?.parts[0] as { state: string }).state
 			: undefined,
 		"approval-requested",
@@ -507,7 +532,8 @@ test("only the first non-preliminary tool output triggers a meaningful output ca
 		true,
 	);
 	assert.equal(
-		typeof (harness.messages[0]?.parts[0] as { state?: unknown } | undefined)?.state === "string"
+		typeof (harness.messages[0]?.parts[0] as { state?: unknown } | undefined)
+			?.state === "string"
 			? (harness.messages[0]?.parts[0] as { state: string }).state
 			: undefined,
 		"output-available",
@@ -529,17 +555,29 @@ test("bindChatStreamEventSource wires EventSource events into the reducer", asyn
 		JSON.stringify({
 			type: "start",
 			messageId: "assistant-1",
-			messageMetadata: { model: "anthropic/claude-sonnet-4-6", reasoning: "enabled" },
+			messageMetadata: {
+				model: "anthropic/claude-sonnet-4-6",
+				reasoning: "enabled",
+			},
 		}),
 	);
-	eventSource.dispatch("chunk", JSON.stringify({ type: "text-start", id: "part-1" }));
+	eventSource.dispatch(
+		"chunk",
+		JSON.stringify({ type: "text-start", id: "part-1" }),
+	);
 	eventSource.dispatch(
 		"chunk",
 		JSON.stringify({ type: "text-delta", id: "part-1", delta: "response" }),
 	);
-	eventSource.dispatch("chunk", JSON.stringify({ type: "text-end", id: "part-1" }));
+	eventSource.dispatch(
+		"chunk",
+		JSON.stringify({ type: "text-end", id: "part-1" }),
+	);
 	eventSource.dispatch("history-end", "{}");
-	eventSource.dispatch("chunk", JSON.stringify({ type: "finish", finishReason: "stop" }));
+	eventSource.dispatch(
+		"chunk",
+		JSON.stringify({ type: "finish", finishReason: "stop" }),
+	);
 	eventSource.dispatch("done", "{}");
 
 	await flushStreamEvents();

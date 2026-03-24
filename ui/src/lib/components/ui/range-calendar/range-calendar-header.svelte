@@ -13,7 +13,7 @@
 	bind:ref
 	class={cn(
 		"flex h-(--cell-size) w-full items-center justify-center gap-1.5 text-sm font-medium",
-		className
+		className,
 	)}
 	{...restProps}
 />

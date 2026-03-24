@@ -33,7 +33,9 @@ import {
  * </table>
  * ```
  */
-export function createSvelteTable<TData extends RowData>(options: TableOptions<TData>) {
+export function createSvelteTable<TData extends RowData>(
+	options: TableOptions<TData>,
+) {
 	const resolvedOptions: TableOptionsResolved<TData> = mergeObjects(
 		{
 			state: {},
@@ -41,12 +43,12 @@ export function createSvelteTable<TData extends RowData>(options: TableOptions<T
 			renderFallbackValue: null,
 			mergeOptions: (
 				defaultOptions: TableOptions<TData>,
-				options: Partial<TableOptions<TData>>
+				options: Partial<TableOptions<TData>>,
 			) => {
 				return mergeObjects(defaultOptions, options);
 			},
 		},
-		options
+		options,
 	);
 
 	const table = createTable(resolvedOptions);
@@ -77,7 +79,10 @@ export function createSvelteTable<TData extends RowData>(options: TableOptions<T
 }
 
 type MaybeThunk<T extends object> = T | (() => T | null | undefined);
-type Intersection<T extends readonly unknown[]> = (T extends [infer H, ...infer R]
+type Intersection<T extends readonly unknown[]> = (T extends [
+	infer H,
+	...infer R,
+]
 	? H & Intersection<R>
 	: unknown) & {};
 

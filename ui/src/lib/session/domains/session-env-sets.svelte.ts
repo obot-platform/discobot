@@ -36,7 +36,11 @@ export function createSessionEnvSetsDomain(
 			}
 			void store.create(name, envVars);
 		},
-		update: (envSetId: string, name: string, envVars: Record<string, string>) => {
+		update: (
+			envSetId: string,
+			name: string,
+			envVars: Record<string, string>,
+		) => {
 			if (!name.trim()) {
 				return;
 			}

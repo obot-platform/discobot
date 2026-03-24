@@ -25,6 +25,8 @@ export function getSelectedFileFromView(activeView: SessionActiveView): string {
 	return activeView.kind === "file" ? activeView.path : "";
 }
 
-export function getSelectedServiceIdFromView(_activeView: SessionActiveView): string | null {
+export function getSelectedServiceIdFromView(
+	_activeView: SessionActiveView,
+): string | null {
 	return null;
 }

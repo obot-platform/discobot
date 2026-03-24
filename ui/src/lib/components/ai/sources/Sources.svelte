@@ -9,9 +9,18 @@
 		children?: () => any;
 	};
 
-	let { open = false, class: className, children, ...restProps }: Props = $props();
+	let {
+		open = false,
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 </script>
 
-<Collapsible bind:open class={cn("not-prose mb-4 text-primary text-xs", className)} {...restProps}>
+<Collapsible
+	bind:open
+	class={cn("not-prose mb-4 text-primary text-xs", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </Collapsible>

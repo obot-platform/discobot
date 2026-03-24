@@ -25,7 +25,9 @@
 
 {#if output || errorText}
 	<div class={cn("space-y-2 p-4", className)} {...restProps}>
-		<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+		<h4
+			class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+		>
 			{errorText ? "Error" : "Result"}
 		</h4>
 		<div
@@ -40,7 +42,9 @@
 				<div class="p-3">{errorText}</div>
 			{/if}
 			{#if renderedOutput}
-				<pre class="overflow-x-auto p-3 font-mono text-xs"><code>{renderedOutput}</code></pre>
+				<pre class="overflow-x-auto p-3 font-mono text-xs"><code
+						>{renderedOutput}</code
+					></pre>
 			{/if}
 		</div>
 	</div>

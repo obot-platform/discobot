@@ -1,5 +1,9 @@
 import { api } from "$lib/api-client";
-import type { CreateThreadRequest, Thread, UpdateThreadRequest } from "$lib/api-types";
+import type {
+	CreateThreadRequest,
+	Thread,
+	UpdateThreadRequest,
+} from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
 
 export class ThreadStore {
@@ -62,7 +66,11 @@ export class ThreadStore {
 		return this.#items.find((t) => t.id === created.id)!;
 	}
 
-	async update(sessionId: string, threadId: string, data: UpdateThreadRequest): Promise<Thread> {
+	async update(
+		sessionId: string,
+		threadId: string,
+		data: UpdateThreadRequest,
+	): Promise<Thread> {
 		await api.updateThread(sessionId, threadId, data);
 		await this.fetchOne(sessionId, threadId);
 		return this.#items.find((t) => t.id === threadId)!;

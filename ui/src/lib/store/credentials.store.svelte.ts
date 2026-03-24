@@ -1,5 +1,9 @@
 import { api } from "$lib/api-client";
-import type { CredentialAuthType, CredentialInfo, CredentialType } from "$lib/api-types";
+import type {
+	CredentialAuthType,
+	CredentialInfo,
+	CredentialType,
+} from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
 
 export class CredentialStore {
@@ -22,7 +26,9 @@ export class CredentialStore {
 	/** Returns the cached credential. Triggers a background fetch of the full list on cache miss. */
 	get(idOrProvider: string): CredentialInfo | null {
 		const cached =
-			this.#items.find((c) => c.id === idOrProvider || c.provider === idOrProvider) ?? null;
+			this.#items.find(
+				(c) => c.id === idOrProvider || c.provider === idOrProvider,
+			) ?? null;
 		if (cached === null && this.#status === "idle") {
 			void this.fetch();
 		}

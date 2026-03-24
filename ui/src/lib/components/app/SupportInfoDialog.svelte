@@ -28,7 +28,11 @@
 	}
 
 	async function copySupportInfo() {
-		if (!supportJson || typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+		if (
+			!supportJson ||
+			typeof navigator === "undefined" ||
+			!navigator.clipboard?.writeText
+		) {
 			return;
 		}
 		await navigator.clipboard.writeText(supportJson);
@@ -76,7 +80,9 @@
 </script>
 
 <Dialog.Root open={true} onOpenChange={handleOpenChange}>
-	<Dialog.Content class="sm:max-w-3xl max-h-[88vh] flex flex-col overflow-hidden">
+	<Dialog.Content
+		class="sm:max-w-3xl max-h-[88vh] flex flex-col overflow-hidden"
+	>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
 				<InfoIcon class="size-4" />
@@ -87,35 +93,60 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="mt-1 min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-3">
+		<div
+			class="mt-1 min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-3"
+		>
 			{#if supportInfo.status === "loading"}
-				<div class="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
+				<div
+					class="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground"
+				>
 					<Loader2Icon class="size-4 animate-spin" />
 					Loading support information...
 				</div>
 			{:else if supportInfo.status === "error"}
-				<div class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+				<div
+					class="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+				>
 					{supportInfo.error ?? "Failed to load support information."}
 				</div>
 			{:else if supportJson}
-				<pre class="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5"><code>{supportJson}</code></pre>
+				<pre
+					class="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5"><code
+						>{supportJson}</code
+					></pre>
 			{:else}
-				<div class="flex min-h-40 items-center justify-center text-sm text-muted-foreground">
+				<div
+					class="flex min-h-40 items-center justify-center text-sm text-muted-foreground"
+				>
 					No support information available.
 				</div>
 			{/if}
 		</div>
 
 		<Dialog.Footer class="mt-3">
-			<Button variant="outline" size="sm" onclick={copySupportInfo} disabled={!supportJson}>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={copySupportInfo}
+				disabled={!supportJson}
+			>
 				<CopyIcon class="size-3.5" />
 				{copied ? "Copied" : "Copy JSON"}
 			</Button>
-			<Button variant="outline" size="sm" onclick={downloadSupportInfo} disabled={!supportJson}>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={downloadSupportInfo}
+				disabled={!supportJson}
+			>
 				<DownloadIcon class="size-3.5" />
 				Download JSON
 			</Button>
-			<Button variant="default" size="sm" onclick={() => handleOpenChange(false)}>
+			<Button
+				variant="default"
+				size="sm"
+				onclick={() => handleOpenChange(false)}
+			>
 				Close
 			</Button>
 		</Dialog.Footer>

@@ -22,10 +22,14 @@
 	{...restProps}
 >
 	{#if handles.target}
-		<div class="absolute top-1/2 -left-2 size-3 -translate-y-1/2 rounded-full border bg-background"></div>
+		<div
+			class="absolute top-1/2 -left-2 size-3 -translate-y-1/2 rounded-full border bg-background"
+		></div>
 	{/if}
 	{#if handles.source}
-		<div class="absolute top-1/2 -right-2 size-3 -translate-y-1/2 rounded-full border bg-background"></div>
+		<div
+			class="absolute top-1/2 -right-2 size-3 -translate-y-1/2 rounded-full border bg-background"
+		></div>
 	{/if}
 	{@render children?.()}
 </Card>

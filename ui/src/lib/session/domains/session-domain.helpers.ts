@@ -21,13 +21,15 @@ export function buildImplicitThread(session: Session | null): ThreadSummary[] {
 		return [];
 	}
 
-	return [{
-		id: session.id,
-		name: session.displayName || session.name,
-		model: session.model,
-		reasoning: session.reasoning,
-		mode: session.mode,
-	}];
+	return [
+		{
+			id: session.id,
+			name: session.displayName || session.name,
+			model: session.model,
+			reasoning: session.reasoning,
+			mode: session.mode,
+		},
+	];
 }
 
 export function getNextSelectedThreadId(
@@ -35,17 +37,25 @@ export function getNextSelectedThreadId(
 	removedThreadId: string,
 	currentSelectedId: string | null,
 ): string | null {
-	const removedIndex = threads.findIndex((thread) => thread.id === removedThreadId);
+	const removedIndex = threads.findIndex(
+		(thread) => thread.id === removedThreadId,
+	);
 	if (removedIndex === -1) {
 		return currentSelectedId;
 	}
 
-	const remainingThreads = threads.filter((thread) => thread.id !== removedThreadId);
+	const remainingThreads = threads.filter(
+		(thread) => thread.id !== removedThreadId,
+	);
 	if (currentSelectedId !== removedThreadId) {
 		return currentSelectedId;
 	}
 
-	return remainingThreads[removedIndex]?.id ?? remainingThreads[removedIndex - 1]?.id ?? null;
+	return (
+		remainingThreads[removedIndex]?.id ??
+		remainingThreads[removedIndex - 1]?.id ??
+		null
+	);
 }
 
 export function createUserMessage(
@@ -64,8 +74,9 @@ export function createUserMessage(
 
 export function getMessageText(message: ChatMessage): string {
 	return message.parts
-		.filter((part): part is Extract<ChatMessage["parts"][number], { type: "text" }> =>
-			part.type === "text",
+		.filter(
+			(part): part is Extract<ChatMessage["parts"][number], { type: "text" }> =>
+				part.type === "text",
 		)
 		.map((part) => part.text)
 		.join("\n")
@@ -74,8 +85,11 @@ export function getMessageText(message: ChatMessage): string {
 
 export function getReasoningText(message: ChatMessage): string {
 	return message.parts
-		.filter((part): part is Extract<ChatMessage["parts"][number], { type: "reasoning" }> =>
-			part.type === "reasoning",
+		.filter(
+			(
+				part,
+			): part is Extract<ChatMessage["parts"][number], { type: "reasoning" }> =>
+				part.type === "reasoning",
 		)
 		.map((part) => part.text)
 		.join("\n")
@@ -83,14 +97,20 @@ export function getReasoningText(message: ChatMessage): string {
 }
 
 export function getDynamicToolParts(message: ChatMessage): DynamicToolPart[] {
-	return message.parts.filter((part) => part.type === "dynamic-tool") as unknown as DynamicToolPart[];
+	return message.parts.filter(
+		(part) => part.type === "dynamic-tool",
+	) as unknown as DynamicToolPart[];
 }
 
 export function addToolApprovalResponse(
 	messages: ChatMessage[],
 	options: { id: string; approved: boolean; reason?: string },
 ): boolean {
-	for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+	for (
+		let messageIndex = messages.length - 1;
+		messageIndex >= 0;
+		messageIndex -= 1
+	) {
 		const message = messages[messageIndex];
 		if (message.role !== "assistant") {
 			continue;
@@ -119,9 +139,16 @@ export function getPlanEntries(messages: ChatMessage[]): PlanEntry[] {
 	const latestTodoWrite = [...messages]
 		.reverse()
 		.flatMap((message) => getDynamicToolParts(message))
-		.find((part) => part.toolName === "TodoWrite" && part.state === "output-available");
+		.find(
+			(part) =>
+				part.toolName === "TodoWrite" && part.state === "output-available",
+		);
 
-	if (!latestTodoWrite || !latestTodoWrite.input || typeof latestTodoWrite.input !== "object") {
+	if (
+		!latestTodoWrite ||
+		!latestTodoWrite.input ||
+		typeof latestTodoWrite.input !== "object"
+	) {
 		return [];
 	}
 
@@ -182,7 +209,9 @@ export function toServiceItem(service: Service): ServiceItem {
 	};
 }
 
-export function toHooksStatus(response: HooksStatusResponse | null | undefined): HooksStatus {
+export function toHooksStatus(
+	response: HooksStatusResponse | null | undefined,
+): HooksStatus {
 	if (!response) {
 		return { hooks: [], pendingHookIds: [] };
 	}

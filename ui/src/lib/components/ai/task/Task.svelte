@@ -8,7 +8,12 @@
 		children?: () => any;
 	};
 
-	let { open = $bindable(true), class: className, children, ...restProps }: Props = $props();
+	let {
+		open = $bindable(true),
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 </script>
 
 <Collapsible bind:open class={cn(className)} {...restProps}>

@@ -11,7 +11,9 @@ test("resolveOpenFileState clears the active file when given an empty string", (
 });
 
 test("resolveOpenFileState without an argument falls back to the remembered file", () => {
-	const nextState = resolveOpenFileState(undefined, "src/app.ts", ["src/app.ts"]);
+	const nextState = resolveOpenFileState(undefined, "src/app.ts", [
+		"src/app.ts",
+	]);
 
 	assert.deepEqual(nextState.activeView, { kind: "file", path: "src/app.ts" });
 	assert.equal(nextState.selectedFile, "src/app.ts");

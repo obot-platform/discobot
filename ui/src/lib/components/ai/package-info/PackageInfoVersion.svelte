@@ -14,7 +14,10 @@
 
 {#if info.currentVersion || info.newVersion}
 	<div
-		class={cn("mt-2 flex items-center gap-2 font-mono text-muted-foreground text-sm", className)}
+		class={cn(
+			"mt-2 flex items-center gap-2 font-mono text-muted-foreground text-sm",
+			className,
+		)}
 		{...restProps}
 	>
 		{#if children}

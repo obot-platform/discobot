@@ -1,6 +1,8 @@
 import { getContext, setContext } from "svelte";
 
-const PACKAGE_INFO_CONTEXT_KEY = Symbol.for("discobot-ui-ai-package-info-context");
+const PACKAGE_INFO_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-package-info-context",
+);
 
 export type ChangeType = "major" | "minor" | "patch" | "added" | "removed";
 

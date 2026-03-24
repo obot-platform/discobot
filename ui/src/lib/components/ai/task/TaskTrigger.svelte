@@ -17,10 +17,14 @@
 	{#if children}
 		{@render children()}
 	{:else}
-		<div class="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+		<div
+			class="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
+		>
 			<SearchIcon class="size-4" />
 			<p class="text-sm">{title}</p>
-			<ChevronDownIcon class="size-4 transition-transform group-data-[state=open]:rotate-180" />
+			<ChevronDownIcon
+				class="size-4 transition-transform group-data-[state=open]:rotate-180"
+			/>
 		</div>
 	{/if}
 </CollapsibleTrigger>

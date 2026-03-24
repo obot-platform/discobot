@@ -72,7 +72,8 @@
 			/>
 		{/if}
 	{:else if attachment.mediaCategory === "video" && attachment.data.type === "file" && attachment.data.url}
-		<video class="size-full object-cover" muted src={attachment.data.url}></video>
+		<video class="size-full object-cover" muted src={attachment.data.url}
+		></video>
 	{:else if FallbackIcon}
 		<FallbackIcon class={cn(iconSize, "text-muted-foreground")} />
 	{:else}

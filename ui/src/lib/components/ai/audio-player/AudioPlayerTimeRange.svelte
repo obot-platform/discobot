@@ -17,7 +17,9 @@
 			: 0,
 	);
 
-	function handleInput(event: Event & { currentTarget: EventTarget & HTMLInputElement }) {
+	function handleInput(
+		event: Event & { currentTarget: EventTarget & HTMLInputElement },
+	) {
 		oninput?.(event);
 		if (event.defaultPrevented) {
 			return;
@@ -29,7 +31,7 @@
 <ButtonGroupText class="bg-transparent" data-slot="audio-player-time-range">
 	<input
 		class={cn("h-1 w-28 cursor-pointer accent-primary", className)}
-		max={max}
+		{max}
 		min={0}
 		oninput={handleInput}
 		step="any"

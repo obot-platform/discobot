@@ -13,7 +13,10 @@
 </script>
 
 {#if branch === messageBranch.currentBranch}
-	<div class={cn("grid gap-2 overflow-hidden [&>div]:pb-0", className)} {...restProps}>
+	<div
+		class={cn("grid gap-2 overflow-hidden [&>div]:pb-0", className)}
+		{...restProps}
+	>
 		{@render children?.()}
 	</div>
 {/if}

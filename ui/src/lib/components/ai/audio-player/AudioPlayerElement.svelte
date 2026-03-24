@@ -26,8 +26,10 @@
 	let ref = $state<HTMLAudioElement | null>(null);
 	const player: AudioPlayerContextValue = useAudioPlayerContext();
 
-	const resolvedSrc = $derived.by(() =>
-		src ?? (data ? `data:${data.mediaType};base64,${data.base64}` : undefined),
+	const resolvedSrc = $derived.by(
+		() =>
+			src ??
+			(data ? `data:${data.mediaType};base64,${data.base64}` : undefined),
 	);
 
 	$effect(() => {

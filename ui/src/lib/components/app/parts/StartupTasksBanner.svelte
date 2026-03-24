@@ -24,7 +24,9 @@
 		}
 	}
 
-	function getTaskBadgeVariant(task: StartupTask): "secondary" | "destructive" | "outline" {
+	function getTaskBadgeVariant(
+		task: StartupTask,
+	): "secondary" | "destructive" | "outline" {
 		switch (task.state) {
 			case "failed":
 				return "destructive";
@@ -122,7 +124,10 @@
 
 					{#if getTaskProgress(task) !== null}
 						<div class="mt-2 flex items-center gap-2">
-							<Progress value={getTaskProgress(task) ?? 0} class="h-1.5 flex-1" />
+							<Progress
+								value={getTaskProgress(task) ?? 0}
+								class="h-1.5 flex-1"
+							/>
 							<span class="text-[11px] tabular-nums text-muted-foreground">
 								{getTaskProgress(task)}%
 							</span>

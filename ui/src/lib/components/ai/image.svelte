@@ -9,7 +9,13 @@
 		class?: string;
 	};
 
-	let { base64, uint8Array, mediaType, alt = "", class: className }: Props = $props();
+	let {
+		base64,
+		uint8Array,
+		mediaType,
+		alt = "",
+		class: className,
+	}: Props = $props();
 
 	const src = $derived.by(() => {
 		if (base64) {
@@ -26,4 +32,8 @@
 	});
 </script>
 
-<img alt={alt} class={cn("h-auto max-w-full overflow-hidden rounded-md", className)} src={src} />
+<img
+	{alt}
+	class={cn("h-auto max-w-full overflow-hidden rounded-md", className)}
+	{src}
+/>

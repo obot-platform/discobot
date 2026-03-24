@@ -1,11 +1,19 @@
-	<script lang="ts">
+<script lang="ts">
 	import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 	import { tick } from "svelte";
 	import type { ChatMessage } from "$lib/api-types";
 	import type { ChatWidthMode } from "$lib/app/app-context.types";
 	import { Loader } from "$lib/components/ai";
-	import { Message, MessageContent, MessageResponse } from "$lib/components/ai/message";
-	import { Reasoning, ReasoningContent, ReasoningTrigger } from "$lib/components/ai/reasoning";
+	import {
+		Message,
+		MessageContent,
+		MessageResponse,
+	} from "$lib/components/ai/message";
+	import {
+		Reasoning,
+		ReasoningContent,
+		ReasoningTrigger,
+	} from "$lib/components/ai/reasoning";
 	import OptimizedToolRenderer from "$lib/components/ai/tool-renderers/OptimizedToolRenderer.svelte";
 	import type { DynamicToolPart } from "$lib/components/ai/types";
 	import ConversationComposer from "$lib/components/app/ConversationComposer.svelte";
@@ -52,8 +60,12 @@
 		() => session?.sessionId ?? app?.sessions.selectedId ?? null,
 	);
 	const activeThreadId = $derived.by(() => thread?.threadId ?? null);
-	const conversationMessages = $derived.by(() => messages ?? thread?.messages ?? []);
-	const conversationStatus = $derived.by(() => status ?? thread?.status ?? "ready");
+	const conversationMessages = $derived.by(
+		() => messages ?? thread?.messages ?? [],
+	);
+	const conversationStatus = $derived.by(
+		() => status ?? thread?.status ?? "ready",
+	);
 	const effectiveChatWidthMode = $derived.by(
 		() => chatWidthMode ?? app?.preferences.chatWidthMode ?? "full",
 	);
@@ -72,7 +84,9 @@
 	const sessionError = $derived.by(
 		() => sessionErrorOverride ?? session?.current?.errorMessage ?? null,
 	);
-	const threadError = $derived.by(() => threadErrorOverride ?? thread?.error ?? null);
+	const threadError = $derived.by(
+		() => threadErrorOverride ?? thread?.error ?? null,
+	);
 	const canShowComposer = $derived.by(
 		() => showComposer && Boolean(app) && Boolean(session) && Boolean(thread),
 	);
@@ -86,11 +100,15 @@
 	let hasInitialBottomScroll = $state(false);
 	let isNearBottom = $state(true);
 
-	function isTextPart(part: MessagePart): part is Extract<MessagePart, { type: "text" }> {
+	function isTextPart(
+		part: MessagePart,
+	): part is Extract<MessagePart, { type: "text" }> {
 		return part.type === "text";
 	}
 
-	function isReasoningPart(part: MessagePart): part is Extract<MessagePart, { type: "reasoning" }> {
+	function isReasoningPart(
+		part: MessagePart,
+	): part is Extract<MessagePart, { type: "reasoning" }> {
 		return part.type === "reasoning";
 	}
 
@@ -101,9 +119,7 @@
 	}
 
 	function isStreamingMessage(message: ChatMessage): boolean {
-		return (
-			(message as { status?: string } | undefined)?.status === "streaming"
-		);
+		return (message as { status?: string } | undefined)?.status === "streaming";
 	}
 
 	function isProvisionalUserMessage(
@@ -125,7 +141,8 @@
 			return;
 		}
 
-		const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+		const distanceToBottom =
+			element.scrollHeight - element.scrollTop - element.clientHeight;
 		isNearBottom = distanceToBottom <= SCROLL_TO_BOTTOM_BUFFER;
 	}
 
@@ -149,10 +166,13 @@
 			return null;
 		}
 
-		const messageElements = content?.querySelectorAll<HTMLElement>("[data-conversation-message-id]");
+		const messageElements = content?.querySelectorAll<HTMLElement>(
+			"[data-conversation-message-id]",
+		);
 		return (
 			Array.from(messageElements ?? []).find(
-				(candidate) => candidate.dataset.conversationMessageId === anchorMessageId,
+				(candidate) =>
+					candidate.dataset.conversationMessageId === anchorMessageId,
 			) ?? null
 		);
 	}
@@ -314,11 +334,17 @@
 								data-conversation-message-id={message.id}
 								from={message.role === "assistant" ? "assistant" : "user"}
 							>
-								<LazyMount estimatedHeight={getMessagePlaceholderHeight(message)} root={viewport}>
+								<LazyMount
+									estimatedHeight={getMessagePlaceholderHeight(message)}
+									root={viewport}
+								>
 									<MessageContent>
 										{#each message.parts as part, index (`${message.id}-${index}`)}
 											{#if isReasoningPart(part) && part.text.length > 0}
-												<Reasoning defaultOpen={false} isStreaming={isStreamingMessage(message)}>
+												<Reasoning
+													defaultOpen={false}
+													isStreaming={isStreamingMessage(message)}
+												>
 													<ReasoningTrigger />
 													<ReasoningContent text={part.text} />
 												</Reasoning>
@@ -340,7 +366,10 @@
 						{/each}
 						{#if isStreaming}
 							<Message from="assistant">
-								<LazyMount estimatedHeight={ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT} root={viewport}>
+								<LazyMount
+									estimatedHeight={ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT}
+									root={viewport}
+								>
 									<MessageContent>
 										<div class="text-muted-foreground">
 											<Loader size={18} />
@@ -349,11 +378,16 @@
 								</LazyMount>
 							</Message>
 						{/if}
-						<div aria-hidden="true" style={`height: ${bottomSpacerHeight}px;`}></div>
+						<div
+							aria-hidden="true"
+							style={`height: ${bottomSpacerHeight}px;`}
+						></div>
 					</div>
 				</div>
 				{#if !isNearBottom}
-					<div class="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+					<div
+						class="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center"
+					>
 						<Button
 							class="pointer-events-auto rounded-full shadow-sm"
 							onclick={() => scrollToBottom("smooth")}
@@ -367,7 +401,9 @@
 				{/if}
 			</div>
 		{:else if isLoading}
-			<div class="flex min-h-0 flex-1 items-center justify-center p-4 text-muted-foreground text-sm">
+			<div
+				class="flex min-h-0 flex-1 items-center justify-center p-4 text-muted-foreground text-sm"
+			>
 				Loading conversation...
 			</div>
 		{/if}

@@ -14,9 +14,15 @@
 	const plan = usePlanContext();
 </script>
 
-<CardDescription class={cn("text-balance", className)} data-slot="plan-description" {...restProps}>
+<CardDescription
+	class={cn("text-balance", className)}
+	data-slot="plan-description"
+	{...restProps}
+>
 	{#if plan.isStreaming}
-		<Shimmer text={text}>{#if children}{@render children()}{/if}</Shimmer>
+		<Shimmer {text}
+			>{#if children}{@render children()}{/if}</Shimmer
+		>
 	{:else if children}
 		{@render children()}
 	{:else}

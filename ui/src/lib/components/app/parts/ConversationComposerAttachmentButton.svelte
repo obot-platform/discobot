@@ -39,11 +39,17 @@
 
 <DropdownMenu>
 	<DropdownMenuTrigger class="tauri-no-drag">
-		<InputGroupButton size="icon-sm" variant="ghost" aria-label="Attachment actions">
+		<InputGroupButton
+			size="icon-sm"
+			variant="ghost"
+			aria-label="Attachment actions"
+		>
 			<PaperclipIcon class="size-4" />
 		</InputGroupButton>
 	</DropdownMenuTrigger>
 	<DropdownMenuContent align="start" class="w-48">
-		<DropdownMenuItem onclick={openFileDialog}>Add photos or files</DropdownMenuItem>
+		<DropdownMenuItem onclick={openFileDialog}
+			>Add photos or files</DropdownMenuItem
+		>
 	</DropdownMenuContent>
 </DropdownMenu>

@@ -11,7 +11,13 @@
 		children?: () => any;
 	};
 
-	let { name, value, class: className, children, ...restProps }: Props = $props();
+	let {
+		name,
+		value,
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 	const environmentVariable = $state({ name: "", value: "" });
 	$effect(() => {
 		environmentVariable.name = name;

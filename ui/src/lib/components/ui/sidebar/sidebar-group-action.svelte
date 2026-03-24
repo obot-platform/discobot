@@ -19,7 +19,7 @@
 			// Increases the hit area of the button on mobile.
 			"after:absolute after:-inset-2 md:after:hidden",
 			"group-data-[collapsible=icon]:hidden",
-			className
+			className,
 		),
 		"data-slot": "sidebar-group-action",
 		"data-sidebar": "group-action",

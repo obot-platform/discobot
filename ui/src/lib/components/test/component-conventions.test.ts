@@ -43,7 +43,10 @@ function relPath(filePath: string): string {
 	return path.relative(COMPONENTS_ROOT, filePath);
 }
 
-async function assertNoGlobalContext(dir: string, label: string): Promise<void> {
+async function assertNoGlobalContext(
+	dir: string,
+	label: string,
+): Promise<void> {
 	const files = await findSvelteFiles(dir);
 	assert.ok(files.length > 0, `expected to find .svelte files in ${label}`);
 
@@ -65,5 +68,8 @@ test("ai/ components are self-contained — no global context imports", async ()
 });
 
 test("app/parts/ components are pure — no global context imports", async () => {
-	await assertNoGlobalContext(path.join(COMPONENTS_ROOT, "app/parts"), "app/parts/");
+	await assertNoGlobalContext(
+		path.join(COMPONENTS_ROOT, "app/parts"),
+		"app/parts/",
+	);
 });

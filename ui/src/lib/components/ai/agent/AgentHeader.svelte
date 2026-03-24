@@ -10,12 +10,7 @@
 		class?: string;
 	};
 
-	let {
-		name,
-		model,
-		class: className,
-		...restProps
-	}: Props = $props();
+	let { name, model, class: className, ...restProps }: Props = $props();
 </script>
 
 <div

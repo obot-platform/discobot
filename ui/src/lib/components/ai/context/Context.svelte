@@ -11,8 +11,14 @@
 		children?: () => any;
 	};
 
-	let { usedTokens, maxTokens, usage, modelId, children, ...restProps }: Props = $props();
-	const usageContext = $state({ usedTokens: 0, maxTokens: 1, usage: undefined as LanguageModelUsage | undefined, modelId: undefined as string | undefined });
+	let { usedTokens, maxTokens, usage, modelId, children, ...restProps }: Props =
+		$props();
+	const usageContext = $state({
+		usedTokens: 0,
+		maxTokens: 1,
+		usage: undefined as LanguageModelUsage | undefined,
+		modelId: undefined as string | undefined,
+	});
 	$effect(() => {
 		usageContext.usedTokens = usedTokens;
 		usageContext.maxTokens = maxTokens;

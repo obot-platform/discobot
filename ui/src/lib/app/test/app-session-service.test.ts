@@ -15,11 +15,17 @@ const sessions: SessionSummary[] = [
 ];
 
 test("getNextSelectedSessionId keeps the current selection when another session is deleted", () => {
-	assert.equal(getNextSelectedSessionId(sessions, "session-1", "session-2"), "session-2");
+	assert.equal(
+		getNextSelectedSessionId(sessions, "session-1", "session-2"),
+		"session-2",
+	);
 });
 
 test("getNextSelectedSessionId falls back to the first remaining session", () => {
-	assert.equal(getNextSelectedSessionId(sessions, "session-2", "session-2"), "session-1");
+	assert.equal(
+		getNextSelectedSessionId(sessions, "session-2", "session-2"),
+		"session-1",
+	);
 });
 
 test("getNextSelectedSessionId returns null when the last session is deleted", () => {

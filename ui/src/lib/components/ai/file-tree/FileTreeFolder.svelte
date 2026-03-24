@@ -19,7 +19,13 @@
 		children?: () => any;
 	};
 
-	let { path, name, class: className, children, ...restProps }: Props = $props();
+	let {
+		path,
+		name,
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 
 	const fileTree = useFileTreeContext();
 	const isExpanded = $derived.by(() => fileTree.expandedPaths.includes(path));

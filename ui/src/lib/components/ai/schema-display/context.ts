@@ -1,6 +1,8 @@
 import { getContext, setContext } from "svelte";
 
-const SCHEMA_DISPLAY_CONTEXT_KEY = Symbol.for("discobot-ui-ai-schema-display-context");
+const SCHEMA_DISPLAY_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-schema-display-context",
+);
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -41,7 +43,9 @@ export function useSchemaDisplayContext(): SchemaDisplayContextValue {
 		SCHEMA_DISPLAY_CONTEXT_KEY,
 	);
 	if (!context) {
-		throw new Error("SchemaDisplay components must be used within SchemaDisplay");
+		throw new Error(
+			"SchemaDisplay components must be used within SchemaDisplay",
+		);
 	}
 	return context;
 }

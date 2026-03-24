@@ -94,6 +94,8 @@
 		{/if}
 	</span>
 	{#if showLabel}
-		<span class={cn("text-sm text-muted-foreground", labelClass)}>{statusLabel(status)}</span>
+		<span class={cn("text-sm text-muted-foreground", labelClass)}
+			>{statusLabel(status)}</span
+		>
 	{/if}
 </span>

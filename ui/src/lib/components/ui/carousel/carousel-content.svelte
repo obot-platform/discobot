@@ -33,7 +33,7 @@
 		class={cn(
 			"flex",
 			emblaCtx.orientation === "horizontal" ? "-ms-4" : "-mt-4 flex-col",
-			className
+			className,
 		)}
 		data-embla-container=""
 		{...restProps}

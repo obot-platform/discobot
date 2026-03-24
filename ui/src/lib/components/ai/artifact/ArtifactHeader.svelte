@@ -12,7 +12,10 @@
 
 <div
 	bind:this={ref}
-	class={cn("flex items-center justify-between border-b bg-muted/50 px-4 py-3", className)}
+	class={cn(
+		"flex items-center justify-between border-b bg-muted/50 px-4 py-3",
+		className,
+	)}
 	{...restProps}
 >
 	{@render children?.()}

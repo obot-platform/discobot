@@ -19,7 +19,10 @@
 {#if children}
 	{@render children()}
 {:else if reasoningTokens}
-	<div class={cn("flex items-center justify-between text-xs", className)} {...restProps}>
+	<div
+		class={cn("flex items-center justify-between text-xs", className)}
+		{...restProps}
+	>
 		<span class="text-muted-foreground">Reasoning</span>
 		<TokensWithCost tokens={reasoningTokens} costText={reasoningCostText} />
 	</div>

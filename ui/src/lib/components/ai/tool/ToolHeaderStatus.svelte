@@ -25,7 +25,10 @@
 			"output-denied": "Denied",
 		};
 
-		const icons: Record<Exclude<ToolState, "output-available">, Component<{ class?: string }>> = {
+		const icons: Record<
+			Exclude<ToolState, "output-available">,
+			Component<{ class?: string }>
+		> = {
 			"input-streaming": LoaderCircleIcon,
 			"input-available": LoaderCircleIcon,
 			"approval-requested": ClockIcon,
@@ -47,8 +50,13 @@
 </script>
 
 {#if statusMeta}
-	<Badge class={cn("gap-1.5 rounded-full text-xs", className)} variant="secondary">
-		<statusMeta.Icon class={cn("size-4 shrink-0", statusMeta.spinning ? "animate-spin" : "")} />
+	<Badge
+		class={cn("gap-1.5 rounded-full text-xs", className)}
+		variant="secondary"
+	>
+		<statusMeta.Icon
+			class={cn("size-4 shrink-0", statusMeta.spinning ? "animate-spin" : "")}
+		/>
 		{statusMeta.label}
 	</Badge>
 {/if}

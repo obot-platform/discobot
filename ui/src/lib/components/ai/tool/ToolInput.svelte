@@ -11,8 +11,12 @@
 </script>
 
 <div class={cn("space-y-2 overflow-hidden p-4", className)} {...restProps}>
-	<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Parameters</h4>
+	<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+		Parameters
+	</h4>
 	<div class="rounded-md bg-muted/50">
-		<pre class="overflow-x-auto p-3 font-mono text-xs text-foreground"><code>{rendered}</code></pre>
+		<pre class="overflow-x-auto p-3 font-mono text-xs text-foreground"><code
+				>{rendered}</code
+			></pre>
 	</div>
 </div>

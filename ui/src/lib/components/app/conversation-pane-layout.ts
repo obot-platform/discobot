@@ -21,9 +21,18 @@ export function getBottomSpacerHeight({
 		0,
 		viewportClientHeight - viewportPaddingTop - viewportPaddingBottom,
 	);
-	const contentHeightWithoutSpacer = Math.max(0, contentHeight - existingSpacerHeight);
-	const distanceFromAnchorTopToEnd = Math.max(0, contentHeightWithoutSpacer - anchorOffsetTop);
-	const availableViewportHeight = Math.max(0, viewportContentHeight - Math.max(0, contentTopPadding));
+	const contentHeightWithoutSpacer = Math.max(
+		0,
+		contentHeight - existingSpacerHeight,
+	);
+	const distanceFromAnchorTopToEnd = Math.max(
+		0,
+		contentHeightWithoutSpacer - anchorOffsetTop,
+	);
+	const availableViewportHeight = Math.max(
+		0,
+		viewportContentHeight - Math.max(0, contentTopPadding),
+	);
 	const nextSpacerHeight = availableViewportHeight - distanceFromAnchorTopToEnd;
 
 	return nextSpacerHeight <= 0 ? 0 : Math.floor(nextSpacerHeight + 0.01);

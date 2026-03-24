@@ -18,7 +18,10 @@
 </script>
 
 <DialogContent
-	class={cn("outline! border-none! p-0 outline-border! outline-solid!", className)}
+	class={cn(
+		"outline! border-none! p-0 outline-border! outline-solid!",
+		className,
+	)}
 	{...restProps}
 >
 	<DialogTitle class="sr-only">{title}</DialogTitle>

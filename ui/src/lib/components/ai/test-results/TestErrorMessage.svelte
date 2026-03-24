@@ -5,6 +5,9 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<p class={cn("font-medium text-red-700 text-sm dark:text-red-400", className)} {...restProps}>
+<p
+	class={cn("font-medium text-red-700 text-sm dark:text-red-400", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </p>

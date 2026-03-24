@@ -10,8 +10,22 @@
 	type Props = {
 		tooltip?: string;
 		label?: string;
-		variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
-		size?: "default" | "xs" | "sm" | "lg" | "icon" | "icon-xs" | "icon-sm" | "icon-lg";
+		variant?:
+			| "default"
+			| "destructive"
+			| "outline"
+			| "secondary"
+			| "ghost"
+			| "link";
+		size?:
+			| "default"
+			| "xs"
+			| "sm"
+			| "lg"
+			| "icon"
+			| "icon-xs"
+			| "icon-sm"
+			| "icon-lg";
 		children?: () => any;
 		[key: string]: unknown;
 	};

@@ -25,7 +25,9 @@ export function useTranscriptionContext(): TranscriptionContextValue {
 		TRANSCRIPTION_CONTEXT_KEY,
 	);
 	if (!context) {
-		throw new Error("Transcription components must be used within Transcription");
+		throw new Error(
+			"Transcription components must be used within Transcription",
+		);
 	}
 	return context;
 }

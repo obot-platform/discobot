@@ -9,10 +9,22 @@
 		children?: () => any;
 	};
 
-	let { href, title, class: className, children, ...restProps }: Props = $props();
+	let {
+		href,
+		title,
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 </script>
 
-<a class={cn("flex items-center gap-2", className)} {href} rel="noreferrer" target="_blank" {...restProps}>
+<a
+	class={cn("flex items-center gap-2", className)}
+	{href}
+	rel="noreferrer"
+	target="_blank"
+	{...restProps}
+>
 	{#if children}
 		{@render children()}
 	{:else}

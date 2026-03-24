@@ -22,7 +22,9 @@ export function useVoiceSelectorContext(): VoiceSelectorContextValue {
 		VOICE_SELECTOR_CONTEXT_KEY,
 	);
 	if (!context) {
-		throw new Error("VoiceSelector components must be used within VoiceSelector");
+		throw new Error(
+			"VoiceSelector components must be used within VoiceSelector",
+		);
 	}
 	return context;
 }

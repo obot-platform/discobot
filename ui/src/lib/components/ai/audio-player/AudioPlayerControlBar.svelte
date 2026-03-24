@@ -11,7 +11,11 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<div class={cn("flex items-center", className)} data-slot="audio-player-control-bar" {...restProps}>
+<div
+	class={cn("flex items-center", className)}
+	data-slot="audio-player-control-bar"
+	{...restProps}
+>
 	<ButtonGroup orientation="horizontal">
 		{@render children?.()}
 	</ButtonGroup>

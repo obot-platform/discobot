@@ -8,7 +8,11 @@
 		class?: string;
 	};
 
-	let { showInternalFrames = true, class: className, ...restProps }: Props = $props();
+	let {
+		showInternalFrames = true,
+		class: className,
+		...restProps
+	}: Props = $props();
 	const stackTrace = useStackTraceContext();
 
 	const framesToShow = $derived.by(() =>
@@ -23,10 +27,17 @@
 		<div class="text-xs text-muted-foreground">No stack frames</div>
 	{:else}
 		{#each framesToShow as frame, index (`${frame.raw}-${index}`)}
-			<div class={cn("text-xs", frame.isInternal ? "text-muted-foreground/50" : "text-foreground/90")}>
+			<div
+				class={cn(
+					"text-xs",
+					frame.isInternal ? "text-muted-foreground/50" : "text-foreground/90",
+				)}
+			>
 				<span class="text-muted-foreground">at </span>
 				{#if frame.functionName}
-					<span class={frame.isInternal ? "" : "text-foreground"}>{frame.functionName} </span>
+					<span class={frame.isInternal ? "" : "text-foreground"}
+						>{frame.functionName}
+					</span>
 				{/if}
 				{#if frame.filePath}
 					<span class="text-muted-foreground">(</span>

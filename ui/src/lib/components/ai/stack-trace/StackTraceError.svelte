@@ -6,7 +6,10 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<div class={cn("flex flex-1 items-center gap-2 overflow-hidden", className)} {...restProps}>
+<div
+	class={cn("flex flex-1 items-center gap-2 overflow-hidden", className)}
+	{...restProps}
+>
 	<AlertTriangleIcon class="size-4 shrink-0 text-destructive" />
 	{@render children?.()}
 </div>

@@ -4,6 +4,9 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<span class={cn("flex-1 truncate text-left font-medium", className)} {...restProps}>
+<span
+	class={cn("flex-1 truncate text-left font-medium", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </span>

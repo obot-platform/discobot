@@ -1,6 +1,10 @@
 <script lang="ts">
 	import SearchIcon from "@lucide/svelte/icons/search";
-	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
+	import {
+		ToolContent,
+		ToolHeaderControls,
+		ToolHeaderStatus,
+	} from "$lib/components/ai/tool";
 	import {
 		type GrepToolOutput,
 		validateGrepInput,
@@ -14,7 +18,8 @@
 
 	const isStreaming = $derived.by(
 		() =>
-			toolPart.state === "input-streaming" || toolPart.state === "input-available",
+			toolPart.state === "input-streaming" ||
+			toolPart.state === "input-available",
 	);
 	const inputValidation = $derived.by(() => validateGrepInput(toolPart.input));
 	const validInput = $derived.by(() =>
@@ -24,7 +29,9 @@
 		toolPart.output ? validateGrepOutput(toolPart.output) : null,
 	);
 	const validOutput = $derived.by(() =>
-		outputValidation?.success ? (outputValidation.data as GrepToolOutput) : undefined,
+		outputValidation?.success
+			? (outputValidation.data as GrepToolOutput)
+			: undefined,
 	);
 	const rawOutputText = $derived.by(() => renderToolValue(toolPart.output));
 	const grepError = $derived.by(() => toolPart.errorText);
@@ -43,34 +50,55 @@
 
 <ToolContent>
 	{#if !toolPart.input || typeof toolPart.input !== "object"}
-		<div class="p-4 pt-3 text-muted-foreground text-sm">{isStreaming ? "Loading search..." : "Search details are unavailable."}</div>
+		<div class="p-4 pt-3 text-muted-foreground text-sm">
+			{isStreaming ? "Loading search..." : "Search details are unavailable."}
+		</div>
 	{:else if !inputValidation.success || !validInput?.pattern}
 		<div class="space-y-3 p-4 pt-3">
-			<p class="text-muted-foreground text-sm">{isStreaming ? "Loading search..." : "Could not parse search details."}</p>
+			<p class="text-muted-foreground text-sm">
+				{isStreaming ? "Loading search..." : "Could not parse search details."}
+			</p>
 			{#if rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>
 	{:else}
 		<div class="space-y-4 p-4 pt-3">
 			<div class="rounded-md border bg-muted/30 p-3 text-xs">
-				<p><span class="text-muted-foreground">pattern:</span> <code>{validInput.pattern}</code></p>
+				<p>
+					<span class="text-muted-foreground">pattern:</span>
+					<code>{validInput.pattern}</code>
+				</p>
 				{#if validInput.path}
-					<p class="mt-1"><span class="text-muted-foreground">path:</span> <code>{shortenPath(validInput.path)}</code></p>
+					<p class="mt-1">
+						<span class="text-muted-foreground">path:</span>
+						<code>{shortenPath(validInput.path)}</code>
+					</p>
 				{/if}
 				{#if validInput.glob}
-					<p class="mt-1"><span class="text-muted-foreground">glob:</span> <code>{validInput.glob}</code></p>
+					<p class="mt-1">
+						<span class="text-muted-foreground">glob:</span>
+						<code>{validInput.glob}</code>
+					</p>
 				{/if}
 				{#if validInput.output_mode}
-					<p class="mt-1"><span class="text-muted-foreground">mode:</span> <code>{validInput.output_mode}</code></p>
+					<p class="mt-1">
+						<span class="text-muted-foreground">mode:</span>
+						<code>{validInput.output_mode}</code>
+					</p>
 				{/if}
 			</div>
 
 			{#if validOutput?.count !== undefined}
 				<div class="rounded-md border bg-muted/20 p-4">
-					<div class="font-semibold text-2xl text-foreground">{validOutput.count}</div>
+					<div class="font-semibold text-2xl text-foreground">
+						{validOutput.count}
+					</div>
 					<div class="text-muted-foreground text-sm">matches</div>
 				</div>
 			{/if}
@@ -79,39 +107,59 @@
 				<div class="rounded-md border bg-muted/20 p-2">
 					{#each validOutput.matches as match}
 						<div class="border-b px-2 py-2 text-xs last:border-b-0">
-							<div class="font-mono text-muted-foreground">{shortenPath(match.file)}:{match.line}</div>
-							<div class="mt-1 rounded bg-background/80 px-2 py-1 font-mono text-foreground">{match.content}</div>
+							<div class="font-mono text-muted-foreground">
+								{shortenPath(match.file)}:{match.line}
+							</div>
+							<div
+								class="mt-1 rounded bg-background/80 px-2 py-1 font-mono text-foreground"
+							>
+								{match.content}
+							</div>
 						</div>
 					{/each}
 				</div>
 			{:else if validOutput?.files?.length}
 				<div class="rounded-md border bg-muted/20 p-2">
 					{#each validOutput.files as file}
-						<div class="border-b px-2 py-1 font-mono text-xs last:border-b-0">{shortenPath(file)}</div>
+						<div class="border-b px-2 py-1 font-mono text-xs last:border-b-0">
+							{shortenPath(file)}
+						</div>
 					{/each}
 				</div>
 			{:else if validOutput?.content}
 				<div class="rounded-md border bg-muted/20 p-3">
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{validOutput.content}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{validOutput.content}</code
+						></pre>
 				</div>
 			{:else if outputValidation?.success && !grepError}
-				<div class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-sm">
+				<div
+					class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-sm"
+				>
 					No matches found.
 				</div>
 			{/if}
 
 			{#if grepError}
-				<div class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm">
+				<div
+					class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm"
+				>
 					{grepError}
 				</div>
 			{/if}
 
 			{#if outputValidation && !outputValidation.success && rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<h5 class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+					<h5
+						class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide"
+					>
 						Unparsed output
 					</h5>
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>

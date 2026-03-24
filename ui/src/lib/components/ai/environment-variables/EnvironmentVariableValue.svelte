@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { cn } from "$lib/utils";
-	import { useEnvironmentVariableContext, useEnvironmentVariablesContext } from "./context";
+	import {
+		useEnvironmentVariableContext,
+		useEnvironmentVariablesContext,
+	} from "./context";
 
 	type Props = { class?: string; children?: () => any };
 	let { class: className, children, ...restProps }: Props = $props();

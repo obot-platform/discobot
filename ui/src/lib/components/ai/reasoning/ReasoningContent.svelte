@@ -34,7 +34,9 @@
 		}
 
 		const lines = text.replace(/\r\n/g, "\n").split("\n");
-		const firstNonEmptyLineIndex = lines.findIndex((line) => line.trim().length > 0);
+		const firstNonEmptyLineIndex = lines.findIndex(
+			(line) => line.trim().length > 0,
+		);
 		if (firstNonEmptyLineIndex === -1) {
 			return undefined;
 		}
@@ -88,7 +90,9 @@
 	});
 
 	const plugins = $derived.by(() =>
-		mermaidPlugin ? { code, math, cjk, mermaid: mermaidPlugin } : { code, math, cjk },
+		mermaidPlugin
+			? { code, math, cjk, mermaid: mermaidPlugin }
+			: { code, math, cjk },
 	);
 </script>
 
@@ -101,7 +105,7 @@
 	{...restProps}
 >
 	{#if text !== undefined}
-		<ReactStreamdown text={text} plugins={plugins} isAnimating={reasoning.isStreaming} />
+		<ReactStreamdown {text} {plugins} isAnimating={reasoning.isStreaming} />
 	{:else}
 		<div class="whitespace-pre-wrap break-words">
 			{@render children?.()}

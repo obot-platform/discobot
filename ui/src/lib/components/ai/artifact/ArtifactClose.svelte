@@ -19,7 +19,10 @@
 </script>
 
 <Button
-	class={cn("size-8 p-0 text-muted-foreground hover:text-foreground", className)}
+	class={cn(
+		"size-8 p-0 text-muted-foreground hover:text-foreground",
+		className,
+	)}
 	{size}
 	type="button"
 	{variant}

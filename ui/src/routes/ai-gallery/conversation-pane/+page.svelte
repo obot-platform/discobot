@@ -5,7 +5,13 @@
 	import ConversationPane from "$lib/components/app/ConversationPane.svelte";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "$lib/components/ui/card";
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle,
+	} from "$lib/components/ui/card";
 	import { Switch } from "$lib/components/ui/switch";
 
 	type ConversationStatus = "ready" | "loading" | "streaming";
@@ -125,7 +131,8 @@
 				},
 				output: {
 					exitCode: 0,
-					stdout: "svelte-check found 0 errors and 0 warnings\neslint found 0 problems",
+					stdout:
+						"svelte-check found 0 errors and 0 warnings\neslint found 0 problems",
 				},
 			}),
 		]),
@@ -135,7 +142,8 @@
 				toolName: "Read",
 				state: "input-streaming",
 				input: {
-					file_path: "/home/discobot/workspace/ui/src/lib/components/app/ConversationPane.svelte",
+					file_path:
+						"/home/discobot/workspace/ui/src/lib/components/app/ConversationPane.svelte",
 					offset: 0,
 					limit: 120,
 				},
@@ -147,8 +155,10 @@
 				toolName: "Write",
 				state: "output-available",
 				input: {
-					file_path: "/home/discobot/workspace/ui/src/routes/ai-gallery/conversation-pane/+page.svelte",
-					content: "<script lang=\"ts\">\n\t// mocked route scaffold\n<\\/script>\n",
+					file_path:
+						"/home/discobot/workspace/ui/src/routes/ai-gallery/conversation-pane/+page.svelte",
+					content:
+						'<script lang="ts">\n\t// mocked route scaffold\n<\\/script>\n',
 				},
 				output: {
 					success: true,
@@ -162,9 +172,11 @@
 				toolName: "Edit",
 				state: "output-available",
 				input: {
-					file_path: "/home/discobot/workspace/ui/src/lib/components/app/ConversationPane.svelte",
+					file_path:
+						"/home/discobot/workspace/ui/src/lib/components/app/ConversationPane.svelte",
 					old_string: "const preferences = app.preferences;",
-					new_string: "const effectiveChatWidthMode = chatWidthMode ?? app?.preferences.chatWidthMode ?? \"full\";",
+					new_string:
+						'const effectiveChatWidthMode = chatWidthMode ?? app?.preferences.chatWidthMode ?? "full";',
 					replace_all: false,
 				},
 				output: {
@@ -188,7 +200,8 @@
 						{
 							file: "/home/discobot/workspace/ui/src/lib/components/app/ConversationPane.svelte",
 							line: 16,
-							content: "import { useThreadContext } from \"$lib/context/thread-context.svelte\";",
+							content:
+								'import { useThreadContext } from "$lib/context/thread-context.svelte";',
 						},
 					],
 				},
@@ -284,14 +297,16 @@
 				input: {
 					subagent_type: "Explore",
 					description: "Inspect conversation renderer usage",
-					prompt: "Find everywhere the message pane depends on thread/session context.",
+					prompt:
+						"Find everywhere the message pane depends on thread/session context.",
 					max_turns: 5,
 					model: "haiku",
 					run_in_background: false,
 				},
 				output: {
 					agentId: "agent-42",
-					result: "Conversation display mainly depends on thread messages/status and chat width preference.",
+					result:
+						"Conversation display mainly depends on thread messages/status and chat width preference.",
 				},
 			}),
 		]),
@@ -305,7 +320,8 @@
 					args: "",
 				},
 				output: {
-					result: "Loaded React and Next.js performance guidance from Vercel Engineering.",
+					result:
+						"Loaded React and Next.js performance guidance from Vercel Engineering.",
 				},
 			}),
 		]),
@@ -322,8 +338,14 @@
 							question: "Which interaction density should we optimize first?",
 							multiSelect: false,
 							options: [
-								{ label: "Dense", description: "Fit more tool output above the fold." },
-								{ label: "Relaxed", description: "Give each message part more breathing room." },
+								{
+									label: "Dense",
+									description: "Fit more tool output above the fold.",
+								},
+								{
+									label: "Relaxed",
+									description: "Give each message part more breathing room.",
+								},
 							],
 						},
 					],
@@ -342,13 +364,20 @@
 							question: "Should tool cards stay expanded after completion?",
 							multiSelect: false,
 							options: [
-								{ label: "Expanded", description: "Keep results fully visible." },
-								{ label: "Collapsed", description: "Compress completed work by default." },
+								{
+									label: "Expanded",
+									description: "Keep results fully visible.",
+								},
+								{
+									label: "Collapsed",
+									description: "Compress completed work by default.",
+								},
 							],
 						},
 					],
 				},
-				output: "\"Should tool cards stay expanded after completion?\"=\"Expanded\"",
+				output:
+					'"Should tool cards stay expanded after completion?"="Expanded"',
 			}),
 		]),
 		createMessage("assistant-tool-denied", "assistant", [
@@ -362,7 +391,11 @@
 					run_in_background: false,
 				},
 				errorText: "The user denied permission for this action.",
-				approval: { id: "approval-push", approved: false, reason: "Keep this local for now" },
+				approval: {
+					id: "approval-push",
+					approved: false,
+					reason: "Keep this local for now",
+				},
 			}),
 		]),
 		createMessage("assistant-tool-error", "assistant", [
@@ -371,10 +404,12 @@
 				toolName: "Write",
 				state: "output-error",
 				input: {
-					file_path: "/home/discobot/workspace/ui/src/routes/ai-gallery/conversation-pane/+page.svelte",
+					file_path:
+						"/home/discobot/workspace/ui/src/routes/ai-gallery/conversation-pane/+page.svelte",
 					content: "<broken />",
 				},
-				errorText: "Write failed because the destination directory did not exist.",
+				errorText:
+					"Write failed because the destination directory did not exist.",
 			}),
 		]),
 		createMessage("assistant-tool-fallback", "assistant", [
@@ -408,10 +443,14 @@
 		showFullFixture ? mockConversation : shortConversation,
 	);
 	const sessionError = $derived.by(() =>
-		showErrors ? "Mock session error: the sandbox reported a startup issue." : null,
+		showErrors
+			? "Mock session error: the sandbox reported a startup issue."
+			: null,
 	);
 	const threadError = $derived.by(() =>
-		showErrors ? "Mock thread error: a streamed tool chunk failed validation." : null,
+		showErrors
+			? "Mock thread error: a streamed tool chunk failed validation."
+			: null,
 	);
 </script>
 
@@ -428,10 +467,12 @@
 						<Badge variant="secondary">Mocked route</Badge>
 						<Badge variant="outline">Real ConversationPane</Badge>
 					</div>
-					<h1 class="text-3xl font-semibold tracking-tight">Conversation pane UX sandbox</h1>
+					<h1 class="text-3xl font-semibold tracking-tight">
+						Conversation pane UX sandbox
+					</h1>
 					<p class="max-w-3xl text-sm text-muted-foreground">
-						A dedicated preview route for tuning message spacing, tool chrome, reasoning, loading,
-						and error states with mocked data only.
+						A dedicated preview route for tuning message spacing, tool chrome,
+						reasoning, loading, and error states with mocked data only.
 					</p>
 				</div>
 
@@ -447,14 +488,19 @@
 				<Card>
 					<CardHeader class="pb-3">
 						<CardTitle>Controls</CardTitle>
-						<CardDescription>Flip the same layout states you’d want while iterating on message interaction.</CardDescription>
+						<CardDescription
+							>Flip the same layout states you’d want while iterating on message
+							interaction.</CardDescription
+						>
 					</CardHeader>
 					<CardContent class="space-y-4">
 						<div class="space-y-2">
 							<p class="font-medium text-sm">Chat width</p>
 							<div class="flex flex-wrap gap-2">
 								<Button
-									variant={chatWidthMode === "constrained" ? "default" : "outline"}
+									variant={chatWidthMode === "constrained"
+										? "default"
+										: "outline"}
 									size="sm"
 									onclick={() => {
 										chatWidthMode = "constrained";
@@ -478,7 +524,9 @@
 							<p class="font-medium text-sm">Pane status</p>
 							<div class="flex flex-wrap gap-2">
 								<Button
-									variant={conversationStatus === "ready" ? "default" : "outline"}
+									variant={conversationStatus === "ready"
+										? "default"
+										: "outline"}
 									size="sm"
 									onclick={() => {
 										conversationStatus = "ready";
@@ -487,7 +535,9 @@
 									Ready
 								</Button>
 								<Button
-									variant={conversationStatus === "loading" ? "default" : "outline"}
+									variant={conversationStatus === "loading"
+										? "default"
+										: "outline"}
 									size="sm"
 									onclick={() => {
 										conversationStatus = "loading";
@@ -496,7 +546,9 @@
 									Loading
 								</Button>
 								<Button
-									variant={conversationStatus === "streaming" ? "default" : "outline"}
+									variant={conversationStatus === "streaming"
+										? "default"
+										: "outline"}
 									size="sm"
 									onclick={() => {
 										conversationStatus = "streaming";
@@ -507,18 +559,27 @@
 							</div>
 						</div>
 
-						<div class="flex items-center justify-between rounded-xl border px-4 py-3">
+						<div
+							class="flex items-center justify-between rounded-xl border px-4 py-3"
+						>
 							<div>
 								<p class="font-medium text-sm">Include banner errors</p>
-								<p class="text-muted-foreground text-xs">Shows the same destructive banners the live pane renders.</p>
+								<p class="text-muted-foreground text-xs">
+									Shows the same destructive banners the live pane renders.
+								</p>
 							</div>
 							<Switch bind:checked={showErrors} />
 						</div>
 
-						<div class="flex items-center justify-between rounded-xl border px-4 py-3">
+						<div
+							class="flex items-center justify-between rounded-xl border px-4 py-3"
+						>
 							<div>
 								<p class="font-medium text-sm">Show full fixture set</p>
-								<p class="text-muted-foreground text-xs">Switch between a short transcript and the exhaustive message/tool matrix.</p>
+								<p class="text-muted-foreground text-xs">
+									Switch between a short transcript and the exhaustive
+									message/tool matrix.
+								</p>
 							</div>
 							<Switch bind:checked={showFullFixture} />
 						</div>
@@ -527,7 +588,10 @@
 							<div class="flex items-start justify-between gap-4">
 								<div>
 									<p class="font-medium text-sm">Tool open state test</p>
-									<p class="text-muted-foreground text-xs">Remount the mocked pane with all tool cards expanded or collapsed.</p>
+									<p class="text-muted-foreground text-xs">
+										Remount the mocked pane with all tool cards expanded or
+										collapsed.
+									</p>
 								</div>
 								<div class="flex gap-2">
 									<Button
@@ -559,18 +623,24 @@
 				<Card>
 					<CardHeader class="pb-3">
 						<CardTitle>Dependency snapshot</CardTitle>
-						<CardDescription>What the live display actually needs from context today.</CardDescription>
+						<CardDescription
+							>What the live display actually needs from context today.</CardDescription
+						>
 					</CardHeader>
 					<CardContent class="space-y-3 text-sm text-muted-foreground">
 						<p>
-							The message display is lightly coupled: mocked messages, a status string, optional error
-							banners, and chat width are enough to render the real pane.
+							The message display is lightly coupled: mocked messages, a status
+							string, optional error banners, and chat width are enough to
+							render the real pane.
 						</p>
 						<p>
-							The composer is the heavy part — it pulls model selection, workspace setup, files, hooks,
-							env sets, submit/cancel behavior, and pending session state from app/session/thread context.
+							The composer is the heavy part — it pulls model selection,
+							workspace setup, files, hooks, env sets, submit/cancel behavior,
+							and pending session state from app/session/thread context.
 						</p>
-						<p class="rounded-lg border bg-muted/30 p-3 font-mono text-xs text-foreground">
+						<p
+							class="rounded-lg border bg-muted/30 p-3 font-mono text-xs text-foreground"
+						>
 							Current mock route: <code>/ai-gallery/conversation-pane</code>
 						</p>
 					</CardContent>
@@ -581,16 +651,18 @@
 
 	<div class="min-h-0 flex-1 overflow-hidden">
 		<div class="mx-auto flex h-full max-w-7xl flex-col px-6 py-6 lg:px-10">
-			<div class="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card shadow-sm">
+			<div
+				class="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card shadow-sm"
+			>
 				{#key `${toolDefaultOpen}-${paneRenderVersion}`}
 					<ConversationPane
 						contentTopPadding={5}
 						messages={activeMessages}
 						status={conversationStatus}
-						sessionError={sessionError}
-						threadError={threadError}
-						chatWidthMode={chatWidthMode}
-						toolDefaultOpen={toolDefaultOpen}
+						{sessionError}
+						{threadError}
+						{chatWidthMode}
+						{toolDefaultOpen}
 						showComposer={false}
 					/>
 				{/key}

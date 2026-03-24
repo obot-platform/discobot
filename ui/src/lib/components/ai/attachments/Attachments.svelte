@@ -9,8 +9,12 @@
 		children?: () => any;
 	};
 
-	let { variant = "grid", class: className, children, ...restProps }: Props =
-		$props();
+	let {
+		variant = "grid",
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 
 	const attachments = $state({ variant: "grid" as AttachmentVariant });
 	$effect(() => {

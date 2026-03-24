@@ -68,8 +68,10 @@
 							log.level === "log" && "text-foreground",
 						)}
 					>
-						<span class="text-muted-foreground">{formatTimestamp(log.timestamp)}</span>
-						 {log.message}
+						<span class="text-muted-foreground"
+							>{formatTimestamp(log.timestamp)}</span
+						>
+						{log.message}
 					</div>
 				{/each}
 			{/if}

@@ -10,6 +10,9 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<CardFooter class={cn("rounded-b-md border-t bg-secondary p-3!", className)} {...restProps}>
+<CardFooter
+	class={cn("rounded-b-md border-t bg-secondary p-3!", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </CardFooter>

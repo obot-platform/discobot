@@ -19,11 +19,11 @@
 		reasoning: boolean;
 	};
 
-type Props = {
-	value?: string | null;
-	onSelect?: (value: string | null) => void;
-	models: ModelInfo[];
-};
+	type Props = {
+		value?: string | null;
+		onSelect?: (value: string | null) => void;
+		models: ModelInfo[];
+	};
 
 	let { value = null, onSelect = () => {}, models }: Props = $props();
 
@@ -113,13 +113,14 @@ type Props = {
 			grouped[provider].push(variant);
 		}
 
-		return Object.entries(grouped).sort(([left], [right]) => left.localeCompare(right));
+		return Object.entries(grouped).sort(([left], [right]) =>
+			left.localeCompare(right),
+		);
 	});
 
 	const selectedModelVariant = $derived.by(
 		() => modelVariants.find((variant) => variant.id === value) ?? null,
 	);
-
 </script>
 
 <DropdownMenu>
@@ -128,7 +129,9 @@ type Props = {
 			size="xs"
 			variant="ghost"
 			class="h-6 max-w-[160px] gap-1.5 px-2 text-xs"
-			title={selectedModelVariant ? `Model: ${selectedModelVariant.displayName}` : "Model"}
+			title={selectedModelVariant
+				? `Model: ${selectedModelVariant.displayName}`
+				: "Model"}
 		>
 			{#if selectedModelVariant}
 				<span class="truncate">
@@ -163,7 +166,9 @@ type Props = {
 			{#if providerIndex > 0}
 				<DropdownMenuSeparator />
 			{/if}
-			<DropdownMenuLabel class="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+			<DropdownMenuLabel
+				class="text-xs uppercase tracking-[0.16em] text-muted-foreground"
+			>
 				{provider}
 			</DropdownMenuLabel>
 			{#each variants as variant (variant.id)}
@@ -176,7 +181,9 @@ type Props = {
 					<div class="min-w-0 flex-1 pl-3">
 						<div class="truncate font-medium">{variant.displayName}</div>
 						{#if variant.model.description && !variant.reasoning}
-							<div class="truncate text-xs text-muted-foreground">{variant.model.description}</div>
+							<div class="truncate text-xs text-muted-foreground">
+								{variant.model.description}
+							</div>
 						{/if}
 					</div>
 					{#if value === variant.id}

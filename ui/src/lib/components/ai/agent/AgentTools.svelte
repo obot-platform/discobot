@@ -29,7 +29,11 @@
 
 <div class={cn("space-y-2", className)} {...restProps}>
 	<span class="font-medium text-muted-foreground text-sm">Tools</span>
-	<Accordion bind:value={value as string[] | undefined} type="multiple" class="rounded-md border">
+	<Accordion
+		bind:value={value as string[] | undefined}
+		type="multiple"
+		class="rounded-md border"
+	>
 		{@render children?.()}
 	</Accordion>
 </div>

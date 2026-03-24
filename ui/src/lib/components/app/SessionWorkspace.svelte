@@ -33,7 +33,9 @@
 	});
 
 	function sidebarOpen() {
-		return isMobile.current ? sessionView.mobileSidebarOpen : sessionView.desktopSidebarOpen;
+		return isMobile.current
+			? sessionView.mobileSidebarOpen
+			: sessionView.desktopSidebarOpen;
 	}
 
 	function toggleSidebar() {
@@ -64,7 +66,10 @@
 	}
 
 	function hasSavedSidebarLayout() {
-		return typeof window !== "undefined" && window.localStorage.getItem(SIDEBAR_LAYOUT_STORAGE_KEY);
+		return (
+			typeof window !== "undefined" &&
+			window.localStorage.getItem(SIDEBAR_LAYOUT_STORAGE_KEY)
+		);
 	}
 
 	$effect(() => {
@@ -92,8 +97,14 @@
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		{#if isMobile.current}
 			<Sheet.Root bind:open={sessionView.mobileSidebarOpen}>
-				<Sheet.Content side="left" class="w-64 max-w-none bg-background p-3 [&>button]:hidden">
-					<SessionSidebar onThreadSelect={handleSessionSelect} onToggleSidebar={toggleSidebar} />
+				<Sheet.Content
+					side="left"
+					class="w-64 max-w-none bg-background p-3 [&>button]:hidden"
+				>
+					<SessionSidebar
+						onThreadSelect={handleSessionSelect}
+						onToggleSidebar={toggleSidebar}
+					/>
 				</Sheet.Content>
 			</Sheet.Root>
 

@@ -9,7 +9,11 @@
 		defaultOpen?: boolean;
 		open?: boolean;
 		onOpenChange?: (open: boolean) => void;
-		onFilePathClick?: (filePath: string, line?: number, column?: number) => void;
+		onFilePathClick?: (
+			filePath: string,
+			line?: number,
+			column?: number,
+		) => void;
 		class?: string;
 		children?: () => any;
 	};

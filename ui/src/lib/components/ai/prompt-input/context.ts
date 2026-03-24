@@ -1,6 +1,8 @@
 import { getContext, setContext } from "svelte";
 
-const PROMPT_INPUT_CONTEXT_KEY = Symbol.for("discobot-ui-ai-prompt-input-context");
+const PROMPT_INPUT_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-prompt-input-context",
+);
 
 export type PromptInputFile = {
 	id: string;

@@ -22,8 +22,14 @@ test("session status constants include committed and rebased", () => {
 test("session status component renders dedicated git icons for committed and rebased", () => {
 	const source = readSessionStatusSource();
 
-	assert.match(source, /import GitCommitIcon from "@lucide\/svelte\/icons\/git-commit"/);
-	assert.match(source, /import GitBranchIcon from "@lucide\/svelte\/icons\/git-branch"/);
+	assert.match(
+		source,
+		/import GitCommitIcon from "@lucide\/svelte\/icons\/git-commit"/,
+	);
+	assert.match(
+		source,
+		/import GitBranchIcon from "@lucide\/svelte\/icons\/git-branch"/,
+	);
 	assert.match(source, /normalizedStatus\(status\) === "committed"/);
 	assert.match(source, /normalizedStatus\(status\) === "rebased"/);
 	assert.match(source, /<GitCommitIcon class="size-3\.5" \/>/);

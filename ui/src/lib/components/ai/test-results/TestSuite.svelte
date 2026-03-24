@@ -11,7 +11,14 @@
 		children?: () => any;
 	};
 
-	let { name, status, open = $bindable(false), class: className, children, ...restProps }: Props = $props();
+	let {
+		name,
+		status,
+		open = $bindable(false),
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 
 	const testSuite = $state({ name: "", status: "passed" as TestStatus });
 	$effect(() => {
@@ -21,6 +28,10 @@
 	setTestSuiteContext(testSuite);
 </script>
 
-<Collapsible bind:open class={cn("rounded-lg border", className)} {...restProps}>
+<Collapsible
+	bind:open
+	class={cn("rounded-lg border", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </Collapsible>

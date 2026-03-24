@@ -146,7 +146,9 @@ function resolveStoredThemeMode(): ThemeMode | null {
 	}
 
 	const storedTheme = window.localStorage.getItem(THEME_KEY);
-	return storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"
+	return storedTheme === "light" ||
+		storedTheme === "dark" ||
+		storedTheme === "system"
 		? storedTheme
 		: null;
 }
@@ -176,7 +178,9 @@ function resolvePreferredTheme(): ResolvedTheme {
 		return "dark";
 	}
 
-	return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+	return window.matchMedia("(prefers-color-scheme: dark)").matches
+		? "dark"
+		: "light";
 }
 
 export function resolveThemeMode(theme: ThemeMode): ResolvedTheme {

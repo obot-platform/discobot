@@ -1,6 +1,12 @@
 import type { WorkspaceValidationResult } from "$lib/api-types";
-import type { EnvSetEditorMode, SessionActiveView } from "$lib/session/session-view.types";
-import { getDefaultActiveView, getSelectedFileFromView } from "$lib/session/session-view.types";
+import type {
+	EnvSetEditorMode,
+	SessionActiveView,
+} from "$lib/session/session-view.types";
+import {
+	getDefaultActiveView,
+	getSelectedFileFromView,
+} from "$lib/session/session-view.types";
 
 type CreateSessionViewStateArgs = {
 	getFiles: () => string[];
@@ -21,7 +27,10 @@ export function resolveOpenFileState(
 
 	const nextFile = selectedFile || (availableFiles[0] ?? "");
 	return {
-		activeView: nextFile.length > 0 ? { kind: "file", path: nextFile } : getDefaultActiveView(availableFiles),
+		activeView:
+			nextFile.length > 0
+				? { kind: "file", path: nextFile }
+				: getDefaultActiveView(availableFiles),
 		selectedFile: nextFile,
 	};
 }
@@ -67,7 +76,9 @@ export type SessionViewState = {
 	setPendingWorkspaceOption: (value: string) => void;
 	setPendingWorkspaceBranch: (value: string) => void;
 	setPendingWorkspaceSourceInput: (value: string) => void;
-	setPendingWorkspaceValidation: (value: WorkspaceValidationResult | null) => void;
+	setPendingWorkspaceValidation: (
+		value: WorkspaceValidationResult | null,
+	) => void;
 	setPendingWorkspaceValidating: (value: boolean) => void;
 	setPendingWorkspaceSetupMessage: (value: string | null) => void;
 	resetPendingWorkspaceSetup: () => void;
@@ -81,10 +92,15 @@ export type SessionViewState = {
 	startEnvSetCreate: () => void;
 	startEnvSetEdit: (envSetId: string) => void;
 	closeEnvSetManager: () => void;
-	resetForSession: (selectedThreadId: string | null, selectedFile: string) => void;
+	resetForSession: (
+		selectedThreadId: string | null,
+		selectedFile: string,
+	) => void;
 };
 
-export function createSessionViewState(args: CreateSessionViewStateArgs): SessionViewState {
+export function createSessionViewState(
+	args: CreateSessionViewStateArgs,
+): SessionViewState {
 	let activeView = $state<SessionActiveView>({ kind: "chat" });
 	let selectedThreadId = $state<string | null>(null);
 	let selectedFile = $state("");
@@ -104,7 +120,9 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 	let pendingWorkspaceOption = $state("new-workspace");
 	let pendingWorkspaceBranch = $state("");
 	let pendingWorkspaceSourceInput = $state("");
-	let pendingWorkspaceValidation = $state<WorkspaceValidationResult | null>(null);
+	let pendingWorkspaceValidation = $state<WorkspaceValidationResult | null>(
+		null,
+	);
 	let pendingWorkspaceValidating = $state(false);
 	let pendingWorkspaceSetupMessage = $state<string | null>(null);
 
@@ -261,24 +279,40 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 			return pendingWorkspaceSetupMessage;
 		},
 		get pendingWorkspaceRequiresSourceInput() {
-			return pendingWorkspaceOption === "local-directory" || pendingWorkspaceOption === "git-repo";
+			return (
+				pendingWorkspaceOption === "local-directory" ||
+				pendingWorkspaceOption === "git-repo"
+			);
 		},
 		get pendingWorkspaceSourceType() {
 			return pendingWorkspaceOption === "git-repo" ? "git" : "local";
 		},
 		get pendingWorkspaceSourceIsValid() {
-			if (!(pendingWorkspaceOption === "local-directory" || pendingWorkspaceOption === "git-repo")) {
+			if (
+				!(
+					pendingWorkspaceOption === "local-directory" ||
+					pendingWorkspaceOption === "git-repo"
+				)
+			) {
 				return true;
 			}
 
-			if (pendingWorkspaceSourceInput.trim().length === 0 || pendingWorkspaceValidating) {
+			if (
+				pendingWorkspaceSourceInput.trim().length === 0 ||
+				pendingWorkspaceValidating
+			) {
 				return false;
 			}
 
 			return pendingWorkspaceValidation?.valid ?? false;
 		},
 		get pendingWorkspaceValidationMessage() {
-			if (!(pendingWorkspaceOption === "local-directory" || pendingWorkspaceOption === "git-repo")) {
+			if (
+				!(
+					pendingWorkspaceOption === "local-directory" ||
+					pendingWorkspaceOption === "git-repo"
+				)
+			) {
 				return null;
 			}
 
@@ -295,7 +329,9 @@ export function createSessionViewState(args: CreateSessionViewStateArgs): Sessio
 			}
 
 			if (!pendingWorkspaceValidation.valid) {
-				return pendingWorkspaceValidation.error || "Enter a valid workspace path.";
+				return (
+					pendingWorkspaceValidation.error || "Enter a valid workspace path."
+				);
 			}
 
 			switch (pendingWorkspaceValidation.classification) {

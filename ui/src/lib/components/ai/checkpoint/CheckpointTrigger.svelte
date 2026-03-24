@@ -19,6 +19,13 @@
 	}: Props = $props();
 </script>
 
-<Button class={cn(className)} {size} type="button" {variant} title={tooltip} {...restProps}>
+<Button
+	class={cn(className)}
+	{size}
+	type="button"
+	{variant}
+	title={tooltip}
+	{...restProps}
+>
 	{@render children?.()}
 </Button>

@@ -36,7 +36,9 @@
 
 {#if isOpen}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-		<div class="relative mx-4 flex w-full max-w-md flex-col gap-4 rounded-xl border bg-background p-6 shadow-lg">
+		<div
+			class="relative mx-4 flex w-full max-w-md flex-col gap-4 rounded-xl border bg-background p-6 shadow-lg"
+		>
 			<button
 				class="absolute right-4 top-4 rounded-md p-1 text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
 				onclick={onClose}
@@ -56,7 +58,9 @@
 				</p>
 			</div>
 
-			<div class="break-all rounded-md bg-muted p-3 font-mono text-sm">{url}</div>
+			<div class="break-all rounded-md bg-muted p-3 font-mono text-sm">
+				{url}
+			</div>
 
 			<div class="flex gap-2">
 				<Button class="flex-1" onclick={handleCopyLink} variant="outline">

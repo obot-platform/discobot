@@ -49,7 +49,11 @@
 	}
 
 	async function loadDevicesWithPermission() {
-		if (typeof navigator === "undefined" || !navigator.mediaDevices || loading) {
+		if (
+			typeof navigator === "undefined" ||
+			!navigator.mediaDevices ||
+			loading
+		) {
 			return;
 		}
 		try {
@@ -133,6 +137,6 @@
 	setMicSelectorContext(micSelector);
 </script>
 
-<Popover bind:open={open} {...restProps}>
+<Popover bind:open {...restProps}>
 	{@render children?.()}
 </Popover>

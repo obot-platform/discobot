@@ -1,7 +1,11 @@
 <script lang="ts">
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import type { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
-	import type { ButtonProps, ButtonSize, ButtonVariant } from "$lib/components/ui/button";
+	import type {
+		ButtonProps,
+		ButtonSize,
+		ButtonVariant,
+	} from "$lib/components/ui/button";
 	import { Button } from "$lib/components/ui/button";
 	import {
 		DropdownMenu,
@@ -42,7 +46,9 @@
 		sideOffset = 8,
 	}: Props = $props();
 
-	const iconClass = $derived(size === "xs" || size === "icon-xs" ? "size-3.5" : "size-4");
+	const iconClass = $derived(
+		size === "xs" || size === "icon-xs" ? "size-3.5" : "size-4",
+	);
 	const useSharedOutlineBorder = $derived(variant === "outline");
 	const groupClass = $derived(
 		useSharedOutlineBorder

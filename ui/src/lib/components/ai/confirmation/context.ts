@@ -1,14 +1,18 @@
 import { getContext, setContext } from "svelte";
 import type { ToolApproval, ToolState } from "$lib/components/ai/types";
 
-const CONFIRMATION_CONTEXT_KEY = Symbol.for("discobot-ui-ai-confirmation-context");
+const CONFIRMATION_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-confirmation-context",
+);
 
 export type ConfirmationContextValue = {
 	approval: ToolApproval;
 	state: ToolState;
 };
 
-export function setConfirmationContext(value: ConfirmationContextValue): ConfirmationContextValue {
+export function setConfirmationContext(
+	value: ConfirmationContextValue,
+): ConfirmationContextValue {
 	return setContext(CONFIRMATION_CONTEXT_KEY, value);
 }
 

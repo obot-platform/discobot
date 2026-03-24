@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { Collapsible, CollapsibleContent } from "$lib/components/ui/collapsible";
+	import {
+		Collapsible,
+		CollapsibleContent,
+	} from "$lib/components/ui/collapsible";
 	import { cn } from "$lib/utils";
 	import { useChainOfThoughtContext } from "./context";
 

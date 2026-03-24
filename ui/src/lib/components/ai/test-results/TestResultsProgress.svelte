@@ -29,11 +29,19 @@
 			{@render children()}
 		{:else}
 			<div class="flex h-2 overflow-hidden rounded-full bg-muted">
-				<div class="bg-green-500 transition-all" style={`width:${passedPercent}%`}></div>
-				<div class="bg-red-500 transition-all" style={`width:${failedPercent}%`}></div>
+				<div
+					class="bg-green-500 transition-all"
+					style={`width:${passedPercent}%`}
+				></div>
+				<div
+					class="bg-red-500 transition-all"
+					style={`width:${failedPercent}%`}
+				></div>
 			</div>
 			<div class="flex justify-between text-muted-foreground text-xs">
-				<span>{testResults.summary.passed}/{testResults.summary.total} tests passed</span>
+				<span
+					>{testResults.summary.passed}/{testResults.summary.total} tests passed</span
+				>
 				<span>{passedPercent.toFixed(0)}%</span>
 			</div>
 		{/if}

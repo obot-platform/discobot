@@ -17,9 +17,15 @@ test("getReconciledSelectedSessionId prefers an explicit valid session", () => {
 });
 
 test("getReconciledSelectedSessionId keeps the current valid selection", () => {
-	assert.equal(getReconciledSelectedSessionId(sessions, "session-1"), "session-1");
+	assert.equal(
+		getReconciledSelectedSessionId(sessions, "session-1"),
+		"session-1",
+	);
 });
 
 test("getReconciledSelectedSessionId clears invalid selections", () => {
-	assert.equal(getReconciledSelectedSessionId(sessions, "missing-session"), null);
+	assert.equal(
+		getReconciledSelectedSessionId(sessions, "missing-session"),
+		null,
+	);
 });

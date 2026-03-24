@@ -11,7 +11,9 @@
 	let { class: className, oninput, ...restProps }: Props = $props();
 	const player = useAudioPlayerContext();
 
-	function handleInput(event: Event & { currentTarget: EventTarget & HTMLInputElement }) {
+	function handleInput(
+		event: Event & { currentTarget: EventTarget & HTMLInputElement },
+	) {
 		oninput?.(event);
 		if (event.defaultPrevented) {
 			return;

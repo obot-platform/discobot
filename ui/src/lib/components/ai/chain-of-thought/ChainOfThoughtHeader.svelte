@@ -1,7 +1,10 @@
 <script lang="ts">
 	import BrainIcon from "@lucide/svelte/icons/brain";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
-	import { Collapsible, CollapsibleTrigger } from "$lib/components/ui/collapsible";
+	import {
+		Collapsible,
+		CollapsibleTrigger,
+	} from "$lib/components/ui/collapsible";
 	import { cn } from "$lib/utils";
 	import { useChainOfThoughtContext } from "./context";
 
@@ -14,7 +17,10 @@
 	const chainOfThought = useChainOfThoughtContext();
 </script>
 
-<Collapsible open={chainOfThought.isOpen} onOpenChange={chainOfThought.setIsOpen}>
+<Collapsible
+	open={chainOfThought.isOpen}
+	onOpenChange={chainOfThought.setIsOpen}
+>
 	<CollapsibleTrigger
 		class={cn(
 			"flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",

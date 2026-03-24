@@ -15,8 +15,13 @@
 		children?: () => any;
 	};
 
-	let { data, onRemove, class: className, children, ...restProps }: Props =
-		$props();
+	let {
+		data,
+		onRemove,
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 
 	const attachments = useAttachmentsContext();
 	const mediaCategory = $derived.by(() => getMediaCategory(data));

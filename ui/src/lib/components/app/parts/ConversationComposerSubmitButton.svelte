@@ -18,8 +18,12 @@
 
 	let hovered = $state(false);
 
-	const isGenerating = $derived.by(() => status === "submitted" || status === "streaming");
-	const showPlusIcon = $derived.by(() => hovered && inputEmpty && !isGenerating);
+	const isGenerating = $derived.by(
+		() => status === "submitted" || status === "streaming",
+	);
+	const showPlusIcon = $derived.by(
+		() => hovered && inputEmpty && !isGenerating,
+	);
 </script>
 
 <InputGroupButton

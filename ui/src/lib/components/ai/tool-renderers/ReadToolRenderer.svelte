@@ -1,7 +1,11 @@
 <script lang="ts">
 	import EyeIcon from "@lucide/svelte/icons/eye";
 	import FileTextIcon from "@lucide/svelte/icons/file-text";
-	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
+	import {
+		ToolContent,
+		ToolHeaderControls,
+		ToolHeaderStatus,
+	} from "$lib/components/ai/tool";
 	import {
 		type ReadToolOutput,
 		validateReadInput,
@@ -15,7 +19,8 @@
 
 	const isStreaming = $derived.by(
 		() =>
-			toolPart.state === "input-streaming" || toolPart.state === "input-available",
+			toolPart.state === "input-streaming" ||
+			toolPart.state === "input-available",
 	);
 	const inputValidation = $derived.by(() => validateReadInput(toolPart.input));
 	const validInput = $derived.by(() =>
@@ -25,10 +30,12 @@
 		toolPart.output ? validateReadOutput(toolPart.output) : null,
 	);
 	const validOutput = $derived.by(() =>
-		outputValidation?.success ? (outputValidation.data as ReadToolOutput) : undefined,
+		outputValidation?.success
+			? (outputValidation.data as ReadToolOutput)
+			: undefined,
 	);
-	const content = $derived.by(() =>
-		validOutput?.content || validOutput?.lines?.join("\n") || "",
+	const content = $derived.by(
+		() => validOutput?.content || validOutput?.lines?.join("\n") || "",
 	);
 	const parsedContentLines = $derived.by(() => {
 		if (!content) {
@@ -58,7 +65,9 @@
 			? (parsed as Array<{ lineNumber: string; text: string }>)
 			: [];
 	});
-	const hasParsedContentLines = $derived.by(() => parsedContentLines.length > 0);
+	const hasParsedContentLines = $derived.by(
+		() => parsedContentLines.length > 0,
+	);
 	const fileName = $derived.by(() => {
 		if (!validInput?.file_path) {
 			return undefined;
@@ -83,16 +92,23 @@
 <ToolContent>
 	{#if !toolPart.input || typeof toolPart.input !== "object"}
 		<div class="p-4 pt-3 text-muted-foreground text-sm">
-			{isStreaming ? "Loading file details..." : "File details are unavailable."}
+			{isStreaming
+				? "Loading file details..."
+				: "File details are unavailable."}
 		</div>
 	{:else if !inputValidation.success || !validInput?.file_path}
 		<div class="space-y-3 p-4 pt-3">
 			<p class="text-muted-foreground text-sm">
-				{isStreaming ? "Loading file details..." : "Could not parse file details."}
+				{isStreaming
+					? "Loading file details..."
+					: "Could not parse file details."}
 			</p>
 			{#if rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>
@@ -100,60 +116,96 @@
 		<div class="space-y-4 p-4 pt-3">
 			<div class="space-y-2">
 				<div class="flex flex-wrap items-center gap-2 text-sm">
-					<code class="rounded bg-muted px-2 py-1 font-mono text-foreground">{fileName}</code>
+					<code class="rounded bg-muted px-2 py-1 font-mono text-foreground"
+						>{fileName}</code
+					>
 					{#if validInput.offset !== undefined}
-						<span class="text-muted-foreground text-xs">offset: {validInput.offset}</span>
+						<span class="text-muted-foreground text-xs"
+							>offset: {validInput.offset}</span
+						>
 					{/if}
 					{#if validInput.limit !== undefined}
-						<span class="text-muted-foreground text-xs">limit: {validInput.limit}</span>
+						<span class="text-muted-foreground text-xs"
+							>limit: {validInput.limit}</span
+						>
 					{/if}
 					{#if validInput.pages}
-						<span class="text-muted-foreground text-xs">pages: {validInput.pages}</span>
+						<span class="text-muted-foreground text-xs"
+							>pages: {validInput.pages}</span
+						>
 					{/if}
 				</div>
-				<div class="font-mono text-muted-foreground text-xs">{shortenPath(validInput.file_path)}</div>
+				<div class="font-mono text-muted-foreground text-xs">
+					{shortenPath(validInput.file_path)}
+				</div>
 			</div>
 
 			{#if content}
 				<div class="space-y-2">
 					<div class="flex items-center gap-2">
 						<EyeIcon class="size-4 text-muted-foreground" />
-						<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Content</h4>
-						<span class="text-muted-foreground text-xs">{countLines(content)} lines</span>
+						<h4
+							class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+						>
+							Content
+						</h4>
+						<span class="text-muted-foreground text-xs"
+							>{countLines(content)} lines</span
+						>
 					</div>
 					<div class="rounded-md border bg-muted/30">
 						{#if hasParsedContentLines}
-							<div class="overflow-x-auto p-3 font-mono text-xs text-foreground">
+							<div
+								class="overflow-x-auto p-3 font-mono text-xs text-foreground"
+							>
 								<div class="grid min-w-max grid-cols-[auto_1fr] gap-x-3">
 									{#each parsedContentLines as line}
-										<div class="select-none text-muted-foreground/60 text-right">{line.lineNumber}</div>
-										<div class="whitespace-pre-wrap break-words">{line.text || " "}</div>
+										<div
+											class="select-none text-muted-foreground/60 text-right"
+										>
+											{line.lineNumber}
+										</div>
+										<div class="whitespace-pre-wrap break-words">
+											{line.text || " "}
+										</div>
 									{/each}
 								</div>
 							</div>
 						{:else}
-							<pre class="overflow-x-auto p-3 font-mono text-xs text-foreground"><code>{content}</code></pre>
+							<pre
+								class="overflow-x-auto p-3 font-mono text-xs text-foreground"><code
+									>{content}</code
+								></pre>
 						{/if}
 					</div>
 				</div>
 			{:else if outputValidation?.success && !readError}
-				<div class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-sm">
+				<div
+					class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-sm"
+				>
 					Read completed without file content.
 				</div>
 			{/if}
 
 			{#if readError}
-				<div class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm">
+				<div
+					class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm"
+				>
 					{readError}
 				</div>
 			{/if}
 
 			{#if outputValidation && !outputValidation.success && rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<h5 class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+					<h5
+						class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide"
+					>
 						Unparsed output
 					</h5>
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>

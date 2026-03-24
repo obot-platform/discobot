@@ -34,15 +34,17 @@
 	});
 
 	const plugins = $derived.by(() =>
-		mermaidPlugin ? { code, math, cjk, mermaid: mermaidPlugin } : { code, math, cjk },
+		mermaidPlugin
+			? { code, math, cjk, mermaid: mermaidPlugin }
+			: { code, math, cjk },
 	);
 </script>
 
 <div class={cn("size-full break-words", className)} {...restProps}>
 	{#if text !== undefined}
 		<ReactStreamdown
-			text={text}
-			plugins={plugins}
+			{text}
+			{plugins}
 			class="size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 		/>
 	{:else}

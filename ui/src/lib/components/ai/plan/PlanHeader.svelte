@@ -10,6 +10,10 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<CardHeader class={cn("flex items-start justify-between", className)} data-slot="plan-header" {...restProps}>
+<CardHeader
+	class={cn("flex items-start justify-between", className)}
+	data-slot="plan-header"
+	{...restProps}
+>
 	{@render children?.()}
 </CardHeader>

@@ -9,7 +9,9 @@
 	};
 
 	let { summary, class: className, children, ...restProps }: Props = $props();
-	const testResults = $state({ summary: undefined as TestResultsSummary | undefined });
+	const testResults = $state({
+		summary: undefined as TestResultsSummary | undefined,
+	});
 	$effect(() => {
 		testResults.summary = summary;
 	});

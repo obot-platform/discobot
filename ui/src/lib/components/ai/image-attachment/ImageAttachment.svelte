@@ -47,7 +47,9 @@
 			return;
 		}
 
-		const mimeType = metadata.match(/^data:([^;]+);base64$/)?.[1] ?? "application/octet-stream";
+		const mimeType =
+			metadata.match(/^data:([^;]+);base64$/)?.[1] ??
+			"application/octet-stream";
 		await downloadFile({
 			filename,
 			content: decodeBase64(content),
@@ -129,7 +131,11 @@
 	});
 </script>
 
-<svelte:window bind:innerWidth bind:innerHeight onkeydown={handleWindowKeydown} />
+<svelte:window
+	bind:innerWidth
+	bind:innerHeight
+	onkeydown={handleWindowKeydown}
+/>
 
 <button
 	class={cn(
@@ -139,9 +145,13 @@
 	onclick={open}
 	type="button"
 >
-	<img alt={filename} class="h-auto max-w-full" src={src} title={filename} />
-	<div class="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20">
-		<Maximize2Icon class="size-6 opacity-0 transition-opacity group-hover:opacity-100 text-white drop-shadow-lg" />
+	<img alt={filename} class="h-auto max-w-full" {src} title={filename} />
+	<div
+		class="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20"
+	>
+		<Maximize2Icon
+			class="size-6 opacity-0 transition-opacity group-hover:opacity-100 text-white drop-shadow-lg"
+		/>
 	</div>
 </button>
 
@@ -211,10 +221,14 @@
 		</div>
 
 		<div class="fixed bottom-4 left-4 z-[102] flex items-center gap-3">
-			<div class="rounded-md bg-white/10 px-3 py-1.5 text-sm text-white/70 backdrop-blur-sm">
+			<div
+				class="rounded-md bg-white/10 px-3 py-1.5 text-sm text-white/70 backdrop-blur-sm"
+			>
 				{filename}
 			</div>
-			<div class="rounded-md bg-white/10 px-3 py-1.5 text-white/50 text-xs backdrop-blur-sm">
+			<div
+				class="rounded-md bg-white/10 px-3 py-1.5 text-white/50 text-xs backdrop-blur-sm"
+			>
 				Scroll to zoom
 			</div>
 		</div>
@@ -228,8 +242,10 @@
 				class="object-contain"
 				draggable="false"
 				onload={(event) =>
-					handleImageLoad(event.currentTarget as EventTarget & HTMLImageElement)}
-				src={src}
+					handleImageLoad(
+						event.currentTarget as EventTarget & HTMLImageElement,
+					)}
+				{src}
 				style={`width: ${displaySize.width}; height: ${displaySize.height};`}
 				title={filename}
 			/>

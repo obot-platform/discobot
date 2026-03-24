@@ -109,13 +109,17 @@ const featuredNames = new Set([
 ]);
 
 const descriptions: Partial<Record<string, string>> = {
-	accordion: "Reveal stacked content sections without leaving the current view.",
-	"alert-dialog": "Ask for confirmation before destructive or high-friction actions.",
+	accordion:
+		"Reveal stacked content sections without leaving the current view.",
+	"alert-dialog":
+		"Ask for confirmation before destructive or high-friction actions.",
 	alert: "Present inline status, warnings, and contextual feedback.",
-	"aspect-ratio": "Lock media containers to a predictable width-to-height ratio.",
+	"aspect-ratio":
+		"Lock media containers to a predictable width-to-height ratio.",
 	avatar: "Display a user or workspace identity image with a fallback.",
 	badge: "Attach a compact label for state, tags, or counts.",
-	breadcrumb: "Show the current location within a nested information hierarchy.",
+	breadcrumb:
+		"Show the current location within a nested information hierarchy.",
 	button: "Trigger a primary, secondary, or contextual action.",
 	"button-group": "Keep related actions visually and semantically grouped.",
 	calendar: "Pick a single date from a visual calendar view.",
@@ -125,8 +129,10 @@ const descriptions: Partial<Record<string, string>> = {
 	checkbox: "Capture boolean choices or multi-select options.",
 	collapsible: "Expand or collapse a region while staying in the same layout.",
 	command: "Create a command palette or searchable action launcher.",
-	"context-menu": "Expose secondary actions at the cursor or long-press position.",
-	"data-table": "Compose sortable, filterable table views from structured data.",
+	"context-menu":
+		"Expose secondary actions at the cursor or long-press position.",
+	"data-table":
+		"Compose sortable, filterable table views from structured data.",
 	dialog: "Open a centered modal workflow that blocks the rest of the app.",
 	drawer: "Slide a panel from the edge for mobile-first or transient tasks.",
 	"dropdown-menu": "Offer a compact menu of contextual actions.",
@@ -142,9 +148,11 @@ const descriptions: Partial<Record<string, string>> = {
 	label: "Describe an associated form control accessibly.",
 	menubar: "Provide app-like menu bars with nested items and shortcuts.",
 	"native-select": "Use the platform select element with consistent styling.",
-	"navigation-menu": "Build top-level product navigation with expandable content.",
+	"navigation-menu":
+		"Build top-level product navigation with expandable content.",
 	pagination: "Move between pages of data or content.",
-	popover: "Anchor a floating panel to a trigger without taking over the screen.",
+	popover:
+		"Anchor a floating panel to a trigger without taking over the screen.",
 	progress: "Communicate completion progress for an ongoing task.",
 	"radio-group": "Choose one option from a small exclusive set.",
 	"range-calendar": "Pick a date range from a calendar interface.",
@@ -236,7 +244,11 @@ function categorizeComponent(name: string): UiComponentCategory {
 		return "data";
 	}
 
-	if (["alert", "empty", "progress", "skeleton", "sonner", "spinner"].includes(name)) {
+	if (
+		["alert", "empty", "progress", "skeleton", "sonner", "spinner"].includes(
+			name,
+		)
+	) {
 		return "feedback";
 	}
 
@@ -286,9 +298,13 @@ export const uiComponentCatalog: UiComponentCatalogEntry[] = componentNames
 	})
 	.sort((left, right) => {
 		return (
-			categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category) ||
+			categoryOrder.indexOf(left.category) -
+				categoryOrder.indexOf(right.category) ||
 			left.label.localeCompare(right.label)
 		);
 	});
 
-export const uiComponentFilters: UiComponentFilter[] = ["all", ...categoryOrder];
+export const uiComponentFilters: UiComponentFilter[] = [
+	"all",
+	...categoryOrder,
+];

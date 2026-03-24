@@ -92,7 +92,10 @@
 </script>
 
 <Collapsible
-	class={cn("group group/reasoning not-prose mb-4 w-full rounded-md", className)}
+	class={cn(
+		"group group/reasoning not-prose mb-4 w-full rounded-md",
+		className,
+	)}
 	bind:open
 	{...restProps}
 >

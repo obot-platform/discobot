@@ -8,10 +8,19 @@
 		children?: () => any;
 	};
 
-	let { name, version, class: className, children, ...restProps }: Props = $props();
+	let {
+		name,
+		version,
+		class: className,
+		children,
+		...restProps
+	}: Props = $props();
 </script>
 
-<div class={cn("flex items-center justify-between text-sm", className)} {...restProps}>
+<div
+	class={cn("flex items-center justify-between text-sm", className)}
+	{...restProps}
+>
 	{#if children}
 		{@render children()}
 	{:else}

@@ -18,7 +18,10 @@ export function createSessionServicesDomain(
 	$effect(() => {
 		if (
 			typeof window === "undefined" ||
-			!rawServices.some((service) => service.status === "starting" || service.status === "stopping")
+			!rawServices.some(
+				(service) =>
+					service.status === "starting" || service.status === "stopping",
+			)
 		) {
 			return;
 		}
@@ -42,7 +45,9 @@ export function createSessionServicesDomain(
 	}
 
 	const list = $derived(rawServices.map(toServiceItem));
-	const active = $derived(list.find((service) => service.id === args.getActiveServiceId()) ?? null);
+	const active = $derived(
+		list.find((service) => service.id === args.getActiveServiceId()) ?? null,
+	);
 
 	return {
 		get list() {

@@ -11,10 +11,19 @@
 		children?: () => any;
 	};
 
-	let { class: className, approval, state: toolState, children, ...restProps }: Props = $props();
+	let {
+		class: className,
+		approval,
+		state: toolState,
+		children,
+		...restProps
+	}: Props = $props();
 
 	const shouldRender = $derived.by(
-		() => !!approval && toolState !== "input-streaming" && toolState !== "input-available",
+		() =>
+			!!approval &&
+			toolState !== "input-streaming" &&
+			toolState !== "input-available",
 	);
 
 	const confirmation = $state({

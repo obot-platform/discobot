@@ -403,10 +403,13 @@ class ApiClient {
 	}
 
 	async startChat(data: StartChatRequest): Promise<StartChatResponse> {
-		return this.fetch<StartChatResponse>(`/sessions/${data.sessionId}/threads/${data.threadId}/chat`, {
-			method: "POST",
-			body: JSON.stringify(data),
-		});
+		return this.fetch<StartChatResponse>(
+			`/sessions/${data.sessionId}/threads/${data.threadId}/chat`,
+			{
+				method: "POST",
+				body: JSON.stringify(data),
+			},
+		);
 	}
 
 	getThreadChatStreamUrl(
@@ -501,7 +504,10 @@ class ApiClient {
 		);
 	}
 
-	async deleteThread(sessionId: string, threadId: string): Promise<{ success: boolean }> {
+	async deleteThread(
+		sessionId: string,
+		threadId: string,
+	): Promise<{ success: boolean }> {
 		return this.fetch<{ success: boolean }>(
 			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}`,
 			{
@@ -555,7 +561,9 @@ class ApiClient {
 	}
 
 	async getCredentialTypes(): Promise<{ credentialTypes: CredentialType[] }> {
-		return this.fetch<{ credentialTypes: CredentialType[] }>("/credentials/types");
+		return this.fetch<{ credentialTypes: CredentialType[] }>(
+			"/credentials/types",
+		);
 	}
 
 	async createCredential(

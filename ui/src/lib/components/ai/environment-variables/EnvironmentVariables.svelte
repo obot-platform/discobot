@@ -27,7 +27,9 @@
 	});
 
 	const isControlled = $derived(controlledShowValues !== undefined);
-	const showValues = $derived(isControlled ? !!controlledShowValues : internalShowValues);
+	const showValues = $derived(
+		isControlled ? !!controlledShowValues : internalShowValues,
+	);
 
 	const contextValue = $state({
 		showValues: false,

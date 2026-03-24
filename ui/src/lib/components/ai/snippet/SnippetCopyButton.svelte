@@ -12,7 +12,13 @@
 		children?: () => any;
 	};
 
-	let { onCopy, onError, timeout = 2000, children, ...restProps }: Props = $props();
+	let {
+		onCopy,
+		onError,
+		timeout = 2000,
+		children,
+		...restProps
+	}: Props = $props();
 	let isCopied = $state(false);
 	const snippet = useSnippetContext();
 	let timeoutRef = $state<ReturnType<typeof setTimeout> | null>(null);

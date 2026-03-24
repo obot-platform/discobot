@@ -7,7 +7,11 @@ import { createSessionFilesDomain } from "$lib/session/domains/session-files.sve
 import { createSessionHooksDomain } from "$lib/session/domains/session-hooks.svelte";
 import { createSessionServicesDomain } from "$lib/session/domains/session-services.svelte";
 import { createSessionThreadsDomain } from "$lib/session/domains/session-threads.svelte";
-import type { SessionContextValue, SessionStores, ThreadContextValue } from "$lib/session/session-context.types";
+import type {
+	SessionContextValue,
+	SessionStores,
+	ThreadContextValue,
+} from "$lib/session/session-context.types";
 import { DESKTOP_SERVICE_ID } from "$lib/shell-types";
 import { createSessionViewState } from "$lib/session/view/create-session-view-state.svelte";
 import { EnvSetStore } from "$lib/store/env-sets.store.svelte";
@@ -144,9 +148,13 @@ export function setSessionContext(): SessionContextValue {
 }
 
 export function useSessionContext(): SessionContextValue {
-	const context = getContext<SessionContextValue | undefined>(SESSION_CONTEXT_KEY);
+	const context = getContext<SessionContextValue | undefined>(
+		SESSION_CONTEXT_KEY,
+	);
 	if (!context) {
-		throw new Error("useSessionContext must be used within SessionContext provider");
+		throw new Error(
+			"useSessionContext must be used within SessionContext provider",
+		);
 	}
 	return context;
 }

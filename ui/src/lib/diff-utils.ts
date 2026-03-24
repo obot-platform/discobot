@@ -43,7 +43,8 @@ function buildLcsMatrix(left: string[], right: string[]): number[][] {
 	for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
 		for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
 			if (left[leftIndex - 1] === right[rightIndex - 1]) {
-				matrix[leftIndex][rightIndex] = matrix[leftIndex - 1][rightIndex - 1] + 1;
+				matrix[leftIndex][rightIndex] =
+					matrix[leftIndex - 1][rightIndex - 1] + 1;
 				continue;
 			}
 
@@ -68,7 +69,11 @@ function getCommonPrefixLength(left: string, right: string): number {
 	return index;
 }
 
-function getCommonSuffixLength(left: string, right: string, prefixLength: number): number {
+function getCommonSuffixLength(
+	left: string,
+	right: string,
+	prefixLength: number,
+): number {
 	const maxLength = Math.min(left.length, right.length) - prefixLength;
 	let index = 0;
 
@@ -88,7 +93,8 @@ function buildSegments(
 	suffixLength: number,
 ): EditDiffSegment[] {
 	const segments: EditDiffSegment[] = [];
-	const suffixStart = suffixLength > 0 ? value.length - suffixLength : value.length;
+	const suffixStart =
+		suffixLength > 0 ? value.length - suffixLength : value.length;
 	const prefix = value.slice(0, prefixLength);
 	const changed = value.slice(prefixLength, suffixStart);
 	const suffix = value.slice(suffixStart);
@@ -123,7 +129,10 @@ function buildChangedLineSegments(
 	};
 }
 
-export function buildEditDiffRows(oldContent: string, newContent: string): EditDiffRow[] {
+export function buildEditDiffRows(
+	oldContent: string,
+	newContent: string,
+): EditDiffRow[] {
 	const oldLines = toLines(oldContent);
 	const newLines = toLines(newContent);
 	const matrix = buildLcsMatrix(oldLines, newLines);
@@ -242,8 +251,9 @@ export function buildEditDiffRows(oldContent: string, newContent: string): EditD
 					kind: "remove",
 					oldLineNumber: removedOperation.oldLineNumber,
 					newLineNumber: null,
-					segments:
-						pairedSegments?.left ?? [{ text: removedOperation.line, changed: true }],
+					segments: pairedSegments?.left ?? [
+						{ text: removedOperation.line, changed: true },
+					],
 				});
 			}
 
@@ -252,8 +262,9 @@ export function buildEditDiffRows(oldContent: string, newContent: string): EditD
 					kind: "add",
 					oldLineNumber: null,
 					newLineNumber: addedOperation.newLineNumber,
-					segments:
-						pairedSegments?.right ?? [{ text: addedOperation.line, changed: true }],
+					segments: pairedSegments?.right ?? [
+						{ text: addedOperation.line, changed: true },
+					],
 				});
 			}
 		}
@@ -344,7 +355,10 @@ export function parseUnifiedDiff(patch: string): ParsedDiffHunk[] {
 	return hunks;
 }
 
-export function reconstructOriginalFromPatch(currentContent: string, patch: string): string {
+export function reconstructOriginalFromPatch(
+	currentContent: string,
+	patch: string,
+): string {
 	const hunks = parseUnifiedDiff(patch);
 	if (hunks.length === 0) {
 		return currentContent;
@@ -398,7 +412,10 @@ export function countDiffLinesFast(patch: string): number {
 			inHunk = true;
 			continue;
 		}
-		if (inHunk && (line.startsWith(" ") || line.startsWith("+") || line.startsWith("-"))) {
+		if (
+			inHunk &&
+			(line.startsWith(" ") || line.startsWith("+") || line.startsWith("-"))
+		) {
 			count += 1;
 		}
 	}

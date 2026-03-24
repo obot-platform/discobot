@@ -1,6 +1,10 @@
 <script lang="ts">
 	import ListTodoIcon from "@lucide/svelte/icons/list-todo";
-	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
+	import {
+		ToolContent,
+		ToolHeaderControls,
+		ToolHeaderStatus,
+	} from "$lib/components/ai/tool";
 	import {
 		type TodoWriteToolInput,
 		type TodoWriteToolOutput,
@@ -15,7 +19,8 @@
 
 	const isStreaming = $derived.by(
 		() =>
-			toolPart.state === "input-streaming" || toolPart.state === "input-available",
+			toolPart.state === "input-streaming" ||
+			toolPart.state === "input-available",
 	);
 	const inputValidation = $derived.by(() =>
 		validateTodoWriteInput(toolPart.input),
@@ -54,7 +59,11 @@
 	<CollapsibleTrigger class="flex min-w-0 flex-1 items-center gap-2 text-left">
 		<ListTodoIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.todos ? `${validInput.todos.length} todos` : isStreaming ? "Loading todos..." : "Todo write"}
+			{validInput?.todos
+				? `${validInput.todos.length} todos`
+				: isStreaming
+					? "Loading todos..."
+					: "Todo write"}
 		</span>
 		<ToolHeaderStatus state={toolPart.state} />
 	</CollapsibleTrigger>
@@ -63,13 +72,20 @@
 
 <ToolContent>
 	{#if !toolPart.input || typeof toolPart.input !== "object"}
-		<div class="p-4 pt-3 text-muted-foreground text-sm">{isStreaming ? "Loading todos..." : "Todo details are unavailable."}</div>
+		<div class="p-4 pt-3 text-muted-foreground text-sm">
+			{isStreaming ? "Loading todos..." : "Todo details are unavailable."}
+		</div>
 	{:else if !inputValidation.success || !validInput?.todos}
 		<div class="space-y-3 p-4 pt-3">
-			<p class="text-muted-foreground text-sm">{isStreaming ? "Loading todos..." : "Could not parse todo details."}</p>
+			<p class="text-muted-foreground text-sm">
+				{isStreaming ? "Loading todos..." : "Could not parse todo details."}
+			</p>
 			{#if rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>
@@ -90,9 +106,19 @@
 			<ul class="space-y-1 rounded-md border bg-muted/20 p-3">
 				{#each validInput.todos as todo}
 					<li class="flex items-start gap-2 text-xs">
-						<span class="mt-0.5">{todo.status === "completed" ? "✓" : todo.status === "in_progress" ? "•" : "○"}</span>
+						<span class="mt-0.5"
+							>{todo.status === "completed"
+								? "✓"
+								: todo.status === "in_progress"
+									? "•"
+									: "○"}</span
+						>
 						<div>
-							<div class={todo.status === "completed" ? "line-through text-muted-foreground" : ""}>
+							<div
+								class={todo.status === "completed"
+									? "line-through text-muted-foreground"
+									: ""}
+							>
 								{todo.content || "Untitled task"}
 							</div>
 							{#if todo.activeForm}
@@ -108,17 +134,24 @@
 			{/if}
 
 			{#if todoError}
-				<div class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm">
+				<div
+					class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm"
+				>
 					{todoError}
 				</div>
 			{/if}
 
 			{#if outputValidation && !outputValidation.success && rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<h5 class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+					<h5
+						class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide"
+					>
 						Unparsed output
 					</h5>
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>

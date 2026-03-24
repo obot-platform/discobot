@@ -29,6 +29,9 @@
 	{#if children}
 		{@render children()}
 	{:else}
-		<pre class="whitespace-pre-wrap break-words">{terminal.output}{#if terminal.isStreaming}<span class="ml-0.5 inline-block h-4 w-2 animate-pulse bg-zinc-100"></span>{/if}</pre>
+		<pre
+			class="whitespace-pre-wrap break-words">{terminal.output}{#if terminal.isStreaming}<span
+					class="ml-0.5 inline-block h-4 w-2 animate-pulse bg-zinc-100"
+				></span>{/if}</pre>
 	{/if}
 </div>

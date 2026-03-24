@@ -1,7 +1,9 @@
 import { getContext, setContext } from "svelte";
 import type { ParsedStackTrace } from "./parse";
 
-const STACK_TRACE_CONTEXT_KEY = Symbol.for("discobot-ui-ai-stack-trace-context");
+const STACK_TRACE_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-stack-trace-context",
+);
 
 export type StackTraceContextValue = {
 	trace: ParsedStackTrace;

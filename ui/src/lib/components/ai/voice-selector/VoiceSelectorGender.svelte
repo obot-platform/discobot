@@ -34,7 +34,9 @@
 		intersex: VenusAndMarsIcon,
 	};
 
-	const Icon = $derived.by(() => (value ? iconByGender[value] : CircleSmallIcon));
+	const Icon = $derived.by(() =>
+		value ? iconByGender[value] : CircleSmallIcon,
+	);
 </script>
 
 <span class={cn("text-muted-foreground text-xs", className)} {...restProps}>

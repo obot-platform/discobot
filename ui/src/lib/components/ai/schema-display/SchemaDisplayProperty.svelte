@@ -1,7 +1,11 @@
 <script lang="ts">
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 	import { Badge } from "$lib/components/ui/badge";
-	import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "$lib/components/ui/collapsible";
+	import {
+		Collapsible,
+		CollapsibleContent,
+		CollapsibleTrigger,
+	} from "$lib/components/ui/collapsible";
 	import { cn } from "$lib/utils";
 	import type { SchemaProperty } from "./context";
 	import SchemaDisplayProperty from "./SchemaDisplayProperty.svelte";
@@ -40,17 +44,25 @@
 			)}
 			style={`padding-left:${paddingLeft}px`}
 		>
-			<ChevronRightIcon class="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+			<ChevronRightIcon
+				class="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
+			/>
 			<span class="font-mono text-sm">{name}</span>
 			<Badge class="text-xs" variant="outline">{type}</Badge>
 			{#if required}
-				<Badge class="bg-red-100 text-red-700 text-xs dark:bg-red-900/30 dark:text-red-400" variant="secondary">
+				<Badge
+					class="bg-red-100 text-red-700 text-xs dark:bg-red-900/30 dark:text-red-400"
+					variant="secondary"
+				>
 					required
 				</Badge>
 			{/if}
 		</CollapsibleTrigger>
 		{#if description}
-			<p class="pb-2 text-muted-foreground text-sm" style={`padding-left:${paddingLeft + 24}px`}>
+			<p
+				class="pb-2 text-muted-foreground text-sm"
+				style={`padding-left:${paddingLeft + 24}px`}
+			>
 				{description}
 			</p>
 		{/if}
@@ -60,19 +72,30 @@
 					<SchemaDisplayProperty {...property} depth={depth + 1} />
 				{/each}
 				{#if items}
-					<SchemaDisplayProperty {...items} depth={depth + 1} name={`${name}[]`} />
+					<SchemaDisplayProperty
+						{...items}
+						depth={depth + 1}
+						name={`${name}[]`}
+					/>
 				{/if}
 			</div>
 		</CollapsibleContent>
 	</Collapsible>
 {:else}
-	<div class={cn("py-3 pr-4", className)} style={`padding-left:${paddingLeft}px`} {...restProps}>
+	<div
+		class={cn("py-3 pr-4", className)}
+		style={`padding-left:${paddingLeft}px`}
+		{...restProps}
+	>
 		<div class="flex items-center gap-2">
 			<span class="size-4"></span>
 			<span class="font-mono text-sm">{name}</span>
 			<Badge class="text-xs" variant="outline">{type}</Badge>
 			{#if required}
-				<Badge class="bg-red-100 text-red-700 text-xs dark:bg-red-900/30 dark:text-red-400" variant="secondary">
+				<Badge
+					class="bg-red-100 text-red-700 text-xs dark:bg-red-900/30 dark:text-red-400"
+					variant="secondary"
+				>
 					required
 				</Badge>
 			{/if}

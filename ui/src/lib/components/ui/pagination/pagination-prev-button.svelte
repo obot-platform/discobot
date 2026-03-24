@@ -26,7 +26,7 @@
 			variant: "ghost",
 			class: "gap-1 px-2.5 sm:ps-2.5",
 		}),
-		className
+		className,
 	)}
 	children={children || Fallback}
 	{...restProps}

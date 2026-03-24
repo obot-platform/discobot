@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { ScrollArea, ScrollAreaScrollbar } from "$lib/components/ui/scroll-area";
+	import {
+		ScrollArea,
+		ScrollAreaScrollbar,
+	} from "$lib/components/ui/scroll-area";
 	import { cn } from "$lib/utils";
 
 	type Props = {

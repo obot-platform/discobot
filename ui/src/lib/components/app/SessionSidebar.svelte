@@ -46,7 +46,6 @@
 	let deleteSessionId = $state<string | null>(null);
 	let deletingSession = $state(false);
 
-
 	function sessionById(sessionId: string) {
 		return sessions.list.find((s) => s.id === sessionId) ?? null;
 	}
@@ -126,14 +125,21 @@
 	}
 </script>
 
-{#snippet sessionItem(sessionObj: (typeof sessions.list)[number], isSelected: boolean)}
+{#snippet sessionItem(
+	sessionObj: (typeof sessions.list)[number],
+	isSelected: boolean,
+)}
 	<div class="group flex min-w-0 items-center gap-0.5">
 		<button
 			type="button"
 			onclick={() => handleSelectSession(sessionObj.id)}
 			class={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
 		>
-			<SessionStatus status={sessionObj.status} showLabel={false} class="shrink-0" />
+			<SessionStatus
+				status={sessionObj.status}
+				showLabel={false}
+				class="shrink-0"
+			/>
 			<span class="truncate">{sessionObj.name || "New Session"}</span>
 		</button>
 
@@ -155,7 +161,10 @@
 				<DropdownMenuItem onclick={() => openRenameDialog(sessionObj.id)}>
 					Rename
 				</DropdownMenuItem>
-				<DropdownMenuItem variant="destructive" onclick={() => openDeleteDialog(sessionObj.id)}>
+				<DropdownMenuItem
+					variant="destructive"
+					onclick={() => openDeleteDialog(sessionObj.id)}
+				>
 					Delete
 				</DropdownMenuItem>
 			</DropdownMenuContent>
@@ -163,8 +172,12 @@
 	</div>
 {/snippet}
 
-<aside class="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm">
-	<div class="flex h-10 items-center justify-between border-b border-sidebar-border px-3">
+<aside
+	class="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm"
+>
+	<div
+		class="flex h-10 items-center justify-between border-b border-sidebar-border px-3"
+	>
 		<div class="flex min-w-0 items-center gap-1">
 			{#if onToggleSidebar}
 				<Button
@@ -178,7 +191,11 @@
 					<PanelLeftIcon class="size-3.5" />
 				</Button>
 			{/if}
-			<p class="text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70">Sessions</p>
+			<p
+				class="text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70"
+			>
+				Sessions
+			</p>
 		</div>
 		<Button
 			variant="ghost"
@@ -202,7 +219,9 @@
 						open={preferences.sidebarRecentOpen}
 						onOpenChange={(v) => preferences.setSidebarRecentOpen(v)}
 					>
-						<Collapsible.Trigger class="flex w-full items-center gap-1 px-2 pb-1 pt-1 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground">
+						<Collapsible.Trigger
+							class="flex w-full items-center gap-1 px-2 pb-1 pt-1 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+						>
 							{#if preferences.sidebarRecentOpen}
 								<ChevronDownIcon class="size-3 shrink-0" />
 							{:else}
@@ -212,7 +231,10 @@
 						</Collapsible.Trigger>
 						<Collapsible.Content class="space-y-0.5">
 							{#each sessions.recent as sessionObj}
-								{@render sessionItem(sessionObj, sessions.selectedId === sessionObj.id)}
+								{@render sessionItem(
+									sessionObj,
+									sessions.selectedId === sessionObj.id,
+								)}
 							{/each}
 						</Collapsible.Content>
 					</Collapsible.Root>
@@ -223,7 +245,9 @@
 						open={preferences.sidebarAllOpen}
 						onOpenChange={(v) => preferences.setSidebarAllOpen(v)}
 					>
-						<Collapsible.Trigger class="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground">
+						<Collapsible.Trigger
+							class="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+						>
 							{#if preferences.sidebarAllOpen}
 								<ChevronDownIcon class="size-3 shrink-0" />
 							{:else}
@@ -233,7 +257,10 @@
 						</Collapsible.Trigger>
 						<Collapsible.Content class="space-y-0.5">
 							{#each sessions.list as sessionObj}
-								{@render sessionItem(sessionObj, sessions.selectedId === sessionObj.id)}
+								{@render sessionItem(
+									sessionObj,
+									sessions.selectedId === sessionObj.id,
+								)}
 							{/each}
 						</Collapsible.Content>
 					</Collapsible.Root>
@@ -246,7 +273,9 @@
 		<Dialog.Content class="sm:max-w-md">
 			<Dialog.Header>
 				<Dialog.Title>Rename session</Dialog.Title>
-				<Dialog.Description>Choose a new name for this session.</Dialog.Description>
+				<Dialog.Description
+					>Choose a new name for this session.</Dialog.Description
+				>
 			</Dialog.Header>
 			<Input
 				value={renameDraft}
@@ -258,7 +287,12 @@
 				placeholder="Session name"
 			/>
 			<Dialog.Footer>
-				<Button variant="ghost" size="sm" onclick={closeRenameDialog} disabled={renamingSession}>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={closeRenameDialog}
+					disabled={renamingSession}
+				>
 					Cancel
 				</Button>
 				<Button
@@ -284,7 +318,10 @@
 				</AlertDialogDescription>
 			</AlertDialogHeader>
 			<AlertDialogFooter>
-				<AlertDialogCancel onclick={closeDeleteDialog} disabled={deletingSession}>
+				<AlertDialogCancel
+					onclick={closeDeleteDialog}
+					disabled={deletingSession}
+				>
 					Cancel
 				</AlertDialogCancel>
 				<AlertDialogAction

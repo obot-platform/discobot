@@ -1,6 +1,8 @@
 import { getContext, setContext } from "svelte";
 
-const OPEN_IN_CHAT_CONTEXT_KEY = Symbol.for("discobot-ui-ai-open-in-chat-context");
+const OPEN_IN_CHAT_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-open-in-chat-context",
+);
 
 export type OpenInChatContextValue = {
 	query: string;

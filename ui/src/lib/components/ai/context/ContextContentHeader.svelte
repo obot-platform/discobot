@@ -7,16 +7,25 @@
 	let { class: className, children, ...restProps }: Props = $props();
 	const ctx = useContextUsageContext();
 
-	const usedPercent = $derived.by(() => (ctx.maxTokens === 0 ? 0 : ctx.usedTokens / ctx.maxTokens));
-	const displayPct = $derived.by(
-		() =>
-			new Intl.NumberFormat("en-US", {
-				style: "percent",
-				maximumFractionDigits: 1,
-			}).format(usedPercent),
+	const usedPercent = $derived.by(() =>
+		ctx.maxTokens === 0 ? 0 : ctx.usedTokens / ctx.maxTokens,
 	);
-	const used = $derived.by(() => new Intl.NumberFormat("en-US", { notation: "compact" }).format(ctx.usedTokens));
-	const total = $derived.by(() => new Intl.NumberFormat("en-US", { notation: "compact" }).format(ctx.maxTokens));
+	const displayPct = $derived.by(() =>
+		new Intl.NumberFormat("en-US", {
+			style: "percent",
+			maximumFractionDigits: 1,
+		}).format(usedPercent),
+	);
+	const used = $derived.by(() =>
+		new Intl.NumberFormat("en-US", { notation: "compact" }).format(
+			ctx.usedTokens,
+		),
+	);
+	const total = $derived.by(() =>
+		new Intl.NumberFormat("en-US", { notation: "compact" }).format(
+			ctx.maxTokens,
+		),
+	);
 </script>
 
 <div class={cn("w-full space-y-2 p-3", className)} {...restProps}>

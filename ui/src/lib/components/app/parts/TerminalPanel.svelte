@@ -30,7 +30,14 @@
 	const RESIZE_DEBOUNCE_MS = 150;
 	const COPY_RESET_MS = 2000;
 
-	let { dockMaximized, onClose, onRootEnabledChange, onToggleDockMaximized, rootEnabled, sessionId }: Props = $props();
+	let {
+		dockMaximized,
+		onClose,
+		onRootEnabledChange,
+		onToggleDockMaximized,
+		rootEnabled,
+		sessionId,
+	}: Props = $props();
 
 	let terminalHost = $state<HTMLDivElement | null>(null);
 	let connectionStatus = $state<ConnectionStatus>("disconnected");
@@ -79,7 +86,9 @@
 		return "";
 	});
 
-	const maximizeTitle = $derived.by(() => (dockMaximized ? "Restore split view" : "Maximize terminal panel"));
+	const maximizeTitle = $derived.by(() =>
+		dockMaximized ? "Restore split view" : "Maximize terminal panel",
+	);
 
 	function getSSHHost(): string {
 		if (typeof window === "undefined") return "localhost";
@@ -90,7 +99,11 @@
 		return hostname;
 	}
 
-	function readThemeValue(style: CSSStyleDeclaration, property: string, fallback: string): string {
+	function readThemeValue(
+		style: CSSStyleDeclaration,
+		property: string,
+		fallback: string,
+	): string {
 		const value = style.getPropertyValue(property).trim();
 		return value.length > 0 ? value : fallback;
 	}
@@ -104,9 +117,21 @@
 		}
 
 		const style = window.getComputedStyle(document.documentElement);
-		const background = readThemeValue(style, "--terminal-bg", "oklch(0.08 0 0)");
-		const foreground = readThemeValue(style, "--terminal-fg", "oklch(0.75 0.15 145)");
-		const selectionBackground = readThemeValue(style, "--tree-selected", "oklch(0.65 0.15 250 / 0.2)");
+		const background = readThemeValue(
+			style,
+			"--terminal-bg",
+			"oklch(0.08 0 0)",
+		);
+		const foreground = readThemeValue(
+			style,
+			"--terminal-fg",
+			"oklch(0.75 0.15 145)",
+		);
+		const selectionBackground = readThemeValue(
+			style,
+			"--tree-selected",
+			"oklch(0.65 0.15 250 / 0.2)",
+		);
 
 		return {
 			background,
@@ -205,7 +230,9 @@
 
 		if (!nextSessionId) {
 			updateConnectionStatus("disconnected");
-			terminal.writeln("\x1b[33mNo session selected. Select a session to connect to the terminal.\x1b[0m");
+			terminal.writeln(
+				"\x1b[33mNo session selected. Select a session to connect to the terminal.\x1b[0m",
+			);
 			return;
 		}
 
@@ -266,7 +293,9 @@
 		};
 	}
 
-	function getTerminalCopyShortcut(event: KeyboardEvent): "ctrl-shift" | "meta" | null {
+	function getTerminalCopyShortcut(
+		event: KeyboardEvent,
+	): "ctrl-shift" | "meta" | null {
 		const key = event.key.toLowerCase();
 		if (key !== "c" || event.altKey) {
 			return null;
@@ -322,10 +351,13 @@
 
 		let cancelled = false;
 		void (async () => {
-			const { FitAddon, OSC8LinkProvider, Terminal, UrlRegexProvider, init } = await import("ghostty-web");
+			const { FitAddon, OSC8LinkProvider, Terminal, UrlRegexProvider, init } =
+				await import("ghostty-web");
 			await init();
 
-			const createOpenUrlLinkProvider = (provider: ILinkProvider): ILinkProvider => ({
+			const createOpenUrlLinkProvider = (
+				provider: ILinkProvider,
+			): ILinkProvider => ({
 				provideLinks: (y, callback) => {
 					provider.provideLinks(y, (links) => {
 						callback(
@@ -456,23 +488,32 @@
 </script>
 
 <DockWindowChrome
-	dockMaximized={dockMaximized}
-	onClose={onClose}
-	onToggleDockMaximized={onToggleDockMaximized}
+	{dockMaximized}
+	{onClose}
+	{onToggleDockMaximized}
 	closeLabel="Close terminal panel"
 	minimizeLabel="Minimize terminal panel"
-	maximizeTitle={maximizeTitle}
+	{maximizeTitle}
 	shellClass="min-h-[28rem]"
 >
 	{#snippet title()}
-		<span class="truncate text-xs text-sidebar-foreground/70">{sessionLabel}</span>
-		<div class={`size-2 shrink-0 rounded-full ${statusClass}`} title={connectionStatus}></div>
+		<span class="truncate text-xs text-sidebar-foreground/70"
+			>{sessionLabel}</span
+		>
+		<div
+			class={`size-2 shrink-0 rounded-full ${statusClass}`}
+			title={connectionStatus}
+		></div>
 	{/snippet}
 
 	{#snippet actions()}
 		<label class="flex items-center gap-2 text-xs text-sidebar-foreground/70">
 			<span>root</span>
-			<Switch checked={rootEnabled} disabled={!sessionId} onCheckedChange={(checked) => onRootEnabledChange(checked === true)} />
+			<Switch
+				checked={rootEnabled}
+				disabled={!sessionId}
+				onCheckedChange={(checked) => onRootEnabledChange(checked === true)}
+			/>
 		</label>
 		{#if sshCommand}
 			<Button
@@ -494,11 +535,18 @@
 
 	<div class="relative h-full min-h-0 overflow-hidden p-3">
 		{#if connectionStatus !== "connected"}
-			<div class="absolute inset-3 z-10 flex items-center justify-center rounded-md bg-black/35">
+			<div
+				class="absolute inset-3 z-10 flex items-center justify-center rounded-md bg-black/35"
+			>
 				<div class="flex flex-col items-center gap-3 text-center">
 					<span class="text-xs text-white/70">{overlayMessage}</span>
 					{#if connectionStatus === "disconnected" && sessionId}
-						<Button variant="outline" size="xs" onclick={reconnectTerminal} class="gap-2">
+						<Button
+							variant="outline"
+							size="xs"
+							onclick={reconnectTerminal}
+							class="gap-2"
+						>
 							<RotateCcwIcon class="size-3.5" />
 							Reconnect
 						</Button>

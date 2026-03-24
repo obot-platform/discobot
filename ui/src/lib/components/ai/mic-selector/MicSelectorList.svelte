@@ -17,7 +17,9 @@
 	{#if children}
 		{@render children()}
 	{:else if micSelector.loading}
-		<div class="px-2 py-3 text-muted-foreground text-sm">Loading microphones...</div>
+		<div class="px-2 py-3 text-muted-foreground text-sm">
+			Loading microphones...
+		</div>
 	{:else if micSelector.error}
 		<div class="px-2 py-3 text-destructive text-sm">{micSelector.error}</div>
 	{:else if micSelector.data.length === 0}

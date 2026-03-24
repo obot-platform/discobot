@@ -11,7 +11,9 @@
 </script>
 
 <div class={cn("mt-2 space-y-2", className)} {...restProps}>
-	<div class="relative flex max-h-[22rem] items-center justify-center overflow-hidden rounded-lg bg-muted p-3">
+	<div
+		class="relative flex max-h-[22rem] items-center justify-center overflow-hidden rounded-lg bg-muted p-3"
+	>
 		{@render children?.()}
 	</div>
 	{#if caption}

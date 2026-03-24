@@ -18,7 +18,12 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Separator } from "$lib/components/ui/separator";
 	import { Switch } from "$lib/components/ui/switch";
-	import { Tabs, TabsContent, TabsList, TabsTrigger } from "$lib/components/ui/tabs";
+	import {
+		Tabs,
+		TabsContent,
+		TabsList,
+		TabsTrigger,
+	} from "$lib/components/ui/tabs";
 	import { Textarea } from "$lib/components/ui/textarea";
 	import { getApiBase, isTauriShell } from "$lib/environment";
 	import { getTheme, toggleTheme } from "$lib/theme";
@@ -40,26 +45,37 @@
 			component.label,
 			component.description,
 			categoryLabels[component.category],
-		].join(" ").toLowerCase();
-		const matchesSearch = !normalizedSearch || haystack.includes(normalizedSearch);
+		]
+			.join(" ")
+			.toLowerCase();
+		const matchesSearch =
+			!normalizedSearch || haystack.includes(normalizedSearch);
 		return matchesCategory && matchesSearch;
 	});
 	$: categorySummary = uiComponentFilters
 		.filter((filter): filter is UiComponentCategory => filter !== "all")
 		.map((category) => ({
 			category,
-			count: uiComponentCatalog.filter((component) => component.category === category).length,
+			count: uiComponentCatalog.filter(
+				(component) => component.category === category,
+			).length,
 			label: categoryLabels[category],
 		}));
 	$: if (
 		filteredCatalog.length > 0 &&
-		!filteredCatalog.some((component) => component.name === selectedComponentName)
+		!filteredCatalog.some(
+			(component) => component.name === selectedComponentName,
+		)
 	) {
 		selectedComponentName = filteredCatalog[0].name;
 	}
 	$: selectedComponent =
-		filteredCatalog.find((component) => component.name === selectedComponentName) ??
-		uiComponentCatalog.find((component) => component.name === selectedComponentName) ??
+		filteredCatalog.find(
+			(component) => component.name === selectedComponentName,
+		) ??
+		uiComponentCatalog.find(
+			(component) => component.name === selectedComponentName,
+		) ??
 		null;
 
 	function handleThemeToggle() {
@@ -80,32 +96,42 @@
 </svelte:head>
 
 <div class="min-h-screen bg-background text-foreground">
-	<div class="mx-auto flex min-h-screen max-w-7xl flex-col gap-8 px-6 py-8 lg:px-10">
-		<header class="flex flex-col gap-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur">
-			<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+	<div
+		class="mx-auto flex min-h-screen max-w-7xl flex-col gap-8 px-6 py-8 lg:px-10"
+	>
+		<header
+			class="flex flex-col gap-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur"
+		>
+			<div
+				class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
+			>
 				<div class="space-y-3">
 					<div class="flex flex-wrap items-center gap-2">
 						<Badge variant="secondary">Svelte 5 redesign</Badge>
-						<Badge variant="outline">{uiComponentCatalog.length} components installed</Badge>
+						<Badge variant="outline"
+							>{uiComponentCatalog.length} components installed</Badge
+						>
 					</div>
 					<div class="space-y-2">
-						<p class="text-sm font-medium uppercase tracking-[0.24em] text-muted-foreground">
+						<p
+							class="text-sm font-medium uppercase tracking-[0.24em] text-muted-foreground"
+						>
 							Component gallery
 						</p>
 						<h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">
 							Browse the installed shadcn-svelte system
 						</h1>
-						<p class="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
-							Use this page to search, filter, and compare the full component set while we
-							shape the new Discobot shell.
+						<p
+							class="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base"
+						>
+							Use this page to search, filter, and compare the full component
+							set while we shape the new Discobot shell.
 						</p>
 					</div>
 				</div>
 
 				<div class="flex flex-wrap items-center gap-3 self-start lg:self-auto">
-					<Button variant="outline" href="/">
-						Back to home
-					</Button>
+					<Button variant="outline" href="/">Back to home</Button>
 					<Button variant="outline" onclick={handleThemeToggle}>
 						Theme: {theme}
 					</Button>
@@ -117,10 +143,14 @@
 					bind:value={search}
 					placeholder="Search components, categories, or use cases"
 				/>
-				<div class="flex items-center gap-3 rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm">
+				<div
+					class="flex items-center gap-3 rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm"
+				>
 					<div class="space-y-0.5">
 						<p class="font-medium">Compact preview</p>
-						<p class="text-xs text-muted-foreground">Tighten spacing in the sample panel</p>
+						<p class="text-xs text-muted-foreground">
+							Tighten spacing in the sample panel
+						</p>
 					</div>
 					<Switch bind:checked={compactPreview} />
 				</div>
@@ -155,7 +185,9 @@
 			{/each}
 		</section>
 
-		<main class="grid flex-1 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
+		<main
+			class="grid flex-1 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]"
+		>
 			<section class="space-y-6">
 				<Card>
 					<CardHeader class={compactPreview ? "gap-2 pb-3" : undefined}>
@@ -166,7 +198,9 @@
 									A starter playground built from the installed component set.
 								</CardDescription>
 							</div>
-							<Badge variant="outline">Current runtime: {isTauriShell() ? "Tauri" : "Browser"}</Badge>
+							<Badge variant="outline"
+								>Current runtime: {isTauriShell() ? "Tauri" : "Browser"}</Badge
+							>
 						</div>
 					</CardHeader>
 					<CardContent class={compactPreview ? "space-y-4" : "space-y-6"}>
@@ -200,7 +234,8 @@
 										</CardHeader>
 										<CardContent>
 											<p class="text-sm leading-6 text-muted-foreground">
-												Use cards to break the shell into readable, movable sections.
+												Use cards to break the shell into readable, movable
+												sections.
 											</p>
 										</CardContent>
 									</Card>
@@ -212,13 +247,19 @@
 											</CardDescription>
 										</CardHeader>
 										<CardContent class="space-y-3">
-											<div class="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm">
+											<div
+												class="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm"
+											>
 												<span>Backend connection</span>
 												<Badge variant="secondary">Healthy</Badge>
 											</div>
-											<div class="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm">
+											<div
+												class="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm"
+											>
 												<span>Preview API base</span>
-												<span class="font-mono text-xs text-muted-foreground">{getApiBase()}</span>
+												<span class="font-mono text-xs text-muted-foreground"
+													>{getApiBase()}</span
+												>
 											</div>
 										</CardContent>
 									</Card>
@@ -227,24 +268,36 @@
 
 							<TabsContent value="forms" class="mt-4 space-y-4">
 								<div class="grid gap-4 md:grid-cols-2">
-									<div class="space-y-3 rounded-2xl border border-border bg-background/70 p-4">
+									<div
+										class="space-y-3 rounded-2xl border border-border bg-background/70 p-4"
+									>
 										<p class="text-sm font-medium">Search & filters</p>
 										<Input value="Build a mobile-first shell" />
 										<Textarea rows={4} value={formPreviewNotes} />
 									</div>
-									<div class="space-y-3 rounded-2xl border border-border bg-background/70 p-4">
+									<div
+										class="space-y-3 rounded-2xl border border-border bg-background/70 p-4"
+									>
 										<p class="text-sm font-medium">Preferences</p>
-										<div class="flex items-center justify-between rounded-xl border border-border px-3 py-2">
+										<div
+											class="flex items-center justify-between rounded-xl border border-border px-3 py-2"
+										>
 											<div>
 												<p class="text-sm font-medium">Dense navigation</p>
-												<p class="text-xs text-muted-foreground">Fit more panes on desktop</p>
+												<p class="text-xs text-muted-foreground">
+													Fit more panes on desktop
+												</p>
 											</div>
 											<Switch checked />
 										</div>
-										<div class="flex items-center justify-between rounded-xl border border-border px-3 py-2">
+										<div
+											class="flex items-center justify-between rounded-xl border border-border px-3 py-2"
+										>
 											<div>
 												<p class="text-sm font-medium">Animated transitions</p>
-												<p class="text-xs text-muted-foreground">Subtle motion only</p>
+												<p class="text-xs text-muted-foreground">
+													Subtle motion only
+												</p>
 											</div>
 											<Switch />
 										</div>
@@ -253,7 +306,9 @@
 							</TabsContent>
 
 							<TabsContent value="workflow" class="mt-4 space-y-4">
-								<div class="space-y-4 rounded-2xl border border-border bg-background/70 p-4">
+								<div
+									class="space-y-4 rounded-2xl border border-border bg-background/70 p-4"
+								>
 									<div class="flex flex-wrap gap-2">
 										<Badge>Shell</Badge>
 										<Badge variant="secondary">Chat</Badge>
@@ -277,7 +332,8 @@
 										<div class="rounded-xl border border-border p-3">
 											<p class="text-sm font-medium">3. Refine</p>
 											<p class="mt-1 text-sm text-muted-foreground">
-												Tune states, spacing, and interaction density for desktop and mobile.
+												Tune states, spacing, and interaction density for
+												desktop and mobile.
 											</p>
 										</div>
 									</div>
@@ -303,7 +359,9 @@
 					</CardHeader>
 					<CardContent>
 						{#if filteredCatalog.length === 0}
-							<div class="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+							<div
+								class="rounded-2xl border border-dashed border-border px-4 py-8 text-center"
+							>
 								<p class="font-medium">No components match that filter yet.</p>
 								<p class="mt-2 text-sm text-muted-foreground">
 									Try a broader search or switch back to the full catalog.
@@ -319,7 +377,9 @@
 									>
 										<div class="flex flex-wrap items-center gap-2">
 											<p class="font-medium">{component.label}</p>
-											<Badge variant="outline">{categoryLabels[component.category]}</Badge>
+											<Badge variant="outline"
+												>{categoryLabels[component.category]}</Badge
+											>
 											{#if component.featured}
 												<Badge>Featured</Badge>
 											{/if}
@@ -372,14 +432,20 @@
 
 							<div class="space-y-2">
 								<p class="text-sm font-medium">Import</p>
-								<pre class="overflow-x-auto rounded-2xl border border-border bg-background/70 p-3 text-xs leading-6 text-muted-foreground"><code>{`import { ${selectedComponent.exportName} } from "${selectedComponent.importPath}";`}</code></pre>
+								<pre
+									class="overflow-x-auto rounded-2xl border border-border bg-background/70 p-3 text-xs leading-6 text-muted-foreground"><code
+										>{`import { ${selectedComponent.exportName} } from "${selectedComponent.importPath}";`}</code
+									></pre>
 							</div>
 
 							<div class="grid gap-3">
-								<div class="rounded-2xl border border-border bg-background/70 p-4">
+								<div
+									class="rounded-2xl border border-border bg-background/70 p-4"
+								>
 									<p class="text-sm font-medium">When to reach for it</p>
 									<p class="mt-2 text-sm leading-6 text-muted-foreground">
-										Start with {selectedComponent.label.toLowerCase()} when the screen needs
+										Start with {selectedComponent.label.toLowerCase()} when the screen
+										needs
 										{selectedComponent.category === "layout"
 											? " structure and composition"
 											: selectedComponent.category === "form"
@@ -393,18 +459,24 @@
 															: selectedComponent.category === "feedback"
 																? " status or progress communication"
 																: " compact UI affordances"}
-										.</p>
+										.
+									</p>
 								</div>
-								<div class="rounded-2xl border border-border bg-background/70 p-4">
+								<div
+									class="rounded-2xl border border-border bg-background/70 p-4"
+								>
 									<p class="text-sm font-medium">Design note</p>
 									<p class="mt-2 text-sm leading-6 text-muted-foreground">
-										Use the gallery to shortlist primitives first, then we can compose them
-										into Discobot-specific views like the shell, session lists, and chat panes.
+										Use the gallery to shortlist primitives first, then we can
+										compose them into Discobot-specific views like the shell,
+										session lists, and chat panes.
 									</p>
 								</div>
 							</div>
 						{:else}
-							<p class="text-sm text-muted-foreground">Select a component card to inspect it.</p>
+							<p class="text-sm text-muted-foreground">
+								Select a component card to inspect it.
+							</p>
 						{/if}
 					</CardContent>
 				</Card>
@@ -418,10 +490,22 @@
 					</CardHeader>
 					<CardContent>
 						<div class="space-y-3 text-sm leading-6 text-muted-foreground">
-							<p><span class="font-medium text-foreground">Layout:</span> card, sidebar, sheet, resizable, scroll-area.</p>
-							<p><span class="font-medium text-foreground">Forms:</span> input, textarea, select, switch, field, form.</p>
-							<p><span class="font-medium text-foreground">Navigation:</span> tabs, dropdown-menu, command, breadcrumb, navigation-menu.</p>
-							<p><span class="font-medium text-foreground">Feedback:</span> alert, sonner, progress, skeleton, spinner, empty.</p>
+							<p>
+								<span class="font-medium text-foreground">Layout:</span> card, sidebar,
+								sheet, resizable, scroll-area.
+							</p>
+							<p>
+								<span class="font-medium text-foreground">Forms:</span> input, textarea,
+								select, switch, field, form.
+							</p>
+							<p>
+								<span class="font-medium text-foreground">Navigation:</span> tabs,
+								dropdown-menu, command, breadcrumb, navigation-menu.
+							</p>
+							<p>
+								<span class="font-medium text-foreground">Feedback:</span> alert,
+								sonner, progress, skeleton, spinner, empty.
+							</p>
 						</div>
 					</CardContent>
 				</Card>

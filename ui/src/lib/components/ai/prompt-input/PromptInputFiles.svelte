@@ -12,7 +12,13 @@
 </script>
 
 {#if promptInput.files.length > 0}
-	<div class={cn("flex w-full flex-wrap gap-1 border-b border-border px-3 pb-2 pt-3", className)} {...restProps}>
+	<div
+		class={cn(
+			"flex w-full flex-wrap gap-1 border-b border-border px-3 pb-2 pt-3",
+			className,
+		)}
+		{...restProps}
+	>
 		{#each promptInput.files as file (file.id)}
 			<PromptInputFile {file} />
 		{/each}

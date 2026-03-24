@@ -11,7 +11,10 @@ function fixNoVncCjs(): Plugin {
 		load(id) {
 			if (id.includes("@novnc/novnc") && id.endsWith("browser.js")) {
 				const code = readFileSync(id, "utf-8");
-				return code.replace(/= await _checkWebCodecsH264DecodeSupport\(\)/g, "= false");
+				return code.replace(
+					/= await _checkWebCodecsH264DecodeSupport\(\)/g,
+					"= false",
+				);
 			}
 		},
 	};
@@ -67,21 +70,23 @@ export default defineConfig({
 				{
 					name: "fix-novnc-cjs",
 					setup(build) {
-						build.onLoad({ filter: /browser\.js$/, namespace: "file" }, (args) => {
-							if (!args.path.includes("@novnc/novnc")) return;
-							const code = readFileSync(args.path, "utf-8");
-							return {
-								contents: code.replace(
-									/= await _checkWebCodecsH264DecodeSupport\(\)/g,
-									"= false",
-								),
-								loader: "js",
-							};
-						});
+						build.onLoad(
+							{ filter: /browser\.js$/, namespace: "file" },
+							(args) => {
+								if (!args.path.includes("@novnc/novnc")) return;
+								const code = readFileSync(args.path, "utf-8");
+								return {
+									contents: code.replace(
+										/= await _checkWebCodecsH264DecodeSupport\(\)/g,
+										"= false",
+									),
+									loader: "js",
+								};
+							},
+						);
 					},
 				},
 			],
 		},
 	},
 });
-

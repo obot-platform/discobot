@@ -138,7 +138,10 @@ export type AppWorkspaces = {
 	get: (workspaceId: string) => Workspace | null;
 	refresh: () => Promise<void>;
 	reloadWorkspace: (workspaceId: string) => Promise<void>;
-	validate: (path: string, sourceType: "local" | "git") => Promise<WorkspaceValidationResult>;
+	validate: (
+		path: string,
+		sourceType: "local" | "git",
+	) => Promise<WorkspaceValidationResult>;
 	create: (data: CreateWorkspaceRequest) => Promise<Workspace>;
 };
 
@@ -165,13 +168,25 @@ export type AppCredentials = {
 	credentialTypes: CredentialType[];
 	get: (idOrProvider: string) => CredentialInfo | null;
 	refresh: () => Promise<void>;
-	create: (provider: string, authType: CredentialAuthType, apiKey: string) => Promise<CredentialInfo>;
-	update: (provider: string, authType: CredentialAuthType, apiKey: string) => Promise<CredentialInfo>;
+	create: (
+		provider: string,
+		authType: CredentialAuthType,
+		apiKey: string,
+	) => Promise<CredentialInfo>;
+	update: (
+		provider: string,
+		authType: CredentialAuthType,
+		apiKey: string,
+	) => Promise<CredentialInfo>;
 	remove: (provider: string) => Promise<void>;
 	refreshCredential: (provider: string) => Promise<OAuthRefreshResponse>;
 	anthropicAuthorize: () => Promise<OAuthAuthorizeResponse>;
-	anthropicExchange: (data: OAuthExchangeRequest) => Promise<OAuthExchangeResponse>;
-	githubDeviceCode: (data?: GitHubDeviceCodeRequest) => Promise<GitHubDeviceCodeResponse>;
+	anthropicExchange: (
+		data: OAuthExchangeRequest,
+	) => Promise<OAuthExchangeResponse>;
+	githubDeviceCode: (
+		data?: GitHubDeviceCodeRequest,
+	) => Promise<GitHubDeviceCodeResponse>;
 	githubPoll: (data: GitHubPollRequest) => Promise<GitHubPollResponse>;
 	codexAuthorize: () => Promise<CodexAuthorizeResponse>;
 	codexExchange: (data: CodexExchangeRequest) => Promise<CodexExchangeResponse>;

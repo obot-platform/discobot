@@ -11,7 +11,7 @@
 </script>
 
 <img
-	alt={alt}
+	{alt}
 	class={cn("h-8 w-8 rounded border object-cover", className)}
 	height={32}
 	width={32}

@@ -18,6 +18,10 @@
 	}: Props = $props();
 </script>
 
-<Collapsible bind:open class={cn("rounded-lg border bg-background", className)} {...restProps}>
+<Collapsible
+	bind:open
+	class={cn("rounded-lg border bg-background", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </Collapsible>

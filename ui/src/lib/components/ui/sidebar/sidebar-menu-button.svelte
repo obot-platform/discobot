@@ -24,12 +24,18 @@
 	export type SidebarMenuButtonVariant = VariantProps<
 		typeof sidebarMenuButtonVariants
 	>["variant"];
-	export type SidebarMenuButtonSize = VariantProps<typeof sidebarMenuButtonVariants>["size"];
+	export type SidebarMenuButtonSize = VariantProps<
+		typeof sidebarMenuButtonVariants
+	>["size"];
 </script>
 
 <script lang="ts">
 	import * as Tooltip from "$lib/components/ui/tooltip/index.js";
-	import { cn, type WithElementRef, type WithoutChildrenOrChild } from "$lib/utils.js";
+	import {
+		cn,
+		type WithElementRef,
+		type WithoutChildrenOrChild,
+	} from "$lib/utils.js";
 	import { mergeProps } from "bits-ui";
 	import type { ComponentProps, Snippet } from "svelte";
 	import type { HTMLAttributes } from "svelte/elements";
@@ -51,7 +57,9 @@
 		variant?: SidebarMenuButtonVariant;
 		size?: SidebarMenuButtonSize;
 		tooltipContent?: Snippet | string;
-		tooltipContentProps?: WithoutChildrenOrChild<ComponentProps<typeof Tooltip.Content>>;
+		tooltipContentProps?: WithoutChildrenOrChild<
+			ComponentProps<typeof Tooltip.Content>
+		>;
 		child?: Snippet<[{ props: Record<string, unknown> }]>;
 	} = $props();
 

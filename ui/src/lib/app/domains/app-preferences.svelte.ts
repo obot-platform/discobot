@@ -15,7 +15,11 @@ import {
 	readSidebarRecentOpen,
 	writeStorage,
 } from "$lib/app/app-helpers";
-import type { AppContextBootstrap, AppPreferences, ChatWidthMode } from "$lib/app/app-context.types";
+import type {
+	AppContextBootstrap,
+	AppPreferences,
+	ChatWidthMode,
+} from "$lib/app/app-context.types";
 import type { ThemeColorScheme } from "$lib/api-types";
 import {
 	appendPromptHistoryEntry,
@@ -39,11 +43,15 @@ type CreateAppPreferencesDomainArgs = {
 	bootstrap: AppContextBootstrap;
 };
 
-export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs): AppPreferences {
+export function createAppPreferencesDomain(
+	args: CreateAppPreferencesDomainArgs,
+): AppPreferences {
 	let theme = $state<ThemeMode>("system");
 	let resolvedTheme = $state<ResolvedTheme>("dark");
 	let colorScheme = $state<ThemeColorScheme>("default");
-	let preferredIde = $state<PreferredIde>(args.bootstrap.ideOptions[0]?.id ?? "cursor");
+	let preferredIde = $state<PreferredIde>(
+		args.bootstrap.ideOptions[0]?.id ?? "cursor",
+	);
 	let chatWidthMode = $state<ChatWidthMode>("constrained");
 	let defaultModel = $state("");
 	let sidebarRecentOpen = $state(true);
@@ -135,7 +143,8 @@ export function createAppPreferencesDomain(args: CreateAppPreferencesDomainArgs)
 			if (!availableThemes.some((t) => t.id === scheme)) return;
 			colorScheme = applyColorScheme(scheme);
 		},
-		toggleTheme: () => applyThemeState(resolvedTheme === "dark" ? "light" : "dark"),
+		toggleTheme: () =>
+			applyThemeState(resolvedTheme === "dark" ? "light" : "dark"),
 		addPromptToHistory: (prompt) => {
 			promptHistory = appendPromptHistoryEntry(promptHistory, prompt);
 			writeStorage(PROMPT_HISTORY_STORAGE_KEY, JSON.stringify(promptHistory));

@@ -29,6 +29,8 @@
 		}}
 	>
 		<CheckCircleIcon class="size-3.5" />
-		<span class="text-xs font-medium">{queueCompletedCount()}/{queueTotalCount()}</span>
+		<span class="text-xs font-medium"
+			>{queueCompletedCount()}/{queueTotalCount()}</span
+		>
 	</Button>
 {/if}

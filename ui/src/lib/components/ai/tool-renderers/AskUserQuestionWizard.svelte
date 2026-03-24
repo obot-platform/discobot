@@ -19,7 +19,10 @@
 
 	type Props = {
 		pendingQuestion: PendingQuestionLike;
-		onSubmit: (toolUseID: string, answers: Record<string, string>) => Promise<void>;
+		onSubmit: (
+			toolUseID: string,
+			answers: Record<string, string>,
+		) => Promise<void>;
 	};
 
 	let { pendingQuestion, onSubmit }: Props = $props();
@@ -35,7 +38,9 @@
 	const notes = $derived.by(
 		() => pendingQuestion.questions.find((question) => question.notes)?.notes,
 	);
-	const currentQuestion = $derived.by(() => pendingQuestion.questions[currentStep]);
+	const currentQuestion = $derived.by(
+		() => pendingQuestion.questions[currentStep],
+	);
 
 	$effect(() => {
 		const initialAnswers: Record<string, string> = {};
@@ -90,7 +95,11 @@
 	}
 
 	function findNextUnanswered(afterStep: number): number | null {
-		for (let index = afterStep + 1; index < pendingQuestion.questions.length; index += 1) {
+		for (
+			let index = afterStep + 1;
+			index < pendingQuestion.questions.length;
+			index += 1
+		) {
 			if (!isStepAnswered(index)) {
 				return index;
 			}
@@ -193,7 +202,8 @@
 					const parts = [regular, other].filter(Boolean);
 					finalAnswers[question.question] = parts.join(", ");
 				} else {
-					finalAnswers[question.question] = otherText[question.question]?.trim() || "";
+					finalAnswers[question.question] =
+						otherText[question.question]?.trim() || "";
 				}
 			} else {
 				finalAnswers[question.question] = answers[question.question] || "";
@@ -236,11 +246,15 @@
 <div class="space-y-4">
 	<div>
 		<h3 class="font-semibold text-base">Agent needs input</h3>
-		<p class="text-muted-foreground text-sm">Answer to help the agent continue with your task.</p>
+		<p class="text-muted-foreground text-sm">
+			Answer to help the agent continue with your task.
+		</p>
 	</div>
 
 	{#if notes}
-		<div class="relative max-h-64 overflow-y-auto rounded-md border bg-muted/30 p-3 text-sm">
+		<div
+			class="relative max-h-64 overflow-y-auto rounded-md border bg-muted/30 p-3 text-sm"
+		>
 			<Button
 				class="absolute right-1 top-1 h-6 w-6"
 				onclick={() => {
@@ -255,7 +269,9 @@
 		</div>
 
 		<Dialog.Root bind:open={contextExpanded}>
-			<Dialog.Content class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+			<Dialog.Content
+				class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
+			>
 				<Dialog.Header>
 					<Dialog.Title>Plan</Dialog.Title>
 				</Dialog.Header>
@@ -325,7 +341,8 @@
 							disabled={isSubmitting}
 							name={`question-${currentQuestion.question}`}
 							onchange={(event) => {
-								const checked = (event.currentTarget as HTMLInputElement).checked;
+								const checked = (event.currentTarget as HTMLInputElement)
+									.checked;
 								handleOptionChange(currentQuestion, option.label, checked);
 							}}
 							class="mt-0.5 shrink-0 accent-primary"
@@ -333,9 +350,13 @@
 							value={option.label}
 						/>
 						<div class="flex flex-1 flex-col gap-0.5">
-							<span class="text-sm font-medium leading-tight">{option.label}</span>
+							<span class="text-sm font-medium leading-tight"
+								>{option.label}</span
+							>
 							{#if option.description}
-								<span class="text-muted-foreground text-xs">{option.description}</span>
+								<span class="text-muted-foreground text-xs"
+									>{option.description}</span
+								>
 							{/if}
 						</div>
 					</label>

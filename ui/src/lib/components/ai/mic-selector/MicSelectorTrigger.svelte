@@ -38,7 +38,12 @@
 </script>
 
 <PopoverTrigger>
-	<Button bind:ref={buttonRef} variant="outline" class={className} {...restProps}>
+	<Button
+		bind:ref={buttonRef}
+		variant="outline"
+		class={className}
+		{...restProps}
+	>
 		{@render children?.()}
 		<ChevronsUpDownIcon class="shrink-0 text-muted-foreground" size={16} />
 	</Button>

@@ -11,7 +11,10 @@
 </script>
 
 <div
-	class={cn("flex w-full items-center border-border border-t border-b", className)}
+	class={cn(
+		"flex w-full items-center border-border border-t border-b",
+		className,
+	)}
 	{...restProps}
 >
 	{@render children?.()}

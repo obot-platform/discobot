@@ -1,5 +1,9 @@
 import type { UIMessageChunk } from "ai";
-import { readUIMessageStream, safeValidateUIMessages, uiMessageChunkSchema } from "ai";
+import {
+	readUIMessageStream,
+	safeValidateUIMessages,
+	uiMessageChunkSchema,
+} from "ai";
 
 import type { ChatMessage } from "$lib/api-types";
 
@@ -126,7 +130,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		Object.assign(mutableTarget, sourceRecord);
 	};
 
-	const upsertMessage = (message: ChatMessage, insertBeforeMessageId?: string) => {
+	const upsertMessage = (
+		message: ChatMessage,
+		insertBeforeMessageId?: string,
+	) => {
 		const targetMessages = getTargetMessages();
 		const existingIndex = targetMessages.findIndex(
 			(candidate) => candidate.id === message.id,
@@ -137,9 +144,13 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			return;
 		}
 
-		const nextMessages = targetMessages.filter((candidate) => !candidate.provisional);
+		const nextMessages = targetMessages.filter(
+			(candidate) => !candidate.provisional,
+		);
 		const insertBeforeIndex = insertBeforeMessageId
-			? nextMessages.findIndex((candidate) => candidate.id === insertBeforeMessageId)
+			? nextMessages.findIndex(
+					(candidate) => candidate.id === insertBeforeMessageId,
+				)
 			: -1;
 
 		if (insertBeforeIndex === -1) {
@@ -216,7 +227,9 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 	const parseChunkEvent = async (data: string): Promise<UIMessageChunk> => {
 		const schema = uiMessageChunkSchema();
 		if (!schema.validate) {
-			throw new Error("UIMessageChunk schema does not expose a validate function");
+			throw new Error(
+				"UIMessageChunk schema does not expose a validate function",
+			);
 		}
 
 		const validation = await schema.validate(JSON.parse(data));
@@ -240,7 +253,9 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		}
 	};
 
-	const parseMessageMetadata = (value: unknown): StreamMessageMetadata | undefined => {
+	const parseMessageMetadata = (
+		value: unknown,
+	): StreamMessageMetadata | undefined => {
 		if (!value || typeof value !== "object") {
 			return undefined;
 		}
@@ -257,13 +272,19 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 	const isModeChangeChunk = (
 		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & { type: "data-mode-change"; data: { mode?: string } } => {
+	): chunk is UIMessageChunk & {
+		type: "data-mode-change";
+		data: { mode?: string };
+	} => {
 		return chunk.type === "data-mode-change";
 	};
 
 	const isMessageMetadataChunk = (
 		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & { type: "message-metadata"; messageMetadata?: unknown } => {
+	): chunk is UIMessageChunk & {
+		type: "message-metadata";
+		messageMetadata?: unknown;
+	} => {
 		return chunk.type === "message-metadata";
 	};
 
@@ -362,7 +383,9 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		activeAssistantStream = stream;
 	};
 
-	const isUserMessageChunk = (chunk: UIMessageChunk): chunk is UIMessageChunk & UserMessageChunk => {
+	const isUserMessageChunk = (
+		chunk: UIMessageChunk,
+	): chunk is UIMessageChunk & UserMessageChunk => {
 		return chunk.type === "data-user-message";
 	};
 
@@ -412,7 +435,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		return getTargetMessages().find((message) => message.id === messageId);
 	};
 
-	const notifyMeaningfulMilestones = (chunk: UIMessageChunk, stream: ActiveAssistantStream) => {
+	const notifyMeaningfulMilestones = (
+		chunk: UIMessageChunk,
+		stream: ActiveAssistantStream,
+	) => {
 		if (isToolOutputAvailableChunk(chunk) && chunk.preliminary !== true) {
 			if (!hasNotifiedMeaningfulToolOutput) {
 				hasNotifiedMeaningfulToolOutput = true;
@@ -427,7 +453,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			: isToolApprovalRequestChunk(chunk)
 				? chunk.toolCallId
 				: null;
-		if (actionableQuestionToolCallId && !actionableQuestionToolCallIds.has(actionableQuestionToolCallId)) {
+		if (
+			actionableQuestionToolCallId &&
+			!actionableQuestionToolCallIds.has(actionableQuestionToolCallId)
+		) {
 			actionableQuestionToolCallIds.add(actionableQuestionToolCallId);
 			options.onActionableQuestion?.();
 		}
@@ -441,7 +470,8 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			if (
 				toolPart &&
 				toolPart.toolName === "AskUserQuestion" &&
-				(toolPart.state === "input-available" || toolPart.state === "approval-requested") &&
+				(toolPart.state === "input-available" ||
+					toolPart.state === "approval-requested") &&
 				!actionableQuestionToolCallIds.has(toolPart.toolCallId)
 			) {
 				actionableQuestionToolCallIds.add(toolPart.toolCallId);
@@ -524,7 +554,9 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 	};
 
 	const handleStreamEvent = (event: ChatStreamEvent) => {
-		const task = updateQueue.catch(() => undefined).then(() => applyEvent(event));
+		const task = updateQueue
+			.catch(() => undefined)
+			.then(() => applyEvent(event));
 		updateQueue = task;
 		return task;
 	};
@@ -546,7 +578,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 export function bindChatStreamEventSource(
 	eventSource: ChatStreamEventSource,
-	streamState: Pick<ReturnType<typeof createChatStreamState>, "handleStreamEvent">,
+	streamState: Pick<
+		ReturnType<typeof createChatStreamState>,
+		"handleStreamEvent"
+	>,
 	options: ChatStreamEventSourceOptions = {},
 ) {
 	const handleError = (error: unknown) => {
@@ -578,7 +613,10 @@ export function bindChatStreamEventSource(
 		ping: (event: MessageEvent<string>) => {
 			dispatchEvent({ event: "ping", data: event.data });
 		},
-	} satisfies Record<ChatStreamEventName, (event: MessageEvent<string>) => void>;
+	} satisfies Record<
+		ChatStreamEventName,
+		(event: MessageEvent<string>) => void
+	>;
 
 	for (const [eventName, listener] of Object.entries(listeners) as Array<
 		[ChatStreamEventName, (event: MessageEvent<string>) => void]

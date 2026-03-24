@@ -11,7 +11,10 @@
 	const stackTrace = useStackTraceContext();
 </script>
 
-<div class={cn("flex size-7 items-center justify-center", className)} {...restProps}>
+<div
+	class={cn("flex size-7 items-center justify-center", className)}
+	{...restProps}
+>
 	<ChevronDownIcon
 		class={cn(
 			"size-4 text-muted-foreground transition-transform",

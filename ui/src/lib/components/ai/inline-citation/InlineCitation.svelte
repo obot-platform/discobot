@@ -10,9 +10,6 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<span
-	class={cn("group inline items-center gap-1", className)}
-	{...restProps}
->
+<span class={cn("group inline items-center gap-1", className)} {...restProps}>
 	{@render children?.()}
 </span>

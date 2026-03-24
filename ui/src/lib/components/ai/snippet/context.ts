@@ -6,12 +6,16 @@ export type SnippetContextValue = {
 	code: string;
 };
 
-export function setSnippetContext(value: SnippetContextValue): SnippetContextValue {
+export function setSnippetContext(
+	value: SnippetContextValue,
+): SnippetContextValue {
 	return setContext(SNIPPET_CONTEXT_KEY, value);
 }
 
 export function useSnippetContext(): SnippetContextValue {
-	const context = getContext<SnippetContextValue | undefined>(SNIPPET_CONTEXT_KEY);
+	const context = getContext<SnippetContextValue | undefined>(
+		SNIPPET_CONTEXT_KEY,
+	);
 	if (!context) {
 		throw new Error("Snippet components must be used within Snippet");
 	}

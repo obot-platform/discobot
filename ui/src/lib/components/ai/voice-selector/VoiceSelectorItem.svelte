@@ -29,7 +29,7 @@
 
 <CommandItem
 	class={cn("px-4 py-2", className)}
-	value={value}
+	{value}
 	onSelect={handleSelect}
 	{...restProps}
 >

@@ -1,7 +1,11 @@
 <script lang="ts">
 	import GlobeIcon from "@lucide/svelte/icons/globe";
 	import { MessageResponse } from "$lib/components/ai/message";
-	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
+	import {
+		ToolContent,
+		ToolHeaderControls,
+		ToolHeaderStatus,
+	} from "$lib/components/ai/tool";
 	import {
 		type WebFetchToolOutput,
 		validateWebFetchInput,
@@ -15,7 +19,8 @@
 
 	const isStreaming = $derived.by(
 		() =>
-			toolPart.state === "input-streaming" || toolPart.state === "input-available",
+			toolPart.state === "input-streaming" ||
+			toolPart.state === "input-available",
 	);
 	const inputValidation = $derived.by(() =>
 		validateWebFetchInput(toolPart.input),
@@ -31,7 +36,9 @@
 			? (outputValidation.data as WebFetchToolOutput)
 			: undefined,
 	);
-	const fetchError = $derived.by(() => toolPart.errorText || validOutput?.error);
+	const fetchError = $derived.by(
+		() => toolPart.errorText || validOutput?.error,
+	);
 	const rawOutputText = $derived.by(() => renderToolValue(toolPart.output));
 </script>
 
@@ -48,13 +55,22 @@
 
 <ToolContent>
 	{#if !toolPart.input || typeof toolPart.input !== "object"}
-		<div class="p-4 pt-3 text-muted-foreground text-sm">{isStreaming ? "Loading web fetch..." : "Fetch details are unavailable."}</div>
+		<div class="p-4 pt-3 text-muted-foreground text-sm">
+			{isStreaming ? "Loading web fetch..." : "Fetch details are unavailable."}
+		</div>
 	{:else if !inputValidation.success || !validInput?.url}
 		<div class="space-y-3 p-4 pt-3">
-			<p class="text-muted-foreground text-sm">{isStreaming ? "Loading web fetch..." : "Could not parse fetch details."}</p>
+			<p class="text-muted-foreground text-sm">
+				{isStreaming
+					? "Loading web fetch..."
+					: "Could not parse fetch details."}
+			</p>
 			{#if rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>
@@ -72,23 +88,32 @@
 					<MessageResponse text={validOutput.content} />
 				</div>
 			{:else if outputValidation?.success && !fetchError}
-				<div class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-sm">
+				<div
+					class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-sm"
+				>
 					Fetch completed without content.
 				</div>
 			{/if}
 
 			{#if fetchError}
-				<div class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm">
+				<div
+					class="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm"
+				>
 					{fetchError}
 				</div>
 			{/if}
 
 			{#if outputValidation && !outputValidation.success && rawOutputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<h5 class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+					<h5
+						class="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide"
+					>
 						Unparsed output
 					</h5>
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code>{rawOutputText}</code></pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs"><code
+							>{rawOutputText}</code
+						></pre>
 				</div>
 			{/if}
 		</div>

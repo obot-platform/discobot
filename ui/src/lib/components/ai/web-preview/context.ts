@@ -2,7 +2,9 @@ import { getContext, setContext } from "svelte";
 
 export type WebPreviewViewport = "desktop" | "tablet" | "mobile";
 
-const WEB_PREVIEW_CONTEXT_KEY = Symbol.for("discobot-ui-ai-web-preview-context");
+const WEB_PREVIEW_CONTEXT_KEY = Symbol.for(
+	"discobot-ui-ai-web-preview-context",
+);
 
 export type WebPreviewContextValue = {
 	url: string;

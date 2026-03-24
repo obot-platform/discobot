@@ -32,7 +32,9 @@ const TOOL_RENDERERS: Record<string, RendererComponent> = {
 	Skill: SkillToolRenderer,
 };
 
-export function getToolRenderer(toolName: string): RendererComponent | undefined {
+export function getToolRenderer(
+	toolName: string,
+): RendererComponent | undefined {
 	return TOOL_RENDERERS[toolName];
 }
 

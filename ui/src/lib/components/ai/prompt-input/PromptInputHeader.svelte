@@ -6,6 +6,10 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<InputGroupAddon align="block-start" class={cn("order-first flex-wrap gap-1", className)} {...restProps}>
+<InputGroupAddon
+	align="block-start"
+	class={cn("order-first flex-wrap gap-1", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </InputGroupAddon>

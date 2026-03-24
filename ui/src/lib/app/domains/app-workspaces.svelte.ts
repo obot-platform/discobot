@@ -5,7 +5,9 @@ type CreateAppWorkspacesDomainArgs = {
 	store: WorkspaceStore;
 };
 
-export function createAppWorkspacesDomain(args: CreateAppWorkspacesDomainArgs): AppWorkspaces {
+export function createAppWorkspacesDomain(
+	args: CreateAppWorkspacesDomainArgs,
+): AppWorkspaces {
 	const { store } = args;
 
 	return {

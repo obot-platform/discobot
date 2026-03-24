@@ -9,10 +9,14 @@ type CreateAppStartupStatusDomainArgs = {
 	store: StartupTaskStore;
 };
 
-export function createAppStartupStatusDomain(args: CreateAppStartupStatusDomainArgs): AppStartupStatus {
+export function createAppStartupStatusDomain(
+	args: CreateAppStartupStatusDomainArgs,
+): AppStartupStatus {
 	const { store } = args;
 
-	const visibleTasks = $derived.by(() => store.list.filter((task) => task.state !== "completed"));
+	const visibleTasks = $derived.by(() =>
+		store.list.filter((task) => task.state !== "completed"),
+	);
 	const hasActiveTasks = $derived.by(() => store.list.some(isTaskActive));
 
 	return {

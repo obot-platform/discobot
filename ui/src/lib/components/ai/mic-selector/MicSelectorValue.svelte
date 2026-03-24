@@ -11,7 +11,10 @@
 	const micSelector = useMicSelectorContext();
 
 	const currentDevice = $derived.by(
-		() => micSelector.data.find((device) => device.deviceId === micSelector.value) ?? null,
+		() =>
+			micSelector.data.find(
+				(device) => device.deviceId === micSelector.value,
+			) ?? null,
 	);
 </script>
 
@@ -22,5 +25,7 @@
 		{...restProps}
 	/>
 {:else}
-	<span class={cn("flex-1 text-left", className)} {...restProps}>Select microphone...</span>
+	<span class={cn("flex-1 text-left", className)} {...restProps}
+		>Select microphone...</span
+	>
 {/if}

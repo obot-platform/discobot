@@ -20,7 +20,9 @@ type CreateAppCredentialsDomainArgs = {
 	refreshModels: () => Promise<void>;
 };
 
-export function createAppCredentialsDomain(args: CreateAppCredentialsDomainArgs): AppCredentials {
+export function createAppCredentialsDomain(
+	args: CreateAppCredentialsDomainArgs,
+): AppCredentials {
 	const { store } = args;
 
 	const saveCredential = async (
@@ -54,15 +56,19 @@ export function createAppCredentialsDomain(args: CreateAppCredentialsDomainArgs)
 			void args.refreshModels();
 			return response as OAuthRefreshResponse;
 		},
-		anthropicAuthorize: (): Promise<OAuthAuthorizeResponse> => api.anthropicAuthorize(),
-		anthropicExchange: async (data: OAuthExchangeRequest): Promise<OAuthExchangeResponse> => {
+		anthropicAuthorize: (): Promise<OAuthAuthorizeResponse> =>
+			api.anthropicAuthorize(),
+		anthropicExchange: async (
+			data: OAuthExchangeRequest,
+		): Promise<OAuthExchangeResponse> => {
 			const response = await api.anthropicExchange(data);
 			await store.fetch();
 			void args.refreshModels();
 			return response;
 		},
-		githubDeviceCode: (data?: GitHubDeviceCodeRequest): Promise<GitHubDeviceCodeResponse> =>
-			api.githubDeviceCode(data),
+		githubDeviceCode: (
+			data?: GitHubDeviceCodeRequest,
+		): Promise<GitHubDeviceCodeResponse> => api.githubDeviceCode(data),
 		githubPoll: async (data: GitHubPollRequest) => {
 			const response = await api.githubPoll(data);
 			if (response.status === "success") {

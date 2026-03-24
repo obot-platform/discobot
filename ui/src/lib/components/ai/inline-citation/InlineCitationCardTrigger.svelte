@@ -10,12 +10,7 @@
 		children?: () => any;
 	};
 
-	let {
-		sources,
-		class: className,
-		children,
-		...restProps
-	}: Props = $props();
+	let { sources, class: className, children, ...restProps }: Props = $props();
 
 	const sourceLabel = $derived.by(() => {
 		const firstSource = sources[0];

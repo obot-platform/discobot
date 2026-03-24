@@ -1,6 +1,11 @@
-import type { AttachmentData, AttachmentMediaCategory } from "$lib/components/ai/types";
+import type {
+	AttachmentData,
+	AttachmentMediaCategory,
+} from "$lib/components/ai/types";
 
-export function getMediaCategory(data: AttachmentData): AttachmentMediaCategory {
+export function getMediaCategory(
+	data: AttachmentData,
+): AttachmentMediaCategory {
 	if (data.type === "source-document") {
 		return "source";
 	}

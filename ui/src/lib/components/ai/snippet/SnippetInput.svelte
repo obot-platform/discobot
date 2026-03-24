@@ -4,8 +4,16 @@
 	import { cn } from "$lib/utils";
 	import { useSnippetContext } from "./context";
 
-	let { class: className, ...restProps }: ComponentProps<typeof InputGroupInput> = $props();
+	let {
+		class: className,
+		...restProps
+	}: ComponentProps<typeof InputGroupInput> = $props();
 	const snippet = useSnippetContext();
 </script>
 
-<InputGroupInput class={cn("text-foreground", className)} readonly value={snippet.code} {...restProps} />
+<InputGroupInput
+	class={cn("text-foreground", className)}
+	readonly
+	value={snippet.code}
+	{...restProps}
+/>

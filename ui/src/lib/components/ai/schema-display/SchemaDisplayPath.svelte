@@ -12,7 +12,12 @@
 		return source
 			.split(/(\{[^}]+\})/g)
 			.filter(Boolean)
-			.map((part): PathPart => ({ value: part, isParam: /^\{[^}]+\}$/.test(part) }));
+			.map(
+				(part): PathPart => ({
+					value: part,
+					isParam: /^\{[^}]+\}$/.test(part),
+				}),
+			);
 	});
 </script>
 
@@ -22,7 +27,9 @@
 	{:else}
 		{#each pathParts as part}
 			{#if part.isParam}
-				<span class="text-blue-600 dark:text-blue-400">{part.value.slice(1, -1)}</span>
+				<span class="text-blue-600 dark:text-blue-400"
+					>{part.value.slice(1, -1)}</span
+				>
 			{:else}
 				{part.value}
 			{/if}

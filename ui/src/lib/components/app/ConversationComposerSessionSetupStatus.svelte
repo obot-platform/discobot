@@ -9,7 +9,9 @@
 </script>
 
 {#if session.isPending}
-	<p class="mb-2 px-1 text-sm font-medium text-muted-foreground">Start a new session</p>
+	<p class="mb-2 px-1 text-sm font-medium text-muted-foreground">
+		Start a new session
+	</p>
 	{#if workspaces.status === "loading"}
 		<p class="mb-2 px-1 text-xs text-muted-foreground">Loading workspaces...</p>
 	{/if}

@@ -10,6 +10,10 @@
 	}: WithElementRef<HTMLAttributes<HTMLParagraphElement>> = $props();
 </script>
 
-<p bind:this={ref} class={cn("font-medium text-foreground text-sm", className)} {...restProps}>
+<p
+	bind:this={ref}
+	class={cn("font-medium text-foreground text-sm", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </p>

@@ -82,7 +82,11 @@
 		if (!sessionView.selectedHookId) {
 			return null;
 		}
-		return hooksStatus.hooks.find((hook) => hook.hookId === sessionView.selectedHookId) ?? null;
+		return (
+			hooksStatus.hooks.find(
+				(hook) => hook.hookId === sessionView.selectedHookId,
+			) ?? null
+		);
 	});
 
 	function selectedHookOutput() {
@@ -119,7 +123,9 @@
 
 {#if expanded && hooksStatus.hooks.length > 0}
 	<div class="mb-2 rounded-lg border border-border bg-background shadow-sm">
-		<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+		<div
+			class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground"
+		>
 			Hooks ({hookPassedCount()} passed)
 		</div>
 		<div class="max-h-48 overflow-auto p-1">
@@ -137,7 +143,9 @@
 					}}
 				>
 					{#if hook.lastResult === "running"}
-						<Loader2Icon class={`size-3 animate-spin ${hookStatusTone(hook)}`} />
+						<Loader2Icon
+							class={`size-3 animate-spin ${hookStatusTone(hook)}`}
+						/>
 					{:else if isHookPending(hook.hookId)}
 						<ClockIcon class={`size-3 ${hookStatusTone(hook)}`} />
 					{:else if hook.lastResult === "failure"}
@@ -174,7 +182,9 @@
 <Dialog.Root bind:open={sessionView.hookDialogOpen}>
 	{#if selectedHookData}
 		{@const hook = selectedHookData}
-		<Dialog.Content class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+		<Dialog.Content
+			class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
+		>
 			<Dialog.Header>
 				<Dialog.Title class="flex items-center gap-2">
 					{#if hook.lastResult === "running"}
@@ -194,10 +204,14 @@
 			</Dialog.Header>
 
 			<div class="flex items-center gap-4 text-sm">
-				<span class="text-muted-foreground">Status: {hookStatusLabel(hook)}</span>
+				<span class="text-muted-foreground"
+					>Status: {hookStatusLabel(hook)}</span
+				>
 				<span class="text-muted-foreground">Runs: {hook.runCount}</span>
 				{#if typeof hook.lastExitCode === "number"}
-					<span class="text-muted-foreground">Exit code: {hook.lastExitCode}</span>
+					<span class="text-muted-foreground"
+						>Exit code: {hook.lastExitCode}</span
+					>
 				{/if}
 				{#if hook.failCount > 0}
 					<span class="text-red-500/80">Failures: {hook.failCount}</span>
@@ -215,12 +229,17 @@
 				{/if}
 			</div>
 
-			<div class="mt-2 flex-1 min-h-0 overflow-hidden rounded-md border border-border bg-muted/30">
-				<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+			<div
+				class="mt-2 flex-1 min-h-0 overflow-hidden rounded-md border border-border bg-muted/30"
+			>
+				<div
+					class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground"
+				>
 					{hook.command ? `Command: ${hook.command}` : "Output"}
 				</div>
 				<div class="max-h-[50vh] overflow-auto">
-					<pre class="p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">{selectedHookOutput()}</pre>
+					<pre
+						class="p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">{selectedHookOutput()}</pre>
 				</div>
 			</div>
 		</Dialog.Content>

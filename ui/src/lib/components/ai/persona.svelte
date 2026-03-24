@@ -6,8 +6,19 @@
 	import Volume2Icon from "@lucide/svelte/icons/volume-2";
 	import { cn } from "$lib/utils";
 
-	export type PersonaState = "idle" | "listening" | "thinking" | "speaking" | "asleep";
-	type PersonaVariant = "obsidian" | "mana" | "opal" | "halo" | "glint" | "command";
+	export type PersonaState =
+		| "idle"
+		| "listening"
+		| "thinking"
+		| "speaking"
+		| "asleep";
+	type PersonaVariant =
+		| "obsidian"
+		| "mana"
+		| "opal"
+		| "halo"
+		| "glint"
+		| "command";
 
 	type Props = {
 		state: PersonaState;
@@ -15,7 +26,11 @@
 		class?: string;
 	};
 
-	let { state = "idle", variant = "obsidian", class: className }: Props = $props();
+	let {
+		state = "idle",
+		variant = "obsidian",
+		class: className,
+	}: Props = $props();
 
 	const toneClass = $derived.by(() => {
 		switch (variant) {

@@ -35,7 +35,10 @@
 	class="relative z-[60] grid h-12 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-background"
 	data-tauri-drag-region
 >
-	<div class="absolute inset-0 pointer-events-auto" data-tauri-drag-region></div>
+	<div
+		class="absolute inset-0 pointer-events-auto"
+		data-tauri-drag-region
+	></div>
 
 	<div class="relative z-20 flex min-w-0 items-center gap-2 px-3">
 		{#if showMacSpacer()}
@@ -53,17 +56,19 @@
 		</div>
 	{/if}
 
-	<div class="relative z-20 flex min-w-0 items-center justify-self-end gap-1 pr-2">
+	<div
+		class="relative z-20 flex min-w-0 items-center justify-self-end gap-1 pr-2"
+	>
 		<Button
 			variant="ghost"
 			size="icon-sm"
 			onclick={preferences.toggleTheme}
-			aria-label={
-				preferences.resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"
-			}
-			title={
-				preferences.resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"
-			}
+			aria-label={preferences.resolvedTheme === "dark"
+				? "Switch to light theme"
+				: "Switch to dark theme"}
+			title={preferences.resolvedTheme === "dark"
+				? "Switch to light theme"
+				: "Switch to dark theme"}
 		>
 			{#if preferences.resolvedTheme === "dark"}
 				<SunIcon class="size-4" />
@@ -81,7 +86,8 @@
 		>
 			<SettingsIcon class="size-4" />
 			{#if updates.showBadge}
-				<span class="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500"></span>
+				<span class="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500"
+				></span>
 			{/if}
 		</Button>
 

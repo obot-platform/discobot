@@ -16,7 +16,9 @@
 
 {#if expanded && entries.length > 0}
 	<div class="mb-2 rounded-lg border border-border bg-background shadow-sm">
-		<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+		<div
+			class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground"
+		>
 			Todo ({completedCount()} completed)
 		</div>
 		<div class="max-h-48 overflow-auto p-1">

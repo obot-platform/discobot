@@ -20,7 +20,9 @@
 
 	const session = useSessionContext();
 	// threadId is stable at mount time because SessionWorkspace wraps us in {#key session.threads.selectedId}
-	const thread = setThreadContext(session.threads.selectedId ?? session.sessionId);
+	const thread = setThreadContext(
+		session.threads.selectedId ?? session.sessionId,
+	);
 
 	onMount(() => {
 		void thread.load();
@@ -51,7 +53,8 @@
 					<ThreadWorkspaceHeader
 						sidebarOpen={props.sidebarOpen ?? false}
 						onToggleSidebar={props.onToggleSidebar ?? noop}
-						title={session.threads.selected?.name ?? (session.isPending ? "" : "No thread selected")}
+						title={session.threads.selected?.name ??
+							(session.isPending ? "" : "No thread selected")}
 					/>
 					<div class="min-h-0 flex-1 overflow-hidden">
 						<ConversationPane />
@@ -69,7 +72,8 @@
 		<ThreadWorkspaceHeader
 			sidebarOpen={props.sidebarOpen ?? false}
 			onToggleSidebar={props.onToggleSidebar ?? noop}
-			title={session.threads.selected?.name ?? (session.isPending ? "" : "No thread selected")}
+			title={session.threads.selected?.name ??
+				(session.isPending ? "" : "No thread selected")}
 		/>
 
 		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">

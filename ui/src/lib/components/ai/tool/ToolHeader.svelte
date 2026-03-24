@@ -33,13 +33,19 @@
 	}: Props = $props();
 
 	const derivedName = $derived.by(() =>
-		type === "dynamic-tool" ? (toolName ?? "tool") : type.split("-").slice(1).join("-"),
+		type === "dynamic-tool"
+			? (toolName ?? "tool")
+			: type.split("-").slice(1).join("-"),
 	);
 	const displayText = $derived.by(() => title ?? derivedName);
 	const colonIndex = $derived.by(() => displayText.indexOf(": "));
 	const hasVerb = $derived.by(() => colonIndex !== -1);
-	const verb = $derived.by(() => (hasVerb ? displayText.slice(0, colonIndex) : null));
-	const rest = $derived.by(() => (hasVerb ? displayText.slice(colonIndex + 2) : displayText));
+	const verb = $derived.by(() =>
+		hasVerb ? displayText.slice(0, colonIndex) : null,
+	);
+	const rest = $derived.by(() =>
+		hasVerb ? displayText.slice(colonIndex + 2) : displayText,
+	);
 </script>
 
 <div class="flex items-center justify-between gap-4">

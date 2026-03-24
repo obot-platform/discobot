@@ -11,12 +11,7 @@
 		children?: () => any;
 	};
 
-	let {
-		class: className,
-		onclick,
-		children,
-		...restProps
-	}: Props = $props();
+	let { class: className, onclick, children, ...restProps }: Props = $props();
 
 	const player = useAudioPlayerContext();
 

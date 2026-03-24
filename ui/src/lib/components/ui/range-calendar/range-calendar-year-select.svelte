@@ -14,10 +14,14 @@
 <span
 	class={cn(
 		"has-focus:border-ring border-input has-focus:ring-ring/50 relative flex rounded-md border shadow-xs has-focus:ring-[3px]",
-		className
+		className,
 	)}
 >
-	<RangeCalendarPrimitive.YearSelect bind:ref class="absolute inset-0 opacity-0" {...restProps}>
+	<RangeCalendarPrimitive.YearSelect
+		bind:ref
+		class="absolute inset-0 opacity-0"
+		{...restProps}
+	>
 		{#snippet child({ props, yearItems, selectedYearItem })}
 			<select data-slot="calendar-native-select" {...props} {value}>
 				{#each yearItems as yearItem (yearItem.value)}
@@ -35,7 +39,8 @@
 				class="[&>svg]:text-muted-foreground flex h-8 items-center gap-1 rounded-md ps-2 pe-1 text-sm font-medium select-none [&>svg]:size-3.5"
 				aria-hidden="true"
 			>
-				{yearItems.find((item) => item.value === value)?.label || selectedYearItem.label}
+				{yearItems.find((item) => item.value === value)?.label ||
+					selectedYearItem.label}
 				<ChevronDownIcon class="size-4" />
 			</span>
 		{/snippet}

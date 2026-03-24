@@ -31,7 +31,10 @@ test("isPathAtOrWithin matches exact paths and descendants", () => {
 });
 
 test("renamePath remaps exact paths and descendants", () => {
-	assert.equal(renamePath("src/app.ts", "src/app.ts", "src/main.ts"), "src/main.ts");
+	assert.equal(
+		renamePath("src/app.ts", "src/app.ts", "src/main.ts"),
+		"src/main.ts",
+	);
 	assert.equal(
 		renamePath("src/utils/math.ts", "src", "lib"),
 		"lib/utils/math.ts",

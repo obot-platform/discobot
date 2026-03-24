@@ -19,7 +19,10 @@
 {#if children}
 	{@render children()}
 {:else if cacheTokens}
-	<div class={cn("flex items-center justify-between text-xs", className)} {...restProps}>
+	<div
+		class={cn("flex items-center justify-between text-xs", className)}
+		{...restProps}
+	>
 		<span class="text-muted-foreground">Cache</span>
 		<TokensWithCost tokens={cacheTokens} costText={cacheCostText} />
 	</div>

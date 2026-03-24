@@ -8,7 +8,10 @@
 </script>
 
 {#if test.duration !== undefined}
-	<span class={cn("ml-auto text-muted-foreground text-xs", className)} {...restProps}>
+	<span
+		class={cn("ml-auto text-muted-foreground text-xs", className)}
+		{...restProps}
+	>
 		{#if children}
 			{@render children()}
 		{:else}

@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { cn, type WithElementRef, type WithoutChildren } from "$lib/utils.js";
 	import type { HTMLAttributes } from "svelte/elements";
-	import { getPayloadConfigFromPayload, useChart, type TooltipPayload } from "./chart-utils.js";
+	import {
+		getPayloadConfigFromPayload,
+		useChart,
+		type TooltipPayload,
+	} from "./chart-utils.js";
 	import { getTooltipContext, Tooltip as TooltipPrimitive } from "layerchart";
 	import type { Snippet } from "svelte";
 
@@ -31,7 +35,9 @@
 		labelKey?: string;
 		hideIndicator?: boolean;
 		labelClassName?: string;
-		labelFormatter?: ((value: any, payload: TooltipPayload[]) => string | number | Snippet) | null;
+		labelFormatter?:
+			| ((value: any, payload: TooltipPayload[]) => string | number | Snippet)
+			| null;
 		formatter?: Snippet<
 			[
 				{
@@ -66,7 +72,9 @@
 		return labelFormatter(value, tooltipCtx.payload);
 	});
 
-	const nestLabel = $derived(tooltipCtx.payload.length === 1 && indicator !== "dot");
+	const nestLabel = $derived(
+		tooltipCtx.payload.length === 1 && indicator !== "dot",
+	);
 </script>
 
 {#snippet TooltipLabel()}
@@ -85,7 +93,7 @@
 	<div
 		class={cn(
 			"border-border/50 bg-background grid min-w-[9rem] items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl",
-			className
+			className,
 		)}
 		{...restProps}
 	>
@@ -95,12 +103,16 @@
 		<div class="grid gap-1.5">
 			{#each tooltipCtx.payload as item, i (item.key + i)}
 				{@const key = `${nameKey || item.key || item.name || "value"}`}
-				{@const itemConfig = getPayloadConfigFromPayload(chart.config, item, key)}
+				{@const itemConfig = getPayloadConfigFromPayload(
+					chart.config,
+					item,
+					key,
+				)}
 				{@const indicatorColor = color || item.payload?.color || item.color}
 				<div
 					class={cn(
 						"[&>svg]:text-muted-foreground flex w-full flex-wrap items-stretch gap-2 [&>svg]:size-2.5",
-						indicator === "dot" && "items-center"
+						indicator === "dot" && "items-center",
 					)}
 				>
 					{#if formatter && item.value !== undefined && item.name}
@@ -125,14 +137,14 @@
 										"w-0 border-[1.5px] border-dashed bg-transparent":
 											indicator === "dashed",
 										"my-0.5": nestLabel && indicator === "dashed",
-									}
+									},
 								)}
 							></div>
 						{/if}
 						<div
 							class={cn(
 								"flex flex-1 shrink-0 justify-between leading-none",
-								nestLabel ? "items-end" : "items-center"
+								nestLabel ? "items-end" : "items-center",
 							)}
 						>
 							<div class="grid gap-1.5">
@@ -144,7 +156,9 @@
 								</span>
 							</div>
 							{#if item.value !== undefined}
-								<span class="text-foreground font-mono font-medium tabular-nums">
+								<span
+									class="text-foreground font-mono font-medium tabular-nums"
+								>
 									{item.value.toLocaleString()}
 								</span>
 							{/if}

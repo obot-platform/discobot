@@ -10,9 +10,6 @@
 	let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<div
-	class={cn("not-prose w-full rounded-md border", className)}
-	{...restProps}
->
+<div class={cn("not-prose w-full rounded-md border", className)} {...restProps}>
 	{@render children?.()}
 </div>

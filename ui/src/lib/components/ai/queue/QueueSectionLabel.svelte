@@ -19,7 +19,9 @@
 </script>
 
 <span class={cn("flex items-center gap-2", className)} {...restProps}>
-	<ChevronDownIcon class="size-4 transition-transform group-data-[state=closed]:-rotate-90" />
+	<ChevronDownIcon
+		class="size-4 transition-transform group-data-[state=closed]:-rotate-90"
+	/>
 	{@render children?.()}
 	<span>{count} {label}</span>
 </span>

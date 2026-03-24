@@ -25,8 +25,9 @@
 	}
 
 	function hookPassedCount() {
-		return hooks().filter((hook) => hook.lastResult === "success" && !isHookPending(hook.hookId))
-			.length;
+		return hooks().filter(
+			(hook) => hook.lastResult === "success" && !isHookPending(hook.hookId),
+		).length;
 	}
 
 	function hookHasRunning() {

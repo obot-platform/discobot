@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { cn } from "$lib/utils";
-	import { type TranscriptionSegmentData, useTranscriptionContext } from "./context";
+	import {
+		type TranscriptionSegmentData,
+		useTranscriptionContext,
+	} from "./context";
 
 	type Props = {
 		segment: TranscriptionSegmentData;
@@ -9,8 +12,13 @@
 		onclick?: (event: MouseEvent) => void;
 	};
 
-	let { segment, index, class: className, onclick, ...restProps }: Props =
-		$props();
+	let {
+		segment,
+		index,
+		class: className,
+		onclick,
+		...restProps
+	}: Props = $props();
 
 	const transcription = useTranscriptionContext();
 

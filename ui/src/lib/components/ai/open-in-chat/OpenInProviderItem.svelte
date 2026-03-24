@@ -2,7 +2,11 @@
 	import { DropdownMenuItem } from "$lib/components/ui/dropdown-menu";
 	import { openUrl } from "$lib/tauri";
 	import { useOpenInChatContext } from "./context";
-	import { ExternalLinkIcon, providers, type OpenInProvider } from "./providers";
+	import {
+		ExternalLinkIcon,
+		providers,
+		type OpenInProvider,
+	} from "./providers";
 
 	type Props = {
 		provider: OpenInProvider;
@@ -19,7 +23,11 @@
 	}
 </script>
 
-<DropdownMenuItem onclick={handleOpen} class="flex items-center gap-2" {...restProps}>
+<DropdownMenuItem
+	onclick={handleOpen}
+	class="flex items-center gap-2"
+	{...restProps}
+>
 	<ProviderIcon class="size-4 shrink-0" />
 	<span class="flex-1">{providerMeta.title}</span>
 	<ExternalLinkIcon class="size-4 shrink-0" />

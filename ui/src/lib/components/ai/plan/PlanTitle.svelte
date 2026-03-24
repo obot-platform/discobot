@@ -14,7 +14,9 @@
 
 <CardTitle data-slot="plan-title" {...restProps}>
 	{#if plan.isStreaming}
-		<Shimmer text={text}>{#if children}{@render children()}{/if}</Shimmer>
+		<Shimmer {text}
+			>{#if children}{@render children()}{/if}</Shimmer
+		>
 	{:else if children}
 		{@render children()}
 	{:else}

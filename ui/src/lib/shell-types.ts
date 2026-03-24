@@ -21,9 +21,20 @@ export const SUPPORTED_PREFERRED_IDES = [
 	"jetbrains-rider",
 ] as const;
 export type PreferredIde = (typeof SUPPORTED_PREFERRED_IDES)[number];
-export type StandardPreferredIde = Extract<PreferredIde, "cursor" | "vscode" | "zed">;
+export type StandardPreferredIde = Extract<
+	PreferredIde,
+	"cursor" | "vscode" | "zed"
+>;
 export type JetBrainsPreferredIde = Exclude<PreferredIde, StandardPreferredIde>;
-export type JetBrainsProductCode = "IU" | "WS" | "GO" | "PY" | "PS" | "CL" | "RM" | "RD";
+export type JetBrainsProductCode =
+	| "IU"
+	| "WS"
+	| "GO"
+	| "PY"
+	| "PS"
+	| "CL"
+	| "RM"
+	| "RD";
 export type WindowControlsSide = "left" | "right";
 
 export type AsyncStatus = "idle" | "loading" | "ready" | "error";
@@ -51,7 +62,9 @@ export type JetBrainsIdeOption = BaseIdeOption & {
 
 export type IdeOption = StandardIdeOption | JetBrainsIdeOption;
 
-export function isPreferredIde(value: string | null | undefined): value is PreferredIde {
+export function isPreferredIde(
+	value: string | null | undefined,
+): value is PreferredIde {
 	return (SUPPORTED_PREFERRED_IDES as readonly string[]).includes(value ?? "");
 }
 
@@ -178,7 +191,8 @@ export type SessionData = {
 	status: Session["status"];
 	files: Session["files"];
 	workspaceId?: Session["workspaceId"];
-	model?: Session["model"];	reasoning?: Session["reasoning"];
+	model?: Session["model"];
+	reasoning?: Session["reasoning"];
 	mode?: Session["mode"];
 	activeEnvSetIds?: Session["activeEnvSetIds"];
 	baseBranch: string;

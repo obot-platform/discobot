@@ -5,7 +5,13 @@ import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 import GithubIcon from "@lucide/svelte/icons/github";
 import SparklesIcon from "@lucide/svelte/icons/sparkles";
 
-export type OpenInProvider = "chatgpt" | "claude" | "t3" | "scira" | "v0" | "cursor";
+export type OpenInProvider =
+	| "chatgpt"
+	| "claude"
+	| "t3"
+	| "scira"
+	| "v0"
+	| "cursor";
 
 export type ProviderMeta = {
 	title: string;

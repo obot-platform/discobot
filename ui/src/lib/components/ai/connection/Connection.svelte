@@ -17,6 +17,19 @@
 </script>
 
 <g {...restProps}>
-	<path class="animated" d={path} fill="none" stroke="var(--color-ring)" stroke-width={1}></path>
-	<circle cx={toX} cy={toY} fill="#fff" r={3} stroke="var(--color-ring)" stroke-width={1}></circle>
+	<path
+		class="animated"
+		d={path}
+		fill="none"
+		stroke="var(--color-ring)"
+		stroke-width={1}
+	></path>
+	<circle
+		cx={toX}
+		cy={toY}
+		fill="#fff"
+		r={3}
+		stroke="var(--color-ring)"
+		stroke-width={1}
+	></circle>
 </g>

@@ -1,6 +1,10 @@
 <script lang="ts">
 	import MessageSquareQuoteIcon from "@lucide/svelte/icons/message-square-quote";
-	import { ToolContent, ToolHeaderControls, ToolHeaderStatus } from "$lib/components/ai/tool";
+	import {
+		ToolContent,
+		ToolHeaderControls,
+		ToolHeaderStatus,
+	} from "$lib/components/ai/tool";
 	import {
 		type AskUserQuestionToolInput,
 		validateAskUserQuestionInput,
@@ -30,14 +34,16 @@
 	};
 
 	let pendingQuestion = $state<PendingQuestionLike | null>(null);
-	let approvalStatus = $state<"idle" | "loading" | "pending" | "answered" | "error">(
-		"idle",
-	);
+	let approvalStatus = $state<
+		"idle" | "loading" | "pending" | "answered" | "error"
+	>("idle");
 	let approvalError = $state<string | null>(null);
 	let localAnswers = $state<Record<string, string> | null>(null);
 
 	function parseAnswers(value: unknown): Record<string, string> | null {
-		const parseCandidate = (candidate: unknown): Record<string, string> | null => {
+		const parseCandidate = (
+			candidate: unknown,
+		): Record<string, string> | null => {
 			if (Array.isArray(candidate)) {
 				const pairs: Record<string, string> = {};
 				for (const item of candidate) {
@@ -75,7 +81,8 @@
 				const parsed = JSON.parse(trimmed);
 				return parseCandidate(parsed);
 			} catch {
-				const pairRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"="([^"\\]*(?:\\.[^"\\]*)*)"/g;
+				const pairRegex =
+					/"([^"\\]*(?:\\.[^"\\]*)*)"="([^"\\]*(?:\\.[^"\\]*)*)"/g;
 				const pairs: Record<string, string> = {};
 				for (const match of trimmed.matchAll(pairRegex)) {
 					pairs[match[1]] = match[2];
@@ -131,7 +138,9 @@
 	const parsedAnswers = $derived.by(() => parseAnswers(toolPart.output));
 	const resolvedAnswers = $derived.by(() => parsedAnswers ?? localAnswers);
 	const questions = $derived.by(() => validInput?.questions ?? []);
-	const summaryQuestions = $derived.by(() => pendingQuestion?.questions ?? questions);
+	const summaryQuestions = $derived.by(
+		() => pendingQuestion?.questions ?? questions,
+	);
 
 	async function fetchPendingQuestion(
 		sessionId: string,
@@ -204,7 +213,10 @@
 		};
 	});
 
-	async function submitAnswers(toolUseID: string, answers: Record<string, string>) {
+	async function submitAnswers(
+		toolUseID: string,
+		answers: Record<string, string>,
+	) {
 		localAnswers = answers;
 		approvalError = null;
 
@@ -232,7 +244,9 @@
 		} catch (error) {
 			approvalStatus = "pending";
 			approvalError =
-				error instanceof Error ? error.message : "Failed to submit question answer";
+				error instanceof Error
+					? error.message
+					: "Failed to submit question answer";
 		}
 	}
 </script>
@@ -253,8 +267,14 @@
 				<p class="text-muted-foreground text-sm">Loading question...</p>
 			{:else if approvalStatus === "error"}
 				<div class="space-y-1.5">
-					<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
-					<p class="text-destructive text-sm">{approvalError ?? "Failed to load question"}</p>
+					<h4
+						class="font-medium text-destructive text-xs uppercase tracking-wide"
+					>
+						Error
+					</h4>
+					<p class="text-destructive text-sm">
+						{approvalError ?? "Failed to load question"}
+					</p>
 				</div>
 			{:else if approvalStatus === "answered"}
 				{#if summaryQuestions.length > 0 && resolvedAnswers}
@@ -262,7 +282,9 @@
 						{#each summaryQuestions as question}
 							<div class="space-y-1">
 								<p class="font-medium text-sm">{question.question}</p>
-								<p class="text-muted-foreground text-sm">{resolvedAnswers[question.question] ?? "No answer"}</p>
+								<p class="text-muted-foreground text-sm">
+									{resolvedAnswers[question.question] ?? "No answer"}
+								</p>
 							</div>
 						{/each}
 					</div>
@@ -271,10 +293,12 @@
 				{/if}
 			{:else if pendingQuestion}
 				<div class="rounded-lg border bg-card p-4">
-					<AskUserQuestionWizard pendingQuestion={pendingQuestion} onSubmit={submitAnswers} />
+					<AskUserQuestionWizard {pendingQuestion} onSubmit={submitAnswers} />
 				</div>
 			{:else}
-				<p class="text-muted-foreground text-sm">Waiting for question details...</p>
+				<p class="text-muted-foreground text-sm">
+					Waiting for question details...
+				</p>
 			{/if}
 
 			{#if approvalError && approvalStatus !== "error"}
@@ -283,19 +307,30 @@
 
 			{#if toolPart.errorText}
 				<div class="space-y-1.5">
-					<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
+					<h4
+						class="font-medium text-destructive text-xs uppercase tracking-wide"
+					>
+						Error
+					</h4>
 					<p class="text-destructive text-sm">{toolPart.errorText}</p>
 				</div>
 			{/if}
 		</div>
 	{:else if !toolPart.input || typeof toolPart.input !== "object"}
-		<div class="p-4 pt-3 text-muted-foreground text-sm">{isStreaming ? "Loading question..." : "No input data"}</div>
+		<div class="p-4 pt-3 text-muted-foreground text-sm">
+			{isStreaming ? "Loading question..." : "No input data"}
+		</div>
 	{:else if !inputValidation.success}
 		<div class="space-y-3 p-4 pt-3">
-			<p class="text-muted-foreground text-sm">{isStreaming ? "Loading question..." : "Could not parse question details."}</p>
+			<p class="text-muted-foreground text-sm">
+				{isStreaming
+					? "Loading question..."
+					: "Could not parse question details."}
+			</p>
 			{#if outputText}
 				<div class="rounded-md border border-dashed bg-muted/20 p-3">
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs">{outputText}</pre>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs">{outputText}</pre>
 				</div>
 			{/if}
 			{#if toolPart.errorText}
@@ -310,7 +345,9 @@
 						{#each questions as question}
 							<div class="space-y-1">
 								<p class="font-medium text-sm">{question.question}</p>
-								<p class="text-muted-foreground text-sm">{resolvedAnswers[question.question] ?? "No answer"}</p>
+								<p class="text-muted-foreground text-sm">
+									{resolvedAnswers[question.question] ?? "No answer"}
+								</p>
 							</div>
 						{/each}
 					{:else}
@@ -325,20 +362,31 @@
 
 			{#if outputText && !resolvedAnswers}
 				<div class="space-y-1.5">
-					<h4 class="font-medium text-muted-foreground text-xs uppercase tracking-wide">Response</h4>
-					<pre class="overflow-x-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-sm">{outputText}</pre>
+					<h4
+						class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+					>
+						Response
+					</h4>
+					<pre
+						class="overflow-x-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-sm">{outputText}</pre>
 				</div>
 			{/if}
 
 			{#if outputValidation && !outputValidation.success}
-				<div class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-xs">
+				<div
+					class="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-xs"
+				>
 					Could not parse tool output.
 				</div>
 			{/if}
 
 			{#if toolPart.errorText}
 				<div class="space-y-1.5">
-					<h4 class="font-medium text-destructive text-xs uppercase tracking-wide">Error</h4>
+					<h4
+						class="font-medium text-destructive text-xs uppercase tracking-wide"
+					>
+						Error
+					</h4>
 					<p class="text-destructive text-sm">{toolPart.errorText}</p>
 				</div>
 			{/if}

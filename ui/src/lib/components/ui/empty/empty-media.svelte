@@ -14,7 +14,9 @@
 		},
 	});
 
-	export type EmptyMediaVariant = VariantProps<typeof emptyMediaVariants>["variant"];
+	export type EmptyMediaVariant = VariantProps<
+		typeof emptyMediaVariants
+	>["variant"];
 </script>
 
 <script lang="ts">
@@ -27,7 +29,9 @@
 		children,
 		variant = "default",
 		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & { variant?: EmptyMediaVariant } = $props();
+	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
+		variant?: EmptyMediaVariant;
+	} = $props();
 </script>
 
 <div

@@ -73,7 +73,8 @@ function withLocalStorage(run: (storage: StorageLike) => void) {
 	};
 	const previousWindow = windowWithStorage.window;
 	const storage = createLocalStorage();
-	windowWithStorage.window = { localStorage: storage } as unknown as Window & typeof globalThis;
+	windowWithStorage.window = { localStorage: storage } as unknown as Window &
+		typeof globalThis;
 	try {
 		run(storage);
 	} finally {
@@ -82,13 +83,23 @@ function withLocalStorage(run: (storage: StorageLike) => void) {
 }
 
 test("appendPromptHistoryEntry prepends new prompts and skips duplicates", () => {
-	assert.deepEqual(appendPromptHistoryEntry([], "  first prompt  "), ["first prompt"]);
-	assert.deepEqual(appendPromptHistoryEntry(["first prompt"], "first prompt"), ["first prompt"]);
-	assert.deepEqual(appendPromptHistoryEntry(["first prompt"], "second prompt"), ["second prompt", "first prompt"]);
+	assert.deepEqual(appendPromptHistoryEntry([], "  first prompt  "), [
+		"first prompt",
+	]);
+	assert.deepEqual(appendPromptHistoryEntry(["first prompt"], "first prompt"), [
+		"first prompt",
+	]);
+	assert.deepEqual(
+		appendPromptHistoryEntry(["first prompt"], "second prompt"),
+		["second prompt", "first prompt"],
+	);
 });
 
 test("appendPromptHistoryEntry enforces the max history size", () => {
-	const history = Array.from({ length: MAX_PROMPT_HISTORY_SIZE }, (_, index) => `prompt-${index}`);
+	const history = Array.from(
+		{ length: MAX_PROMPT_HISTORY_SIZE },
+		(_, index) => `prompt-${index}`,
+	);
 	const nextHistory = appendPromptHistoryEntry(history, "latest prompt");
 
 	assert.equal(nextHistory.length, MAX_PROMPT_HISTORY_SIZE);
@@ -97,7 +108,10 @@ test("appendPromptHistoryEntry enforces the max history size", () => {
 });
 
 test("removePromptHistoryEntry removes a prompt from history", () => {
-	assert.deepEqual(removePromptHistoryEntry(["first", "second", "third"], "second"), ["first", "third"]);
+	assert.deepEqual(
+		removePromptHistoryEntry(["first", "second", "third"], "second"),
+		["first", "third"],
+	);
 	assert.deepEqual(removePromptHistoryEntry(["first"], "missing"), ["first"]);
 });
 
@@ -107,7 +121,10 @@ test("stores prompt history globally", () => {
 		promptHistory = appendPromptHistoryEntry(promptHistory, "other prompt");
 		storage.setItem(PROMPT_HISTORY_STORAGE_KEY, JSON.stringify(promptHistory));
 
-		assert.deepEqual(readPromptHistoryFromStorage(storage), ["other prompt", "first prompt"]);
+		assert.deepEqual(readPromptHistoryFromStorage(storage), [
+			"other prompt",
+			"first prompt",
+		]);
 	});
 });
 
@@ -118,11 +135,19 @@ test("stores pinned prompts globally", () => {
 		pinnedPrompts = appendPinnedPrompt(pinnedPrompts, "favorite one");
 		storage.setItem(PINNED_PROMPTS_STORAGE_KEY, JSON.stringify(pinnedPrompts));
 
-		assert.deepEqual(readPinnedPromptsFromStorage(storage), ["favorite one", "favorite two"]);
+		assert.deepEqual(readPinnedPromptsFromStorage(storage), [
+			"favorite one",
+			"favorite two",
+		]);
 
 		storage.setItem(
 			PINNED_PROMPTS_STORAGE_KEY,
-			JSON.stringify(removePinnedPrompt(readPinnedPromptsFromStorage(storage), "favorite one")),
+			JSON.stringify(
+				removePinnedPrompt(
+					readPinnedPromptsFromStorage(storage),
+					"favorite one",
+				),
+			),
 		);
 		assert.deepEqual(readPinnedPromptsFromStorage(storage), ["favorite two"]);
 	});
@@ -131,13 +156,15 @@ test("stores pinned prompts globally", () => {
 test("appendPinnedPrompt and removePinnedPrompt keep pin state unique", () => {
 	assert.deepEqual(appendPinnedPrompt([], "  favorite  "), ["favorite"]);
 	assert.deepEqual(appendPinnedPrompt(["favorite"], "favorite"), ["favorite"]);
-	assert.deepEqual(removePinnedPrompt(["favorite", "second"], "favorite"), ["second"]);
+	assert.deepEqual(removePinnedPrompt(["favorite", "second"], "favorite"), [
+		"second",
+	]);
 });
 
 test("ignores malformed stored values", () => {
 	withLocalStorage((storage) => {
 		storage.setItem(PROMPT_HISTORY_STORAGE_KEY, "not json");
-		storage.setItem(PINNED_PROMPTS_STORAGE_KEY, "{\"bad\":true}");
+		storage.setItem(PINNED_PROMPTS_STORAGE_KEY, '{"bad":true}');
 
 		assert.deepEqual(readPromptHistoryFromStorage(storage), []);
 		assert.deepEqual(readPinnedPromptsFromStorage(storage), []);

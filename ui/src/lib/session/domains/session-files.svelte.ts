@@ -34,7 +34,9 @@ type CreateSessionFilesDomainArgs = {
 };
 
 function uniquePaths(paths: string[]): string[] {
-	return paths.filter((path, index) => path.length > 0 && paths.indexOf(path) === index);
+	return paths.filter(
+		(path, index) => path.length > 0 && paths.indexOf(path) === index,
+	);
 }
 
 function hasChangedDescendant(
@@ -60,7 +62,8 @@ function entriesToNodes(
 	);
 
 	const nodes: SessionFileTreeNode[] = entries.map((entry) => {
-		const path = parentPath === "." ? entry.name : `${parentPath}/${entry.name}`;
+		const path =
+			parentPath === "." ? entry.name : `${parentPath}/${entry.name}`;
 		const isDirectory = entry.type === "directory";
 		const diffEntry = diffEntriesMap.get(path);
 
@@ -85,7 +88,8 @@ function entriesToNodes(
 			? filePath.substring(0, filePath.lastIndexOf("/"))
 			: ".";
 		const isDirectChild = parentDir === parentPath;
-		const isUnderParent = parentPath === "." ? true : filePath.startsWith(`${parentPath}/`);
+		const isUnderParent =
+			parentPath === "." ? true : filePath.startsWith(`${parentPath}/`);
 
 		if (!isUnderParent) continue;
 
@@ -106,9 +110,11 @@ function entriesToNodes(
 		const relativePath =
 			parentPath === "." ? filePath : filePath.substring(parentPath.length + 1);
 		const firstPart = relativePath.split("/")[0];
-		const ghostDirPath = parentPath === "." ? firstPart : `${parentPath}/${firstPart}`;
+		const ghostDirPath =
+			parentPath === "." ? firstPart : `${parentPath}/${firstPart}`;
 
-		if (existingPaths.has(ghostDirPath) || addedPaths.has(ghostDirPath)) continue;
+		if (existingPaths.has(ghostDirPath) || addedPaths.has(ghostDirPath))
+			continue;
 
 		nodes.push({
 			name: firstPart,
@@ -168,7 +174,9 @@ function buildTreeFromCache(
 	});
 }
 
-function buildTreeFromChangedFiles(diffEntries: SessionDiffFileEntry[]): SessionFileTreeNode[] {
+function buildTreeFromChangedFiles(
+	diffEntries: SessionDiffFileEntry[],
+): SessionFileTreeNode[] {
 	if (diffEntries.length === 0) return [];
 
 	const statusMap = new SvelteMap<string, SessionDiffFileEntry["status"]>();
@@ -190,7 +198,10 @@ function buildTreeFromChangedFiles(diffEntries: SessionDiffFileEntry[]): Session
 			const part = parts[index];
 			const isLast = index === parts.length - 1;
 			if (!current.children.has(part)) {
-				current.children.set(part, { children: new SvelteMap(), isFile: isLast });
+				current.children.set(part, {
+					children: new SvelteMap(),
+					isFile: isLast,
+				});
 			}
 			const next = current.children.get(part);
 			if (!next) break;
@@ -201,7 +212,10 @@ function buildTreeFromChangedFiles(diffEntries: SessionDiffFileEntry[]): Session
 		}
 	}
 
-	function convertToNodes(node: TreeNode, parentPath: string): SessionFileTreeNode[] {
+	function convertToNodes(
+		node: TreeNode,
+		parentPath: string,
+	): SessionFileTreeNode[] {
 		const nodes: SessionFileTreeNode[] = [];
 		for (const [name, child] of node.children) {
 			const path = parentPath === "." ? name : `${parentPath}/${name}`;
@@ -249,7 +263,11 @@ export function isPathAtOrWithin(path: string, targetPath: string): boolean {
 	return path === targetPath || path.startsWith(`${targetPath}/`);
 }
 
-export function renamePath(path: string, oldPath: string, newPath: string): string {
+export function renamePath(
+	path: string,
+	oldPath: string,
+	newPath: string,
+): string {
 	if (!isPathAtOrWithin(path, oldPath)) {
 		return path;
 	}
@@ -268,7 +286,10 @@ export function remapRecordKeys<T>(
 	return next;
 }
 
-export function removeRecordKeys<T>(records: Record<string, T>, targetPath: string): Record<string, T> {
+export function removeRecordKeys<T>(
+	records: Record<string, T>,
+	targetPath: string,
+): Record<string, T> {
 	const next: Record<string, T> = {};
 	for (const [path, value] of Object.entries(records)) {
 		if (isPathAtOrWithin(path, targetPath)) {
@@ -326,14 +347,18 @@ function remapFileRecords(
 			remappedPath === path
 				? value
 				: {
-					...value,
-					path: remappedPath,
-				};
+						...value,
+						path: remappedPath,
+					};
 	}
 	return next;
 }
 
-function remapPathList(paths: string[], oldPath: string, newPath: string): string[] {
+function remapPathList(
+	paths: string[],
+	oldPath: string,
+	newPath: string,
+): string[] {
 	return uniquePaths(paths.map((path) => renamePath(path, oldPath, newPath)));
 }
 
@@ -341,7 +366,9 @@ function removePathList(paths: string[], targetPath: string): string[] {
 	return paths.filter((path) => !isPathAtOrWithin(path, targetPath));
 }
 
-export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): SessionFilesDomain {
+export function createSessionFilesDomain(
+	args: CreateSessionFilesDomainArgs,
+): SessionFilesDomain {
 	let openPaths = $state<string[]>([]);
 	let fileRecords = $state<Record<string, SessionFileRecord>>({});
 	let buffers = $state<Record<string, SessionFileBufferState>>({});
@@ -367,7 +394,11 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 			: buildTreeFromCache(rootNodes, childrenCache, diffEntriesMap),
 	);
 	const list = $derived(
-		uniquePaths([...openPaths, ...diff.map((file) => file.path), ...searchable.slice(0, 20)]),
+		uniquePaths([
+			...openPaths,
+			...diff.map((file) => file.path),
+			...searchable.slice(0, 20),
+		]),
 	);
 	const contents = $derived.by(() => {
 		const next: Record<string, string> = {};
@@ -446,17 +477,27 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 		if (!args.hasSession() || showChangedOnly) {
 			return;
 		}
-		if (!force && (path === "." || childrenCache.has(path) || loadingPaths.includes(path))) {
+		if (
+			!force &&
+			(path === "." || childrenCache.has(path) || loadingPaths.includes(path))
+		) {
 			return;
 		}
 
 		throwIfAborted(signal);
-		const currentDiffEntriesMap = new SvelteMap(diff.map((entry) => [entry.path, entry] as const));
+		const currentDiffEntriesMap = new SvelteMap(
+			diff.map((entry) => [entry.path, entry] as const),
+		);
 		loadingPaths = uniquePaths([...loadingPaths, path]);
 		try {
-			const response = await api.listSessionFiles(args.sessionId, path, { signal });
+			const response = await api.listSessionFiles(args.sessionId, path, {
+				signal,
+			});
 			throwIfAborted(signal);
-			childrenCache.set(path, entriesToNodes(response.entries, path, currentDiffEntriesMap));
+			childrenCache.set(
+				path,
+				entriesToNodes(response.entries, path, currentDiffEntriesMap),
+			);
 		} catch (error) {
 			if (isAbortError(error)) {
 				throw error;
@@ -477,7 +518,9 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 
 		const diffEntry = diff.find((file) => file.path === path);
 		const fromBase = diffEntry?.status === "deleted";
-		const response = await api.readSessionFile(args.sessionId, path, { fromBase });
+		const response = await api.readSessionFile(args.sessionId, path, {
+			fromBase,
+		});
 		const nextRecord: SessionFileRecord = {
 			path,
 			content: response.content,
@@ -565,7 +608,9 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 
 		const runtime = editorRuntime.get(path);
 		if (runtime?.model && "setValue" in (runtime.model as object)) {
-			(runtime.model as { setValue: (value: string) => void }).setValue(current.originalContent);
+			(runtime.model as { setValue: (value: string) => void }).setValue(
+				current.originalContent,
+			);
 		}
 	}
 
@@ -670,7 +715,9 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 
 		const runtime = editorRuntime.get(path);
 		if (runtime?.model && "setValue" in (runtime.model as object)) {
-			(runtime.model as { setValue: (value: string) => void }).setValue(current.conflictContent);
+			(runtime.model as { setValue: (value: string) => void }).setValue(
+				current.conflictContent,
+			);
 		}
 	}
 
@@ -768,7 +815,8 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 			if (list.length === 0 && searchable.length === 0) {
 				await refresh();
 			}
-			const nextFile = (file ?? args.getSelectedFile()) || list[0] || searchable[0] || "";
+			const nextFile =
+				(file ?? args.getSelectedFile()) || list[0] || searchable[0] || "";
 			if (!nextFile) {
 				args.openFile();
 				return;
@@ -813,7 +861,10 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 			const controller = new AbortController();
 			expandAllController = controller;
 
-			async function loadAll(nodes: SessionFileTreeNode[], signal: AbortSignal): Promise<void> {
+			async function loadAll(
+				nodes: SessionFileTreeNode[],
+				signal: AbortSignal,
+			): Promise<void> {
 				throwIfAborted(signal);
 				await Promise.all(
 					nodes.map(async (node) => {
@@ -824,7 +875,8 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 						expandedPaths = uniquePaths([...expandedPaths, node.path]);
 						await loadDirectory(node.path, { force: true, signal });
 						throwIfAborted(signal);
-						const nextChildren = childrenCache.get(node.path) ?? node.children ?? [];
+						const nextChildren =
+							childrenCache.get(node.path) ?? node.children ?? [];
 						if (nextChildren.length > 0) {
 							await loadAll(nextChildren, signal);
 						}
@@ -861,7 +913,9 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 				return false;
 			}
 
-			const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+			const parentPath = path.includes("/")
+				? path.slice(0, path.lastIndexOf("/"))
+				: "";
 			const newPath = parentPath ? `${parentPath}/${trimmedName}` : trimmedName;
 			if (newPath === path) {
 				return true;
@@ -931,20 +985,21 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 		},
 		updateBuffer: (path, content) => {
 			const record = fileRecords[path];
-			const current = buffers[path] ??
+			const current =
+				buffers[path] ??
 				(record
 					? createBufferState(record)
 					: {
-						content,
-						originalContent: "",
-						encoding: "utf8",
-						isDirty: true,
-						isSaving: false,
-						saveError: null,
-						hasConflict: false,
-						conflictContent: null,
-						fromBase: false,
-					});
+							content,
+							originalContent: "",
+							encoding: "utf8",
+							isDirty: true,
+							isSaving: false,
+							saveError: null,
+							hasConflict: false,
+							conflictContent: null,
+							fromBase: false,
+						});
 			setBuffer(path, {
 				...current,
 				content,
@@ -958,12 +1013,18 @@ export function createSessionFilesDomain(args: CreateSessionFilesDomainArgs): Se
 		forceSave,
 		getEditorModel: (path) => editorRuntime.get(path)?.model ?? null,
 		setEditorModel: (path, model) => {
-			const current = editorRuntime.get(path) ?? { model: null, viewState: null };
+			const current = editorRuntime.get(path) ?? {
+				model: null,
+				viewState: null,
+			};
 			editorRuntime.set(path, { ...current, model });
 		},
 		getEditorViewState: (path) => editorRuntime.get(path)?.viewState ?? null,
 		setEditorViewState: (path, viewState) => {
-			const current = editorRuntime.get(path) ?? { model: null, viewState: null };
+			const current = editorRuntime.get(path) ?? {
+				model: null,
+				viewState: null,
+			};
 			editorRuntime.set(path, { ...current, viewState });
 		},
 		dispose: () => {

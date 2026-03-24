@@ -20,7 +20,10 @@
 
 <Collapsible
 	bind:open
-	class={cn("not-prose group mb-4 w-full overflow-hidden rounded-md border", className)}
+	class={cn(
+		"not-prose group mb-4 w-full overflow-hidden rounded-md border",
+		className,
+	)}
 	{...restProps}
 >
 	{@render children?.()}

@@ -7,13 +7,15 @@ import { getContext, hasContext, setContext } from "svelte";
 import type { HTMLAttributes } from "svelte/elements";
 
 export type CarouselAPI =
-	NonNullable<NonNullable<EmblaCarouselSvelteType["$$_attributes"]>["on:emblaInit"]> extends (
-		evt: CustomEvent<infer CarouselAPI>
-	) => void
+	NonNullable<
+		NonNullable<EmblaCarouselSvelteType["$$_attributes"]>["on:emblaInit"]
+	> extends (evt: CustomEvent<infer CarouselAPI>) => void
 		? CarouselAPI
 		: never;
 
-type EmblaCarouselConfig = NonNullable<Parameters<typeof emblaCarouselSvelte>[1]>;
+type EmblaCarouselConfig = NonNullable<
+	Parameters<typeof emblaCarouselSvelte>[1]
+>;
 
 export type CarouselOptions = EmblaCarouselConfig["options"];
 export type CarouselPlugins = EmblaCarouselConfig["plugins"];

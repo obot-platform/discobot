@@ -6,4 +6,12 @@ import ToolHeaderStatus from "./ToolHeaderStatus.svelte";
 import ToolInput from "./ToolInput.svelte";
 import ToolOutput from "./ToolOutput.svelte";
 
-export { Tool, ToolContent, ToolHeader, ToolHeaderControls, ToolHeaderStatus, ToolInput, ToolOutput };
+export {
+	Tool,
+	ToolContent,
+	ToolHeader,
+	ToolHeaderControls,
+	ToolHeaderStatus,
+	ToolInput,
+	ToolOutput,
+};

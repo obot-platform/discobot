@@ -20,15 +20,21 @@
 	)}
 	{...restProps}
 >
-	<ChevronRightIcon class="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+	<ChevronRightIcon
+		class="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
+	/>
 	{#if testSuite.status === "passed"}
-		<CheckCircle2Icon class="size-4 shrink-0 text-green-600 dark:text-green-400" />
+		<CheckCircle2Icon
+			class="size-4 shrink-0 text-green-600 dark:text-green-400"
+		/>
 	{:else if testSuite.status === "failed"}
 		<XCircleIcon class="size-4 shrink-0 text-red-600 dark:text-red-400" />
 	{:else if testSuite.status === "skipped"}
 		<CircleIcon class="size-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
 	{:else}
-		<CircleDotIcon class="size-4 shrink-0 animate-pulse text-blue-600 dark:text-blue-400" />
+		<CircleDotIcon
+			class="size-4 shrink-0 animate-pulse text-blue-600 dark:text-blue-400"
+		/>
 	{/if}
 	<span class="font-medium text-sm">
 		{#if children}

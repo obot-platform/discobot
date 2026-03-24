@@ -1,7 +1,11 @@
 <script lang="ts">
 	import type { ComponentProps } from "svelte";
 	import { CodeBlock } from "$lib/components/ai/code-block";
-	import { AccordionContent, AccordionItem, AccordionTrigger } from "$lib/components/ui/accordion";
+	import {
+		AccordionContent,
+		AccordionItem,
+		AccordionTrigger,
+	} from "$lib/components/ui/accordion";
 	import { cn } from "$lib/utils";
 
 	type AgentToolDefinition = {
@@ -15,12 +19,7 @@
 		class?: string;
 	};
 
-	let {
-		tool,
-		value,
-		class: className,
-		...restProps
-	}: Props = $props();
+	let { tool, value, class: className, ...restProps }: Props = $props();
 
 	const schema = $derived.by(() => tool.jsonSchema ?? tool.inputSchema);
 </script>

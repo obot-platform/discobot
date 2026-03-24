@@ -36,6 +36,9 @@
 	setPackageInfoContext(packageInfo);
 </script>
 
-<div class={cn("rounded-lg border bg-background p-4", className)} {...restProps}>
+<div
+	class={cn("rounded-lg border bg-background p-4", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </div>

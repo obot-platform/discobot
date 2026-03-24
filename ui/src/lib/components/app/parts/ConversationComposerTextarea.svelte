@@ -36,7 +36,9 @@
 
 	let isComposing = $state(false);
 	let fileMentionDropdownRef = $state<FileMentionDropdownHandle | null>(null);
-	let promptHistoryDropdownRef = $state<PromptHistoryDropdownHandle | null>(null);
+	let promptHistoryDropdownRef = $state<PromptHistoryDropdownHandle | null>(
+		null,
+	);
 	let fileMentionTextareaRef = $state<HTMLTextAreaElement | null>(null);
 
 	function shouldSubmitComposerOnEnter(draft: string): boolean {
@@ -64,7 +66,11 @@
 			return;
 		}
 
-		if (event.key === "Backspace" && draft.length === 0 && attachmentCount > 0) {
+		if (
+			event.key === "Backspace" &&
+			draft.length === 0 &&
+			attachmentCount > 0
+		) {
 			event.preventDefault();
 			onRemoveLastAttachment();
 		}

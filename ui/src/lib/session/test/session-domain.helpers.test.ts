@@ -42,7 +42,10 @@ test("addToolApprovalResponse updates a pending dynamic tool in place", () => {
 		},
 	];
 
-	const updated = addToolApprovalResponse(messages, { id: "call-1", approved: true });
+	const updated = addToolApprovalResponse(messages, {
+		id: "call-1",
+		approved: true,
+	});
 
 	assert.equal(updated, true);
 	assert.equal(messages[0]?.parts[0]?.type, "dynamic-tool");
@@ -79,7 +82,10 @@ test("addToolApprovalResponse ignores already-resolved tools", () => {
 		},
 	] as ChatMessage[];
 
-	const updated = addToolApprovalResponse(messages, { id: "call-1", approved: true });
+	const updated = addToolApprovalResponse(messages, {
+		id: "call-1",
+		approved: true,
+	});
 
 	assert.equal(updated, false);
 	assert.equal(messages[0]?.parts[0]?.type, "dynamic-tool");

@@ -10,6 +10,10 @@
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 </script>
 
-<div bind:this={ref} class={cn("flex-1 overflow-auto p-4", className)} {...restProps}>
+<div
+	bind:this={ref}
+	class={cn("flex-1 overflow-auto p-4", className)}
+	{...restProps}
+>
 	{@render children?.()}
 </div>
