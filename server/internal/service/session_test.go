@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobot/server/internal/model"
 )
@@ -131,6 +132,9 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 	// Create a fully populated model.Session with non-nil values
 	strPtr := func(s string) *string { return &s }
 
+	createdAt := time.Date(2026, time.March, 20, 8, 30, 0, 0, time.UTC)
+	updatedAt := time.Date(2026, time.March, 21, 9, 45, 0, 0, time.UTC)
+
 	modelSession := &model.Session{
 		ID:              "test-id",
 		ProjectID:       "test-project",
@@ -148,6 +152,8 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		WorkspacePath:   strPtr("/path/to/workspace"),
 		WorkspaceCommit: strPtr("commit789"),
 		ActiveEnvSetIDs: []string{"test-env-set-id"},
+		CreatedAt:       createdAt,
+		UpdatedAt:       updatedAt,
 	}
 
 	// Create a mock SessionService (nil is fine since mapSession doesn't use it)
@@ -175,9 +181,10 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		"WorkspacePath":   "WorkspacePath",
 		"WorkspaceCommit": "WorkspaceCommit",
 		"ActiveEnvSetIDs": "ActiveEnvSetIDs",
+		"CreatedAt":       "CreatedAt",
 		// Excluded fields (not part of API response):
 		// - SSHKeyEncryptedData: encrypted secret material, never exposed
-		// - CreatedAt, UpdatedAt: mapped to Timestamp
+		// - UpdatedAt: mapped to Timestamp
 		// - Project, Workspace, Messages: relationships, not serialized
 		// - Files: always initialized as empty array in mapSession
 	}
@@ -192,7 +199,7 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		modelFieldName := modelField.Name
 
 		// Skip GORM metadata fields and relationship fields
-		if modelFieldName == "SSHKeyEncryptedData" || modelFieldName == "CreatedAt" || modelFieldName == "UpdatedAt" ||
+		if modelFieldName == "SSHKeyEncryptedData" || modelFieldName == "UpdatedAt" ||
 			modelFieldName == "Project" || modelFieldName == "Workspace" ||
 			modelFieldName == "Messages" {
 			continue
@@ -239,6 +246,12 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 	}
 	if result.DisplayName != "Test Display" {
 		t.Errorf("DisplayName = %q, want %q", result.DisplayName, "Test Display")
+	}
+	if result.CreatedAt != createdAt.Format(time.RFC3339) {
+		t.Errorf("CreatedAt = %q, want %q", result.CreatedAt, createdAt.Format(time.RFC3339))
+	}
+	if result.Timestamp != updatedAt.Format(time.RFC3339) {
+		t.Errorf("Timestamp = %q, want %q", result.Timestamp, updatedAt.Format(time.RFC3339))
 	}
 
 	// Verify Files is initialized (not nil)

@@ -10,6 +10,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 		id: "session-1",
 		name: "Session",
 		description: "",
+		createdAt: new Date().toISOString(),
 		timestamp: new Date().toISOString(),
 		status: "ready",
 		files: [],

@@ -143,26 +143,46 @@ export async function delay(ms: number) {
 	await new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export function toSessionSummaries(sessions: Session[]): SessionSummary[] {
-	const sortedSessions = [...sessions].sort((a, b) => {
-		const left = new Date(a.timestamp).getTime();
-		const right = new Date(b.timestamp).getTime();
-		if (Number.isNaN(left) || Number.isNaN(right)) {
-			return 0;
-		}
-		return right - left;
-	});
+function compareIsoDatesDesc(left: string, right: string) {
+	const leftTime = new Date(left).getTime();
+	const rightTime = new Date(right).getTime();
+	if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+		return 0;
+	}
+	return rightTime - leftTime;
+}
 
-	const recentIds = new Set(
-		sortedSessions.slice(0, RECENT_SESSIONS_LIMIT).map((session) => session.id),
-	);
-
-	return sortedSessions.map((session) => ({
+function toSessionSummary(session: Session, recentIds: Set<string>): SessionSummary {
+	return {
 		id: session.id,
 		name: session.displayName || session.name,
 		status: session.status,
 		isRecent: recentIds.has(session.id),
-	}));
+	};
+}
+
+function getRecentSessionIds(sessions: Session[]) {
+	return new Set(
+		[...sessions]
+			.sort((a, b) => compareIsoDatesDesc(a.timestamp, b.timestamp))
+			.slice(0, RECENT_SESSIONS_LIMIT)
+			.map((session) => session.id),
+	);
+}
+
+export function toSessionSummaries(sessions: Session[]): SessionSummary[] {
+	const recentIds = getRecentSessionIds(sessions);
+	return [...sessions]
+		.sort((a, b) => compareIsoDatesDesc(a.createdAt, b.createdAt))
+		.map((session) => toSessionSummary(session, recentIds));
+}
+
+export function toRecentSessionSummaries(sessions: Session[]): SessionSummary[] {
+	const recentIds = getRecentSessionIds(sessions);
+	return [...sessions]
+		.filter((session) => recentIds.has(session.id))
+		.sort((a, b) => compareIsoDatesDesc(a.timestamp, b.timestamp))
+		.map((session) => toSessionSummary(session, recentIds));
 }
 
 export function getAppEnvironment() {

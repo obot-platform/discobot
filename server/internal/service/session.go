@@ -67,6 +67,7 @@ type Session struct {
 	Name            string     `json:"name"`
 	DisplayName     string     `json:"displayName,omitempty"`
 	Description     string     `json:"description"`
+	CreatedAt       string     `json:"createdAt"`
 	Timestamp       string     `json:"timestamp"`
 	Status          string     `json:"status"`
 	CommitStatus    string     `json:"commitStatus,omitempty"`
@@ -549,12 +550,18 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 		timestamp = time.Now().Format(time.RFC3339)
 	}
 
+	createdAt := sess.CreatedAt.Format(time.RFC3339)
+	if sess.CreatedAt.IsZero() {
+		createdAt = timestamp
+	}
+
 	return &Session{
 		ID:              sess.ID,
 		ProjectID:       sess.ProjectID,
 		Name:            sess.Name,
 		DisplayName:     displayName,
 		Description:     description,
+		CreatedAt:       createdAt,
 		Timestamp:       timestamp,
 		Status:          normalizeSessionStatus(sess.Status),
 		CommitStatus:    sess.CommitStatus,

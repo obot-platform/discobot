@@ -40,6 +40,7 @@ test("buildImplicitThread derives a single thread from the current session", () 
 		name: "Session",
 		displayName: "Friendly session",
 		description: "",
+		createdAt: "2026-03-10T00:00:00.000Z",
 		timestamp: "2026-03-11T00:00:00.000Z",
 		status: "ready",
 		files: [],

@@ -1,7 +1,7 @@
 import { generateId } from "ai";
 import { SvelteMap } from "svelte/reactivity";
 
-import { toSessionSummaries } from "$lib/app/app-helpers";
+import { toRecentSessionSummaries, toSessionSummaries } from "$lib/app/app-helpers";
 import type { AppSessions } from "$lib/app/app-context.types";
 import type { SessionContextValue } from "$lib/session/session-context.types";
 import type { SessionStore } from "$lib/store/sessions.store.svelte";
@@ -21,7 +21,7 @@ export function createAppSessionsDomain(
 	let pendingSessionId = $state<string>(generateId());
 
 	const list = $derived.by(() => toSessionSummaries(store.list));
-	const recent = $derived.by(() => list.filter((session) => session.isRecent));
+	const recent = $derived.by(() => toRecentSessionSummaries(store.list));
 	const selected = $derived.by(
 		() =>
 			list.find((session) => session.id === currentSelectedSessionId) ?? null,

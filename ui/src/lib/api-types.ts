@@ -54,6 +54,7 @@ export interface Session {
 	/** Optional display name for the session (if not set, name is used) */
 	displayName?: string;
 	description: string;
+	createdAt: string;
 	timestamp: string;
 	status: SessionStatus;
 	/** Workspace commit SHA when commit started (expected parent) */
