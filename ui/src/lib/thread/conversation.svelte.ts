@@ -94,6 +94,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		setReasoning: () => {
 			void args.refreshThread();
 		},
+		setThreadName: () => {
+			void args.refreshThread();
+		},
 	});
 
 	function disconnectStream() {

@@ -151,6 +151,9 @@ func TestChunkRoundTrip_Data(t *testing.T) {
 	chunkRoundTrip(t, "ModeChange", ModeChangeChunk{
 		Data: ModeChangeData{Mode: "planning"},
 	})
+	chunkRoundTrip(t, "ThreadName", ThreadNameChunk{
+		Data: ThreadNameData{Name: "Debug build failure"},
+	})
 	chunkRoundTrip(t, "UserMessage", UserMessageChunk{
 		Data: UserMessageData{
 			Message: Message{

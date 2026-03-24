@@ -610,6 +610,51 @@ func TestChatStream_ValidLastEventID_ResumesWithoutHistory(t *testing.T) {
 	}
 }
 
+func TestChatStream_ForwardsThreadNameChunk(t *testing.T) {
+	nameChunk := message.ThreadNameChunk{
+		Data: message.ThreadNameData{Name: "Fix thread naming"},
+	}
+	nameChunkJSON, err := message.MarshalChunk(nameChunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{promptFn: yieldChunksAndBlock(nameChunk)}
+	cm := agent.NewCompletionManager(ma)
+	if _, err := cm.Chat("thread-name", agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 25 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-name/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	time.AfterFunc(5*time.Millisecond, func() {
+		cm.Cancel("thread-name")
+	})
+
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
+	}
+	if frames[1].Event != "chunk" || frames[1].Data != string(nameChunkJSON) {
+		t.Fatalf("expected thread-name chunk frame, got %+v", frames[1])
+	}
+}
+
 func TestChatStream_InvalidLastEventID_TreatedAsFreshRequest(t *testing.T) {
 	historyMsg := message.UIMessage{
 		ID:    "hist-2",

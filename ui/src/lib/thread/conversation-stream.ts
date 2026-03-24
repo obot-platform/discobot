@@ -61,6 +61,7 @@ export type ChatStreamStateOptions = {
 	setMode?: (mode: string) => void;
 	setModel?: (model: string) => void;
 	setReasoning?: (reasoning: string) => void;
+	setThreadName?: (name: string) => void;
 };
 
 type StreamMessageMetadata = {
@@ -279,6 +280,15 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		return chunk.type === "data-mode-change";
 	};
 
+	const isThreadNameChunk = (
+		chunk: UIMessageChunk,
+	): chunk is UIMessageChunk & {
+		type: "data-thread-name";
+		data: { name?: string };
+	} => {
+		return chunk.type === "data-thread-name";
+	};
+
 	const isMessageMetadataChunk = (
 		chunk: UIMessageChunk,
 	): chunk is UIMessageChunk & {
@@ -483,6 +493,11 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 	const applyChunkEvent = async (chunk: UIMessageChunk) => {
 		if (isModeChangeChunk(chunk) && typeof chunk.data?.mode === "string") {
 			options.setMode?.(chunk.data.mode);
+			return;
+		}
+
+		if (isThreadNameChunk(chunk) && typeof chunk.data?.name === "string") {
+			options.setThreadName?.(chunk.data.name);
 			return;
 		}
 

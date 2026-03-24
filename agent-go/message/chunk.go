@@ -325,6 +325,19 @@ type ModeChangeChunk struct {
 
 func (ModeChangeChunk) chunkType() string { return "data-mode-change" }
 
+// ThreadNameData is the payload for a data-thread-name chunk.
+type ThreadNameData struct {
+	Name string `json:"name"`
+}
+
+// ThreadNameChunk is a transient data chunk that signals a thread rename.
+type ThreadNameChunk struct {
+	Data      ThreadNameData `json:"data"`
+	Transient *bool          `json:"transient,omitempty"`
+}
+
+func (ThreadNameChunk) chunkType() string { return "data-thread-name" }
+
 // UserMessageData is the payload for a user message stream chunk.
 type UserMessageData struct {
 	Message               Message `json:"message"`

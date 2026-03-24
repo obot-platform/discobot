@@ -139,3 +139,44 @@ func TestListCommands_IncludesCompactBuiltin(t *testing.T) {
 		t.Fatal("expected compact built-in command")
 	}
 }
+
+func TestPrompt_GeneratesThreadNameBeforeAssistantResponse(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	registry := providers.NewProviderRegistry(nil)
+	mockProvider := &compactCommandMockProvider{}
+	registry.Add(mockProvider)
+
+	agentImpl := NewDefaultAgent(store, registry, nil, t.TempDir(), MCPConfig{})
+	threadID := "thread-generated-name"
+
+	var chunks []message.MessageChunk
+	for chunk, err := range agentImpl.Prompt(context.Background(), threadID, agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "Fix thread naming in agent-go", State: "done"}},
+	}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if chunk != nil {
+			chunks = append(chunks, chunk)
+		}
+	}
+
+	if len(chunks) == 0 {
+		t.Fatal("expected streamed chunks")
+	}
+	nameChunk, ok := chunks[0].(message.ThreadNameChunk)
+	if !ok {
+		t.Fatalf("expected first chunk to be ThreadNameChunk, got %T", chunks[0])
+	}
+	if nameChunk.Data.Name != "Fix thread naming in agent-go" {
+		t.Fatalf("unexpected generated thread name %q", nameChunk.Data.Name)
+	}
+
+	cfg, err := store.LoadConfig(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "Fix thread naming in agent-go" {
+		t.Fatalf("expected persisted name, got %q", cfg.Name)
+	}
+}

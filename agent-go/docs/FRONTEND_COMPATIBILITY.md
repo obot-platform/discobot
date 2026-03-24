@@ -84,6 +84,8 @@ The agent-go message format is compatible with the existing UI. Key points:
 - SSE streaming uses the same chunk format
 - Chat SSE additionally emits `ping` events with `{}` payloads to keep the
   connection alive between completions
+- Chat SSE may emit `data-thread-name` chunks before the assistant reply when
+  the backend auto-generates a friendly thread title from the first user prompt
 
 ## System Prompt Delivery
 

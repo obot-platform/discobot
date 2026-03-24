@@ -439,6 +439,21 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			return
 		}
 
+		if generatedName := generatedThreadName(req.UserParts); shouldGenerateThreadName(threadCfg) && generatedName != "" {
+			threadCfg.Name = generatedName
+			if err := a.store.SaveConfig(threadID, threadCfg); err != nil {
+				yield(nil, fmt.Errorf("save thread name: %w", err))
+				return
+			}
+			if !yield(message.ThreadNameChunk{
+				Data: message.ThreadNameData{
+					Name: generatedName,
+				},
+			}, nil) {
+				return
+			}
+		}
+
 		if modeChangedByPrompt {
 			modeReminderID := "mode-" + agent.GenerateID()
 			if err := a.store.SaveMessage(threadID, thread.StoredMessage{
@@ -529,6 +544,75 @@ func formatModeChangeReminder(planMode bool) string {
 		mode = "plan"
 	}
 	return fmt.Sprintf("<system-reminder>\nMode update: the current mode is now %s. This change was triggered by the current prompt request.\n</system-reminder>", mode)
+}
+
+const generatedThreadNameMaxRunes = 72
+
+func shouldGenerateThreadName(cfg thread.Config) bool {
+	return strings.TrimSpace(cfg.Name) == ""
+}
+
+func generatedThreadName(parts []message.UIPart) string {
+	text := firstThreadNameText(parts)
+	if text == "" {
+		return ""
+	}
+
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" {
+		return ""
+	}
+
+	if commandArgs, ok := stripLeadingSlashCommand(text); ok {
+		text = commandArgs
+		if text == "" {
+			return ""
+		}
+	}
+
+	runes := []rune(text)
+	if len(runes) <= generatedThreadNameMaxRunes {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:generatedThreadNameMaxRunes-1])) + "…"
+}
+
+func firstThreadNameText(parts []message.UIPart) string {
+	for _, part := range parts {
+		textPart, ok := part.(message.UITextPart)
+		if !ok {
+			continue
+		}
+		if trimmed := strings.TrimSpace(textPart.Text); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func stripLeadingSlashCommand(text string) (string, bool) {
+	if !strings.HasPrefix(text, "/") {
+		return text, false
+	}
+
+	fields := strings.Fields(text)
+	if len(fields) < 2 {
+		return "", true
+	}
+
+	command := fields[0]
+	if strings.Contains(command[1:], "/") {
+		return text, false
+	}
+
+	for _, r := range command[1:] {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == ':' || r == '.' {
+			continue
+		}
+		return text, false
+	}
+
+	return strings.Join(fields[1:], " "), true
 }
 
 // resolveModelDisplayName returns the human-readable display name for a

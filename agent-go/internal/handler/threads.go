@@ -83,9 +83,6 @@ func (h *Handler) CreateThread(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusBadRequest, "id is required")
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		req.Name = req.ID
-	}
 
 	store := h.defaultAgent.Store()
 	exists, err := store.ThreadExists(req.ID)
@@ -108,13 +105,15 @@ func (h *Handler) CreateThread(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	cfg.Name = req.Name
-	if err := store.SaveConfig(req.ID, cfg); err != nil {
-		h.Error(w, http.StatusInternalServerError, err.Error())
-		return
+	if trimmedName := strings.TrimSpace(req.Name); trimmedName != "" {
+		cfg.Name = trimmedName
+		if err := store.SaveConfig(req.ID, cfg); err != nil {
+			h.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
-	h.JSON(w, http.StatusCreated, api.Thread{ID: req.ID, Name: cfg.Name})
+	h.JSON(w, http.StatusCreated, threadResponse(req.ID, cfg, req.ID))
 }
 
 // GetThread handles GET /threads/{id} — returns thread metadata.

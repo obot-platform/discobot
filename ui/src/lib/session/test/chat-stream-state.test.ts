@@ -96,6 +96,7 @@ function createHarness(initialMessages: ChatMessage[] = []): {
 	modeChanges: string[];
 	modelChanges: string[];
 	reasoningChanges: string[];
+	threadNameChanges: string[];
 	actionableQuestionCount: number;
 	meaningfulToolOutputCount: number;
 	setCount: number;
@@ -108,6 +109,7 @@ function createHarness(initialMessages: ChatMessage[] = []): {
 	const modeChanges: string[] = [];
 	const modelChanges: string[] = [];
 	const reasoningChanges: string[] = [];
+	const threadNameChanges: string[] = [];
 
 	const state = createChatStreamState({
 		getMessages: () => currentMessages,
@@ -130,6 +132,9 @@ function createHarness(initialMessages: ChatMessage[] = []): {
 		setReasoning: (reasoning) => {
 			reasoningChanges.push(reasoning);
 		},
+		setThreadName: (name) => {
+			threadNameChanges.push(name);
+		},
 	});
 
 	return {
@@ -144,6 +149,9 @@ function createHarness(initialMessages: ChatMessage[] = []): {
 		},
 		get reasoningChanges() {
 			return reasoningChanges;
+		},
+		get threadNameChanges() {
+			return threadNameChanges;
 		},
 		get actionableQuestionCount() {
 			return actionableQuestionCount;
@@ -307,6 +315,20 @@ test("data-user-message inserts a preserved user message before the assistant re
 	assert.equal(messages[1].parts[0]?.type, "text");
 	assert.equal(messages[1].parts[0]?.text, "answer");
 	assert.equal(messages[1].parts[0]?.state, "done");
+});
+
+test("data-thread-name notifies the caller", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-thread-name",
+			data: { name: "Fix thread naming" },
+		}),
+	});
+
+	assert.deepEqual(harness.threadNameChanges, ["Fix thread naming"]);
 });
 
 test("appending a new message removes all provisional messages first", async () => {

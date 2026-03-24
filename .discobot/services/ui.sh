@@ -2,7 +2,7 @@
 #---
 # name: Discobot UI
 # description: Vite + React Router UI development server
-# http: 3000
+# http: 3100
 #---
 
 set +x
@@ -17,4 +17,4 @@ ENV_FILE="./server/.env"
 if ! grep -q "^SANDBOX_IMAGE=" "$ENV_FILE" 2>/dev/null; then
     echo "SANDBOX_IMAGE=ghcr.io/obot-platform/discobot:nonexistent" >> "$ENV_FILE"
 fi
-pnpm install && pnpm dev:backend
+pnpm install && pnpm ui:dev:backend

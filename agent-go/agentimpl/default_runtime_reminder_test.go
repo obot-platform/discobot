@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
@@ -93,6 +94,46 @@ func TestResolvePlanMode_OnlyChangesOnExplicitRequest(t *testing.T) {
 	planMode, changed = resolvePlanMode("build", cfgPlan, true)
 	if planMode || !changed {
 		t.Fatalf("explicit build from plan should change to build, got planMode=%v changed=%v", planMode, changed)
+	}
+}
+
+func TestGeneratedThreadName_UsesFirstMeaningfulText(t *testing.T) {
+	got := generatedThreadName([]message.UIPart{
+		message.UIFilePart{Type: "file", URL: "file:///tmp/input.txt", MediaType: "text/plain"},
+		message.UITextPart{Text: "  Fix the failing CI build for agent-go  ", State: "done"},
+	})
+	if got != "Fix the failing CI build for agent-go" {
+		t.Fatalf("generatedThreadName() = %q", got)
+	}
+}
+
+func TestGeneratedThreadName_StripsLeadingSlashCommand(t *testing.T) {
+	got := generatedThreadName([]message.UIPart{
+		message.UITextPart{Text: "/commit fix thread naming in agent-go", State: "done"},
+	})
+	if got != "fix thread naming in agent-go" {
+		t.Fatalf("generatedThreadName() = %q", got)
+	}
+}
+
+func TestGeneratedThreadName_TruncatesLongText(t *testing.T) {
+	got := generatedThreadName([]message.UIPart{
+		message.UITextPart{Text: strings.Repeat("a", generatedThreadNameMaxRunes+10), State: "done"},
+	})
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("expected ellipsis suffix, got %q", got)
+	}
+	if len([]rune(got)) != generatedThreadNameMaxRunes {
+		t.Fatalf("expected %d runes, got %d", generatedThreadNameMaxRunes, len([]rune(got)))
+	}
+}
+
+func TestShouldGenerateThreadName_OnlyUsesEmptyName(t *testing.T) {
+	if !shouldGenerateThreadName(thread.Config{}) {
+		t.Fatal("expected empty config to be eligible")
+	}
+	if shouldGenerateThreadName(thread.Config{Name: "Custom"}) {
+		t.Fatal("did not expect non-empty name to be eligible")
 	}
 }
 

@@ -169,6 +169,11 @@ func MarshalChunk(c MessageChunk) ([]byte, error) {
 			Type string `json:"type"`
 			ModeChangeChunk
 		}{"data-mode-change", v})
+	case ThreadNameChunk:
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			ThreadNameChunk
+		}{"data-thread-name", v})
 	case UserMessageChunk:
 		return json.Marshal(struct {
 			Type string `json:"type"`
@@ -341,6 +346,9 @@ func UnmarshalChunk(data []byte) (MessageChunk, error) {
 	// Data chunks
 	case disc.Type == "data-mode-change":
 		var c ModeChangeChunk
+		return c, json.Unmarshal(data, &c)
+	case disc.Type == "data-thread-name":
+		var c ThreadNameChunk
 		return c, json.Unmarshal(data, &c)
 	case disc.Type == "data-user-message":
 		var c UserMessageChunk

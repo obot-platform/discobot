@@ -606,7 +606,14 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	if model != "" && !strings.Contains(model, "/") && raw.ProviderID != "" {
 		model = raw.ProviderID + "/" + model
 	}
-	return Config{Name: raw.Name, Model: model, Reasoning: raw.Reasoning, CWD: raw.CWD, PlanMode: raw.PlanMode, ActiveLeafID: raw.ActiveLeafID}, nil
+	return Config{
+		Name:         raw.Name,
+		Model:        model,
+		Reasoning:    raw.Reasoning,
+		CWD:          raw.CWD,
+		PlanMode:     raw.PlanMode,
+		ActiveLeafID: raw.ActiveLeafID,
+	}, nil
 }
 
 // FindLeaf returns the leaf message ID for a thread — the message that is not
