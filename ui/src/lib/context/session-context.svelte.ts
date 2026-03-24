@@ -2,10 +2,6 @@ import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 
 import { useAppContext } from "$lib/context/app-context.svelte";
-import {
-	createBackgroundRefresh,
-	createCoalescedReload,
-} from "$lib/context/create-coalesced-reload";
 import { createSessionEnvSetsDomain } from "$lib/session/domains/session-env-sets.svelte";
 import { createSessionFilesDomain } from "$lib/session/domains/session-files.svelte";
 import { createSessionHooksDomain } from "$lib/session/domains/session-hooks.svelte";
@@ -113,12 +109,13 @@ function createSessionContext(sessionId: string): SessionContextValue {
 
 	const threadContexts = new SvelteMap<string, ThreadContextValue>();
 
-	const runRefresh = createCoalescedReload(async () => {
+	async function load() {
 		if (!hasSession) {
+			loaded = false;
 			return;
 		}
-		await threads.load();
 		if (!loaded) {
+			await threads.load();
 			await Promise.all([
 				filesDomain.refresh(),
 				services.refresh(),
@@ -127,14 +124,7 @@ function createSessionContext(sessionId: string): SessionContextValue {
 			]);
 			loaded = true;
 		}
-	});
-	const refresh = createBackgroundRefresh(
-		runRefresh,
-		`[SessionContext] Failed to refresh session ${sessionId}`,
-	);
 
-	async function load() {
-		await runRefresh();
 		const activeThreadId = threads.selectedId ?? sessionId;
 		await threadContexts.get(activeThreadId)?.load();
 	}
@@ -158,7 +148,6 @@ function createSessionContext(sessionId: string): SessionContextValue {
 			return current;
 		},
 		load,
-		refresh,
 		dispose,
 		stores,
 		ui,

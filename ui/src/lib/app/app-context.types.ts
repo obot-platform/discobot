@@ -157,7 +157,6 @@ export type AppWorkspaces = {
 	status: AsyncStatus;
 	get: (workspaceId: string) => Workspace | null;
 	refresh: () => Promise<void>;
-	refreshNow: () => Promise<void>;
 	reloadWorkspace: (workspaceId: string) => Promise<void>;
 	validate: (
 		path: string,

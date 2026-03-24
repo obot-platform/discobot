@@ -7,10 +7,6 @@ import {
 	writeComposerDraft,
 } from "$lib/composer-draft-storage";
 import { useAppContext } from "$lib/context/app-context.svelte";
-import {
-	createBackgroundRefresh,
-	createCoalescedReload,
-} from "$lib/context/create-coalesced-reload";
 import { useSessionContext } from "$lib/context/session-context.svelte";
 import { createConversationDomain } from "$lib/thread/conversation.svelte";
 import { getPlanEntries } from "$lib/session/domains/session-domain.helpers";
@@ -43,25 +39,29 @@ function createThreadContext(
 	const app = useAppContext();
 	const hasSession = $derived.by(() => session.current !== null);
 	const sessionStatus = $derived.by(() => session.current?.status ?? null);
-	const refreshSessionState = createCoalescedReload(async () => {
+	const refreshSessionState = async () => {
+		await Promise.all([
+			session.files.refresh(),
+			session.services.refresh(),
+			session.envSets.refresh(),
+			session.hooks.refresh(),
+		]);
 		await app.sessions.reloadSession(session.sessionId);
-	});
-	const refreshThreadState = createCoalescedReload(async () => {
-		await session.threads.refreshThread(threadId);
-	});
-	const refreshThreadAndSessionState = createCoalescedReload(async () => {
-		await refreshThreadState();
-		await refreshSessionState();
-	});
+	};
 
 	const conversation = createConversationDomain({
 		sessionId: session.sessionId,
 		hasSession: () => hasSession,
 		getSessionStatus: () => sessionStatus,
 		threadId,
-		refreshThread: refreshThreadState,
+		refreshThread: async () => {
+			await session.threads.refreshThread(threadId);
+		},
 		refreshSessionState,
-		afterTurn: refreshThreadAndSessionState,
+		afterTurn: async () => {
+			await session.threads.refreshThread(threadId);
+			await refreshSessionState();
+		},
 	});
 	let loadedComposerDraftStorageKey = $state<string | null>(null);
 	let lastStoredComposerDraft = $state("");
@@ -124,16 +124,6 @@ function createThreadContext(
 			},
 		});
 	};
-	const loadConversation = createCoalescedReload(async () => {
-		await conversation.load();
-	});
-	const refreshConversationNow = createCoalescedReload(async () => {
-		await conversation.refresh();
-	});
-	const refreshConversation = createBackgroundRefresh(
-		refreshConversationNow,
-		`[ThreadContext] Failed to refresh thread ${threadId}`,
-	);
 
 	return {
 		get threadId() {
@@ -160,8 +150,8 @@ function createThreadContext(
 		clearComposerDraft: clearStoredComposerDraft,
 		submit: conversation.submit,
 		cancel: conversation.cancel,
-		load: loadConversation,
-		refresh: refreshConversation,
+		load: conversation.load,
+		refresh: conversation.refresh,
 		addToolApprovalResponse: conversation.addToolApprovalResponse,
 		dispose: () => {
 			if (composerDraftPersistTimer !== null) {
