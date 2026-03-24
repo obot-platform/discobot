@@ -17,7 +17,7 @@
 	type Props = {
 		draft: string;
 		onDraftChange: (value: string) => void;
-		sessionFiles: string[];
+		sessionId: string | null;
 		attachmentCount: number;
 		onAddFiles: (files: File[] | FileList) => void;
 		onRemoveLastAttachment: () => void;
@@ -27,7 +27,7 @@
 	let {
 		draft,
 		onDraftChange,
-		sessionFiles,
+		sessionId,
 		attachmentCount,
 		onAddFiles,
 		onRemoveLastAttachment,
@@ -124,7 +124,7 @@
 
 <ConversationFileMentionDropdown
 	bind:this={fileMentionDropdownRef}
-	files={sessionFiles}
+	sessionId={sessionId}
 	textareaRef={fileMentionTextareaRef}
 	onDraftChange={(value) => onDraftChange(value)}
 />

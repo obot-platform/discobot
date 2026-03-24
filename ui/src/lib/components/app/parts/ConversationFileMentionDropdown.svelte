@@ -1,6 +1,7 @@
 <script lang="ts">
 	import FileIcon from "@lucide/svelte/icons/file";
 	import FolderIcon from "@lucide/svelte/icons/folder";
+	import { api } from "$lib/api-client";
 
 	type FileMentionItem = {
 		path: string;
@@ -8,81 +9,27 @@
 	};
 
 	type Props = {
-		files: string[];
+		sessionId: string | null;
 		textareaRef: HTMLTextAreaElement | null;
 		onDraftChange: (value: string) => void;
 	};
 
-	let { files, textareaRef, onDraftChange }: Props = $props();
+	let { sessionId, textareaRef, onDraftChange }: Props = $props();
 
 	let open = $state(false);
 	let query = $state("");
 	let triggerIndex = $state(0);
 	let selectedIndex = $state(0);
 	let dropdownRef = $state<HTMLDivElement | null>(null);
-
-	function allItems() {
-		const entriesByPath: Record<string, FileMentionItem> = {};
-
-		for (const path of files) {
-			if (!path) {
-				continue;
-			}
-			entriesByPath[path] = { path, type: "file" };
-
-			const segments = path.split("/");
-			if (segments.length < 2) {
-				continue;
-			}
-
-			let current = "";
-			for (let i = 0; i < segments.length - 1; i += 1) {
-				current = current ? `${current}/${segments[i]}` : segments[i];
-				if (!entriesByPath[current]) {
-					entriesByPath[current] = { path: current, type: "directory" };
-				}
-			}
-		}
-
-		return Object.values(entriesByPath).sort((a, b) =>
-			a.path.localeCompare(b.path),
-		);
-	}
-
-	const suggestions = $derived.by(() => {
-		const items = allItems();
-		const normalizedQuery = query.trim().toLowerCase();
-		if (!normalizedQuery) {
-			return items.slice(0, 50);
-		}
-
-		return items
-			.filter((item) => item.path.toLowerCase().includes(normalizedQuery))
-			.sort((a, b) => {
-				const aLower = a.path.toLowerCase();
-				const bLower = b.path.toLowerCase();
-				const aStarts = aLower.startsWith(normalizedQuery) ? 0 : 1;
-				const bStarts = bLower.startsWith(normalizedQuery) ? 0 : 1;
-				if (aStarts !== bStarts) {
-					return aStarts - bStarts;
-				}
-
-				const aIndex = aLower.indexOf(normalizedQuery);
-				const bIndex = bLower.indexOf(normalizedQuery);
-				if (aIndex !== bIndex) {
-					return aIndex - bIndex;
-				}
-
-				return a.path.length - b.path.length;
-			})
-			.slice(0, 50);
-	});
+	let suggestions = $state<FileMentionItem[]>([]);
+	let isLoading = $state(false);
+	let latestRequestId = $state(0);
 
 	const showEmpty = $derived.by(
-		() => suggestions.length === 0 && query.length > 0,
+		() => !isLoading && suggestions.length === 0 && query.length > 0,
 	);
 	const shouldRender = $derived.by(
-		() => open && (suggestions.length > 0 || showEmpty),
+		() => open && !!sessionId && (isLoading || suggestions.length > 0 || showEmpty),
 	);
 
 	function updateMentionState(value: string, cursor: number) {
@@ -156,6 +103,51 @@
 	}
 
 	$effect(() => {
+		if (!open || !sessionId) {
+			suggestions = [];
+			isLoading = false;
+			return;
+		}
+
+		const requestId = latestRequestId + 1;
+		latestRequestId = requestId;
+		const currentQuery = query;
+		const controller = new AbortController();
+		const timeout = window.setTimeout(
+			async () => {
+				isLoading = true;
+				try {
+					const response = await api.searchSessionFiles(sessionId, currentQuery, 50, {
+						signal: controller.signal,
+					});
+					if (latestRequestId !== requestId) {
+						return;
+					}
+					suggestions = response.results.map((result) => ({
+						path: result.path,
+						type: result.type,
+					}));
+				} catch (error) {
+					if (controller.signal.aborted || latestRequestId !== requestId) {
+						return;
+					}
+					suggestions = [];
+				} finally {
+					if (latestRequestId === requestId) {
+						isLoading = false;
+					}
+				}
+			},
+			currentQuery === "" ? 0 : 80,
+		);
+
+		return () => {
+			window.clearTimeout(timeout);
+			controller.abort();
+		};
+	});
+
+	$effect(() => {
 		if (!open) {
 			return;
 		}
@@ -175,9 +167,7 @@
 			return;
 		}
 
-		const selectedItem = dropdownRef.querySelector(
-			`[data-index="${selectedIndex}"]`,
-		);
+		const selectedItem = dropdownRef.querySelector(`[data-index="${selectedIndex}"]`);
 		if (selectedItem && "scrollIntoView" in selectedItem) {
 			(selectedItem as HTMLElement).scrollIntoView({ block: "nearest" });
 		}

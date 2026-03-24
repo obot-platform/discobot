@@ -40,7 +40,6 @@
 	const thread = useThreadContext();
 	const sessionView = session.ui;
 	const sessionHooks = session.hooks;
-	const sessionFiles = $derived.by(() => session.files.searchable);
 
 	let attachmentFiles = $state<ComposerAttachment[]>([]);
 	let modeOverride = $state<ComposerMode | undefined>(undefined);
@@ -352,7 +351,7 @@
 						bind:this={composerTextareaRef}
 						draft={sessionView.composerDraft}
 						onDraftChange={(v) => sessionView.setComposerDraft(v)}
-						sessionFiles={session.isPending ? [] : sessionFiles}
+						sessionId={session.isPending ? null : session.sessionId}
 						attachmentCount={attachmentFiles.length}
 						onAddFiles={addFiles}
 						onRemoveLastAttachment={removeLastAttachment}

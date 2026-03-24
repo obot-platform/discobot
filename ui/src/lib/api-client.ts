@@ -274,10 +274,12 @@ class ApiClient {
 		sessionId: string,
 		query: string,
 		limit = 50,
+		options?: { signal?: AbortSignal },
 	): Promise<SearchSessionFilesResponse> {
 		const params = new URLSearchParams({ q: query, limit: String(limit) });
 		return this.fetch<SearchSessionFilesResponse>(
 			`/sessions/${sessionId}/files/search?${params}`,
+			options?.signal ? { signal: options.signal } : undefined,
 		);
 	}
 
