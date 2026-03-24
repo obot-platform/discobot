@@ -7,7 +7,8 @@ import {
 } from "$lib/thread/conversation-stream";
 import {
 	addToolApprovalResponse,
-	createUserMessage,
+	createUserMessageFromParts,
+	hasUserMessageContent,
 } from "$lib/session/domains/session-domain.helpers";
 
 type CreateConversationDomainArgs = {
@@ -243,18 +244,17 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		},
 		load,
 		submit: async ({
-			text,
+			parts,
 			mode,
 			modelId,
 			reasoning,
 		}: {
-			text: string;
+			parts: ChatMessage["parts"];
 			mode: "build" | "plan";
 			modelId: string | null;
 			reasoning: boolean;
 		}) => {
-			const trimmedText = text.trim();
-			if (!trimmedText) {
+			if (!hasUserMessageContent(parts)) {
 				return;
 			}
 
@@ -262,7 +262,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			const nextModel = normalizeModelId(modelId ?? null);
 			const nextReasoning = reasoning ? "enabled" : undefined;
 			const nextMode = mode === "plan" ? "plan" : "";
-			const userMessage = createUserMessage(trimmedText, { provisional: true });
+			const userMessage = createUserMessageFromParts(parts, {
+				provisional: true,
+			});
 
 			if (!args.hasSession()) {
 				return;

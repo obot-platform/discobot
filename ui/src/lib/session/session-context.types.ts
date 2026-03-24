@@ -159,7 +159,7 @@ export type ThreadContextValue = {
 	status: AsyncStatus | "streaming";
 	error: string | null;
 	submit: (payload: {
-		text: string;
+		parts: ChatMessage["parts"];
 		mode: "build" | "plan";
 		modelId: string | null;
 		reasoning: boolean;

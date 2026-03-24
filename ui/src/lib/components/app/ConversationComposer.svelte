@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { generateId } from "ai";
 	import { onMount, tick } from "svelte";
 	import { InputGroup, InputGroupAddon } from "$lib/components/ui/input-group";
 	import ConversationComposerAttachmentButton from "$lib/components/app/parts/ConversationComposerAttachmentButton.svelte";
@@ -25,6 +24,11 @@
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { useThreadContext } from "$lib/context/thread-context.svelte";
+	import {
+		buildUserMessageParts,
+		createUserMessageAttachment,
+		createUserMessageFromParts,
+	} from "$lib/session/domains/session-domain.helpers";
 
 	const app = useAppContext();
 	const models = app.models;
@@ -171,6 +175,13 @@
 		attachmentFiles = [];
 	}
 
+	async function createMessageParts(text: string) {
+		const attachments = await Promise.all(
+			attachmentFiles.map(({ file }) => createUserMessageAttachment(file)),
+		);
+		return buildUserMessageParts(text, attachments);
+	}
+
 	async function focusComposerTextarea() {
 		await tick();
 		composerTextareaRef?.focus();
@@ -200,9 +211,10 @@
 		}
 
 		const nextMessageText = sessionView.composerDraft.trim();
+		const nextMessageParts = await createMessageParts(nextMessageText);
 		try {
 			await thread.submit({
-				text: nextMessageText,
+				parts: nextMessageParts,
 				mode: effectiveMode,
 				modelId: effectiveModelId,
 				reasoning: effectiveReasoning,
@@ -236,21 +248,17 @@
 		}
 
 		const trimmedText = sessionView.composerDraft.trim();
+		const messageParts = await createMessageParts(trimmedText);
 		const model = normalizeModelId(effectiveModelId);
 
 		try {
 			const response = await app.chat({
 				sessionId: session.sessionId,
 				threadId: thread.threadId,
-				messages: trimmedText
-					? [
-							{
-								id: generateId(),
-								role: "user",
-								parts: [{ type: "text", text: trimmedText }],
-							},
-						]
-					: [],
+				messages:
+					messageParts.length > 0
+						? [createUserMessageFromParts(messageParts)]
+						: [],
 				...(workspaceSelection.workspaceId
 					? { workspaceId: workspaceSelection.workspaceId }
 					: {}),

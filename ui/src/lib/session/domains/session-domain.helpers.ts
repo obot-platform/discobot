@@ -16,6 +16,15 @@ import type {
 	ThreadSummary,
 } from "$lib/shell-types";
 
+type UserTextPart = Extract<ChatMessage["parts"][number], { type: "text" }>;
+type UserFilePart = Extract<ChatMessage["parts"][number], { type: "file" }>;
+
+export type UserMessageAttachment = {
+	filename?: string;
+	mediaType: string;
+	url: string;
+};
+
 export function buildImplicitThread(session: Session | null): ThreadSummary[] {
 	if (!session) {
 		return [];
@@ -64,11 +73,82 @@ export function createUserMessage(
 		provisional?: boolean;
 	} = {},
 ): ChatMessage {
+	return createUserMessageFromParts(buildUserMessageParts(text), options);
+}
+
+export function createUserMessageFromParts(
+	parts: ChatMessage["parts"],
+	options: {
+		provisional?: boolean;
+	} = {},
+): ChatMessage {
 	return {
 		id: generateId(),
 		role: "user",
-		parts: [{ type: "text", text }],
+		parts,
 		...(options.provisional ? { provisional: true } : {}),
+	};
+}
+
+export function buildUserMessageParts(
+	text: string,
+	attachments: UserMessageAttachment[] = [],
+): ChatMessage["parts"] {
+	const parts: Array<UserTextPart | UserFilePart> = [];
+	if (text.trim().length > 0) {
+		parts.push({ type: "text", text });
+	}
+	parts.push(
+		...attachments.map(({ filename, mediaType, url }) => ({
+			type: "file" as const,
+			filename,
+			mediaType,
+			url,
+		})),
+	);
+	return parts;
+}
+
+export function hasUserMessageContent(parts: ChatMessage["parts"]): boolean {
+	return parts.some((part) => {
+		if (part.type === "text") {
+			return part.text.trim().length > 0;
+		}
+		return part.type === "file";
+	});
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+	const bufferCtor = (
+		globalThis as {
+			Buffer?: {
+				from: (input: Uint8Array) => {
+					toString: (encoding: "base64") => string;
+				};
+			};
+		}
+	).Buffer;
+	if (bufferCtor) {
+		return bufferCtor.from(bytes).toString("base64");
+	}
+
+	let binary = "";
+	const chunkSize = 0x8000;
+	for (let index = 0; index < bytes.length; index += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+	}
+	return btoa(binary);
+}
+
+export async function createUserMessageAttachment(
+	file: File,
+): Promise<UserMessageAttachment> {
+	const mediaType = file.type || "application/octet-stream";
+	const base64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+	return {
+		filename: file.name,
+		mediaType,
+		url: `data:${mediaType};base64,${base64}`,
 	};
 }
 
