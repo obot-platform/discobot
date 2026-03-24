@@ -345,6 +345,13 @@ func (s *Store) UpdateSession(ctx context.Context, session *model.Session) error
 	return s.writeDB.WithContext(ctx).Save(session).Error
 }
 
+func (s *Store) UpdateSessionSSHKey(ctx context.Context, id string, encryptedData []byte) error {
+	return s.writeDB.WithContext(ctx).
+		Model(&model.Session{}).
+		Where("id = ?", id).
+		Update("ssh_key_encrypted_data", encryptedData).Error
+}
+
 // UpdateSessionWorkspace updates the workspace path and commit for a session.
 func (s *Store) UpdateSessionWorkspace(ctx context.Context, id, workspacePath, workspaceCommit string) error {
 	updates := map[string]interface{}{

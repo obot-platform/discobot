@@ -176,6 +176,7 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		"WorkspaceCommit": "WorkspaceCommit",
 		"ActiveEnvSetIDs": "ActiveEnvSetIDs",
 		// Excluded fields (not part of API response):
+		// - SSHKeyEncryptedData: encrypted secret material, never exposed
 		// - CreatedAt, UpdatedAt: mapped to Timestamp
 		// - Project, Workspace, Messages: relationships, not serialized
 		// - Files: always initialized as empty array in mapSession
@@ -191,7 +192,7 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		modelFieldName := modelField.Name
 
 		// Skip GORM metadata fields and relationship fields
-		if modelFieldName == "CreatedAt" || modelFieldName == "UpdatedAt" ||
+		if modelFieldName == "SSHKeyEncryptedData" || modelFieldName == "CreatedAt" || modelFieldName == "UpdatedAt" ||
 			modelFieldName == "Project" || modelFieldName == "Workspace" ||
 			modelFieldName == "Messages" {
 			continue

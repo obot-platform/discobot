@@ -21,6 +21,7 @@ import (
 
 // Use the config constant for test consistency
 var testImage = config.DefaultSandboxImage()
+var testEncryptionKey = []byte("0123456789abcdef0123456789abcdef")
 
 // sandboxCreatingInitializer provides a SessionInitializer for tests
 // that actually creates sandboxes (unlike the no-op testSessionInitializer in perform_commit_test.go)
@@ -245,6 +246,7 @@ func TestSandboxService_CreateForSession(t *testing.T) {
 	testStore := setupTestStore(t)
 	cfg := &config.Config{
 		SandboxIdleTimeout: 30 * time.Minute,
+		EncryptionKey:      testEncryptionKey,
 	}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
@@ -278,7 +280,7 @@ func TestSandboxService_CreateForSession(t *testing.T) {
 func TestReconcileSandboxes_UsesImageIDAndRunsCleanup(t *testing.T) {
 	provider := newImageIDAwareReconcileProvider("ghcr.io/obot-platform/discobot:latest", "sha256:new")
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, provider, cfg, nil, nil, nil, nil)
 	svc.SetSessionInitializer(&sandboxCreatingInitializer{sandboxSvc: svc})
 
@@ -323,7 +325,7 @@ func TestReconcileSandboxes_UsesImageIDAndRunsCleanup(t *testing.T) {
 func TestSandboxService_CreateForSession_AlreadyExists(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -349,7 +351,7 @@ func TestSandboxService_CreateForSession_AlreadyExists(t *testing.T) {
 func TestSandboxService_GetForSession(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -379,7 +381,7 @@ func TestSandboxService_GetForSession(t *testing.T) {
 func TestSandboxService_GetForSession_NotFound(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -393,7 +395,7 @@ func TestSandboxService_GetForSession_NotFound(t *testing.T) {
 func TestSandboxService_EnsureSandboxReady_CreatesNew(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 	// Provide a session initializer for the test fallback path
 	svc.SetSessionInitializer(&sandboxCreatingInitializer{sandboxSvc: svc})
@@ -424,7 +426,7 @@ func TestSandboxService_EnsureSandboxReady_CreatesNew(t *testing.T) {
 func TestSandboxService_EnsureSandboxReady_AlreadyRunning(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -450,7 +452,7 @@ func TestSandboxService_EnsureSandboxReady_AlreadyRunning(t *testing.T) {
 func TestSandboxService_EnsureSandboxReady_StartsStopped(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 	// Provide a session initializer for the test fallback path
 	svc.SetSessionInitializer(&sandboxCreatingInitializer{sandboxSvc: svc})
@@ -493,7 +495,7 @@ func TestSandboxService_EnsureSandboxReady_StartsStopped(t *testing.T) {
 func TestSandboxService_DestroyForSession(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -525,7 +527,7 @@ func TestSandboxService_DestroyForSession(t *testing.T) {
 func TestSandboxService_DestroyForSession_NotFound(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -540,7 +542,7 @@ func TestSandboxService_DestroyForSession_NotFound(t *testing.T) {
 func TestSandboxService_Exec(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -570,7 +572,7 @@ func TestSandboxService_Exec(t *testing.T) {
 func TestSandboxService_Attach(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -613,7 +615,7 @@ func TestSandboxService_Attach(t *testing.T) {
 func TestSandboxService_CreateForSession_NoWorkspacePath(t *testing.T) {
 	mockProvider := mock.NewProvider()
 	testStore := setupTestStore(t)
-	cfg := &config.Config{}
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
 	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
 
 	ctx := context.Background()
@@ -648,5 +650,90 @@ func TestSandboxService_CreateForSession_NoWorkspacePath(t *testing.T) {
 	err := svc.CreateForSession(ctx, sessionID)
 	if err == nil {
 		t.Error("Expected error when session has no workspace path")
+	}
+}
+
+func TestSandboxService_CreateForSession_StoresEncryptedSSHKey(t *testing.T) {
+	mockProvider := mock.NewProviderWithImage(testImage)
+	testStore := setupTestStore(t)
+	cfg := &config.Config{
+		SandboxIdleTimeout: 30 * time.Minute,
+		EncryptionKey:      testEncryptionKey,
+	}
+	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
+
+	ctx := context.Background()
+	sessionID := "test-session-ssh-key"
+	workspacePath := "/home/user/workspace"
+	createTestSession(t, testStore, sessionID, workspacePath)
+
+	if err := svc.CreateForSession(ctx, sessionID); err != nil {
+		t.Fatalf("CreateForSession failed: %v", err)
+	}
+
+	sess, err := testStore.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("failed to reload session: %v", err)
+	}
+	if len(sess.SSHKeyEncryptedData) == 0 {
+		t.Fatal("expected encrypted ssh key data to be stored on the session")
+	}
+
+	opts, ok := mockProvider.GetCreateOptions(sessionID)
+	if !ok {
+		t.Fatal("expected mock provider to record create options")
+	}
+	if opts.SSHKey == nil {
+		t.Fatal("expected sandbox create options to include an ssh key")
+	}
+	if opts.SSHKey.Filename != sandboxSSHKeyFilename {
+		t.Fatalf("ssh key filename = %q, want %q", opts.SSHKey.Filename, sandboxSSHKeyFilename)
+	}
+	if opts.SSHKey.Algorithm != "ecdsa-sha2-nistp256" {
+		t.Fatalf("ssh key algorithm = %q, want ecdsa-sha2-nistp256", opts.SSHKey.Algorithm)
+	}
+	if opts.SSHKey.PrivateKey == "" || opts.SSHKey.PublicKey == "" {
+		t.Fatal("expected sandbox ssh key material to be populated")
+	}
+}
+
+func TestSandboxService_CreateForSession_ReusesExistingSSHKey(t *testing.T) {
+	mockProvider := mock.NewProviderWithImage(testImage)
+	testStore := setupTestStore(t)
+	cfg := &config.Config{
+		SandboxIdleTimeout: 30 * time.Minute,
+		EncryptionKey:      testEncryptionKey,
+	}
+	svc := NewSandboxService(testStore, mockProvider, cfg, nil, nil, nil, nil)
+
+	ctx := context.Background()
+	sessionID := "test-session-ssh-key-reuse"
+	workspacePath := "/home/user/workspace"
+	createTestSession(t, testStore, sessionID, workspacePath)
+
+	if err := svc.CreateForSession(ctx, sessionID); err != nil {
+		t.Fatalf("first CreateForSession failed: %v", err)
+	}
+	firstOpts, ok := mockProvider.GetCreateOptions(sessionID)
+	if !ok || firstOpts.SSHKey == nil {
+		t.Fatal("expected first sandbox create options to include an ssh key")
+	}
+
+	if err := mockProvider.Remove(ctx, sessionID); err != nil {
+		t.Fatalf("failed to remove mock sandbox: %v", err)
+	}
+	if err := svc.CreateForSession(ctx, sessionID); err != nil {
+		t.Fatalf("second CreateForSession failed: %v", err)
+	}
+	secondOpts, ok := mockProvider.GetCreateOptions(sessionID)
+	if !ok || secondOpts.SSHKey == nil {
+		t.Fatal("expected second sandbox create options to include an ssh key")
+	}
+
+	if firstOpts.SSHKey.PrivateKey != secondOpts.SSHKey.PrivateKey {
+		t.Fatal("expected sandbox ssh private key to be reused across sandbox recreation")
+	}
+	if firstOpts.SSHKey.PublicKey != secondOpts.SSHKey.PublicKey {
+		t.Fatal("expected sandbox ssh public key to be reused across sandbox recreation")
 	}
 }

@@ -297,6 +297,12 @@ func (s *SandboxService) CreateForSession(ctx context.Context, sessionID string)
 		return fmt.Errorf("failed to get workspace: %w", err)
 	}
 
+	// Generate or load the sandbox SSH identity for this session.
+	sshKey, err := ensureSessionSSHKey(ctx, s.store, s.cfg, session)
+	if err != nil {
+		return fmt.Errorf("failed to ensure sandbox ssh key: %w", err)
+	}
+
 	// Generate a cryptographically secure shared secret
 	sharedSecret := generateSandboxSecret(32)
 
@@ -304,6 +310,7 @@ func (s *SandboxService) CreateForSession(ctx context.Context, sessionID string)
 	// Note: The sandbox image is configured globally on the provider via SANDBOX_IMAGE env var
 	opts := sandbox.CreateOptions{
 		SharedSecret: sharedSecret,
+		SSHKey:       sshKey,
 		Labels: map[string]string{
 			"discobot.session.id":   sessionID,
 			"discobot.workspace.id": session.WorkspaceID,

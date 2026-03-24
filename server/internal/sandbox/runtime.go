@@ -210,6 +210,16 @@ const (
 	StatusRemoved Status = "removed"
 )
 
+// SSHKeyProvision contains SSH key material that should be staged into a sandbox.
+// The private key must only be used for runtime provisioning and must never be
+// exposed via environment variables.
+type SSHKeyProvision struct {
+	Filename   string
+	PrivateKey string
+	PublicKey  string
+	Algorithm  string
+}
+
 // CreateOptions configures sandbox creation.
 // Note: The sandbox image is configured globally via SANDBOX_IMAGE env var,
 // not per-sandbox. The provider uses its configured image for all sandboxes.
@@ -220,6 +230,9 @@ type CreateOptions struct {
 	// The provider stores this secret and makes a salted+hashed version available
 	// to the sandbox via the DISCOBOT_SECRET environment variable.
 	SharedSecret string
+
+	// SSHKey contains optional SSH identity material to provision into the sandbox.
+	SSHKey *SSHKeyProvision
 
 	// WorkspacePath is the local directory to mount inside the sandbox at /.workspace.
 	// This is always a local directory path (either a local workspace or a cloned git repo).

@@ -1,8 +1,10 @@
 package docker
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/docker/docker/client"
 
 	"github.com/obot-platform/discobot/server/internal/config"
+	"github.com/obot-platform/discobot/server/internal/sandbox"
 )
 
 func TestIsLocalImage(t *testing.T) {
@@ -64,6 +67,58 @@ func TestIsLocalImage(t *testing.T) {
 				t.Errorf("isLocalImage(%q) = %v, want %v", tt.image, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestBuildSSHKeyArchive(t *testing.T) {
+	archive, err := buildSSHKeyArchive(&sandbox.SSHKeyProvision{
+		Filename:   "discobot_sandbox",
+		PrivateKey: "PRIVATE KEY\n",
+		PublicKey:  "ecdsa-sha2-nistp256 AAAATEST discobot",
+	})
+	if err != nil {
+		t.Fatalf("buildSSHKeyArchive failed: %v", err)
+	}
+
+	tr := tar.NewReader(archive)
+	entries := map[string]string{}
+	modes := map[string]int64{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("failed to read tar entry: %v", err)
+		}
+		modes[hdr.Name] = hdr.Mode
+		if hdr.Typeflag == tar.TypeDir {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatalf("failed to read tar file contents for %s: %v", hdr.Name, err)
+		}
+		entries[hdr.Name] = string(data)
+	}
+
+	if modes[".discobot-secrets"] != 0700 {
+		t.Fatalf(".discobot-secrets mode = %o, want 700", modes[".discobot-secrets"])
+	}
+	if modes[".discobot-secrets/ssh"] != 0700 {
+		t.Fatalf(".discobot-secrets/ssh mode = %o, want 700", modes[".discobot-secrets/ssh"])
+	}
+	if modes[".discobot-secrets/ssh/discobot_sandbox"] != 0600 {
+		t.Fatalf("private key mode = %o, want 600", modes[".discobot-secrets/ssh/discobot_sandbox"])
+	}
+	if modes[".discobot-secrets/ssh/discobot_sandbox.pub"] != 0644 {
+		t.Fatalf("public key mode = %o, want 644", modes[".discobot-secrets/ssh/discobot_sandbox.pub"])
+	}
+	if entries[".discobot-secrets/ssh/discobot_sandbox"] != "PRIVATE KEY\n" {
+		t.Fatalf("unexpected private key contents: %q", entries[".discobot-secrets/ssh/discobot_sandbox"])
+	}
+	if entries[".discobot-secrets/ssh/discobot_sandbox.pub"] != "ecdsa-sha2-nistp256 AAAATEST discobot\n" {
+		t.Fatalf("unexpected public key contents: %q", entries[".discobot-secrets/ssh/discobot_sandbox.pub"])
 	}
 }
 

@@ -33,6 +33,9 @@ const (
 	// Default user to run as
 	defaultUser = "discobot"
 
+	sandboxSSHKeyName       = "discobot_sandbox"
+	sandboxSSHKeyStagingDir = "/.discobot-secrets/ssh"
+
 	// Proxy binary path
 	proxyBinary = "/opt/discobot/bin/proxy"
 
@@ -142,7 +145,14 @@ func runSetup() error {
 	}
 	fmt.Printf("discobot-agent: [%.3fs] filesystem setup completed (overlayfs)\n", time.Since(stepStart).Seconds())
 
-	// Step 4: Mount cache directories
+	// Step 4: Install sandbox SSH key material
+	stepStart = time.Now()
+	if err := installSandboxSSHKey(userInfo); err != nil {
+		return fmt.Errorf("sandbox ssh key setup failed: %w", err)
+	}
+	fmt.Printf("discobot-agent: [%.3fs] sandbox ssh key setup completed\n", time.Since(stepStart).Seconds())
+
+	// Step 5: Mount cache directories
 	stepStart = time.Now()
 	if err := mountCacheDirectories(); err != nil {
 		fmt.Printf("discobot-agent: Cache mount failed: %v\n", err)
@@ -691,6 +701,73 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+func installSandboxSSHKey(u *userInfo) error {
+	return installSandboxSSHKeyFiles(sandboxSSHKeyStagingDir, u.homeDir, u.uid, u.gid)
+}
+
+func installSandboxSSHKeyFiles(srcDir, homeDir string, uid, gid int) error {
+	privateSrc := filepath.Join(srcDir, sandboxSSHKeyName)
+	publicSrc := filepath.Join(srcDir, sandboxSSHKeyName+".pub")
+
+	if _, err := os.Stat(privateSrc); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat private key: %w", err)
+	}
+	if _, err := os.Stat(publicSrc); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("sandbox ssh public key missing at %s", publicSrc)
+		}
+		return fmt.Errorf("stat public key: %w", err)
+	}
+
+	sshDir := filepath.Join(homeDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return fmt.Errorf("create ssh dir: %w", err)
+	}
+	if err := os.Chmod(sshDir, 0700); err != nil {
+		return fmt.Errorf("chmod ssh dir: %w", err)
+	}
+	if uid >= 0 || gid >= 0 {
+		if err := os.Chown(sshDir, uid, gid); err != nil {
+			return fmt.Errorf("chown ssh dir: %w", err)
+		}
+	}
+
+	if err := installSandboxSSHKeyFile(privateSrc, filepath.Join(sshDir, sandboxSSHKeyName), 0600, uid, gid); err != nil {
+		return err
+	}
+	if err := installSandboxSSHKeyFile(publicSrc, filepath.Join(sshDir, sandboxSSHKeyName+".pub"), 0644, uid, gid); err != nil {
+		return err
+	}
+
+	if err := os.RemoveAll(srcDir); err != nil {
+		return fmt.Errorf("remove ssh staging dir: %w", err)
+	}
+
+	return nil
+}
+
+func installSandboxSSHKeyFile(src, dst string, mode os.FileMode, uid, gid int) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	if err := os.WriteFile(dst, data, mode); err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	if err := os.Chmod(dst, mode); err != nil {
+		return fmt.Errorf("chmod %s: %w", dst, err)
+	}
+	if uid >= 0 || gid >= 0 {
+		if err := os.Chown(dst, uid, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", dst, err)
+		}
+	}
+	return nil
+}
+
 // setupWorkspace clones the workspace if it doesn't exist.
 func setupWorkspace(workspacePath, workspaceCommit string, u *userInfo) error {
 	// If workspace already exists, nothing to do
@@ -1160,7 +1237,6 @@ func setupProxyConfig(userInfo *userInfo) error {
 
 	return nil
 }
-
 
 // envOrDefault returns the environment variable value or the default if not set
 func envOrDefault(key, defaultValue string) string {

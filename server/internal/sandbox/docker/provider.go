@@ -2,6 +2,7 @@
 package docker
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -52,6 +53,8 @@ const (
 
 	// dataVolumePrefix is the prefix for data volume names.
 	dataVolumePrefix = "discobot-data-"
+
+	sandboxSSHKeyStagingDir = "/.discobot-secrets/ssh"
 )
 
 // DetectDockerHost resolves the Docker host from the current Docker context.
@@ -214,6 +217,72 @@ func containerName(sessionID string) string {
 // volumeName returns the Docker volume name for a session's data volume.
 func volumeName(sessionID string) string {
 	return fmt.Sprintf("%s%s", dataVolumePrefix, sessionID)
+}
+
+func (p *Provider) provisionSSHKey(ctx context.Context, containerID string, key *sandbox.SSHKeyProvision) error {
+	if key == nil {
+		return nil
+	}
+
+	archive, err := buildSSHKeyArchive(key)
+	if err != nil {
+		return err
+	}
+
+	if err := p.client.CopyToContainer(ctx, containerID, "/", archive, containerTypes.CopyToContainerOptions{}); err != nil {
+		return fmt.Errorf("failed to copy sandbox ssh key into container: %w", err)
+	}
+
+	return nil
+}
+
+func buildSSHKeyArchive(key *sandbox.SSHKeyProvision) (*bytes.Buffer, error) {
+	filename := filepath.Base(strings.TrimSpace(key.Filename))
+	if filename == "" || filename == "." || filename == string(filepath.Separator) {
+		return nil, fmt.Errorf("sandbox ssh key filename is required")
+	}
+	if strings.TrimSpace(key.PrivateKey) == "" || strings.TrimSpace(key.PublicKey) == "" {
+		return nil, fmt.Errorf("sandbox ssh key material is incomplete")
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	entries := []struct {
+		name string
+		mode int64
+		data string
+	}{
+		{name: ".discobot-secrets", mode: 0700},
+		{name: strings.TrimPrefix(sandboxSSHKeyStagingDir, "/"), mode: 0700},
+		{name: filepath.ToSlash(filepath.Join(strings.TrimPrefix(sandboxSSHKeyStagingDir, "/"), filename)), mode: 0600, data: key.PrivateKey},
+		{name: filepath.ToSlash(filepath.Join(strings.TrimPrefix(sandboxSSHKeyStagingDir, "/"), filename+".pub")), mode: 0644, data: strings.TrimSpace(key.PublicKey) + "\n"},
+	}
+
+	for _, entry := range entries {
+		header := &tar.Header{
+			Name: entry.name,
+			Mode: entry.mode,
+		}
+		if entry.data == "" {
+			header.Typeflag = tar.TypeDir
+		} else {
+			header.Size = int64(len(entry.data))
+		}
+		if err := tw.WriteHeader(header); err != nil {
+			return nil, fmt.Errorf("failed to write tar header for %s: %w", entry.name, err)
+		}
+		if entry.data != "" {
+			if _, err := tw.Write([]byte(entry.data)); err != nil {
+				return nil, fmt.Errorf("failed to write tar entry for %s: %w", entry.name, err)
+			}
+		}
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finalize ssh key archive: %w", err)
+	}
+	return &buf, nil
 }
 
 // ImageExists checks if the configured sandbox image is available locally.
@@ -451,6 +520,12 @@ func (p *Provider) Create(ctx context.Context, sessionID string, opts sandbox.Cr
 	// Create container
 	resp, err := p.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, name)
 	if err != nil {
+		return nil, fmt.Errorf("%w: %v", sandbox.ErrStartFailed, err)
+	}
+
+	if err := p.provisionSSHKey(ctx, resp.ID, opts.SSHKey); err != nil {
+		_ = p.client.ContainerRemove(ctx, resp.ID, containerTypes.RemoveOptions{Force: true})
+		_ = p.client.VolumeRemove(ctx, dataVolName, true)
 		return nil, fmt.Errorf("%w: %v", sandbox.ErrStartFailed, err)
 	}
 

@@ -26,10 +26,11 @@ const DefaultMockImage = "mock:latest"
 
 // Provider is a mock sandbox provider for testing.
 type Provider struct {
-	mu        sync.RWMutex
-	sandboxes map[string]*sandbox.Sandbox
-	secrets   map[string]string // sessionID -> raw secret
-	image     string            // configured sandbox image
+	mu            sync.RWMutex
+	sandboxes     map[string]*sandbox.Sandbox
+	secrets       map[string]string // sessionID -> raw secret
+	createOptions map[string]sandbox.CreateOptions
+	image         string // configured sandbox image
 
 	// Event subscribers for Watch functionality
 	subscribersMu sync.RWMutex
@@ -56,18 +57,20 @@ type Provider struct {
 // NewProvider creates a new mock provider with default behavior.
 func NewProvider() *Provider {
 	return &Provider{
-		sandboxes: make(map[string]*sandbox.Sandbox),
-		secrets:   make(map[string]string),
-		image:     DefaultMockImage,
+		sandboxes:     make(map[string]*sandbox.Sandbox),
+		secrets:       make(map[string]string),
+		createOptions: make(map[string]sandbox.CreateOptions),
+		image:         DefaultMockImage,
 	}
 }
 
 // NewProviderWithImage creates a new mock provider with a specific image.
 func NewProviderWithImage(image string) *Provider {
 	return &Provider{
-		sandboxes: make(map[string]*sandbox.Sandbox),
-		secrets:   make(map[string]string),
-		image:     image,
+		sandboxes:     make(map[string]*sandbox.Sandbox),
+		secrets:       make(map[string]string),
+		createOptions: make(map[string]sandbox.CreateOptions),
+		image:         image,
 	}
 }
 
@@ -79,6 +82,14 @@ func (p *Provider) ImageExists(_ context.Context) bool {
 // Image returns the configured sandbox image name.
 func (p *Provider) Image() string {
 	return p.image
+}
+
+// GetCreateOptions returns the create options used for the session.
+func (p *Provider) GetCreateOptions(sessionID string) (sandbox.CreateOptions, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	opts, ok := p.createOptions[sessionID]
+	return opts, ok
 }
 
 // Create creates a mock sandbox.
@@ -98,6 +109,7 @@ func (p *Provider) Create(ctx context.Context, sessionID string, opts sandbox.Cr
 	if opts.SharedSecret != "" {
 		p.secrets[sessionID] = opts.SharedSecret
 	}
+	p.createOptions[sessionID] = opts
 
 	// Always simulate port 3002 assignment (deterministic for testing)
 	ports := []sandbox.AssignedPort{

@@ -215,24 +215,25 @@ const (
 
 // Session represents a chat thread within a workspace.
 type Session struct {
-	ID              string    `gorm:"primaryKey;type:text" json:"id"`
-	ProjectID       string    `gorm:"column:project_id;not null;type:text;index" json:"projectId"`
-	WorkspaceID     string    `gorm:"column:workspace_id;not null;type:text;index" json:"workspaceId"`
-	Name            string    `gorm:"not null;type:text" json:"name"`
-	DisplayName     *string   `gorm:"column:display_name;type:text" json:"displayName,omitempty"`
-	Description     *string   `gorm:"type:text" json:"description,omitempty"`
-	Status          string    `gorm:"not null;type:text;default:initializing" json:"status"`
-	CommitStatus    string    `gorm:"column:commit_status;type:text;default:''" json:"commitStatus"`
-	CommitOperation *string   `gorm:"column:commit_operation;type:text" json:"commitOperation,omitempty"`
-	CommitError     *string   `gorm:"column:commit_error;type:text" json:"commitError,omitempty"`
-	BaseCommit      *string   `gorm:"column:base_commit;type:text" json:"baseCommit,omitempty"`
-	AppliedCommit   *string   `gorm:"column:applied_commit;type:text" json:"appliedCommit,omitempty"`
-	ErrorMessage    *string   `gorm:"column:error_message;type:text" json:"errorMessage,omitempty"`
-	WorkspacePath   *string   `gorm:"column:workspace_path;type:text" json:"workspacePath,omitempty"`
-	WorkspaceCommit *string   `gorm:"column:workspace_commit;type:text" json:"workspaceCommit,omitempty"`
-	ActiveEnvSetIDs []string  `gorm:"column:active_env_set_ids;serializer:json;type:text" json:"activeEnvSetIds,omitempty"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt"`
-	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
+	ID                  string    `gorm:"primaryKey;type:text" json:"id"`
+	ProjectID           string    `gorm:"column:project_id;not null;type:text;index" json:"projectId"`
+	WorkspaceID         string    `gorm:"column:workspace_id;not null;type:text;index" json:"workspaceId"`
+	Name                string    `gorm:"not null;type:text" json:"name"`
+	DisplayName         *string   `gorm:"column:display_name;type:text" json:"displayName,omitempty"`
+	Description         *string   `gorm:"type:text" json:"description,omitempty"`
+	Status              string    `gorm:"not null;type:text;default:initializing" json:"status"`
+	CommitStatus        string    `gorm:"column:commit_status;type:text;default:''" json:"commitStatus"`
+	CommitOperation     *string   `gorm:"column:commit_operation;type:text" json:"commitOperation,omitempty"`
+	CommitError         *string   `gorm:"column:commit_error;type:text" json:"commitError,omitempty"`
+	BaseCommit          *string   `gorm:"column:base_commit;type:text" json:"baseCommit,omitempty"`
+	AppliedCommit       *string   `gorm:"column:applied_commit;type:text" json:"appliedCommit,omitempty"`
+	ErrorMessage        *string   `gorm:"column:error_message;type:text" json:"errorMessage,omitempty"`
+	WorkspacePath       *string   `gorm:"column:workspace_path;type:text" json:"workspacePath,omitempty"`
+	WorkspaceCommit     *string   `gorm:"column:workspace_commit;type:text" json:"workspaceCommit,omitempty"`
+	SSHKeyEncryptedData []byte    `gorm:"column:ssh_key_encrypted_data" json:"-"`
+	ActiveEnvSetIDs     []string  `gorm:"column:active_env_set_ids;serializer:json;type:text" json:"activeEnvSetIds,omitempty"`
+	CreatedAt           time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt           time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
 
 	Project   *Project   `gorm:"foreignKey:ProjectID" json:"-"`
 	Workspace *Workspace `gorm:"foreignKey:WorkspaceID" json:"-"`

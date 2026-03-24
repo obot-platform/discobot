@@ -101,6 +101,17 @@ The `discobot-agent` binary serves as the container's PID 1 process, providing:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
+│  Step 5.25: Install Sandbox SSH Identity                    │
+│  ───────────────────────────────────────                    │
+│  • Check for staged files in /.discobot-secrets/ssh         │
+│  • Create /home/discobot/.ssh with 0700 permissions         │
+│  • Copy discobot_sandbox and discobot_sandbox.pub           │
+│  • Set 0600 on the private key and 0644 on the public key   │
+│  • Remove the staging directory after installation          │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
 │  Step 5.5: Mount Cache Directories                          │
 │  ──────────────────────────────                             │
 │  • Check if /.data/cache volume exists                      │
