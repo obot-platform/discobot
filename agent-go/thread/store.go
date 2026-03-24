@@ -77,6 +77,10 @@ func (s *Store) SaveMessage(threadID string, msg StoredMessage) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create messages dir: %w", err)
 	}
+	if msg.Message.CreatedAt == nil {
+		now := time.Now().UTC()
+		msg.Message.CreatedAt = &now
+	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("marshal message: %w", err)
@@ -276,17 +280,38 @@ func (s *Store) turnStatePath(threadID string) string {
 	return filepath.Join(s.baseDir, threadID, "turn.json")
 }
 
+// turnRecordPath returns the durable per-turn state path under the turn directory.
+func (s *Store) turnRecordPath(threadID, turnID string) string {
+	return filepath.Join(s.turnsDir(threadID), turnID, "turn.json")
+}
+
 // SaveTurnState persists the active turn state to disk.
 func (s *Store) SaveTurnState(threadID string, state TurnState) error {
-	dir := filepath.Join(s.baseDir, threadID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	now := time.Now().UTC()
+	if state.StartedAt == nil {
+		state.StartedAt = &now
+	}
+	state.UpdatedAt = &now
+
+	threadDir := filepath.Join(s.baseDir, threadID)
+	if err := os.MkdirAll(threadDir, 0o755); err != nil {
 		return fmt.Errorf("create thread dir: %w", err)
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("marshal turn state: %w", err)
 	}
-	return writeFileAtomic(s.turnStatePath(threadID), data, 0o644)
+	if err := writeFileAtomic(s.turnStatePath(threadID), data, 0o644); err != nil {
+		return err
+	}
+	if state.ID == "" {
+		return nil
+	}
+	turnDir := filepath.Join(s.turnsDir(threadID), state.ID)
+	if err := os.MkdirAll(turnDir, 0o755); err != nil {
+		return fmt.Errorf("create turn dir: %w", err)
+	}
+	return writeFileAtomic(s.turnRecordPath(threadID, state.ID), data, 0o644)
 }
 
 // LoadTurnState loads the active turn state from disk.
@@ -302,6 +327,23 @@ func (s *Store) LoadTurnState(threadID string) (*TurnState, error) {
 	var state TurnState
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("unmarshal turn state: %w", err)
+	}
+	return &state, nil
+}
+
+// LoadTurnRecord loads the durable per-turn state from the turn directory.
+// Returns nil if not found.
+func (s *Store) LoadTurnRecord(threadID, turnID string) (*TurnState, error) {
+	data, err := os.ReadFile(s.turnRecordPath(threadID, turnID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read turn record: %w", err)
+	}
+	var state TurnState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("unmarshal turn record: %w", err)
 	}
 	return &state, nil
 }

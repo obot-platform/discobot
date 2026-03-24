@@ -3,6 +3,7 @@ package message
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestAccumulator_TextStreaming(t *testing.T) {
@@ -129,7 +130,8 @@ func TestAccumulator_ToolResultError(t *testing.T) {
 func TestAccumulator_FinishAndMetadata(t *testing.T) {
 	acc := NewChunkAccumulator()
 	acc.Push(StreamStartChunk{Warnings: []Warning{{Type: "w", Message: "warn"}}})
-	acc.Push(ResponseMetadataChunk{ID: "r1", ModelID: "claude"})
+	ts := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	acc.Push(ResponseMetadataChunk{ID: "r1", Timestamp: &ts, ModelID: "claude"})
 	acc.Push(TextStartChunk{ID: "t1"})
 	acc.Push(TextDeltaChunk{ID: "t1", Delta: "hi"})
 	acc.Push(TextEndChunk{ID: "t1"})
@@ -147,6 +149,10 @@ func TestAccumulator_FinishAndMetadata(t *testing.T) {
 	}
 	if acc.FinishResult() == nil || acc.FinishResult().FinishReason.Unified != "stop" {
 		t.Error("FinishResult missing or wrong")
+	}
+	msg := acc.Message()
+	if msg.CreatedAt == nil || !msg.CreatedAt.Equal(ts) {
+		t.Fatalf("CreatedAt: got %v, want %v", msg.CreatedAt, ts)
 	}
 }
 

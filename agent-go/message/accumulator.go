@@ -1,6 +1,9 @@
 package message
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // ChunkAccumulator consolidates streaming ProviderMessageChunks from a single
 // provider Complete() call into a Message.
@@ -220,6 +223,13 @@ func (a *ChunkAccumulator) Message() Message {
 	if a.respMeta != nil && a.respMeta.ID != "" {
 		msg.ID = a.respMeta.ID
 		msg.ProviderResponseID = a.respMeta.ID
+	}
+	if a.respMeta != nil && a.respMeta.Timestamp != nil {
+		ts := a.respMeta.Timestamp.UTC()
+		msg.CreatedAt = &ts
+	} else {
+		now := time.Now().UTC()
+		msg.CreatedAt = &now
 	}
 	return msg
 }

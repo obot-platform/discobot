@@ -201,7 +201,7 @@ func TestChunkRoundTrip_FinishProvider(t *testing.T) {
 
 func TestChunkRoundTrip_ResponseFinish(t *testing.T) {
 	// Orchestrator ResponseFinishChunk — no usage, string finishReason.
-	rfc := ResponseFinishChunk{FinishReason: "stop"}
+	rfc := ResponseFinishChunk{FinishReason: "stop", MessageMetadata: json.RawMessage(`{"finishedAt":"2025-01-02T00:00:00Z"}`)}
 	data, err := MarshalChunk(rfc)
 	if err != nil {
 		t.Fatal(err)
@@ -218,6 +218,9 @@ func TestChunkRoundTrip_ResponseFinish(t *testing.T) {
 	}
 	if gotRFC.FinishReason != "stop" {
 		t.Errorf("FinishReason: got %q", gotRFC.FinishReason)
+	}
+	if string(gotRFC.MessageMetadata) != `{"finishedAt":"2025-01-02T00:00:00Z"}` {
+		t.Fatalf("MessageMetadata: got %s", gotRFC.MessageMetadata)
 	}
 }
 

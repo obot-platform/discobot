@@ -54,7 +54,8 @@ func RunTurn(
 ) iter.Seq2[message.MessageChunk, error] {
 	return func(yield func(message.MessageChunk, error) bool) {
 		// 1. Build user message and persist config.
-		cfg.UserMessage = message.Message{Role: "user", Parts: cfg.UserParts}
+		startedAt := time.Now().UTC()
+		cfg.UserMessage = message.Message{Role: "user", Parts: cfg.UserParts, CreatedAt: &startedAt}
 
 		turnID := generateID()
 		turnState := TurnState{
@@ -65,6 +66,7 @@ func RunTurn(
 			CurrentStep: 0,
 			Phase:       PhaseStreaming,
 			LeafMsgID:   leafID,
+			StartedAt:   &startedAt,
 		}
 
 		// 2. Save user message to thread immediately.
@@ -105,7 +107,7 @@ func RunTurn(
 		// Include the model in messageMetadata so the server can record which model was used.
 		if !yield(message.StartChunk{
 			MessageID:       turnState.AssistantMsgID,
-			MessageMetadata: buildMessageMetadata(cfg),
+			MessageMetadata: buildMessageMetadata(cfg, turnState.StartedAt, nil),
 		}, nil) {
 			return
 		}
@@ -120,6 +122,7 @@ func RunTurn(
 			// If context was cancelled (e.g. Ctrl+C), clean up turn state
 			// so the turn is not resumed on the next prompt or restart.
 			if ctx.Err() != nil {
+				_ = finalizeTurnState(store, threadID, &turnState)
 				_ = store.DeleteTurnState(threadID)
 			}
 			return
@@ -130,7 +133,15 @@ func RunTurn(
 		}
 
 		// 5. Turn complete — emit finish envelope and delete turn state.
-		yield(message.ResponseFinishChunk{FinishReason: "stop"}, nil) //nolint:errcheck
+		if err := finalizeTurnState(store, threadID, &turnState); err != nil {
+			yield(nil, fmt.Errorf("save finished turn state: %w", err))
+			return
+		}
+		_ = persistTurnResponseMetadata(store, threadID, &turnState)
+		yield(message.ResponseFinishChunk{
+			FinishReason:    "stop",
+			MessageMetadata: buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt),
+		}, nil) //nolint:errcheck
 		_ = store.DeleteTurnState(threadID)
 	}
 }
@@ -172,7 +183,7 @@ func ResumeTurn(
 			// stream to the same message ID as the original run.
 			if !yield(message.StartChunk{
 				MessageID:       assistantMsgID,
-				MessageMetadata: buildMessageMetadata(turnState.Config),
+				MessageMetadata: buildMessageMetadata(turnState.Config, turnState.StartedAt, nil),
 			}, nil) {
 				return
 			}
@@ -199,6 +210,7 @@ func ResumeTurn(
 		}
 		if !executeLoop(ctx, provider, executor, execToolCtx, store, threadID, turnID, turnState, yield) {
 			if ctx.Err() != nil {
+				_ = finalizeTurnState(store, threadID, turnState)
 				_ = store.DeleteTurnState(threadID)
 			}
 			return
@@ -208,7 +220,15 @@ func ResumeTurn(
 			return // keep turn state on disk
 		}
 
-		yield(message.ResponseFinishChunk{FinishReason: "stop"}, nil) //nolint:errcheck
+		if err := finalizeTurnState(store, threadID, turnState); err != nil {
+			yield(nil, fmt.Errorf("save finished turn state: %w", err))
+			return
+		}
+		_ = persistTurnResponseMetadata(store, threadID, turnState)
+		yield(message.ResponseFinishChunk{
+			FinishReason:    "stop",
+			MessageMetadata: buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt),
+		}, nil) //nolint:errcheck
 		_ = store.DeleteTurnState(threadID)
 	}
 }
@@ -328,6 +348,7 @@ func executeLoop(
 
 			if len(toolCalls) == 0 {
 				// No tool calls — save assistant message and finish turn.
+				assistantMsg.Metadata = buildMessageMetadata(*cfg, turnState.StartedAt, nil)
 				assistantMsgID := resolveMessageID(assistantMsg)
 				if err := store.SaveMessage(threadID, StoredMessage{
 					ID:       assistantMsgID,
@@ -540,6 +561,7 @@ func executeLoop(
 					}
 					msgWithApproval := assistantMsg
 					msgWithApproval.Parts = append(append([]message.Part{}, assistantMsg.Parts...), approvalPart)
+					msgWithApproval.Metadata = buildMessageMetadata(*cfg, turnState.StartedAt, nil)
 
 					assistantMsgID := resolveMessageID(assistantMsg)
 					if err := store.SaveMessage(threadID, StoredMessage{
@@ -621,6 +643,7 @@ func executeLoop(
 				}
 
 				assistantMsgID := resolveMessageID(assistantMsg)
+				assistantMsg.Metadata = buildMessageMetadata(*cfg, turnState.StartedAt, nil)
 				_ = store.SaveMessage(threadID, StoredMessage{
 					ID:       assistantMsgID,
 					ParentID: turnState.LeafMsgID,
@@ -660,7 +683,7 @@ func executeLoop(
 				}
 			}
 
-			toolMsg, saveErr := saveStepMessages(store, threadID, turnState, assistantMsg, orderedResults)
+			toolMsg, saveErr := saveStepMessages(store, threadID, turnState, *cfg, assistantMsg, orderedResults)
 			if saveErr != nil {
 				yield(nil, saveErr)
 				return false
@@ -756,7 +779,7 @@ func executeLoop(
 				}
 			}
 
-			toolMsg, saveErr := saveStepMessages(store, threadID, turnState, assistantMsg, orderedResults)
+			toolMsg, saveErr := saveStepMessages(store, threadID, turnState, *cfg, assistantMsg, orderedResults)
 			if saveErr != nil {
 				yield(nil, saveErr)
 				return false
@@ -851,7 +874,7 @@ func executeLoop(
 				}
 			}
 
-			toolMsg, saveErr := saveStepMessages(store, threadID, turnState, assistantMsg, orderedResults)
+			toolMsg, saveErr := saveStepMessages(store, threadID, turnState, *cfg, assistantMsg, orderedResults)
 			if saveErr != nil {
 				yield(nil, saveErr)
 				return false
@@ -876,9 +899,11 @@ func saveStepMessages(
 	store *Store,
 	threadID string,
 	turnState *TurnState,
+	cfg TurnConfig,
 	assistantMsg message.Message,
 	toolResults []message.ToolResultPart,
 ) (message.Message, error) {
+	assistantMsg.Metadata = buildMessageMetadata(cfg, turnState.StartedAt, nil)
 	assistantMsgID := resolveMessageID(assistantMsg)
 	// Skip re-saving the assistant message if it is already the current leaf.
 	// This happens in PhaseWaitingForAnswer: the approval pause already saved the
@@ -895,7 +920,8 @@ func saveStepMessages(
 		}
 	}
 
-	toolMsg := message.Message{Role: "tool"}
+	toolMsgCreatedAt := time.Now().UTC()
+	toolMsg := message.Message{Role: "tool", CreatedAt: &toolMsgCreatedAt}
 	for _, r := range toolResults {
 		toolMsg.Parts = append(toolMsg.Parts, r)
 	}
@@ -1149,21 +1175,24 @@ func formatRetryMessage(event transport.RetryEvent) string {
 }
 
 // buildMessageMetadata returns a JSON-encoded messageMetadata object containing
-// the model identifier in "providerID/modelID" format and the effective reasoning
-// setting, as expected by the server when it intercepts "start" SSE events.
-//
-// The reasoning field reflects what will actually be used: "auto" when cfg.Reasoning
-// is "auto" or when it's unset and the model supports reasoning
-// (matching the auto-detection logic in the providers). "none" otherwise.
-func buildMessageMetadata(cfg TurnConfig) json.RawMessage {
-	if cfg.ProviderID == "" || cfg.Model == "" {
+// the model identifier in "providerID/modelID" format, the effective reasoning
+// setting, and optional response timing fields.
+func buildMessageMetadata(cfg TurnConfig, startedAt, finishedAt *time.Time) json.RawMessage {
+	payload := map[string]any{}
+	if cfg.ProviderID != "" && cfg.Model != "" {
+		payload["model"] = cfg.ProviderID + "/" + cfg.Model
+		payload["reasoning"] = string(effectiveReasoning(cfg))
+	}
+	if startedAt != nil {
+		payload["startedAt"] = startedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if finishedAt != nil {
+		payload["finishedAt"] = finishedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if len(payload) == 0 {
 		return nil
 	}
-	reasoning := effectiveReasoning(cfg)
-	data, err := json.Marshal(map[string]string{
-		"model":     cfg.ProviderID + "/" + cfg.Model,
-		"reasoning": string(reasoning),
-	})
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil
 	}
@@ -1358,6 +1387,26 @@ func recoverStreamingStep(store *Store, threadID, turnID string, turnState *Turn
 	}
 
 	return true
+}
+
+func finalizeTurnState(store *Store, threadID string, turnState *TurnState) error {
+	if turnState.FinishedAt == nil {
+		finishedAt := time.Now().UTC()
+		turnState.FinishedAt = &finishedAt
+	}
+	return store.SaveTurnState(threadID, *turnState)
+}
+
+func persistTurnResponseMetadata(store *Store, threadID string, turnState *TurnState) error {
+	if turnState.AssistantMsgID == "" {
+		return nil
+	}
+	stored, err := store.LoadMessage(threadID, turnState.AssistantMsgID)
+	if err != nil {
+		return nil
+	}
+	stored.Message.Metadata = buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt)
+	return store.SaveMessage(threadID, stored)
 }
 
 // filterContentParts returns only text and reasoning parts from a message,

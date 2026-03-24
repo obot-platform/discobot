@@ -3,6 +3,7 @@ package thread
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/obot-platform/discobot/agent-go/message"
 )
@@ -30,6 +31,9 @@ type TurnState struct {
 	LeafMsgID         string     `json:"leafMsgId"`                   // updated as messages are saved
 	AssistantMsgID    string     `json:"assistantMsgId"`              // pre-generated ID for the first assistant message
 	PendingApprovalID string     `json:"pendingApprovalId,omitempty"` // tool call ID of the pending approval request
+	StartedAt         *time.Time `json:"startedAt,omitempty"`
+	UpdatedAt         *time.Time `json:"updatedAt,omitempty"`
+	FinishedAt        *time.Time `json:"finishedAt,omitempty"`
 	ReplayTurn        bool       `json:"-"`
 }
 

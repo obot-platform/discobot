@@ -3,7 +3,6 @@ package message
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 )
 
 // DynamicToolPart represents a tool invocation with its full lifecycle state,
@@ -36,11 +35,10 @@ type ToolApproval struct {
 // UIMessage is the JSON wire format for a UIMessage in the AI SDK v6 protocol.
 // Parts are marshaled via the UIPart interface.
 type UIMessage struct {
-	ID        string          `json:"id"`
-	Role      string          `json:"role"`
-	Parts     []UIPart        `json:"-"`
-	Metadata  json.RawMessage `json:"metadata,omitempty"`
-	CreatedAt *time.Time      `json:"createdAt,omitempty"`
+	ID       string          `json:"id"`
+	Role     string          `json:"role"`
+	Parts    []UIPart        `json:"-"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 func (m UIMessage) MarshalJSON() ([]byte, error) {
@@ -53,21 +51,19 @@ func (m UIMessage) MarshalJSON() ([]byte, error) {
 		parts[i] = data
 	}
 	return json.Marshal(struct {
-		ID        string            `json:"id"`
-		Role      string            `json:"role"`
-		Parts     []json.RawMessage `json:"parts"`
-		Metadata  json.RawMessage   `json:"metadata,omitempty"`
-		CreatedAt *time.Time        `json:"createdAt,omitempty"`
-	}{m.ID, m.Role, parts, m.Metadata, m.CreatedAt})
+		ID       string            `json:"id"`
+		Role     string            `json:"role"`
+		Parts    []json.RawMessage `json:"parts"`
+		Metadata json.RawMessage   `json:"metadata,omitempty"`
+	}{m.ID, m.Role, parts, m.Metadata})
 }
 
 func (m *UIMessage) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		ID        string            `json:"id"`
-		Role      string            `json:"role"`
-		Parts     []json.RawMessage `json:"parts"`
-		Metadata  json.RawMessage   `json:"metadata,omitempty"`
-		CreatedAt *time.Time        `json:"createdAt,omitempty"`
+		ID       string            `json:"id"`
+		Role     string            `json:"role"`
+		Parts    []json.RawMessage `json:"parts"`
+		Metadata json.RawMessage   `json:"metadata,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -75,7 +71,6 @@ func (m *UIMessage) UnmarshalJSON(data []byte) error {
 	m.ID = raw.ID
 	m.Role = raw.Role
 	m.Metadata = raw.Metadata
-	m.CreatedAt = raw.CreatedAt
 	m.Parts = make([]UIPart, 0, len(raw.Parts))
 	for _, partData := range raw.Parts {
 		p, err := UnmarshalUIPart(partData)
@@ -109,10 +104,9 @@ func ProjectUIMessages(messages []Message) ([]UIMessage, error) {
 		case "assistant":
 			// Consume consecutive (assistant, optional tool) pairs into one UIMessage.
 			ui := UIMessage{
-				ID:        msg.ID,
-				Role:      "assistant",
-				Metadata:  msg.Metadata,
-				CreatedAt: msg.CreatedAt,
+				ID:       msg.ID,
+				Role:     "assistant",
+				Metadata: msg.Metadata,
 			}
 			for i < len(messages) && messages[i].Role == "assistant" {
 				ass := messages[i]
@@ -152,20 +146,18 @@ func buildUISystemMessage(msg Message) UIMessage {
 		}
 	}
 	return UIMessage{
-		ID:        msg.ID,
-		Role:      "system",
-		Parts:     []UIPart{UITextPart{Type: "text", Text: text, State: "done"}},
-		Metadata:  msg.Metadata,
-		CreatedAt: msg.CreatedAt,
+		ID:       msg.ID,
+		Role:     "system",
+		Parts:    []UIPart{UITextPart{Type: "text", Text: text, State: "done"}},
+		Metadata: msg.Metadata,
 	}
 }
 
 func buildUIUserMessage(msg Message) UIMessage {
 	ui := UIMessage{
-		ID:        msg.ID,
-		Role:      "user",
-		Metadata:  msg.Metadata,
-		CreatedAt: msg.CreatedAt,
+		ID:       msg.ID,
+		Role:     "user",
+		Metadata: msg.Metadata,
 	}
 	for _, p := range msg.Parts {
 		switch v := p.(type) {

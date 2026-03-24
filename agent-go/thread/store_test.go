@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobot/agent-go/message"
 )
@@ -51,6 +52,9 @@ func TestSaveAndLoadMessage(t *testing.T) {
 	}
 	if tp.Text != "hello" {
 		t.Errorf("expected text=hello, got %s", tp.Text)
+	}
+	if loaded.Message.CreatedAt == nil {
+		t.Fatal("expected CreatedAt to be set")
 	}
 }
 
@@ -357,12 +361,14 @@ func TestLoadStepChunks_PartialLastRecord(t *testing.T) {
 func TestSaveAndLoadTurnState(t *testing.T) {
 	store := NewStore(t.TempDir())
 
+	startedAt := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	state := TurnState{
 		ID:          "turn1",
 		ThreadID:    "thread1",
 		LeafID:      "msg0",
 		CurrentStep: 0,
 		Phase:       PhaseStreaming,
+		StartedAt:   &startedAt,
 		Config: TurnConfig{
 			Model:     "test-model",
 			Reasoning: "enabled",
@@ -388,6 +394,23 @@ func TestSaveAndLoadTurnState(t *testing.T) {
 	}
 	if loaded.Config.Model != "test-model" {
 		t.Errorf("expected model=test-model, got %s", loaded.Config.Model)
+	}
+	if loaded.StartedAt == nil || !loaded.StartedAt.Equal(startedAt) {
+		t.Fatalf("expected startedAt=%v, got %v", startedAt, loaded.StartedAt)
+	}
+	if loaded.UpdatedAt == nil {
+		t.Fatal("expected updatedAt to be set")
+	}
+
+	record, err := store.LoadTurnRecord("thread1", "turn1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record == nil {
+		t.Fatal("expected non-nil turn record")
+	}
+	if record.StartedAt == nil || !record.StartedAt.Equal(startedAt) {
+		t.Fatalf("expected turn record startedAt=%v, got %v", startedAt, record.StartedAt)
 	}
 }
 
