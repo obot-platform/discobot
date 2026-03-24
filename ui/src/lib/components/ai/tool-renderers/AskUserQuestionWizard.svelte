@@ -2,10 +2,16 @@
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import Maximize2Icon from "@lucide/svelte/icons/maximize-2";
 	import { MessageResponse } from "$lib/components/ai/message";
+	import type { AskUserQuestionToolInput } from "$lib/components/ai/tool-schemas/askuserquestion-schema";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { cn } from "$lib/utils";
-	import type { AskUserQuestionToolInput } from "$lib/components/ai/tool-schemas/askuserquestion-schema";
+	import {
+		allQuestionsAnswered,
+		isQuestionAnswered,
+		selectedLabels,
+		shouldShowSubmitAction,
+	} from "./askuserquestion-wizard-state";
 
 	const OTHER_LABEL = "__other__";
 	const AUTO_ADVANCE_DELAY = 300;
@@ -43,14 +49,7 @@
 	);
 
 	$effect(() => {
-		const initialAnswers: Record<string, string> = {};
-		for (const question of pendingQuestion.questions) {
-			if (!question.multiSelect && question.options[0]?.label) {
-				initialAnswers[question.question] = question.options[0].label;
-			}
-		}
-
-		answers = initialAnswers;
+		answers = {};
 		otherSelected = {};
 		otherText = {};
 		currentStep = 0;
@@ -65,25 +64,20 @@
 		};
 	});
 
-	function selectedLabels(questionKey: string): string[] {
-		return (answers[questionKey] ?? "").split(", ").filter(Boolean);
-	}
-
 	function isStepAnswered(stepIndex: number): boolean {
-		const question = pendingQuestion.questions[stepIndex];
-		if (!question) {
-			return false;
-		}
-
-		if (otherSelected[question.question]) {
-			return (otherText[question.question]?.trim().length ?? 0) > 0;
-		}
-
-		return (answers[question.question]?.trim().length ?? 0) > 0;
+		return isQuestionAnswered(pendingQuestion.questions[stepIndex], {
+			answers,
+			otherSelected,
+			otherText,
+		});
 	}
 
 	function allAnswered(): boolean {
-		return pendingQuestion.questions.every((_, index) => isStepAnswered(index));
+		return allQuestionsAnswered(pendingQuestion.questions, {
+			answers,
+			otherSelected,
+			otherText,
+		});
 	}
 
 	function isLastStep(): boolean {
@@ -156,7 +150,7 @@
 		}
 
 		if (question.multiSelect) {
-			const current = selectedLabels(question.question);
+			const current = selectedLabels(question.question, answers);
 			const next = checked
 				? [...current, optionLabel]
 				: current.filter((label) => label !== optionLabel);
@@ -326,7 +320,9 @@
 				{#each currentQuestion.options as option (option.label)}
 					{@const isSelected =
 						!otherSelected[currentQuestion.question] &&
-						selectedLabels(currentQuestion.question).includes(option.label)}
+						selectedLabels(currentQuestion.question, answers).includes(
+							option.label,
+						)}
 					<label
 						class={cn(
 							"flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 transition-colors",
@@ -427,7 +423,7 @@
 			{/if}
 		</div>
 		<div class="flex gap-2">
-			{#if isLastStep() || allAnswered()}
+			{#if shouldShowSubmitAction( { currentStep, questions: pendingQuestion.questions, state: { answers, otherSelected, otherText } }, )}
 				<Button
 					disabled={!allAnswered() || isSubmitting}
 					onclick={handleSubmit}

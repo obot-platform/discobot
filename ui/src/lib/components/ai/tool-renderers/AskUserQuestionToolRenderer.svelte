@@ -293,7 +293,9 @@
 				{/if}
 			{:else if pendingQuestion}
 				<div class="rounded-lg border bg-card p-4">
-					<AskUserQuestionWizard {pendingQuestion} onSubmit={submitAnswers} />
+					{#key pendingQuestion.toolUseID}
+						<AskUserQuestionWizard {pendingQuestion} onSubmit={submitAnswers} />
+					{/key}
 				</div>
 			{:else}
 				<p class="text-muted-foreground text-sm">
