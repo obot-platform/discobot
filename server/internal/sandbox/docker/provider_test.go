@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	containerTypes "github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	imageTypes "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -303,6 +305,51 @@ func TestLabelFormat(t *testing.T) {
 
 	if !strings.HasSuffix(expectedLabel, "=true") {
 		t.Error("Label should have value 'true'")
+	}
+}
+
+func TestTranslateDockerEvent_DieWithNonZeroExitCodeIsStopped(t *testing.T) {
+	provider := &Provider{}
+	event := provider.translateDockerEvent(events.Message{
+		Action: "die",
+		Actor: events.Actor{
+			Attributes: map[string]string{
+				"discobot.session.id": "session-123",
+				"exitCode":            "42",
+			},
+		},
+		Time:     1710000000,
+		TimeNano: 1710000000000000000,
+	})
+
+	if event == nil {
+		t.Fatal("expected state event")
+	}
+	if event.Status != sandbox.StatusStopped {
+		t.Fatalf("translateDockerEvent status = %s, want %s", event.Status, sandbox.StatusStopped)
+	}
+	if event.Error != "" {
+		t.Fatalf("translateDockerEvent error = %q, want empty", event.Error)
+	}
+}
+
+func TestApplyContainerState_NonZeroExitCodeIsStopped(t *testing.T) {
+	sb := &sandbox.Sandbox{}
+	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
+
+	applyContainerState(sb, &containerTypes.State{
+		ExitCode:   42,
+		FinishedAt: finishedAt,
+	})
+
+	if sb.Status != sandbox.StatusStopped {
+		t.Fatalf("applyContainerState status = %s, want %s", sb.Status, sandbox.StatusStopped)
+	}
+	if sb.Error != "" {
+		t.Fatalf("applyContainerState error = %q, want empty", sb.Error)
+	}
+	if sb.StoppedAt == nil {
+		t.Fatal("expected stopped timestamp to be set")
 	}
 }
 

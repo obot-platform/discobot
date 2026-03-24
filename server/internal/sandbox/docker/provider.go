@@ -937,6 +937,35 @@ func (p *Provider) Remove(ctx context.Context, sessionID string, opts ...sandbox
 	return nil
 }
 
+func applyContainerState(sb *sandbox.Sandbox, state *containerTypes.State) {
+	if state == nil {
+		sb.Status = sandbox.StatusCreated
+		return
+	}
+
+	switch {
+	case state.Running:
+		sb.Status = sandbox.StatusRunning
+		if started, err := time.Parse(time.RFC3339Nano, state.StartedAt); err == nil {
+			sb.StartedAt = &started
+		}
+	case state.Paused:
+		sb.Status = sandbox.StatusStopped
+	case state.Dead || state.OOMKilled:
+		sb.Status = sandbox.StatusFailed
+		sb.Error = state.Error
+	case state.FinishedAt != "" && state.FinishedAt != "0001-01-01T00:00:00Z":
+		sb.Status = sandbox.StatusStopped
+		if stopped, err := time.Parse(time.RFC3339Nano, state.FinishedAt); err == nil {
+			sb.StoppedAt = &stopped
+		}
+	case state.ExitCode != 0:
+		sb.Status = sandbox.StatusStopped
+	default:
+		sb.Status = sandbox.StatusCreated
+	}
+}
+
 // Get returns the current state of a sandbox.
 func (p *Provider) Get(ctx context.Context, sessionID string) (*sandbox.Sandbox, error) {
 	containerID, err := p.getContainerID(ctx, sessionID)
@@ -970,39 +999,7 @@ func (p *Provider) Get(ctx context.Context, sessionID string) (*sandbox.Sandbox,
 	}
 
 	// Determine status
-	switch {
-	case info.State.Running:
-		s.Status = sandbox.StatusRunning
-		if started, err := time.Parse(time.RFC3339Nano, info.State.StartedAt); err == nil {
-			s.StartedAt = &started
-		}
-	case info.State.Paused:
-		s.Status = sandbox.StatusStopped
-	case info.State.Dead || info.State.OOMKilled:
-		s.Status = sandbox.StatusFailed
-		s.Error = info.State.Error
-	case info.State.ExitCode != 0:
-		// Exit codes 137 (SIGKILL, 128+9) and 143 (SIGTERM, 128+15) are expected
-		// from docker stop and should be treated as stopped, not failed
-		if info.State.ExitCode == 137 || info.State.ExitCode == 143 {
-			s.Status = sandbox.StatusStopped
-			if stopped, err := time.Parse(time.RFC3339Nano, info.State.FinishedAt); err == nil {
-				s.StoppedAt = &stopped
-			}
-		} else {
-			s.Status = sandbox.StatusFailed
-			s.Error = fmt.Sprintf("exited with code %d", info.State.ExitCode)
-		}
-	default:
-		if info.State.FinishedAt != "" && info.State.FinishedAt != "0001-01-01T00:00:00Z" {
-			s.Status = sandbox.StatusStopped
-			if stopped, err := time.Parse(time.RFC3339Nano, info.State.FinishedAt); err == nil {
-				s.StoppedAt = &stopped
-			}
-		} else {
-			s.Status = sandbox.StatusCreated
-		}
-	}
+	applyContainerState(s, info.State)
 
 	// Extract assigned port mappings
 	s.Ports = p.extractPorts(info.NetworkSettings)
@@ -1379,39 +1376,7 @@ func (p *Provider) List(ctx context.Context) ([]*sandbox.Sandbox, error) {
 		}
 
 		// Determine status
-		switch {
-		case info.State.Running:
-			sb.Status = sandbox.StatusRunning
-			if started, err := time.Parse(time.RFC3339Nano, info.State.StartedAt); err == nil {
-				sb.StartedAt = &started
-			}
-		case info.State.Paused:
-			sb.Status = sandbox.StatusStopped
-		case info.State.Dead || info.State.OOMKilled:
-			sb.Status = sandbox.StatusFailed
-			sb.Error = info.State.Error
-		case info.State.ExitCode != 0:
-			// Exit codes 137 (SIGKILL, 128+9) and 143 (SIGTERM, 128+15) are expected
-			// from docker stop and should be treated as stopped, not failed
-			if info.State.ExitCode == 137 || info.State.ExitCode == 143 {
-				sb.Status = sandbox.StatusStopped
-				if stopped, err := time.Parse(time.RFC3339Nano, info.State.FinishedAt); err == nil {
-					sb.StoppedAt = &stopped
-				}
-			} else {
-				sb.Status = sandbox.StatusFailed
-				sb.Error = fmt.Sprintf("exited with code %d", info.State.ExitCode)
-			}
-		default:
-			if info.State.FinishedAt != "" && info.State.FinishedAt != "0001-01-01T00:00:00Z" {
-				sb.Status = sandbox.StatusStopped
-				if stopped, err := time.Parse(time.RFC3339Nano, info.State.FinishedAt); err == nil {
-					sb.StoppedAt = &stopped
-				}
-			} else {
-				sb.Status = sandbox.StatusCreated
-			}
-		}
+		applyContainerState(sb, info.State)
 
 		// Extract assigned port mappings
 		sb.Ports = p.extractPorts(info.NetworkSettings)
@@ -1790,15 +1755,7 @@ func (p *Provider) translateDockerEvent(msg events.Message) *sandbox.StateEvent 
 	case "stop", "kill":
 		status = sandbox.StatusStopped
 	case "die":
-		// Check exit code to determine if stopped or failed
-		exitCode := msg.Actor.Attributes["exitCode"]
-		if exitCode == "137" || exitCode == "143" || exitCode == "0" {
-			// Normal stop (SIGKILL, SIGTERM, or clean exit)
-			status = sandbox.StatusStopped
-		} else {
-			status = sandbox.StatusFailed
-			errMsg = fmt.Sprintf("container died with exit code %s", exitCode)
-		}
+		status = sandbox.StatusStopped
 	case "destroy":
 		status = sandbox.StatusRemoved
 		// Clear container ID from cache since it's been deleted
