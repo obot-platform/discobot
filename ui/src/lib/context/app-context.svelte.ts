@@ -118,8 +118,14 @@ function startProjectEventsSubscription(app: AppContext) {
 			}
 		});
 
-		nextEventSource.addEventListener("connected", (event) => {
+		nextEventSource.addEventListener("connected", () => {
 			console.debug("[SSE] Connected to project events stream");
+			void app.sessions.refresh().catch((error) => {
+				console.error(
+					"[SSE] Failed to refresh sessions after connecting to project events stream:",
+					error,
+				);
+			});
 		});
 
 		nextEventSource.addEventListener("workspace_updated", (event) => {
