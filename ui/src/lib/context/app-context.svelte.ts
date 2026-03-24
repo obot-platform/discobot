@@ -19,6 +19,10 @@ import { createAppUpdatesDomain } from "$lib/app/domains/app-updates.svelte";
 import { createAppWorkspacesDomain } from "$lib/app/domains/app-workspaces.svelte";
 import { createAppViewState } from "$lib/app/view/create-app-view-state.svelte";
 import type { StartupTask } from "$lib/api-types";
+import {
+	createBackgroundRefresh,
+	createCoalescedReload,
+} from "$lib/context/create-coalesced-reload";
 import { SessionStore } from "$lib/store/sessions.store.svelte";
 import { WorkspaceStore } from "$lib/store/workspaces.store.svelte";
 import { ModelStore } from "$lib/store/models.store.svelte";
@@ -197,14 +201,15 @@ function createAppContext(bootstrap: AppContextBootstrap): AppContext {
 		initialSelectedSessionId: bootstrap.selectedSessionId,
 	});
 
-	const refresh = async () => {
-		await Promise.all([
-			sessions.refresh(),
-			workspaces.refresh(),
-			startup.refresh(),
-			models.refresh(),
-		]);
-	};
+	const runRefresh = createCoalescedReload(async () => {
+		void sessions.refresh();
+		void workspaces.refresh();
+		await Promise.all([startup.refresh(), models.refresh()]);
+	});
+	const refresh = createBackgroundRefresh(
+		runRefresh,
+		"[AppContext] Failed to refresh app state",
+	);
 
 	let stopProjectEvents: (() => void) | null = null;
 
@@ -251,7 +256,7 @@ function createAppContext(bootstrap: AppContextBootstrap): AppContext {
 					workspaceType,
 				);
 				if (!workspace) {
-					await workspaces.refresh();
+					await workspaces.refreshNow();
 					workspace = findWorkspaceBySourceAndPath(
 						normalizedWorkspacePath,
 						workspaceType,

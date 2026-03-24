@@ -548,7 +548,7 @@
 	onMount(() => {
 		void (async () => {
 			if (workspaces.status === "idle") {
-				await workspaces.refresh();
+				await workspaces.refreshNow();
 			}
 			syncPendingWorkspaceSelection();
 			syncPendingWorkspaceBranch();

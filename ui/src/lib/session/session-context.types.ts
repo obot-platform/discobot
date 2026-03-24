@@ -188,6 +188,7 @@ export type SessionContextValue = {
 	isPending: boolean;
 	current: Session | null;
 	load: () => Promise<void>;
+	refresh: () => Promise<void>;
 	dispose: () => void;
 	stores: SessionStores;
 	ui: SessionViewState;

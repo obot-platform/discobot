@@ -2,6 +2,10 @@ import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 
 import { useAppContext } from "$lib/context/app-context.svelte";
+import {
+	createBackgroundRefresh,
+	createCoalescedReload,
+} from "$lib/context/create-coalesced-reload";
 import { createSessionEnvSetsDomain } from "$lib/session/domains/session-env-sets.svelte";
 import { createSessionFilesDomain } from "$lib/session/domains/session-files.svelte";
 import { createSessionHooksDomain } from "$lib/session/domains/session-hooks.svelte";
@@ -21,7 +25,6 @@ const SESSION_CONTEXT_KEY = Symbol.for("discobot-ui-session-context");
 
 function createSessionContext(sessionId: string): SessionContextValue {
 	const app = useAppContext();
-	let loaded = $state(false);
 
 	const current = $derived.by(() => {
 		return app.sessions.sessions.find((s) => s.id === sessionId) ?? null;
@@ -83,22 +86,25 @@ function createSessionContext(sessionId: string): SessionContextValue {
 
 	const threadContexts = new SvelteMap<string, ThreadContextValue>();
 
-	async function load() {
+	const runRefresh = createCoalescedReload(async () => {
 		if (!hasSession) {
-			loaded = false;
 			return;
 		}
-		if (!loaded) {
-			await threads.load();
-			await Promise.all([
-				filesDomain.refresh(),
-				services.refresh(),
-				envSets.refresh(),
-				hooks.refresh(),
-			]);
-			loaded = true;
-		}
+		await threads.load();
+		await Promise.all([
+			filesDomain.refresh(),
+			services.refresh(),
+			envSets.refresh(),
+			hooks.refresh(),
+		]);
+	});
+	const refresh = createBackgroundRefresh(
+		runRefresh,
+		`[SessionContext] Failed to refresh session ${sessionId}`,
+	);
 
+	async function load() {
+		void refresh();
 		const activeThreadId = threads.selectedId ?? sessionId;
 		await threadContexts.get(activeThreadId)?.load();
 	}
@@ -122,6 +128,7 @@ function createSessionContext(sessionId: string): SessionContextValue {
 			return current;
 		},
 		load,
+		refresh,
 		dispose,
 		stores,
 		ui,

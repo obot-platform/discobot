@@ -6,6 +6,10 @@ import {
 	toSessionSummaries,
 } from "$lib/app/app-helpers";
 import type { AppSessions } from "$lib/app/app-context.types";
+import {
+	createBackgroundRefresh,
+	createCoalescedReload,
+} from "$lib/context/create-coalesced-reload";
 import type { SessionContextValue } from "$lib/session/session-context.types";
 import type { SessionStore } from "$lib/store/sessions.store.svelte";
 
@@ -31,10 +35,12 @@ export function createAppSessionsDomain(
 	);
 
 	const sessionContexts = new SvelteMap<string, SessionContextValue>();
+	const reloadSessionById = new SvelteMap<string, () => Promise<void>>();
 
 	const removeFromMemory = (sessionId: string): boolean => {
 		sessionContexts.get(sessionId)?.dispose();
 		sessionContexts.delete(sessionId);
+		reloadSessionById.delete(sessionId);
 
 		if (sessionId === currentSelectedSessionId) {
 			currentSelectedSessionId = null;
@@ -52,16 +58,27 @@ export function createAppSessionsDomain(
 		return true;
 	};
 
-	const refresh = async () => {
+	const runRefresh = createCoalescedReload(async () => {
 		await store.fetch();
 		for (const session of store.list) {
-			void sessionContexts.get(session.id)?.load();
+			void sessionContexts.get(session.id)?.refresh();
 		}
-	};
+	});
+	const refresh = createBackgroundRefresh(
+		runRefresh,
+		"[AppSessions] Failed to refresh sessions",
+	);
 
 	const reloadSession = async (sessionId: string) => {
-		await store.fetchOne(sessionId);
-		void sessionContexts.get(sessionId)?.load();
+		let reload = reloadSessionById.get(sessionId);
+		if (!reload) {
+			reload = createCoalescedReload(async () => {
+				await store.fetchOne(sessionId);
+				void sessionContexts.get(sessionId)?.refresh();
+			});
+			reloadSessionById.set(sessionId, reload);
+		}
+		await reload();
 	};
 
 	return {
@@ -100,7 +117,7 @@ export function createAppSessionsDomain(
 				workspaceId ? { workspaceId } : undefined,
 			);
 			currentSelectedSessionId = session.id;
-			await refresh();
+			void refresh();
 			return session.id;
 		},
 		rename: async (sessionId, nextName) => {
@@ -119,6 +136,7 @@ export function createAppSessionsDomain(
 			// remove already evicts from the store; clean up context lifecycle
 			sessionContexts.get(sessionId)?.dispose();
 			sessionContexts.delete(sessionId);
+			reloadSessionById.delete(sessionId);
 			if (sessionId === currentSelectedSessionId) {
 				currentSelectedSessionId = null;
 			}
