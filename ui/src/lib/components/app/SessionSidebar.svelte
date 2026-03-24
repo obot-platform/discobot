@@ -26,6 +26,7 @@
 	} from "$lib/components/ui/dropdown-menu";
 	import { Input } from "$lib/components/ui/input";
 	import { useAppContext } from "$lib/context/app-context.svelte";
+	import { useSessionContext } from "$lib/context/session-context.svelte";
 
 	type Props = {
 		onThreadSelect?: () => void;
@@ -37,6 +38,7 @@
 	const app = useAppContext();
 	const sessions = app.sessions;
 	const preferences = app.preferences;
+	const session = useSessionContext();
 
 	let renameDialogOpen = $state(false);
 	let renameSessionId = $state<string | null>(null);
@@ -52,6 +54,11 @@
 
 	function handleSelectSession(sessionId: string) {
 		sessions.select(sessionId);
+		onThreadSelect?.();
+	}
+
+	function handleSelectRecentThread(sessionId: string, threadId: string) {
+		sessions.openThread(sessionId, threadId);
 		onThreadSelect?.();
 	}
 
@@ -123,6 +130,13 @@
 		}
 		return sessionById(deleteSessionId)?.name ?? "this session";
 	}
+
+	function isRecentThreadSelected(sessionId: string, threadId: string) {
+		return (
+			sessions.selectedId === sessionId &&
+			(session.threads.selectedId ?? session.sessionId) === threadId
+		);
+	}
 </script>
 
 {#snippet sessionItem(
@@ -172,6 +186,32 @@
 	</div>
 {/snippet}
 
+{#snippet recentThreadItem(
+	threadObj: (typeof sessions.recentThreads)[number],
+	isSelected: boolean,
+)}
+	<button
+		type="button"
+		onclick={() =>
+			handleSelectRecentThread(threadObj.sessionId, threadObj.threadId)}
+		class={`flex min-h-10 w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+	>
+		<SessionStatus
+			status={threadObj.sessionStatus}
+			showLabel={false}
+			class="mt-0.5 shrink-0"
+		/>
+		<span class="min-w-0 flex-1">
+			<span class="block truncate text-sm font-medium"
+				>{threadObj.threadName || "New Thread"}</span
+			>
+			<span class="block truncate text-xs text-current/60"
+				>{threadObj.sessionName || "New Session"}</span
+			>
+		</span>
+	</button>
+{/snippet}
+
 <aside
 	class="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm"
 >
@@ -214,7 +254,7 @@
 			{#if sessions.list.length === 0}
 				<p class="px-2 text-xs text-sidebar-foreground/50">No sessions</p>
 			{:else}
-				{#if sessions.recent.length > 0}
+				{#if sessions.recentThreads.length > 0}
 					<Collapsible.Root
 						open={preferences.sidebarRecentOpen}
 						onOpenChange={(v) => preferences.setSidebarRecentOpen(v)}
@@ -230,10 +270,13 @@
 							Recent
 						</Collapsible.Trigger>
 						<Collapsible.Content class="space-y-0.5">
-							{#each sessions.recent as sessionObj}
-								{@render sessionItem(
-									sessionObj,
-									sessions.selectedId === sessionObj.id,
+							{#each sessions.recentThreads as threadObj}
+								{@render recentThreadItem(
+									threadObj,
+									isRecentThreadSelected(
+										threadObj.sessionId,
+										threadObj.threadId,
+									),
 								)}
 							{/each}
 						</Collapsible.Content>

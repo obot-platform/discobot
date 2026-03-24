@@ -2,8 +2,17 @@ import { generateId } from "ai";
 import { SvelteMap } from "svelte/reactivity";
 
 import {
-	toRecentSessionSummaries,
+	readRecentThreadEntries,
+	reconcileRecentThreadsForSession,
+	reconcileRecentThreadsWithSessions,
+	refreshRecentSessionName,
+	refreshRecentThread,
+	removeRecentThread,
+	removeRecentThreadsForSession,
+	toRecentThreadSummaries,
 	toSessionSummaries,
+	touchRecentThread,
+	writeRecentThreadEntries,
 } from "$lib/app/app-helpers";
 import type { AppSessions } from "$lib/app/app-context.types";
 import {
@@ -26,13 +35,86 @@ export function createAppSessionsDomain(
 		args.initialSelectedSessionId ?? null,
 	);
 	let pendingSessionId = $state<string>(generateId());
+	let recentThreadEntries = $state(readRecentThreadEntries());
+	const requestedThreadIdBySession = new SvelteMap<string, string>();
+
+	const persistRecentThreadEntries = (entries: typeof recentThreadEntries) => {
+		recentThreadEntries = entries;
+		writeRecentThreadEntries(entries);
+	};
+
+	const selectSession = (sessionId: string) => {
+		currentSelectedSessionId = sessionId;
+		store.get(sessionId);
+	};
+
+	const recordRecentThread = (payload: {
+		sessionId: string;
+		sessionName: string;
+		threadId: string;
+		threadName: string;
+	}) => {
+		persistRecentThreadEntries(touchRecentThread(recentThreadEntries, payload));
+	};
+
+	const updateRecentThread = (payload: {
+		sessionId: string;
+		sessionName: string;
+		threadId: string;
+		threadName: string;
+	}) => {
+		const nextEntries = refreshRecentThread(recentThreadEntries, payload);
+		if (nextEntries === recentThreadEntries) {
+			return;
+		}
+		persistRecentThreadEntries(nextEntries);
+	};
+
+	const dropRecentThread = (sessionId: string, threadId: string) => {
+		const nextEntries = removeRecentThread(
+			recentThreadEntries,
+			sessionId,
+			threadId,
+		);
+		if (nextEntries.length === recentThreadEntries.length) {
+			return;
+		}
+		persistRecentThreadEntries(nextEntries);
+	};
+
+	const dropRecentThreadsForSession = (sessionId: string) => {
+		const nextEntries = removeRecentThreadsForSession(
+			recentThreadEntries,
+			sessionId,
+		);
+		if (nextEntries.length === recentThreadEntries.length) {
+			return;
+		}
+		persistRecentThreadEntries(nextEntries);
+	};
 
 	const list = $derived.by(() => toSessionSummaries(store.list));
-	const recent = $derived.by(() => toRecentSessionSummaries(store.list));
+	const recentThreads = $derived.by(() =>
+		toRecentThreadSummaries(list, recentThreadEntries),
+	);
 	const selected = $derived.by(
 		() =>
 			list.find((session) => session.id === currentSelectedSessionId) ?? null,
 	);
+
+	$effect(() => {
+		if (store.status !== "ready") {
+			return;
+		}
+
+		const nextEntries = reconcileRecentThreadsWithSessions(
+			recentThreadEntries,
+			store.list.map((session) => session.id),
+		);
+		if (nextEntries !== recentThreadEntries) {
+			persistRecentThreadEntries(nextEntries);
+		}
+	});
 
 	const sessionContexts = new SvelteMap<string, SessionContextValue>();
 	const reloadSessionById = new SvelteMap<string, () => Promise<void>>();
@@ -41,6 +123,8 @@ export function createAppSessionsDomain(
 		sessionContexts.get(sessionId)?.dispose();
 		sessionContexts.delete(sessionId);
 		reloadSessionById.delete(sessionId);
+		requestedThreadIdBySession.delete(sessionId);
+		dropRecentThreadsForSession(sessionId);
 
 		if (sessionId === currentSelectedSessionId) {
 			currentSelectedSessionId = null;
@@ -88,8 +172,8 @@ export function createAppSessionsDomain(
 		get list() {
 			return list;
 		},
-		get recent() {
-			return recent;
+		get recentThreads() {
+			return recentThreads;
 		},
 		get selectedId() {
 			return currentSelectedSessionId;
@@ -101,10 +185,16 @@ export function createAppSessionsDomain(
 			return selected;
 		},
 		sessionContexts,
-		select: (sessionId) => {
-			currentSelectedSessionId = sessionId;
-			// Trigger a background fetchOne if this session isn't cached yet (SWR)
-			store.get(sessionId);
+		select: selectSession,
+		openThread: (sessionId, threadId) => {
+			const sessionContext = sessionContexts.get(sessionId);
+			if (sessionContext) {
+				sessionContext.ui.selectThread(threadId);
+				sessionContext.threads.select(threadId);
+			} else {
+				requestedThreadIdBySession.set(sessionId, threadId);
+			}
+			selectSession(sessionId);
 		},
 		startNew: () => {
 			pendingSessionId = generateId();
@@ -125,7 +215,16 @@ export function createAppSessionsDomain(
 			if (!trimmedName || !list.some((session) => session.id === sessionId)) {
 				return false;
 			}
-			await store.update(sessionId, { displayName: trimmedName });
+			const updatedSession = await store.update(sessionId, {
+				displayName: trimmedName,
+			});
+			persistRecentThreadEntries(
+				refreshRecentSessionName(
+					recentThreadEntries,
+					sessionId,
+					updatedSession.displayName || updatedSession.name,
+				),
+			);
 			return true;
 		},
 		remove: async (sessionId) => {
@@ -137,11 +236,31 @@ export function createAppSessionsDomain(
 			sessionContexts.get(sessionId)?.dispose();
 			sessionContexts.delete(sessionId);
 			reloadSessionById.delete(sessionId);
+			requestedThreadIdBySession.delete(sessionId);
+			dropRecentThreadsForSession(sessionId);
 			if (sessionId === currentSelectedSessionId) {
 				currentSelectedSessionId = null;
 			}
 			return true;
 		},
 		removeFromMemory,
+		recordRecentThread,
+		refreshRecentThread: updateRecentThread,
+		removeRecentThread: dropRecentThread,
+		reconcileRecentThreadsForSession: (sessionId, threadIds) => {
+			const nextEntries = reconcileRecentThreadsForSession(
+				recentThreadEntries,
+				sessionId,
+				threadIds,
+			);
+			if (nextEntries !== recentThreadEntries) {
+				persistRecentThreadEntries(nextEntries);
+			}
+		},
+		takeRequestedThreadId: (sessionId) => {
+			const threadId = requestedThreadIdBySession.get(sessionId) ?? null;
+			requestedThreadIdBySession.delete(sessionId);
+			return threadId;
+		},
 	};
 }

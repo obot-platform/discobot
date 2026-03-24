@@ -8,6 +8,7 @@ import type {
 import {
 	isPreferredIde,
 	type PreferredIde,
+	type RecentThreadSummary,
 	type SessionSummary,
 	type WindowControlsSide,
 } from "$lib/shell-types";
@@ -18,9 +19,18 @@ export const DEFAULT_MODEL_STORAGE_KEY = "chat.default.model";
 export const IGNORED_UPDATE_VERSION_STORAGE_KEY = "update.ignored.version";
 export const SIDEBAR_RECENT_OPEN_STORAGE_KEY = "sidebar.recent.open";
 export const SIDEBAR_ALL_OPEN_STORAGE_KEY = "sidebar.all.open";
+export const RECENT_THREADS_STORAGE_KEY = "recent.threads";
 export const PROMPT_HISTORY_STORAGE_KEY = "discobot:composer-history";
 export const PINNED_PROMPTS_STORAGE_KEY = "discobot:composer-history:pinned";
 export const RECENT_SESSIONS_LIMIT = 4;
+
+export type RecentThreadEntry = {
+	sessionId: string;
+	sessionName: string;
+	threadId: string;
+	threadName: string;
+	lastAccessedAt: string;
+};
 
 export function detectWindowControlsSide(): WindowControlsSide {
 	if (typeof navigator === "undefined") {
@@ -139,6 +149,182 @@ export function writeStorage(key: string, value: string | null) {
 	window.localStorage.setItem(key, value);
 }
 
+function isRecentThreadEntry(value: unknown): value is RecentThreadEntry {
+	if (!value || typeof value !== "object") {
+		return false;
+	}
+
+	const candidate = value as Partial<RecentThreadEntry>;
+	return (
+		typeof candidate.sessionId === "string" &&
+		candidate.sessionId.length > 0 &&
+		typeof candidate.sessionName === "string" &&
+		typeof candidate.threadId === "string" &&
+		candidate.threadId.length > 0 &&
+		typeof candidate.threadName === "string" &&
+		typeof candidate.lastAccessedAt === "string"
+	);
+}
+
+function areRecentThreadEntriesEqual(
+	left: RecentThreadEntry[],
+	right: RecentThreadEntry[],
+): boolean {
+	return (
+		left.length === right.length &&
+		left.every(
+			(entry, index) =>
+				entry.sessionId === right[index]?.sessionId &&
+				entry.sessionName === right[index]?.sessionName &&
+				entry.threadId === right[index]?.threadId &&
+				entry.threadName === right[index]?.threadName &&
+				entry.lastAccessedAt === right[index]?.lastAccessedAt,
+		)
+	);
+}
+
+function areSameRecentThread(
+	left: Pick<RecentThreadEntry, "sessionId" | "threadId">,
+	right: Pick<RecentThreadEntry, "sessionId" | "threadId">,
+): boolean {
+	return left.sessionId === right.sessionId && left.threadId === right.threadId;
+}
+
+function normalizeRecentThreadEntries(
+	entries: RecentThreadEntry[],
+): RecentThreadEntry[] {
+	const dedupedEntries: RecentThreadEntry[] = [];
+	for (const entry of entries) {
+		if (
+			dedupedEntries.some((existing) => areSameRecentThread(existing, entry))
+		) {
+			continue;
+		}
+		dedupedEntries.push(entry);
+	}
+
+	return dedupedEntries.slice(-RECENT_SESSIONS_LIMIT);
+}
+
+export function readRecentThreadEntries(): RecentThreadEntry[] {
+	if (typeof window === "undefined") {
+		return [];
+	}
+
+	const stored = window.localStorage.getItem(RECENT_THREADS_STORAGE_KEY);
+	if (!stored) {
+		return [];
+	}
+
+	try {
+		const parsed = JSON.parse(stored);
+		if (!Array.isArray(parsed)) {
+			return [];
+		}
+
+		return normalizeRecentThreadEntries(parsed.filter(isRecentThreadEntry));
+	} catch {
+		return [];
+	}
+}
+
+export function touchRecentThread(
+	entries: RecentThreadEntry[],
+	thread: Omit<RecentThreadEntry, "lastAccessedAt">,
+	lastAccessedAt = new Date().toISOString(),
+): RecentThreadEntry[] {
+	const existingIndex = entries.findIndex((entry) =>
+		areSameRecentThread(entry, thread),
+	);
+	if (existingIndex !== -1) {
+		return entries.map((entry, index) =>
+			index === existingIndex ? { ...entry, ...thread, lastAccessedAt } : entry,
+		);
+	}
+
+	return normalizeRecentThreadEntries([
+		...entries,
+		{ ...thread, lastAccessedAt },
+	]);
+}
+
+export function refreshRecentThread(
+	entries: RecentThreadEntry[],
+	thread: Omit<RecentThreadEntry, "lastAccessedAt">,
+): RecentThreadEntry[] {
+	const existingIndex = entries.findIndex((entry) =>
+		areSameRecentThread(entry, thread),
+	);
+	if (existingIndex === -1) {
+		return entries;
+	}
+
+	return entries.map((entry, index) =>
+		index === existingIndex ? { ...entry, ...thread } : entry,
+	);
+}
+
+export function refreshRecentSessionName(
+	entries: RecentThreadEntry[],
+	sessionId: string,
+	sessionName: string,
+): RecentThreadEntry[] {
+	return entries.map((entry) =>
+		entry.sessionId === sessionId ? { ...entry, sessionName } : entry,
+	);
+}
+
+export function removeRecentThread(
+	entries: RecentThreadEntry[],
+	sessionId: string,
+	threadId: string,
+): RecentThreadEntry[] {
+	return entries.filter(
+		(entry) => entry.sessionId !== sessionId || entry.threadId !== threadId,
+	);
+}
+
+export function removeRecentThreadsForSession(
+	entries: RecentThreadEntry[],
+	sessionId: string,
+): RecentThreadEntry[] {
+	return entries.filter((entry) => entry.sessionId !== sessionId);
+}
+
+export function reconcileRecentThreadsForSession(
+	entries: RecentThreadEntry[],
+	sessionId: string,
+	threadIds: Iterable<string>,
+): RecentThreadEntry[] {
+	const validThreadIds = new Set(threadIds);
+	const nextEntries = entries.filter((entry) => {
+		return entry.sessionId !== sessionId || validThreadIds.has(entry.threadId);
+	});
+	return areRecentThreadEntriesEqual(entries, nextEntries)
+		? entries
+		: nextEntries;
+}
+
+export function reconcileRecentThreadsWithSessions(
+	entries: RecentThreadEntry[],
+	sessionIds: Iterable<string>,
+): RecentThreadEntry[] {
+	const validSessionIds = new Set(sessionIds);
+	const nextEntries = entries.filter((entry) =>
+		validSessionIds.has(entry.sessionId),
+	);
+	return areRecentThreadEntriesEqual(entries, nextEntries)
+		? entries
+		: nextEntries;
+}
+
+export function writeRecentThreadEntries(entries: RecentThreadEntry[]) {
+	writeStorage(
+		RECENT_THREADS_STORAGE_KEY,
+		entries.length > 0 ? JSON.stringify(entries) : null,
+	);
+}
+
 export async function delay(ms: number) {
 	await new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -152,42 +338,39 @@ function compareIsoDatesDesc(left: string, right: string) {
 	return rightTime - leftTime;
 }
 
-function toSessionSummary(
-	session: Session,
-	recentIds: Set<string>,
-): SessionSummary {
-	return {
-		id: session.id,
-		name: session.displayName || session.name,
-		status: session.status,
-		isRecent: recentIds.has(session.id),
-	};
-}
-
-function getRecentSessionIds(sessions: Session[]) {
-	return new Set(
-		[...sessions]
-			.sort((a, b) => compareIsoDatesDesc(a.timestamp, b.timestamp))
-			.slice(0, RECENT_SESSIONS_LIMIT)
-			.map((session) => session.id),
-	);
-}
-
 export function toSessionSummaries(sessions: Session[]): SessionSummary[] {
-	const recentIds = getRecentSessionIds(sessions);
 	return [...sessions]
 		.sort((a, b) => compareIsoDatesDesc(a.createdAt, b.createdAt))
-		.map((session) => toSessionSummary(session, recentIds));
+		.map((session) => ({
+			id: session.id,
+			name: session.displayName || session.name,
+			status: session.status,
+			isRecent: false,
+		}));
 }
 
-export function toRecentSessionSummaries(
-	sessions: Session[],
-): SessionSummary[] {
-	const recentIds = getRecentSessionIds(sessions);
-	return [...sessions]
-		.filter((session) => recentIds.has(session.id))
-		.sort((a, b) => compareIsoDatesDesc(a.timestamp, b.timestamp))
-		.map((session) => toSessionSummary(session, recentIds));
+export function toRecentThreadSummaries(
+	summaries: SessionSummary[],
+	recentEntries: RecentThreadEntry[],
+): RecentThreadSummary[] {
+	const summariesById = new Map(
+		summaries.map((summary) => [summary.id, summary]),
+	);
+	return recentEntries.flatMap((entry) => {
+		const summary = summariesById.get(entry.sessionId);
+		return summary
+			? [
+					{
+						sessionId: entry.sessionId,
+						sessionName: summary.name,
+						sessionStatus: summary.status,
+						threadId: entry.threadId,
+						threadName: entry.threadName,
+						lastAccessedAt: entry.lastAccessedAt,
+					},
+				]
+			: [];
+	});
 }
 
 export function getAppEnvironment() {

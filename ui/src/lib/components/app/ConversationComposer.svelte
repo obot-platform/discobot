@@ -285,7 +285,7 @@
 			}
 			thread.clearComposerDraft();
 			if (mounted) {
-				sessions.select(response.sessionId);
+				sessions.openThread(response.sessionId, response.threadId);
 			}
 
 			sessionView.setComposerDraft("");

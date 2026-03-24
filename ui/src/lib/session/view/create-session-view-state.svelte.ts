@@ -11,6 +11,7 @@ import {
 type CreateSessionViewStateArgs = {
 	getFiles: () => string[];
 	getServices: () => string[];
+	initialSelectedThreadId?: string | null;
 };
 
 export function resolveOpenFileState(
@@ -102,7 +103,9 @@ export function createSessionViewState(
 	args: CreateSessionViewStateArgs,
 ): SessionViewState {
 	let activeView = $state<SessionActiveView>({ kind: "chat" });
-	let selectedThreadId = $state<string | null>(null);
+	let selectedThreadId = $state<string | null>(
+		args.initialSelectedThreadId ?? null,
+	);
 	let selectedFile = $state("");
 	let selectedServiceId = $state<string | null>(null);
 	let terminalRootEnabled = $state(false);

@@ -3,11 +3,30 @@ import test from "node:test";
 
 import type { Session } from "$lib/api-types";
 import type { SessionSummary } from "$lib/shell-types";
-import { toRecentSessionSummaries, toSessionSummaries } from "../app-helpers";
+import {
+	RECENT_THREADS_STORAGE_KEY,
+	reconcileRecentThreadsForSession,
+	reconcileRecentThreadsWithSessions,
+	readRecentThreadEntries,
+	refreshRecentThread,
+	removeRecentThread,
+	removeRecentThreadsForSession,
+	toRecentThreadSummaries,
+	toSessionSummaries,
+	touchRecentThread,
+	writeRecentThreadEntries,
+} from "../app-helpers";
 import {
 	getNextSelectedSessionId,
 	upsertSession,
 } from "../domains/app-sessions.helpers";
+
+type StorageLike = {
+	getItem: (key: string) => string | null;
+	setItem: (key: string, value: string) => void;
+	removeItem: (key: string) => void;
+	clear: () => void;
+};
 
 const sessions: SessionSummary[] = [
 	{ id: "session-1", name: "One", isRecent: true, status: "ready" },
@@ -26,6 +45,37 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 		files: [],
 		...overrides,
 	};
+}
+
+function createLocalStorage(): StorageLike {
+	const values = new Map<string, string>();
+	return {
+		getItem: (key) => values.get(key) ?? null,
+		setItem: (key, value) => {
+			values.set(key, value);
+		},
+		removeItem: (key) => {
+			values.delete(key);
+		},
+		clear: () => {
+			values.clear();
+		},
+	};
+}
+
+function withLocalStorage(run: (storage: StorageLike) => void) {
+	const windowWithStorage = globalThis as typeof globalThis & {
+		window?: Window;
+	};
+	const previousWindow = windowWithStorage.window;
+	const storage = createLocalStorage();
+	windowWithStorage.window = { localStorage: storage } as unknown as Window &
+		typeof globalThis;
+	try {
+		run(storage);
+	} finally {
+		windowWithStorage.window = previousWindow;
+	}
 }
 
 test("getNextSelectedSessionId keeps the current selection when another session is deleted", () => {
@@ -76,35 +126,7 @@ test("toSessionSummaries sorts all sessions by createdAt descending", () => {
 		summaries.map((session) => session.id),
 		["session-2", "session-3", "session-1"],
 	);
-});
-
-test("toRecentSessionSummaries sorts recent sessions by updated time", () => {
-	const summaries = toRecentSessionSummaries([
-		makeSession({
-			id: "session-1",
-			name: "Created first, updated last",
-			createdAt: "2026-01-01T00:00:00Z",
-			timestamp: "2026-01-04T00:00:00Z",
-		}),
-		makeSession({
-			id: "session-2",
-			name: "Created last, updated first",
-			createdAt: "2026-01-04T00:00:00Z",
-			timestamp: "2026-01-01T00:00:00Z",
-		}),
-		makeSession({
-			id: "session-3",
-			name: "Middle",
-			createdAt: "2026-01-02T00:00:00Z",
-			timestamp: "2026-01-03T00:00:00Z",
-		}),
-	]);
-
-	assert.deepEqual(
-		summaries.map((session) => session.id),
-		["session-1", "session-3", "session-2"],
-	);
-	assert.ok(summaries.every((session) => session.isRecent));
+	assert.ok(summaries.every((session) => session.isRecent === false));
 });
 
 test("upsertSession replaces an existing session in place", () => {
@@ -113,13 +135,11 @@ test("upsertSession replaces an existing session in place", () => {
 			id: "session-1",
 			name: "One",
 			createdAt: "2026-01-01T00:00:00Z",
-			timestamp: "2026-01-01T00:00:00Z",
 		}),
 		makeSession({
 			id: "session-2",
 			name: "Two",
 			createdAt: "2026-01-02T00:00:00Z",
-			timestamp: "2026-01-02T00:00:00Z",
 		}),
 	];
 
@@ -141,7 +161,6 @@ test("upsertSession appends a newly seen session", () => {
 			id: "session-1",
 			name: "One",
 			createdAt: "2026-01-01T00:00:00Z",
-			timestamp: "2026-01-01T00:00:00Z",
 		}),
 	];
 
@@ -156,4 +175,429 @@ test("upsertSession appends a newly seen session", () => {
 		existingSessions[0],
 		nextSession,
 	]);
+});
+
+test("touchRecentThread updates timestamps without reordering existing entries", () => {
+	const nextEntries = touchRecentThread(
+		[
+			{
+				sessionId: "session-1",
+				sessionName: "One",
+				threadId: "thread-1",
+				threadName: "Thread One",
+				lastAccessedAt: "2026-01-01T00:00:00Z",
+			},
+			{
+				sessionId: "session-2",
+				sessionName: "Two",
+				threadId: "thread-2",
+				threadName: "Thread Two",
+				lastAccessedAt: "2026-01-02T00:00:00Z",
+			},
+		],
+		{
+			sessionId: "session-1",
+			sessionName: "One renamed",
+			threadId: "thread-1",
+			threadName: "Thread One renamed",
+		},
+		"2026-02-01T00:00:00Z",
+	);
+
+	assert.deepEqual(nextEntries, [
+		{
+			sessionId: "session-1",
+			sessionName: "One renamed",
+			threadId: "thread-1",
+			threadName: "Thread One renamed",
+			lastAccessedAt: "2026-02-01T00:00:00Z",
+		},
+		{
+			sessionId: "session-2",
+			sessionName: "Two",
+			threadId: "thread-2",
+			threadName: "Thread Two",
+			lastAccessedAt: "2026-01-02T00:00:00Z",
+		},
+	]);
+});
+
+test("touchRecentThread appends unseen entries and evicts the oldest when full", () => {
+	let nextEntries = [
+		{
+			sessionId: "session-1",
+			sessionName: "One",
+			threadId: "thread-1",
+			threadName: "Thread One",
+			lastAccessedAt: "2026-01-01T00:00:00Z",
+		},
+		{
+			sessionId: "session-2",
+			sessionName: "Two",
+			threadId: "thread-2",
+			threadName: "Thread Two",
+			lastAccessedAt: "2026-01-02T00:00:00Z",
+		},
+		{
+			sessionId: "session-3",
+			sessionName: "Three",
+			threadId: "thread-3",
+			threadName: "Thread Three",
+			lastAccessedAt: "2026-01-03T00:00:00Z",
+		},
+		{
+			sessionId: "session-4",
+			sessionName: "Four",
+			threadId: "thread-4",
+			threadName: "Thread Four",
+			lastAccessedAt: "2026-01-04T00:00:00Z",
+		},
+	];
+
+	nextEntries = touchRecentThread(
+		nextEntries,
+		{
+			sessionId: "session-5",
+			sessionName: "Five",
+			threadId: "thread-5",
+			threadName: "Thread Five",
+		},
+		"2026-02-01T00:00:00Z",
+	);
+
+	assert.deepEqual(nextEntries, [
+		{
+			sessionId: "session-2",
+			sessionName: "Two",
+			threadId: "thread-2",
+			threadName: "Thread Two",
+			lastAccessedAt: "2026-01-02T00:00:00Z",
+		},
+		{
+			sessionId: "session-3",
+			sessionName: "Three",
+			threadId: "thread-3",
+			threadName: "Thread Three",
+			lastAccessedAt: "2026-01-03T00:00:00Z",
+		},
+		{
+			sessionId: "session-4",
+			sessionName: "Four",
+			threadId: "thread-4",
+			threadName: "Thread Four",
+			lastAccessedAt: "2026-01-04T00:00:00Z",
+		},
+		{
+			sessionId: "session-5",
+			sessionName: "Five",
+			threadId: "thread-5",
+			threadName: "Thread Five",
+			lastAccessedAt: "2026-02-01T00:00:00Z",
+		},
+	]);
+});
+
+test("refreshRecentThread updates labels without adding missing threads", () => {
+	const existingEntries = [
+		{
+			sessionId: "session-1",
+			sessionName: "One",
+			threadId: "thread-1",
+			threadName: "Thread One",
+			lastAccessedAt: "2026-01-01T00:00:00Z",
+		},
+	];
+
+	assert.deepEqual(
+		refreshRecentThread(existingEntries, {
+			sessionId: "session-1",
+			sessionName: "One renamed",
+			threadId: "thread-1",
+			threadName: "Thread One renamed",
+		}),
+		[
+			{
+				sessionId: "session-1",
+				sessionName: "One renamed",
+				threadId: "thread-1",
+				threadName: "Thread One renamed",
+				lastAccessedAt: "2026-01-01T00:00:00Z",
+			},
+		],
+	);
+	assert.deepEqual(
+		refreshRecentThread(existingEntries, {
+			sessionId: "session-2",
+			sessionName: "Two",
+			threadId: "thread-2",
+			threadName: "Thread Two",
+		}),
+		existingEntries,
+	);
+});
+
+test("reconcileRecentThreadsForSession removes stale thread ids", () => {
+	assert.deepEqual(
+		reconcileRecentThreadsForSession(
+			[
+				{
+					sessionId: "session-1",
+					sessionName: "One",
+					threadId: "thread-1",
+					threadName: "Thread One",
+					lastAccessedAt: "2026-01-01T00:00:00Z",
+				},
+				{
+					sessionId: "session-1",
+					sessionName: "One",
+					threadId: "thread-2",
+					threadName: "Thread Two",
+					lastAccessedAt: "2026-01-02T00:00:00Z",
+				},
+				{
+					sessionId: "session-2",
+					sessionName: "Two",
+					threadId: "thread-3",
+					threadName: "Thread Three",
+					lastAccessedAt: "2026-01-03T00:00:00Z",
+				},
+			],
+			"session-1",
+			["thread-2"],
+		),
+		[
+			{
+				sessionId: "session-1",
+				sessionName: "One",
+				threadId: "thread-2",
+				threadName: "Thread Two",
+				lastAccessedAt: "2026-01-02T00:00:00Z",
+			},
+			{
+				sessionId: "session-2",
+				sessionName: "Two",
+				threadId: "thread-3",
+				threadName: "Thread Three",
+				lastAccessedAt: "2026-01-03T00:00:00Z",
+			},
+		],
+	);
+});
+
+test("reconcileRecentThreadsWithSessions removes deleted sessions", () => {
+	assert.deepEqual(
+		reconcileRecentThreadsWithSessions(
+			[
+				{
+					sessionId: "session-1",
+					sessionName: "One",
+					threadId: "thread-1",
+					threadName: "Thread One",
+					lastAccessedAt: "2026-01-01T00:00:00Z",
+				},
+				{
+					sessionId: "session-2",
+					sessionName: "Two",
+					threadId: "thread-2",
+					threadName: "Thread Two",
+					lastAccessedAt: "2026-01-02T00:00:00Z",
+				},
+			],
+			["session-2"],
+		),
+		[
+			{
+				sessionId: "session-2",
+				sessionName: "Two",
+				threadId: "thread-2",
+				threadName: "Thread Two",
+				lastAccessedAt: "2026-01-02T00:00:00Z",
+			},
+		],
+	);
+});
+
+test("toRecentThreadSummaries preserves stored insertion order", () => {
+	assert.deepEqual(
+		toRecentThreadSummaries(
+			[
+				{ id: "session-3", name: "Three", isRecent: false, status: "ready" },
+				{ id: "session-2", name: "Two", isRecent: false, status: "error" },
+				{ id: "session-1", name: "One", isRecent: false, status: "ready" },
+			],
+			[
+				{
+					sessionId: "session-1",
+					sessionName: "One old",
+					threadId: "thread-1",
+					threadName: "Thread One",
+					lastAccessedAt: "2026-01-01T00:00:00Z",
+				},
+				{
+					sessionId: "session-3",
+					sessionName: "Three old",
+					threadId: "thread-3",
+					threadName: "Thread Three",
+					lastAccessedAt: "2026-01-03T00:00:00Z",
+				},
+			],
+		),
+		[
+			{
+				sessionId: "session-1",
+				sessionName: "One",
+				sessionStatus: "ready",
+				threadId: "thread-1",
+				threadName: "Thread One",
+				lastAccessedAt: "2026-01-01T00:00:00Z",
+			},
+			{
+				sessionId: "session-3",
+				sessionName: "Three",
+				sessionStatus: "ready",
+				threadId: "thread-3",
+				threadName: "Thread Three",
+				lastAccessedAt: "2026-01-03T00:00:00Z",
+			},
+		],
+	);
+});
+
+test("removeRecentThread and removeRecentThreadsForSession prune entries", () => {
+	const entries = [
+		{
+			sessionId: "session-1",
+			sessionName: "One",
+			threadId: "thread-1",
+			threadName: "Thread One",
+			lastAccessedAt: "2026-01-01T00:00:00Z",
+		},
+		{
+			sessionId: "session-1",
+			sessionName: "One",
+			threadId: "thread-2",
+			threadName: "Thread Two",
+			lastAccessedAt: "2026-01-02T00:00:00Z",
+		},
+		{
+			sessionId: "session-2",
+			sessionName: "Two",
+			threadId: "thread-3",
+			threadName: "Thread Three",
+			lastAccessedAt: "2026-01-03T00:00:00Z",
+		},
+	];
+
+	assert.deepEqual(removeRecentThread(entries, "session-1", "thread-2"), [
+		{
+			sessionId: "session-1",
+			sessionName: "One",
+			threadId: "thread-1",
+			threadName: "Thread One",
+			lastAccessedAt: "2026-01-01T00:00:00Z",
+		},
+		{
+			sessionId: "session-2",
+			sessionName: "Two",
+			threadId: "thread-3",
+			threadName: "Thread Three",
+			lastAccessedAt: "2026-01-03T00:00:00Z",
+		},
+	]);
+	assert.deepEqual(removeRecentThreadsForSession(entries, "session-1"), [
+		{
+			sessionId: "session-2",
+			sessionName: "Two",
+			threadId: "thread-3",
+			threadName: "Thread Three",
+			lastAccessedAt: "2026-01-03T00:00:00Z",
+		},
+	]);
+});
+
+test("recent threads persist in local storage without reordering duplicates", () => {
+	withLocalStorage(() => {
+		let entries = touchRecentThread(
+			[],
+			{
+				sessionId: "session-1",
+				sessionName: "One",
+				threadId: "thread-1",
+				threadName: "Thread One",
+			},
+			"2026-01-01T00:00:00Z",
+		);
+		entries = touchRecentThread(
+			entries,
+			{
+				sessionId: "session-2",
+				sessionName: "Two",
+				threadId: "thread-2",
+				threadName: "Thread Two",
+			},
+			"2026-01-02T00:00:00Z",
+		);
+		entries = touchRecentThread(
+			entries,
+			{
+				sessionId: "session-1",
+				sessionName: "One updated",
+				threadId: "thread-1",
+				threadName: "Thread One updated",
+			},
+			"2026-02-01T00:00:00Z",
+		);
+		writeRecentThreadEntries(entries);
+
+		assert.equal(
+			(globalThis.window as Window).localStorage.getItem(
+				RECENT_THREADS_STORAGE_KEY,
+			),
+			JSON.stringify([
+				{
+					sessionId: "session-1",
+					sessionName: "One updated",
+					threadId: "thread-1",
+					threadName: "Thread One updated",
+					lastAccessedAt: "2026-02-01T00:00:00Z",
+				},
+				{
+					sessionId: "session-2",
+					sessionName: "Two",
+					threadId: "thread-2",
+					threadName: "Thread Two",
+					lastAccessedAt: "2026-01-02T00:00:00Z",
+				},
+			]),
+		);
+		assert.deepEqual(readRecentThreadEntries(), [
+			{
+				sessionId: "session-1",
+				sessionName: "One updated",
+				threadId: "thread-1",
+				threadName: "Thread One updated",
+				lastAccessedAt: "2026-02-01T00:00:00Z",
+			},
+			{
+				sessionId: "session-2",
+				sessionName: "Two",
+				threadId: "thread-2",
+				threadName: "Thread Two",
+				lastAccessedAt: "2026-01-02T00:00:00Z",
+			},
+		]);
+	});
+});
+
+test("readRecentThreadEntries ignores malformed stored values", () => {
+	withLocalStorage((storage) => {
+		storage.setItem(
+			RECENT_THREADS_STORAGE_KEY,
+			JSON.stringify([{ bad: true }, "nope"]),
+		);
+		assert.deepEqual(readRecentThreadEntries(), []);
+
+		storage.setItem(RECENT_THREADS_STORAGE_KEY, "not json");
+		assert.deepEqual(readRecentThreadEntries(), []);
+	});
 });

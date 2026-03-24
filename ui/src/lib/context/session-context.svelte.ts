@@ -25,6 +25,8 @@ const SESSION_CONTEXT_KEY = Symbol.for("discobot-ui-session-context");
 
 function createSessionContext(sessionId: string): SessionContextValue {
 	const app = useAppContext();
+	let loaded = $state(false);
+	const initialSelectedThreadId = app.sessions.takeRequestedThreadId(sessionId);
 
 	const current = $derived.by(() => {
 		return app.sessions.sessions.find((s) => s.id === sessionId) ?? null;
@@ -32,6 +34,8 @@ function createSessionContext(sessionId: string): SessionContextValue {
 
 	const hasSession = $derived.by(() => current !== null);
 	const isPending = $derived.by(() => !hasSession);
+	const getSessionName = () =>
+		current?.displayName || current?.name || "New Session";
 
 	const ui = createSessionViewState({
 		getFiles: () => filesDomain.list,
@@ -39,6 +43,7 @@ function createSessionContext(sessionId: string): SessionContextValue {
 			services.list
 				.filter((service) => service.id !== DESKTOP_SERVICE_ID)
 				.map((service) => service.id),
+		initialSelectedThreadId,
 	});
 
 	const stores: SessionStores = {
@@ -61,6 +66,28 @@ function createSessionContext(sessionId: string): SessionContextValue {
 		getSelectedId: () => ui.selectedThreadId,
 		setSelectedId: (threadId) => {
 			ui.selectThread(threadId);
+		},
+		onThreadActivated: (threadId, threadName) => {
+			app.sessions.recordRecentThread({
+				sessionId,
+				sessionName: getSessionName(),
+				threadId,
+				threadName,
+			});
+		},
+		onThreadRenamed: (threadId, threadName) => {
+			app.sessions.refreshRecentThread({
+				sessionId,
+				sessionName: getSessionName(),
+				threadId,
+				threadName,
+			});
+		},
+		onThreadRemoved: (threadId) => {
+			app.sessions.removeRecentThread(sessionId, threadId);
+		},
+		onThreadListChanged: (threadIds) => {
+			app.sessions.reconcileRecentThreadsForSession(sessionId, threadIds);
 		},
 	});
 
@@ -91,12 +118,15 @@ function createSessionContext(sessionId: string): SessionContextValue {
 			return;
 		}
 		await threads.load();
-		await Promise.all([
-			filesDomain.refresh(),
-			services.refresh(),
-			envSets.refresh(),
-			hooks.refresh(),
-		]);
+		if (!loaded) {
+			await Promise.all([
+				filesDomain.refresh(),
+				services.refresh(),
+				envSets.refresh(),
+				hooks.refresh(),
+			]);
+			loaded = true;
+		}
 	});
 	const refresh = createBackgroundRefresh(
 		runRefresh,
@@ -104,7 +134,7 @@ function createSessionContext(sessionId: string): SessionContextValue {
 	);
 
 	async function load() {
-		void refresh();
+		await runRefresh();
 		const activeThreadId = threads.selectedId ?? sessionId;
 		await threadContexts.get(activeThreadId)?.load();
 	}

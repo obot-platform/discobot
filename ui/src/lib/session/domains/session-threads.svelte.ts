@@ -15,6 +15,10 @@ type CreateSessionThreadsDomainArgs = {
 	getSession: () => Session | null;
 	getSelectedId: () => string | null;
 	setSelectedId: (threadId: string | null) => void;
+	onThreadActivated?: (threadId: string, threadName: string) => void;
+	onThreadRenamed?: (threadId: string, threadName: string) => void;
+	onThreadRemoved?: (threadId: string) => void;
+	onThreadListChanged?: (threadIds: string[]) => void;
 };
 
 export function createSessionThreadsDomain(
@@ -42,6 +46,20 @@ export function createSessionThreadsDomain(
 		args.setSelectedId(nextList[0]?.id ?? null);
 	}
 
+	function notifySelectedThread(nextList = currentList()) {
+		const selectedId = args.getSelectedId();
+		const thread = nextList.find((item) => item.id === selectedId);
+		if (!thread) {
+			return;
+		}
+
+		args.onThreadActivated?.(thread.id, thread.name);
+	}
+
+	function notifyThreadListChanged(nextList = currentList()) {
+		args.onThreadListChanged?.(nextList.map((thread) => thread.id));
+	}
+
 	const list = $derived.by(() => currentList());
 
 	return {
@@ -60,23 +78,30 @@ export function createSessionThreadsDomain(
 		load: async () => {
 			if (store.status === "loading" || store.status === "ready") {
 				syncSelectedThread();
+				notifyThreadListChanged();
+				notifySelectedThread();
 				return;
 			}
 			if (!args.hasSession()) {
 				store.reset();
 				syncSelectedThread([]);
+				notifyThreadListChanged([]);
 				return;
 			}
 			await store.fetch(args.sessionId);
-			syncSelectedThread(
+			const nextList =
 				store.list.length > 0
 					? store.list
-					: buildImplicitThread(args.getSession()),
-			);
+					: buildImplicitThread(args.getSession());
+			syncSelectedThread(nextList);
+			notifyThreadListChanged(nextList);
+			notifySelectedThread(nextList);
 		},
 		select: (threadId: string) => {
-			if (list.some((thread) => thread.id === threadId)) {
+			const selectedThread = list.find((thread) => thread.id === threadId);
+			if (selectedThread) {
 				args.setSelectedId(threadId);
+				args.onThreadActivated?.(selectedThread.id, selectedThread.name);
 			}
 		},
 		create: (name?: string) => {
@@ -93,6 +118,8 @@ export function createSessionThreadsDomain(
 					name: trimmedName && trimmedName.length > 0 ? trimmedName : undefined,
 				});
 				args.setSelectedId(created.id);
+				notifyThreadListChanged();
+				args.onThreadActivated?.(created.id, created.name);
 			})();
 		},
 		rename: (threadId: string, nextName: string) => {
@@ -106,12 +133,18 @@ export function createSessionThreadsDomain(
 				}
 
 				if (store.list.length === 0 && threadId === args.sessionId) {
-					await store.create(args.sessionId, {
+					const created = await store.create(args.sessionId, {
 						id: threadId,
 						name: trimmedName,
 					});
+					notifyThreadListChanged();
+					args.onThreadRenamed?.(created.id, created.name);
 				} else {
-					await store.update(args.sessionId, threadId, { name: trimmedName });
+					const updated = await store.update(args.sessionId, threadId, {
+						name: trimmedName,
+					});
+					notifyThreadListChanged();
+					args.onThreadRenamed?.(updated.id, updated.name);
 				}
 			})();
 		},
@@ -127,6 +160,7 @@ export function createSessionThreadsDomain(
 			}
 			void (async () => {
 				await store.remove(args.sessionId, threadId);
+				args.onThreadRemoved?.(threadId);
 				args.setSelectedId(
 					getNextSelectedThreadId(
 						currentList(),
@@ -135,6 +169,8 @@ export function createSessionThreadsDomain(
 					),
 				);
 				syncSelectedThread();
+				notifyThreadListChanged();
+				notifySelectedThread();
 			})();
 		},
 		refreshThread: async (threadId: string) => {
@@ -143,6 +179,8 @@ export function createSessionThreadsDomain(
 			}
 			await store.fetchOne(args.sessionId, threadId);
 			syncSelectedThread();
+			notifyThreadListChanged();
+			notifySelectedThread();
 		},
 	};
 }

@@ -102,6 +102,15 @@ export type SessionSummary = {
 	status: SessionStatusValue;
 };
 
+export type RecentThreadSummary = {
+	sessionId: string;
+	sessionName: string;
+	sessionStatus: SessionStatusValue;
+	threadId: string;
+	threadName: string;
+	lastAccessedAt: string;
+};
+
 export type WorkspaceSummary = {
 	id: string;
 	target: string;

@@ -34,6 +34,7 @@ import type {
 	AsyncStatus,
 	IdeOption,
 	PreferredIde,
+	RecentThreadSummary,
 	SessionSummary,
 	WindowControlsSide,
 } from "$lib/shell-types";
@@ -117,12 +118,13 @@ export type AppEnvironment = {
 export type AppSessions = {
 	sessions: Session[];
 	list: SessionSummary[];
-	recent: SessionSummary[];
+	recentThreads: RecentThreadSummary[];
 	selectedId: string | null;
 	pendingId: string;
 	selected: SessionSummary | null;
 	sessionContexts: Map<string, SessionContextValue>;
 	select: (sessionId: string) => void;
+	openThread: (sessionId: string, threadId: string) => void;
 	startNew: () => void;
 	refresh: () => Promise<void>;
 	reloadSession: (sessionId: string) => Promise<void>;
@@ -130,6 +132,24 @@ export type AppSessions = {
 	rename: (sessionId: string, nextName: string) => Promise<boolean>;
 	remove: (sessionId: string) => Promise<boolean>;
 	removeFromMemory: (sessionId: string) => boolean;
+	recordRecentThread: (payload: {
+		sessionId: string;
+		sessionName: string;
+		threadId: string;
+		threadName: string;
+	}) => void;
+	refreshRecentThread: (payload: {
+		sessionId: string;
+		sessionName: string;
+		threadId: string;
+		threadName: string;
+	}) => void;
+	removeRecentThread: (sessionId: string, threadId: string) => void;
+	reconcileRecentThreadsForSession: (
+		sessionId: string,
+		threadIds: string[],
+	) => void;
+	takeRequestedThreadId: (sessionId: string) => string | null;
 };
 
 export type AppWorkspaces = {
