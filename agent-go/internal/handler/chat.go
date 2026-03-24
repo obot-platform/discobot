@@ -458,10 +458,12 @@ func (h *Handler) PostAnswer(w http.ResponseWriter, r *http.Request) {
 	h.answeredQuestions[questionID] = true
 	h.answeredMu.Unlock()
 
-	// Resume the turn. Prompt() will detect the waiting_for_answer state
-	// with the answer file on disk and continue the turn on the existing
-	// assistant message without replaying a fresh start envelope.
-	completionID, chatErr := h.completions.Chat(threadID, agent.PromptRequest{})
+	// Resume the turn. If there is no in-memory completion snapshot for this
+	// thread (for example after an agent restart), force the resumed turn to
+	// replay its prefix so the client gets the original start envelope and
+	// cached chunks before the approval continuation.
+	replayTurn := h.completions.PollChunks(threadID, 0) == nil
+	completionID, chatErr := h.completions.Chat(threadID, agent.PromptRequest{ReplayTurn: replayTurn})
 	if chatErr != nil {
 		// Answer was saved but resume failed — log but still return success.
 		log.Printf("question: answer saved but failed to resume turn: %v", chatErr)

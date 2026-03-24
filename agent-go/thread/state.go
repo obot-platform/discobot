@@ -30,6 +30,7 @@ type TurnState struct {
 	LeafMsgID         string     `json:"leafMsgId"`                   // updated as messages are saved
 	AssistantMsgID    string     `json:"assistantMsgId"`              // pre-generated ID for the first assistant message
 	PendingApprovalID string     `json:"pendingApprovalId,omitempty"` // tool call ID of the pending approval request
+	ReplayTurn        bool       `json:"-"`
 }
 
 // PendingQuestionState persists a pending AskUserQuestion to disk.

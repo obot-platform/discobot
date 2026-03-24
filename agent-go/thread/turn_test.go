@@ -2681,6 +2681,139 @@ func TestResumeTurn_ApprovalAnswered_LiveContinuationSkipsReplayPreamble(t *test
 	}
 }
 
+func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread1"
+	turnID := "turn1"
+
+	userMsg := message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "delete it"}}}
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:      "msg-user",
+		Message: userMsg,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assistantMsgID := "msg-asst"
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:       assistantMsgID,
+		ParentID: "msg-user",
+		Message: message.Message{
+			Role: "assistant",
+			Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+				message.ToolApprovalRequest{ApprovalID: "tc1", ToolCallID: "tc1"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sf, _ := store.CreateStepFile(threadID, turnID, 0)
+	sf.Close()
+
+	if err := store.SaveStepResult(threadID, turnID, 0, StepResult{
+		AssistantMessage: message.Message{
+			Role: "assistant",
+			Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+			},
+		},
+		ToolCalls: []ToolCallInfo{
+			{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
+		ToolCallID: "tc1",
+		StepIndex:  0,
+		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveAnswer(threadID, turnID, QuestionAnswer{
+		ToolCallID: "tc1",
+		Answers:    map[string]string{"q1": "yes"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	turnState := &TurnState{
+		ID:                turnID,
+		ThreadID:          threadID,
+		CurrentStep:       0,
+		Phase:             PhaseWaitingForAnswer,
+		LeafMsgID:         assistantMsgID,
+		Config:            TurnConfig{Model: "test-model", UserMessage: userMsg},
+		PendingApprovalID: "tc1",
+		ReplayTurn:        true,
+	}
+	if err := store.SaveTurnState(threadID, *turnState); err != nil {
+		t.Fatal(err)
+	}
+
+	prov := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{{
+			message.StreamStartChunk{},
+			message.TextStartChunk{ID: "t1"},
+			message.TextDeltaChunk{ID: "t1", Delta: "Deleted successfully"},
+			message.TextEndChunk{ID: "t1"},
+			message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+		}},
+	}
+
+	exec := &approvalMockExecutor{
+		resolvedResults: map[string]message.ToolResultPart{
+			"tc1": {
+				ToolCallID: "tc1",
+				ToolName:   "dangerous_tool",
+				Output:     message.TextOutput{Value: "item deleted"},
+			},
+		},
+	}
+
+	chunks := collectChunks(t, ResumeTurn(
+		context.Background(),
+		prov,
+		exec,
+		store,
+		turnState,
+		&ToolContext{},
+	))
+
+	var hasUserMessage bool
+	var hasStart bool
+	var hasApprovalRequest bool
+	for _, c := range chunks {
+		switch v := c.(type) {
+		case message.UserMessageChunk:
+			hasUserMessage = true
+			if v.Data.InsertBeforeMessageID != assistantMsgID {
+				t.Fatalf("expected replayed user message to target %q, got %q", assistantMsgID, v.Data.InsertBeforeMessageID)
+			}
+		case message.StartChunk:
+			hasStart = true
+			if v.MessageID != assistantMsgID {
+				t.Fatalf("expected replayed start chunk message ID %q, got %q", assistantMsgID, v.MessageID)
+			}
+		case message.ToolApprovalRequestChunk:
+			hasApprovalRequest = true
+		}
+	}
+	if !hasUserMessage {
+		t.Fatal("expected replayed user message before approval continuation")
+	}
+	if !hasStart {
+		t.Fatal("expected replayed start chunk before approval continuation")
+	}
+	if !hasApprovalRequest {
+		t.Fatal("expected replayed approval request before approval continuation")
+	}
+}
+
 // TestResumeTurn_ApprovalNoAnswer verifies that when no answer is available yet,
 // ResumeTurn returns immediately (turn stays paused).
 func TestResumeTurn_ApprovalNoAnswer(t *testing.T) {

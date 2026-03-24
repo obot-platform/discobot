@@ -151,14 +151,18 @@ func ResumeTurn(
 		threadID := turnState.ThreadID
 		turnID := turnState.ID
 
-		replayPrefix := turnState.Phase != PhaseWaitingForAnswer
+		assistantMsgID := turnState.AssistantMsgID
+		if assistantMsgID == "" {
+			assistantMsgID = turnState.LeafMsgID
+		}
+		replayPrefix := turnState.ReplayTurn || turnState.Phase != PhaseWaitingForAnswer
 
 		if replayPrefix {
 			// Re-emit the user message before the start envelope on resume.
 			if !yield(message.UserMessageChunk{
 				Data: message.UserMessageData{
 					Message:               turnState.Config.UserMessage,
-					InsertBeforeMessageID: turnState.AssistantMsgID,
+					InsertBeforeMessageID: assistantMsgID,
 				},
 			}, nil) {
 				return
@@ -167,7 +171,7 @@ func ResumeTurn(
 			// Re-emit the outer start envelope so the AI SDK can bind the resumed
 			// stream to the same message ID as the original run.
 			if !yield(message.StartChunk{
-				MessageID:       turnState.AssistantMsgID,
+				MessageID:       assistantMsgID,
 				MessageMetadata: buildMessageMetadata(turnState.Config),
 			}, nil) {
 				return

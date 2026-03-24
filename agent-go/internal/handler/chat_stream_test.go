@@ -21,8 +21,9 @@ import (
 )
 
 type streamTestAgent struct {
-	promptFn   func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
-	messagesFn func(threadID, leafID string) ([]message.UIMessage, error)
+	promptFn       func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	messagesFn     func(threadID, leafID string) ([]message.UIMessage, error)
+	submitAnswerFn func(threadID, toolCallID string, answers map[string]string) error
 }
 
 func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
@@ -45,10 +46,15 @@ func (m *streamTestAgent) ListModels(_ context.Context) ([]providers.ModelInfo, 
 func (m *streamTestAgent) ListThreads() ([]string, error)                           { return nil, nil }
 func (m *streamTestAgent) InterruptedThreads() ([]string, error)                    { return nil, nil }
 func (m *streamTestAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error) { return nil, nil }
-func (m *streamTestAgent) SubmitAnswer(_, _ string, _ map[string]string) error      { return nil }
-func (m *streamTestAgent) FinalResponse(_ string) (string, error)                   { return "", nil }
-func (m *streamTestAgent) ListCommands() ([]agent.Command, error)                   { return nil, nil }
-func (m *streamTestAgent) IsLeaf(_, _ string) (bool, error)                         { return true, nil }
+func (m *streamTestAgent) SubmitAnswer(threadID, toolCallID string, answers map[string]string) error {
+	if m.submitAnswerFn != nil {
+		return m.submitAnswerFn(threadID, toolCallID, answers)
+	}
+	return nil
+}
+func (m *streamTestAgent) FinalResponse(_ string) (string, error) { return "", nil }
+func (m *streamTestAgent) ListCommands() ([]agent.Command, error) { return nil, nil }
+func (m *streamTestAgent) IsLeaf(_, _ string) (bool, error)       { return true, nil }
 
 type sseFrame struct {
 	ID    string
@@ -154,6 +160,13 @@ func newChatTestServer(t *testing.T, h *Handler) *httptest.Server {
 	t.Helper()
 	r := chi.NewRouter()
 	r.Post("/threads/{id}/chat", h.PostChat)
+	return httptest.NewServer(r)
+}
+
+func newAnswerTestServer(t *testing.T, h *Handler) *httptest.Server {
+	t.Helper()
+	r := chi.NewRouter()
+	r.Post("/threads/{id}/chat/answer/{questionId}", h.PostAnswer)
 	return httptest.NewServer(r)
 }
 
@@ -310,6 +323,108 @@ func TestPostChat_RejectsNoUserMessageAfterAssistant(t *testing.T) {
 	}
 	if got.Error != "no user message found after the last assistant message" {
 		t.Fatalf("unexpected error %q", got.Error)
+	}
+}
+
+func TestPostAnswer_UsesReplayTurnWithoutCachedCompletion(t *testing.T) {
+	reqCh := make(chan agent.PromptRequest, 1)
+	ma := &streamTestAgent{
+		submitAnswerFn: func(threadID, toolCallID string, answers map[string]string) error {
+			if threadID != "thread-1" {
+				t.Fatalf("expected thread-1, got %q", threadID)
+			}
+			if toolCallID != "question-1" {
+				t.Fatalf("expected question-1, got %q", toolCallID)
+			}
+			if answers["q1"] != "yes" {
+				t.Fatalf("expected answer yes, got %+v", answers)
+			}
+			return nil
+		},
+		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			reqCh <- req
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	ts := newAnswerTestServer(t, h)
+	defer ts.Close()
+
+	body, err := json.Marshal(api.AnswerQuestionRequest{Answers: map[string]string{"q1": "yes"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat/answer/question-1", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	select {
+	case req := <-reqCh:
+		if !req.ReplayTurn {
+			t.Fatal("expected ReplayTurn to be true when no cached completion exists")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Prompt request")
+	}
+}
+
+func TestPostAnswer_SkipsReplayTurnWhenCachedCompletionExists(t *testing.T) {
+	reqCh := make(chan agent.PromptRequest, 2)
+	ma := &streamTestAgent{
+		submitAnswerFn: func(_ string, _ string, _ map[string]string) error {
+			return nil
+		},
+		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			reqCh <- req
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	if _, err := cm.Chat("thread-1", agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "seed"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-reqCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for seed Prompt request")
+	}
+
+	h := New("", cm, nil, nil, nil)
+	ts := newAnswerTestServer(t, h)
+	defer ts.Close()
+
+	body, err := json.Marshal(api.AnswerQuestionRequest{Answers: map[string]string{"q1": "yes"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat/answer/question-1", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	select {
+	case req := <-reqCh:
+		if req.ReplayTurn {
+			t.Fatal("expected ReplayTurn to be false when cached completion exists")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for resumed Prompt request")
 	}
 }
 

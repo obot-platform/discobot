@@ -121,6 +121,12 @@ type PromptRequest struct {
 	// Mode is the permission mode ("plan" or "").
 	Mode string
 
+	// ReplayTurn forces a resumed turn to replay its cached prefix even when the
+	// persisted phase would normally continue live without re-emitting earlier
+	// chunks. Used when an answered waiting_for_answer turn is resumed after the
+	// in-memory completion cache has been lost.
+	ReplayTurn bool
+
 	// Tools overrides the default tool set. Nil means use agent defaults.
 	Tools []providers.ToolDefinition
 

@@ -423,6 +423,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			}
 
 			// Resolve provider from (possibly updated) turn state config.
+			state.ReplayTurn = req.ReplayTurn
 			provider, resolveErr := a.registry.Get(state.Config.ProviderID)
 			if resolveErr != nil {
 				yield(nil, fmt.Errorf("resolve provider for resume: %w", resolveErr))
