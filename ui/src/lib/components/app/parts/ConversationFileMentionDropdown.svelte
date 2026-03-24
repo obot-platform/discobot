@@ -29,7 +29,8 @@
 		() => !isLoading && suggestions.length === 0 && query.length > 0,
 	);
 	const shouldRender = $derived.by(
-		() => open && !!sessionId && (isLoading || suggestions.length > 0 || showEmpty),
+		() =>
+			open && !!sessionId && (isLoading || suggestions.length > 0 || showEmpty),
 	);
 
 	function updateMentionState(value: string, cursor: number) {
@@ -117,9 +118,14 @@
 			async () => {
 				isLoading = true;
 				try {
-					const response = await api.searchSessionFiles(sessionId, currentQuery, 50, {
-						signal: controller.signal,
-					});
+					const response = await api.searchSessionFiles(
+						sessionId,
+						currentQuery,
+						50,
+						{
+							signal: controller.signal,
+						},
+					);
 					if (latestRequestId !== requestId) {
 						return;
 					}
@@ -167,7 +173,9 @@
 			return;
 		}
 
-		const selectedItem = dropdownRef.querySelector(`[data-index="${selectedIndex}"]`);
+		const selectedItem = dropdownRef.querySelector(
+			`[data-index="${selectedIndex}"]`,
+		);
 		if (selectedItem && "scrollIntoView" in selectedItem) {
 			(selectedItem as HTMLElement).scrollIntoView({ block: "nearest" });
 		}

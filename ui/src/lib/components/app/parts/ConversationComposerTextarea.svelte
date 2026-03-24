@@ -124,7 +124,7 @@
 
 <ConversationFileMentionDropdown
 	bind:this={fileMentionDropdownRef}
-	sessionId={sessionId}
+	{sessionId}
 	textareaRef={fileMentionTextareaRef}
 	onDraftChange={(value) => onDraftChange(value)}
 />
