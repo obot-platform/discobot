@@ -42,7 +42,9 @@
 
 <div class={cn("flex items-center justify-between gap-4 px-4 pt-4", className)}>
 	{#if reasoning.isStreaming}
-		<div class="flex min-w-0 flex-1 items-center gap-2 text-left">
+		<div
+			class="flex min-w-0 flex-1 items-center gap-2 text-left text-muted-foreground"
+		>
 			<BrainIcon class="size-4 shrink-0 text-muted-foreground" />
 			<span class="truncate font-medium text-sm">
 				{#if children}
@@ -55,7 +57,7 @@
 		<div class="size-7 shrink-0" aria-hidden="true"></div>
 	{:else}
 		<CollapsibleTrigger
-			class="flex min-w-0 flex-1 items-center gap-2 text-left"
+			class="flex min-w-0 flex-1 items-center gap-2 text-left text-muted-foreground"
 			{...restProps}
 		>
 			<BrainIcon class="size-4 shrink-0 text-muted-foreground" />

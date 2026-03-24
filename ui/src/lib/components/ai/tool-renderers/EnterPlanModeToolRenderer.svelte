@@ -16,7 +16,9 @@
 </script>
 
 <div class="flex items-center justify-between gap-4 px-4 pt-4">
-	<CollapsibleTrigger class="flex min-w-0 flex-1 items-center gap-2 text-left">
+	<CollapsibleTrigger
+		class="flex min-w-0 flex-1 items-center gap-2 text-left text-muted-foreground"
+	>
 		<FilePenLineIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">Enter Plan Mode</span>
 		<ToolHeaderStatus state={toolPart.state} />
