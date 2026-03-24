@@ -33,6 +33,18 @@ func NewManager() *Manager {
 	return &Manager{}
 }
 
+// Snapshot returns a copy of the currently applied env vars keyed by name.
+func (m *Manager) Snapshot() map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make(map[string]string, len(m.creds))
+	for _, cred := range m.creds {
+		out[cred.EnvVar] = cred.Value
+	}
+	return out
+}
+
 // Apply parses the credentials header, stores them in memory if changed,
 // and configures git user if provided.
 func (m *Manager) Apply(credentialsHeader, gitUserName, gitUserEmail string) {

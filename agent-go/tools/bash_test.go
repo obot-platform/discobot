@@ -327,6 +327,62 @@ func TestBash_AllowlistFiltersEnv(t *testing.T) {
 	}
 }
 
+func TestBash_RequestScopedEnvVisible(t *testing.T) {
+	skipOnWindows(t)
+
+	e := New(t.TempDir(), t.TempDir(), t.Name())
+	e.SetEnvSnapshot(func() map[string]string {
+		return map[string]string{"DISCOBOT_BASH_ENV_TEST_REQUEST": "from-request"}
+	})
+
+	out, ok := runBash(t, e, map[string]any{"command": "echo \"${DISCOBOT_BASH_ENV_TEST_REQUEST}\""})
+	if !ok {
+		t.Fatalf("unexpected error output: %s", out)
+	}
+	if !strings.Contains(out, "→from-request") {
+		t.Errorf("expected request-scoped env var to be visible to bash, got: %q", out)
+	}
+}
+
+func TestBash_RequestScopedEnvRespectsAllowlist(t *testing.T) {
+	skipOnWindows(t)
+
+	e := New(t.TempDir(), t.TempDir(), t.Name())
+	e.SetBashEnvAllowlist([]string{"DISCOBOT_BASH_ENV_TEST_ALLOWED_REQUEST"})
+	e.SetEnvSnapshot(func() map[string]string {
+		return map[string]string{
+			"DISCOBOT_BASH_ENV_TEST_ALLOWED_REQUEST": "allowed-request",
+			"DISCOBOT_BASH_ENV_TEST_BLOCKED_REQUEST": "blocked-request",
+		}
+	})
+
+	out, ok := runBash(t, e, map[string]any{"command": "echo \"${DISCOBOT_BASH_ENV_TEST_ALLOWED_REQUEST}|${DISCOBOT_BASH_ENV_TEST_BLOCKED_REQUEST}\""})
+	if !ok {
+		t.Fatalf("unexpected error output: %s", out)
+	}
+	if !strings.Contains(out, "→allowed-request|") {
+		t.Errorf("expected only allowlisted request-scoped env var in output, got: %q", out)
+	}
+}
+
+func TestBash_RequestScopedEnvOverridesProcessEnv(t *testing.T) {
+	skipOnWindows(t)
+	t.Setenv("DISCOBOT_BASH_ENV_TEST_OVERRIDE", "from-process")
+
+	e := New(t.TempDir(), t.TempDir(), t.Name())
+	e.SetEnvSnapshot(func() map[string]string {
+		return map[string]string{"DISCOBOT_BASH_ENV_TEST_OVERRIDE": "from-request"}
+	})
+
+	out, ok := runBash(t, e, map[string]any{"command": "echo \"${DISCOBOT_BASH_ENV_TEST_OVERRIDE}\""})
+	if !ok {
+		t.Fatalf("unexpected error output: %s", out)
+	}
+	if !strings.Contains(out, "→from-request") {
+		t.Errorf("expected request-scoped env var to override process env, got: %q", out)
+	}
+}
+
 // TestExtractCwdFromOutput unit-tests the sentinel-based cwd extraction helper.
 func TestExtractCwdFromOutput(t *testing.T) {
 	const sentinel = "__DISCOBOT_PWD_SENTINEL__"

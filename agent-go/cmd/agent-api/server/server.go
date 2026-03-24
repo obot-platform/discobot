@@ -57,6 +57,9 @@ func Run(cfg *config.Config) {
 		}
 		return ""
 	})
+	exec.SetEnvSnapshot(func() map[string]string {
+		return credMgr.Snapshot()
+	})
 
 	// ── DefaultAgent ─────────────────────────────────────────────────────────
 	mcpCfg := agentimpl.NewMCPConfig(

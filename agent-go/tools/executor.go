@@ -69,6 +69,11 @@ type Executor struct {
 	// lookups (e.g. per-request credentials). It is consulted first; os.Getenv
 	// is the fallback.
 	envLookup func(key string) string
+
+	// envSnapshot is an optional source of the full current request-scoped
+	// environment (e.g. credentials and active EnvSet variables). Bash uses it
+	// to merge request-scoped variables into its process environment.
+	envSnapshot func() map[string]string
 }
 
 // New creates an Executor rooted at cwd.
@@ -162,6 +167,13 @@ func (e *Executor) SetEnvLookup(fn func(key string) string) {
 	e.envLookup = fn
 }
 
+// SetEnvSnapshot sets an optional function that returns the full current
+// request-scoped environment. Bash uses it to merge request-scoped variables
+// into command executions.
+func (e *Executor) SetEnvSnapshot(fn func() map[string]string) {
+	e.envSnapshot = fn
+}
+
 // getenv returns the value of the environment variable named by key.
 // It consults e.envLookup first (if set), then os.Getenv.
 func (e *Executor) getenv(key string) string {
@@ -175,10 +187,37 @@ func (e *Executor) getenv(key string) string {
 
 func (e *Executor) bashEnv() []string {
 	if len(e.bashEnvAllowlist) == 0 {
-		return os.Environ()
+		env := make(map[string]string, len(os.Environ()))
+		for _, entry := range os.Environ() {
+			key, value, ok := strings.Cut(entry, "=")
+			if !ok {
+				continue
+			}
+			env[key] = value
+		}
+		if e.envSnapshot != nil {
+			for key, value := range e.envSnapshot() {
+				env[key] = value
+			}
+		}
+		out := make([]string, 0, len(env))
+		for key, value := range env {
+			out = append(out, key+"="+value)
+		}
+		return out
 	}
+
+	requestEnv := map[string]string{}
+	if e.envSnapshot != nil {
+		requestEnv = e.envSnapshot()
+	}
+
 	env := make([]string, 0, len(e.bashEnvAllowlist))
 	for _, key := range e.bashEnvAllowlist {
+		if value, ok := requestEnv[key]; ok {
+			env = append(env, key+"="+value)
+			continue
+		}
 		if value, ok := os.LookupEnv(key); ok {
 			env = append(env, key+"="+value)
 		}
