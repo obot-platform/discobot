@@ -4,9 +4,15 @@
 	import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
 	import XCircleIcon from "@lucide/svelte/icons/circle-x";
 	import type { Component } from "svelte";
+	import { Shimmer } from "$lib/components/ai";
 	import type { ToolState } from "$lib/components/ai/types";
 	import { Badge } from "$lib/components/ui/badge";
 	import { cn } from "$lib/utils";
+	import {
+		getToolStatusLabel,
+		isToolPreparingState,
+		isToolRunningState,
+	} from "./tool-status";
 
 	type Props = {
 		state: ToolState;
@@ -16,15 +22,6 @@
 	let { state, class: className }: Props = $props();
 
 	const statusMeta = $derived.by(() => {
-		const labels: Record<Exclude<ToolState, "output-available">, string> = {
-			"input-streaming": "Pending",
-			"input-available": "Running",
-			"approval-requested": "Awaiting Approval",
-			"approval-responded": "Responded",
-			"output-error": "Error",
-			"output-denied": "Denied",
-		};
-
 		const icons: Record<
 			Exclude<ToolState, "output-available">,
 			Component<{ class?: string }>
@@ -42,9 +39,10 @@
 		}
 
 		return {
-			label: labels[state],
+			label: getToolStatusLabel(state),
 			Icon: icons[state],
-			spinning: state === "input-streaming" || state === "input-available",
+			preparing: isToolPreparingState(state),
+			spinning: isToolRunningState(state),
 		};
 	});
 </script>
@@ -57,6 +55,10 @@
 		<statusMeta.Icon
 			class={cn("size-4 shrink-0", statusMeta.spinning ? "animate-spin" : "")}
 		/>
-		{statusMeta.label}
+		{#if statusMeta.preparing}
+			<Shimmer as="span" text={statusMeta.label} class="font-medium" />
+		{:else}
+			{statusMeta.label}
+		{/if}
 	</Badge>
 {/if}

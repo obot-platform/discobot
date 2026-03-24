@@ -6,7 +6,12 @@
 	import CodeIcon from "@lucide/svelte/icons/code";
 	import XCircleIcon from "@lucide/svelte/icons/circle-x";
 	import type { Component, ComponentProps } from "svelte";
+	import { Shimmer } from "$lib/components/ai";
 	import type { ToolState } from "$lib/components/ai/types";
+	import {
+		getToolStatusLabel,
+		isToolPreparingState,
+	} from "$lib/components/ai/tool/tool-status";
 	import { Badge } from "$lib/components/ui/badge";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import { cn } from "$lib/utils";
@@ -25,16 +30,6 @@
 	}: Props = $props();
 
 	const statusMeta = $derived.by(() => {
-		const labels: Record<ToolState, string> = {
-			"input-streaming": "Pending",
-			"input-available": "Running",
-			"approval-requested": "Awaiting Approval",
-			"approval-responded": "Responded",
-			"output-available": "Completed",
-			"output-error": "Error",
-			"output-denied": "Denied",
-		};
-
 		const icons: Record<ToolState, Component<{ class?: string }>> = {
 			"input-streaming": CircleIcon,
 			"input-available": ClockIcon,
@@ -46,8 +41,9 @@
 		};
 
 		return {
-			label: labels[state],
+			label: getToolStatusLabel(state),
 			Icon: icons[state],
+			preparing: isToolPreparingState(state),
 		};
 	});
 </script>
@@ -63,7 +59,11 @@
 			<statusMeta.Icon
 				class={cn("size-4", state === "input-available" ? "animate-pulse" : "")}
 			/>
-			{statusMeta.label}
+			{#if statusMeta.preparing}
+				<Shimmer as="span" text={statusMeta.label} class="font-medium" />
+			{:else}
+				{statusMeta.label}
+			{/if}
 		</Badge>
 	</div>
 	<ChevronDownIcon
