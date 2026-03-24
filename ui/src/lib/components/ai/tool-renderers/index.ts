@@ -1,3 +1,4 @@
+import ApplyPatchToolRenderer from "./ApplyPatchToolRenderer.svelte";
 import AskUserQuestionToolRenderer from "./AskUserQuestionToolRenderer.svelte";
 import BashToolRenderer from "./BashToolRenderer.svelte";
 import EditToolRenderer from "./EditToolRenderer.svelte";
@@ -13,6 +14,7 @@ import WebSearchToolRenderer from "./WebSearchToolRenderer.svelte";
 import WriteToolRenderer from "./WriteToolRenderer.svelte";
 
 export {
+	ApplyPatchToolRenderer,
 	AskUserQuestionToolRenderer,
 	BashToolRenderer,
 	EditToolRenderer,

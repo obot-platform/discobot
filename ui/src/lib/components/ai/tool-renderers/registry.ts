@@ -1,5 +1,6 @@
 import type { Component } from "svelte";
 import type { DynamicToolPart } from "$lib/components/ai/types";
+import ApplyPatchToolRenderer from "./ApplyPatchToolRenderer.svelte";
 import AskUserQuestionToolRenderer from "./AskUserQuestionToolRenderer.svelte";
 import BashToolRenderer from "./BashToolRenderer.svelte";
 import EditToolRenderer from "./EditToolRenderer.svelte";
@@ -12,6 +13,7 @@ import TodoWriteToolRenderer from "./TodoWriteToolRenderer.svelte";
 import WebFetchToolRenderer from "./WebFetchToolRenderer.svelte";
 import WebSearchToolRenderer from "./WebSearchToolRenderer.svelte";
 import WriteToolRenderer from "./WriteToolRenderer.svelte";
+import { summarizeApplyPatchTitle } from "./apply-patch";
 import type { ToolRendererComponentProps } from "./types";
 import { shortenPath } from "./utils";
 
@@ -25,6 +27,7 @@ const TOOL_RENDERERS: Record<string, RendererComponent> = {
 	Edit: EditToolRenderer,
 	Grep: GrepToolRenderer,
 	Glob: GlobToolRenderer,
+	apply_patch: ApplyPatchToolRenderer,
 	WebSearch: WebSearchToolRenderer,
 	WebFetch: WebFetchToolRenderer,
 	TodoWrite: TodoWriteToolRenderer,
@@ -47,6 +50,10 @@ export function getToolTitle(toolPart: DynamicToolPart): string | undefined {
 
 	if (toolPart.title) {
 		return toolPart.title;
+	}
+
+	if (toolName === "apply_patch") {
+		return summarizeApplyPatchTitle(input) ?? "Apply patch";
 	}
 
 	if (!input || typeof input !== "object") {
