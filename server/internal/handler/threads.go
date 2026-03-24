@@ -61,8 +61,17 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 		// When the thread hasn't been created yet but it's the session's primary thread,
 		// return a pending placeholder instead of a 404.
 		if threadErrorStatus(err) == http.StatusNotFound && threadID == sessionID {
-			h.JSON(w, http.StatusOK, sandboxapi.Thread{ID: threadID, Pending: true})
-			return
+			session, sessionErr := h.chatService.GetSession(ctx, projectID, sessionID)
+			if sessionErr == nil {
+				name := strings.TrimSpace(session.Name)
+				if session.DisplayName != nil {
+					if displayName := strings.TrimSpace(*session.DisplayName); displayName != "" {
+						name = displayName
+					}
+				}
+				h.JSON(w, http.StatusOK, sandboxapi.Thread{ID: threadID, Name: name, Pending: true})
+				return
+			}
 		}
 		h.Error(w, threadErrorStatus(err), err.Error())
 		return

@@ -15,9 +15,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobot/agent-go/agent"
+	"github.com/obot-platform/discobot/agent-go/agentimpl"
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
+	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
 type streamTestAgent struct {
@@ -160,6 +162,7 @@ func newChatTestServer(t *testing.T, h *Handler) *httptest.Server {
 	t.Helper()
 	r := chi.NewRouter()
 	r.Post("/threads/{id}/chat", h.PostChat)
+	r.Get("/threads/{id}", h.GetThread)
 	return httptest.NewServer(r)
 }
 
@@ -237,6 +240,74 @@ func TestPostChat_AcceptsSingleUserMessage(t *testing.T) {
 		if part.Text != "hi" {
 			t.Fatalf("expected text %q, got %q", "hi", part.Text)
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Prompt request")
+	}
+}
+
+func TestPostChat_SeedsThreadMetadataBeforePromptStarts(t *testing.T) {
+	reqCh := make(chan agent.PromptRequest, 1)
+	ma := &streamTestAgent{
+		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			reqCh <- req
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	store := thread.NewStore(t.TempDir())
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newChatTestServer(t, h)
+	defer ts.Close()
+
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "Investigate thread metadata", State: "done"}},
+	}}, Model: "openai/gpt-5.4", Reasoning: "high", Mode: "plan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d", resp.StatusCode)
+	}
+
+	threadResp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer threadResp.Body.Close()
+
+	if threadResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", threadResp.StatusCode)
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(threadResp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "Investigate thread metadata" {
+		t.Fatalf("expected seeded thread name, got %+v", got)
+	}
+	if got.Model != "openai/gpt-5.4" {
+		t.Fatalf("expected seeded model, got %+v", got)
+	}
+	if got.Reasoning != "high" {
+		t.Fatalf("expected seeded reasoning, got %+v", got)
+	}
+	if got.Mode != "plan" {
+		t.Fatalf("expected seeded mode, got %+v", got)
+	}
+
+	select {
+	case <-reqCh:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for Prompt request")
 	}

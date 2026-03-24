@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
+	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
 func (h *Handler) requireThreadStore(w http.ResponseWriter) bool {
@@ -16,6 +17,29 @@ func (h *Handler) requireThreadStore(w http.ResponseWriter) bool {
 		return false
 	}
 	return true
+}
+
+func threadResponse(threadID string, cfg thread.Config, fallbackName string) api.Thread {
+	name := strings.TrimSpace(cfg.Name)
+	if name == "" {
+		name = strings.TrimSpace(fallbackName)
+	}
+	if name == "" {
+		name = threadID
+	}
+
+	mode := ""
+	if cfg.PlanMode {
+		mode = "plan"
+	}
+
+	return api.Thread{
+		ID:        threadID,
+		Name:      name,
+		Model:     cfg.Model,
+		Reasoning: string(cfg.Reasoning),
+		Mode:      mode,
+	}
 }
 
 // ListThreads handles GET /threads — lists all threads.
@@ -37,22 +61,8 @@ func (h *Handler) ListThreads(w http.ResponseWriter, _ *http.Request) {
 	threads := make([]api.Thread, 0, len(threadIDs))
 	store := h.defaultAgent.Store()
 	for _, threadID := range threadIDs {
-		name := threadID
-		cfg, cfgErr := store.LoadConfig(threadID)
-		if cfgErr == nil && strings.TrimSpace(cfg.Name) != "" {
-			name = cfg.Name
-		}
-		mode := ""
-		if cfgErr == nil && cfg.PlanMode {
-			mode = "plan"
-		}
-		threads = append(threads, api.Thread{
-			ID:        threadID,
-			Name:      name,
-			Model:     cfg.Model,
-			Reasoning: string(cfg.Reasoning),
-			Mode:      mode,
-		})
+		cfg, _ := store.LoadConfig(threadID)
+		threads = append(threads, threadResponse(threadID, cfg, threadID))
 	}
 
 	h.JSON(w, http.StatusOK, api.ListThreadsResponse{Threads: threads})
@@ -130,23 +140,13 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := threadID
 	cfg, err := store.LoadConfig(threadID)
-	if err == nil && strings.TrimSpace(cfg.Name) != "" {
-		name = cfg.Name
-	}
-	mode := ""
-	if err == nil && cfg.PlanMode {
-		mode = "plan"
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	h.JSON(w, http.StatusOK, api.Thread{
-		ID:        threadID,
-		Name:      name,
-		Model:     cfg.Model,
-		Reasoning: string(cfg.Reasoning),
-		Mode:      mode,
-	})
+	h.JSON(w, http.StatusOK, threadResponse(threadID, cfg, threadID))
 }
 
 // UpdateThread handles PUT/PATCH /threads/{id} — updates thread metadata.
@@ -192,18 +192,8 @@ func (h *Handler) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	mode := ""
-	if cfg.PlanMode {
-		mode = "plan"
-	}
 
-	h.JSON(w, http.StatusOK, api.Thread{
-		ID:        threadID,
-		Name:      req.Name,
-		Model:     cfg.Model,
-		Reasoning: string(cfg.Reasoning),
-		Mode:      mode,
-	})
+	h.JSON(w, http.StatusOK, threadResponse(threadID, cfg, req.Name))
 }
 
 // DeleteThread handles DELETE /threads/{id} — removes a thread.

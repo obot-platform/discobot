@@ -111,6 +111,38 @@ func TestSessionThreadCRUD(t *testing.T) {
 	AssertStatus(t, getMissingResp, http.StatusNotFound)
 }
 
+func TestGetPrimaryThreadPendingPlaceholderIncludesSessionName(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("test@example.com")
+	project := ts.CreateTestProject(user, "Test Project")
+	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
+	client := ts.AuthenticatedClient(user)
+
+	basePath := "/api/projects/" + project.ID + "/sessions/" + session.ID + "/threads"
+
+	resp := client.Get(basePath + "/" + session.ID)
+	defer resp.Body.Close()
+	AssertStatus(t, resp, http.StatusOK)
+
+	var got struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Pending bool   `json:"pending"`
+	}
+	ParseJSON(t, resp, &got)
+	if got.ID != session.ID {
+		t.Fatalf("expected thread id %s, got %s", session.ID, got.ID)
+	}
+	if got.Name != "Test Session" {
+		t.Fatalf("expected pending thread name Test Session, got %q", got.Name)
+	}
+	if !got.Pending {
+		t.Fatal("expected pending=true for unmaterialized primary thread")
+	}
+}
+
 func TestListThreadMessages_Empty(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)

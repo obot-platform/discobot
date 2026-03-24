@@ -16,9 +16,64 @@ import (
 	"github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
+	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
 const defaultChatStreamPingInterval = 15 * time.Second
+
+func deriveThreadName(messages []message.UIMessage) string {
+	for _, msg := range messages {
+		if msg.Role != "user" {
+			continue
+		}
+		for _, part := range msg.Parts {
+			textPart, ok := part.(message.UITextPart)
+			if !ok {
+				continue
+			}
+			if trimmed := strings.TrimSpace(textPart.Text); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	return ""
+}
+
+func (h *Handler) ensureThreadMetadata(threadID string, req api.ChatRequest) error {
+	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
+		return nil
+	}
+
+	store := h.defaultAgent.Store()
+	exists, err := store.ThreadExists(threadID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := store.CreateThread(threadID); err != nil {
+			return err
+		}
+	}
+
+	cfg, err := store.LoadConfig(threadID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.Name) == "" {
+		cfg.Name = deriveThreadName(req.Messages)
+	}
+	if strings.TrimSpace(cfg.Model) == "" && strings.Contains(req.Model, "/") {
+		cfg.Model = req.Model
+	}
+	if req.Reasoning != "" {
+		cfg.Reasoning = providers.Reasoning(req.Reasoning)
+	}
+	if req.Mode != "" {
+		cfg.PlanMode = req.Mode == "plan"
+	}
+
+	return store.SaveConfig(threadID, cfg)
+}
 
 // ListMessages handles GET /threads/{id}/messages — returns all messages for the session.
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +138,11 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 
 	// Reset hook state for user-initiated completions.
 	h.resetHookState()
+
+	if err := h.ensureThreadMetadata(threadID, req); err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	promptReq := agent.PromptRequest{
 		LeafID:    leafID,
