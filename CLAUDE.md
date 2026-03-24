@@ -12,16 +12,16 @@ Discobot is a coding agent manager. It runs, monitors, and manages AI coding age
 
 ```bash
 pnpm dev                # Start all services (backend + Tauri app)
-pnpm dev:backend        # Backend only (vite + Go server + agent watcher)
+pnpm dev:backend        # Backend only (Svelte UI + Go server + agent watcher)
 pnpm dev:app            # Tauri desktop app only
-pnpm dev:frontend       # Frontend only (port 3000)
+pnpm dev:frontend       # Active frontend only (Svelte UI on port 3100)
 pnpm dev:server         # Go backend with hot-reload via air (port 3001)
 ```
 
 ### Build
 
 ```bash
-pnpm build              # Build Vite frontend
+pnpm build              # Build server + active frontend + Tauri app
 pnpm build:server       # Build Go server binary
 pnpm typecheck          # TypeScript type checking
 ```
@@ -69,7 +69,7 @@ pnpm ci                 # Full CI pipeline: check → test:unit → build
 
 | Component | Language | Port | Purpose |
 |-----------|----------|------|---------|
-| Frontend | TypeScript (React + Vite) | 3000 | Web UI with SWR data fetching |
+| Frontend | TypeScript (Svelte + Vite) | 3100 | Active web UI |
 | Server | Go (Chi + GORM) | 3001 | REST API, session orchestration, container management |
 | Agent | Go | — | Container PID 1 init process (workspace setup, AgentFS mount) |
 | Agent API | Go | 3002 | Per-container API that drives the AI CLI, SSE streaming |

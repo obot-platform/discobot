@@ -4,9 +4,9 @@
 	"version": "../package.json",
 	"identifier": "ai.discobot",
 	"build": {
-		"devUrl": "http://localhost:3000",
-		"beforeBuildCommand": "pnpm build:server && pnpm build:frontend",
-		"frontendDist": "../dist"
+		"devUrl": "http://localhost:3100",
+		"beforeBuildCommand": "pnpm build:server && pnpm ui:build",
+		"frontendDist": "../ui/build"
 	},
 
 	"app": {
