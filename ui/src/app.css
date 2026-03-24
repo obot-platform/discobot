@@ -37,6 +37,10 @@ body {
 	display: none;
 }
 
+.scrollbar-gutter-stable {
+	scrollbar-gutter: stable both-edges;
+}
+
 /* macOS-style scrollbars */
 * {
 	/* Firefox */

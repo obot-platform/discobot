@@ -324,7 +324,10 @@
 	>
 		{#if hasMessages}
 			<div class="relative min-h-0 flex-1">
-				<div bind:this={viewport} class="h-full overflow-auto p-4">
+				<div
+					bind:this={viewport}
+					class="scrollbar-gutter-stable h-full overflow-auto p-4"
+				>
 					<div
 						bind:this={content}
 						class={`w-full space-y-4 ${effectiveChatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
