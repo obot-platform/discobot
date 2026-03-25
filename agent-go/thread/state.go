@@ -37,18 +37,22 @@ type TurnState struct {
 	ReplayTurn        bool       `json:"-"`
 }
 
-// PendingQuestionState persists a pending AskUserQuestion to disk.
-// Stored at {turnDir}/approve-{toolCallId}.json while the turn is paused waiting for user input.
+// PendingQuestionState persists a pending approval to disk.
+// Stored at {turnDir}/approve-{approvalId}.json while the turn is paused waiting for user input.
+// ApprovalID identifies one specific approval prompt; ToolCallID identifies the
+// underlying paused tool invocation. A single tool call may emit multiple
+// approval prompts over time, each with its own ApprovalID.
 type PendingQuestionState struct {
+	ApprovalID string          `json:"approvalId"`
 	ToolCallID string          `json:"toolCallId"`
 	StepIndex  int             `json:"stepIndex"`
-	Questions  json.RawMessage `json:"questions"` // raw JSON array from tool input
+	TaskID     string          `json:"taskId,omitempty"`    // set when the pending approval belongs to an async task
+	Questions  json.RawMessage `json:"questions,omitempty"` // raw JSON array from tool input
 }
 
-// QuestionAnswer persists the user's answer to a pending question.
-// Stored at {turnDir}/answer.json after the frontend submits.
+// QuestionAnswer persists the user's response to a pending approval.
 type QuestionAnswer struct {
-	ToolCallID string            `json:"toolCallId"`
+	ApprovalID string            `json:"approvalId"`
 	Answers    map[string]string `json:"answers"`
 }
 

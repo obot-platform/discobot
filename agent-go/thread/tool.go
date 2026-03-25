@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/obot-platform/discobot/agent-go/agent"
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 )
 
@@ -23,6 +24,17 @@ type ToolExecuteResult struct {
 	// The step loop will continue processing other tools and then wait for all
 	// async tasks to complete before advancing to the next step.
 	Async *AsyncTaskHandle
+}
+
+// AsyncWaitResult is returned when waiting on an in-flight async task.
+// Exactly one of Result or Approval should be set.
+type AsyncWaitResult struct {
+	// Result holds the completed tool result, including denied execution results.
+	Result message.ToolResultPart
+
+	// Approval is non-nil when the async task reached a point where it requires
+	// user approval before it can continue.
+	Approval *ApprovalRequest
 }
 
 // ToolContext carries per-turn state required by tool execution.
@@ -48,13 +60,18 @@ type AsyncTaskHandle struct {
 	// It must be unique within a step and is persisted to disk for crash recovery.
 	TaskID string
 
-	// Wait blocks until the async task completes and returns the tool result.
+	// Wait blocks until the async task completes or reaches an approval gate.
 	// The context is the step loop's context; cancellation propagates.
-	Wait func(ctx context.Context) (message.ToolResultPart, error)
+	Wait func(ctx context.Context) (AsyncWaitResult, error)
 }
 
 // ApprovalRequest signals that tool execution requires user input.
 type ApprovalRequest struct {
+	// ApprovalID is the external ID used to query and answer this approval.
+	// When empty, the turn loop generates a fresh ID for this specific approval
+	// prompt. One tool call may therefore produce multiple approval IDs over
+	// time; consumers should treat this as an opaque request identifier.
+	ApprovalID string
 	// Questions is the raw JSON data presented to the user.
 	Questions json.RawMessage
 }
@@ -66,12 +83,13 @@ type ToolExecutor interface {
 	// or an async task handle.
 	Execute(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart) (ToolExecuteResult, error)
 
-	// ResolveApproval converts the user's answers into a tool result.
-	// Called when the user responds to an ApprovalRequest, and on crash recovery.
-	ResolveApproval(toolCtx *ToolContext, call message.ToolCallPart, answers map[string]string) (message.ToolResultPart, error)
+	// ResolveAnswer converts the user's response into the next tool execution
+	// result. It may return a final result, another approval request, or a new
+	// async task handle.
+	ResolveAnswer(toolCtx *ToolContext, call message.ToolCallPart, req api.AnswerQuestionRequest) (ToolExecuteResult, error)
 
 	// ResumeAsync re-attaches to a previously launched async task after a crash.
 	// Returns either a completed Result (if the task finished while down) or
 	// a new Async handle with a Wait function (if the task is still running).
-	ResumeAsync(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart, taskID string) (ToolExecuteResult, error)
+	ResumeAsync(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart, taskID string, req *api.AnswerQuestionRequest) (ToolExecuteResult, error)
 }

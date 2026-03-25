@@ -202,7 +202,7 @@ func runSubAgentGoroutine(ctx context.Context, rec *taskRecord, subAgent agent.A
 func taskHandle(call message.ToolCallPart, rec *taskRecord, taskID string) *thread.AsyncTaskHandle {
 	return &thread.AsyncTaskHandle{
 		TaskID: taskID,
-		Wait: func(ctx context.Context) (message.ToolResultPart, error) {
+		Wait: func(ctx context.Context) (thread.AsyncWaitResult, error) {
 			select {
 			case <-rec.done:
 			case <-ctx.Done():
@@ -212,17 +212,23 @@ func taskHandle(call message.ToolCallPart, rec *taskRecord, taskID string) *thre
 					rec.cancel()
 				}
 				rec.mu.Unlock()
-				return errorResult(call, "task cancelled"), nil
+				return thread.AsyncWaitResult{
+					Result: errorResult(call, "task cancelled"),
+				}, nil
 			}
 			rec.mu.Lock()
 			defer rec.mu.Unlock()
 			if rec.status == "failed" {
-				return errorResult(call, rec.output), nil
+				return thread.AsyncWaitResult{
+					Result: errorResult(call, rec.output),
+				}, nil
 			}
-			return message.ToolResultPart{
-				ToolCallID: call.ToolCallID,
-				ToolName:   call.ToolName,
-				Output:     message.TextOutput{Value: rec.output},
+			return thread.AsyncWaitResult{
+				Result: message.ToolResultPart{
+					ToolCallID: call.ToolCallID,
+					ToolName:   call.ToolName,
+					Output:     message.TextOutput{Value: rec.output},
+				},
 			}, nil
 		},
 	}

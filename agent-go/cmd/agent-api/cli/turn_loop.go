@@ -216,7 +216,9 @@ func handlePendingQuestion(ctx context.Context, a *agentimpl.DefaultAgent, threa
 		return false // EOF or cancellation
 	}
 
-	if err := a.SubmitAnswer(threadID, pending.ToolCallID, answers); err != nil {
+	if err := a.SubmitAnswer(threadID, pending.ApprovalID, api.AnswerQuestionRequest{
+		Answers: answers,
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "\nError submitting answer: %v\n", err)
 		return false
 	}

@@ -483,17 +483,20 @@ func (s *Store) answerPath(threadID, turnID, approvalID string) string {
 	return filepath.Join(s.turnsDir(threadID), turnID, "approve-"+approvalID+"-answer.json")
 }
 
-// SaveQuestion persists a pending question to disk as approve-{toolCallId}.json.
+// SaveQuestion persists a pending approval to disk as approve-{approvalId}.json.
 func (s *Store) SaveQuestion(threadID, turnID string, q PendingQuestionState) error {
 	dir := filepath.Join(s.turnsDir(threadID), turnID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create turn dir: %w", err)
 	}
+	if q.ApprovalID == "" {
+		q.ApprovalID = generateID()
+	}
 	data, err := json.Marshal(q)
 	if err != nil {
 		return fmt.Errorf("marshal question: %w", err)
 	}
-	return writeFileAtomic(s.questionPath(threadID, turnID, q.ToolCallID), data, 0o644)
+	return writeFileAtomic(s.questionPath(threadID, turnID, q.ApprovalID), data, 0o644)
 }
 
 // LoadQuestion loads a pending question from disk by approval ID. Returns nil if not found.
@@ -512,7 +515,7 @@ func (s *Store) LoadQuestion(threadID, turnID, approvalID string) (*PendingQuest
 	return &q, nil
 }
 
-// SaveAnswer persists the user's answer to disk as approve-{toolCallId}-answer.json.
+// SaveAnswer persists the user's response to disk as approve-{approvalId}-answer.json.
 func (s *Store) SaveAnswer(threadID, turnID string, a QuestionAnswer) error {
 	dir := filepath.Join(s.turnsDir(threadID), turnID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -522,7 +525,7 @@ func (s *Store) SaveAnswer(threadID, turnID string, a QuestionAnswer) error {
 	if err != nil {
 		return fmt.Errorf("marshal answer: %w", err)
 	}
-	return writeFileAtomic(s.answerPath(threadID, turnID, a.ToolCallID), data, 0o644)
+	return writeFileAtomic(s.answerPath(threadID, turnID, a.ApprovalID), data, 0o644)
 }
 
 // LoadAnswer loads the user's answer from disk by approval ID. Returns nil if not found.

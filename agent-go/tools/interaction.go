@@ -37,7 +37,7 @@ func (e *Executor) executeAskUserQuestion(call message.ToolCallPart) (thread.Too
 
 // resolveAskUserQuestion converts the user's answers back into a tool result.
 // answers is a map of question → answer strings.
-func (e *Executor) resolveAskUserQuestion(call message.ToolCallPart, answers map[string]string) (message.ToolResultPart, error) {
+func (e *Executor) resolveAskUserQuestion(call message.ToolCallPart, req api.AnswerQuestionRequest) (message.ToolResultPart, error) {
 	// Re-parse the original questions so we can format a nice result.
 	var input askUserQuestionInput
 	if err := json.Unmarshal([]byte(call.Input), &input); err != nil {
@@ -58,18 +58,18 @@ func (e *Executor) resolveAskUserQuestion(call message.ToolCallPart, answers map
 	_ = json.Unmarshal(input.Questions, &questions)
 
 	// Build the merged Q&A output.
-	merged := make([]qaItem, 0, len(answers))
+	merged := make([]qaItem, 0, len(req.Answers))
 	for _, q := range questions {
-		answer, ok := answers[q.Question]
+		answer, ok := req.Answers[q.Question]
 		if !ok {
-			answer = answers[q.Header]
+			answer = req.Answers[q.Header]
 		}
 		merged = append(merged, qaItem{Question: q.Question, Answer: answer})
 	}
 
 	// Fall back: if no questions parsed, just include raw answers.
 	if len(merged) == 0 {
-		for q, a := range answers {
+		for q, a := range req.Answers {
 			merged = append(merged, qaItem{Question: q, Answer: a})
 		}
 	}
@@ -115,7 +115,7 @@ Do NOT write code. Do NOT output text — start immediately with tool calls.`, p
 	}, nil
 }
 
-func (e *Executor) resolveEnterPlanMode(call message.ToolCallPart, _ map[string]string) (message.ToolResultPart, error) {
+func (e *Executor) resolveEnterPlanMode(call message.ToolCallPart, _ api.AnswerQuestionRequest) (message.ToolResultPart, error) {
 	// EnterPlanMode no longer uses the approval flow; this resolver is unreachable
 	// but kept to satisfy the ResolveApproval dispatch table.
 	return message.ToolResultPart{
@@ -184,10 +184,10 @@ func (e *Executor) executeExitPlanMode(toolCtx *thread.ToolContext, call message
 	}, nil
 }
 
-func (e *Executor) resolveExitPlanMode(toolCtx *thread.ToolContext, call message.ToolCallPart, answers map[string]string) (message.ToolResultPart, error) {
+func (e *Executor) resolveExitPlanMode(toolCtx *thread.ToolContext, call message.ToolCallPart, req api.AnswerQuestionRequest) (message.ToolResultPart, error) {
 	approved := false
 	var customFeedback string
-	for _, v := range answers {
+	for _, v := range req.Answers {
 		switch v {
 		case "Approve", "approve", "yes", "true":
 			approved = true

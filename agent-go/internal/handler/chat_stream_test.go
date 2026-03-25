@@ -25,7 +25,7 @@ import (
 type streamTestAgent struct {
 	promptFn       func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
 	messagesFn     func(threadID, leafID string) ([]message.UIMessage, error)
-	submitAnswerFn func(threadID, toolCallID string, answers map[string]string) error
+	submitAnswerFn func(threadID, approvalID string, req api.AnswerQuestionRequest) error
 }
 
 func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
@@ -48,9 +48,9 @@ func (m *streamTestAgent) ListModels(_ context.Context) ([]providers.ModelInfo, 
 func (m *streamTestAgent) ListThreads() ([]string, error)                           { return nil, nil }
 func (m *streamTestAgent) InterruptedThreads() ([]string, error)                    { return nil, nil }
 func (m *streamTestAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error) { return nil, nil }
-func (m *streamTestAgent) SubmitAnswer(threadID, toolCallID string, answers map[string]string) error {
+func (m *streamTestAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error {
 	if m.submitAnswerFn != nil {
-		return m.submitAnswerFn(threadID, toolCallID, answers)
+		return m.submitAnswerFn(threadID, approvalID, req)
 	}
 	return nil
 }
@@ -400,15 +400,15 @@ func TestPostChat_RejectsNoUserMessageAfterAssistant(t *testing.T) {
 func TestPostAnswer_UsesReplayTurnWithoutCachedCompletion(t *testing.T) {
 	reqCh := make(chan agent.PromptRequest, 1)
 	ma := &streamTestAgent{
-		submitAnswerFn: func(threadID, toolCallID string, answers map[string]string) error {
+		submitAnswerFn: func(threadID, toolCallID string, req api.AnswerQuestionRequest) error {
 			if threadID != "thread-1" {
 				t.Fatalf("expected thread-1, got %q", threadID)
 			}
 			if toolCallID != "question-1" {
 				t.Fatalf("expected question-1, got %q", toolCallID)
 			}
-			if answers["q1"] != "yes" {
-				t.Fatalf("expected answer yes, got %+v", answers)
+			if req.Answers["q1"] != "yes" {
+				t.Fatalf("expected answer yes, got %+v", req.Answers)
 			}
 			return nil
 		},
@@ -450,7 +450,7 @@ func TestPostAnswer_UsesReplayTurnWithoutCachedCompletion(t *testing.T) {
 func TestPostAnswer_SkipsReplayTurnWhenCachedCompletionExists(t *testing.T) {
 	reqCh := make(chan agent.PromptRequest, 2)
 	ma := &streamTestAgent{
-		submitAnswerFn: func(_ string, _ string, _ map[string]string) error {
+		submitAnswerFn: func(_ string, _ string, _ api.AnswerQuestionRequest) error {
 			return nil
 		},
 		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {

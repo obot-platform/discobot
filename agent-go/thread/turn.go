@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 	"github.com/obot-platform/discobot/agent-go/providers/transport"
@@ -240,6 +241,12 @@ type pendingAsyncEntry struct {
 	handle     *AsyncTaskHandle
 }
 
+type pendingApprovalPause struct {
+	toolCallID string
+	taskID     string
+	approval   *ApprovalRequest
+}
+
 // executeLoop is the continuation-style state machine that drives the turn.
 // Both RunTurn and ResumeTurn call this function. Each phase loads its state
 // from disk, so crash recovery is handled naturally — the loop simply resumes
@@ -433,7 +440,7 @@ func executeLoop(
 						ToolName:   tc.ToolName,
 						Input:      string(at.Input),
 					}
-					resumeResult, resumeErr := executor.ResumeAsync(ctx, toolCtx, call, at.TaskID)
+					resumeResult, resumeErr := executor.ResumeAsync(ctx, toolCtx, call, at.TaskID, nil)
 					if resumeErr != nil {
 						result := message.ToolResultPart{
 							ToolCallID: tc.ToolCallID,
@@ -459,6 +466,16 @@ func executeLoop(
 							toolName:   tc.ToolName,
 							handle:     resumeResult.Async,
 						})
+					} else if resumeResult.Approval != nil {
+						if !pauseForApproval(store, threadID, turnState, *cfg, assistantMsg, stepIndex, &toolResults, &pendingApprovalPause{
+							toolCallID: tc.ToolCallID,
+							taskID:     at.TaskID,
+							approval:   resumeResult.Approval,
+						}, yield) {
+							return false
+						}
+						paused = true
+						break
 					} else {
 						allResults[tc.ToolCallID] = resumeResult.Result
 						toolResults.Results = append(toolResults.Results, resumeResult.Result)
@@ -529,67 +546,27 @@ func executeLoop(
 				// Handle approval — wait for any in-flight async first, then pause.
 				if execResult.Approval != nil {
 					if len(asyncHandles) > 0 {
-						if !waitForAsyncTasks(ctx, store, threadID, turnID, stepIndex,
-							asyncHandles, allResults, &toolResults, yield) {
+						pause, ok := waitForAsyncTasks(ctx, store, threadID, turnID, stepIndex,
+							asyncHandles, allResults, &toolResults, yield)
+						if !ok {
 							return false
+						}
+						if pause != nil {
+							if !pauseForApproval(store, threadID, turnState, *cfg, assistantMsg, stepIndex, &toolResults, pause, yield) {
+								return false
+							}
+							paused = true
+							break
 						}
 						asyncHandles = nil
 					}
 
-					// Save question to disk.
-					if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
-						ToolCallID: tc.ToolCallID,
-						StepIndex:  stepIndex,
-						Questions:  execResult.Approval.Questions,
-					}); err != nil {
-						yield(nil, fmt.Errorf("save question: %w", err))
+					if !pauseForApproval(store, threadID, turnState, *cfg, assistantMsg, stepIndex, &toolResults, &pendingApprovalPause{
+						toolCallID: tc.ToolCallID,
+						approval:   execResult.Approval,
+					}, yield) {
 						return false
 					}
-
-					// Save partial tool results.
-					if len(toolResults.Results) > 0 {
-						if err := store.SaveToolResults(threadID, turnID, stepIndex, toolResults); err != nil {
-							yield(nil, fmt.Errorf("save tool results: %w", err))
-							return false
-						}
-					}
-
-					// Add approval request part to assistant message for UI state.
-					approvalPart := message.ToolApprovalRequest{
-						ApprovalID: tc.ToolCallID,
-						ToolCallID: tc.ToolCallID,
-					}
-					msgWithApproval := assistantMsg
-					msgWithApproval.Parts = append(append([]message.Part{}, assistantMsg.Parts...), approvalPart)
-					msgWithApproval.Metadata = buildMessageMetadata(*cfg, turnState.StartedAt, nil)
-
-					assistantMsgID := resolveMessageID(assistantMsg)
-					if err := store.SaveMessage(threadID, StoredMessage{
-						ID:       assistantMsgID,
-						ParentID: turnState.LeafMsgID,
-						Message:  msgWithApproval,
-					}); err != nil {
-						yield(nil, fmt.Errorf("save assistant message (waiting): %w", err))
-						return false
-					}
-					turnState.LeafMsgID = assistantMsgID
-
-					// Emit the approval request chunk to the SSE stream.
-					if !yield(message.ToolApprovalRequestChunk{
-						ApprovalID: tc.ToolCallID,
-						ToolCallID: tc.ToolCallID,
-					}, nil) {
-						return false
-					}
-
-					turnState.Phase = PhaseWaitingForAnswer
-					turnState.CurrentStep = stepIndex
-					turnState.PendingApprovalID = tc.ToolCallID
-					if err := store.SaveTurnState(threadID, *turnState); err != nil {
-						yield(nil, fmt.Errorf("save turn state (waiting): %w", err))
-						return false
-					}
-
 					paused = true
 					break
 				}
@@ -731,7 +708,7 @@ func executeLoop(
 						Input:      string(task.Input),
 					}
 
-					resumeResult, resumeErr := executor.ResumeAsync(ctx, toolCtx, call, task.TaskID)
+					resumeResult, resumeErr := executor.ResumeAsync(ctx, toolCtx, call, task.TaskID, nil)
 					if resumeErr != nil {
 						result := message.ToolResultPart{
 							ToolCallID: task.ToolCallID,
@@ -749,6 +726,12 @@ func executeLoop(
 							toolName:   task.ToolName,
 							handle:     resumeResult.Async,
 						})
+					} else if resumeResult.Approval != nil {
+						return pauseForApproval(store, threadID, turnState, *cfg, assistantMsg, stepIndex, &toolResults, &pendingApprovalPause{
+							toolCallID: task.ToolCallID,
+							taskID:     task.TaskID,
+							approval:   resumeResult.Approval,
+						}, yield)
 					} else {
 						allResults[task.ToolCallID] = resumeResult.Result
 						toolResults.Results = append(toolResults.Results, resumeResult.Result)
@@ -758,9 +741,13 @@ func executeLoop(
 
 			// Wait for any remaining async handles.
 			if len(asyncHandles) > 0 {
-				if !waitForAsyncTasks(ctx, store, threadID, turnID, stepIndex,
-					asyncHandles, allResults, &toolResults, yield) {
+				pause, ok := waitForAsyncTasks(ctx, store, threadID, turnID, stepIndex,
+					asyncHandles, allResults, &toolResults, yield)
+				if !ok {
 					return false
+				}
+				if pause != nil {
+					return pauseForApproval(store, threadID, turnState, *cfg, assistantMsg, stepIndex, &toolResults, pause, yield)
 				}
 				asyncHandles = nil
 			}
@@ -803,7 +790,16 @@ func executeLoop(
 				return true
 			}
 
-			log.Printf("turn: answer received for tool %s, resuming turn %s", answer.ToolCallID, turnID)
+			pendingQuestion, err := store.LoadQuestion(threadID, turnID, turnState.PendingApprovalID)
+			if err != nil {
+				yield(nil, fmt.Errorf("load pending approval: %w", err))
+				return false
+			}
+			if pendingQuestion == nil {
+				yield(nil, fmt.Errorf("pending approval %s not found", turnState.PendingApprovalID))
+				return false
+			}
+			log.Printf("turn: answer received for tool %s, resuming turn %s", pendingQuestion.ToolCallID, turnID)
 
 			stepResult, err := store.LoadStepResult(threadID, turnID, stepIndex)
 			if err != nil || stepResult == nil {
@@ -819,11 +815,13 @@ func executeLoop(
 			for _, r := range existingToolResults.Results {
 				completedTools[r.ToolCallID] = r
 			}
+			var toolResults StepToolResults
+			toolResults.Results = append(toolResults.Results, existingToolResults.Results...)
 
 			// Find the original tool call and resolve the answer.
 			var answerCall message.ToolCallPart
 			for _, tc := range stepResult.ToolCalls {
-				if tc.ToolCallID == answer.ToolCallID {
+				if tc.ToolCallID == pendingQuestion.ToolCallID {
 					answerCall = message.ToolCallPart{
 						ToolCallID: tc.ToolCallID,
 						ToolName:   tc.ToolName,
@@ -832,12 +830,80 @@ func executeLoop(
 					break
 				}
 			}
-			resolved, resolveErr := executor.ResolveApproval(toolCtx, answerCall, answer.Answers)
-			if resolveErr != nil {
-				yield(nil, fmt.Errorf("resolve approval: %w", resolveErr))
-				return false
+			var resolved message.ToolResultPart
+			if pendingQuestion.TaskID != "" {
+				answerReq := &api.AnswerQuestionRequest{
+					Answers: answer.Answers,
+				}
+				resumeResult, resumeErr := executor.ResumeAsync(ctx, toolCtx, answerCall, pendingQuestion.TaskID, answerReq)
+				if resumeErr != nil {
+					yield(nil, fmt.Errorf("resume async approval: %w", resumeErr))
+					return false
+				}
+				if resumeResult.Async != nil {
+					asyncHandles = []pendingAsyncEntry{{
+						toolCallID: answerCall.ToolCallID,
+						toolName:   answerCall.ToolName,
+						handle:     resumeResult.Async,
+					}}
+					turnState.Phase = PhaseWaitingForAsync
+					if err := store.SaveTurnState(threadID, *turnState); err != nil {
+						yield(nil, fmt.Errorf("save turn state (waiting_for_async): %w", err))
+						return false
+					}
+					continue
+				}
+				if resumeResult.Approval != nil {
+					return pauseForApproval(store, threadID, turnState, *cfg, assistantMsg, stepIndex, &toolResults, &pendingApprovalPause{
+						toolCallID: answerCall.ToolCallID,
+						taskID:     pendingQuestion.TaskID,
+						approval:   resumeResult.Approval,
+					}, yield)
+				}
+				resolved = resumeResult.Result
+			} else {
+				answerReq := api.AnswerQuestionRequest{
+					Answers: answer.Answers,
+				}
+				resolveResult, resolveErr := executor.ResolveAnswer(toolCtx, answerCall, answerReq)
+				if resolveErr != nil {
+					yield(nil, fmt.Errorf("resolve answer: %w", resolveErr))
+					return false
+				}
+				if resolveResult.Async != nil {
+					asyncHandles = []pendingAsyncEntry{{
+						toolCallID: answerCall.ToolCallID,
+						toolName:   answerCall.ToolName,
+						handle:     resolveResult.Async,
+					}}
+					asyncTasksState := StepAsyncTasks{
+						Tasks: []AsyncTaskInfo{{
+							ToolCallID: answerCall.ToolCallID,
+							ToolName:   answerCall.ToolName,
+							TaskID:     resolveResult.Async.TaskID,
+							Input:      answerCall.Input,
+						}},
+					}
+					if err := store.SaveAsyncTasks(threadID, turnID, stepIndex, asyncTasksState); err != nil {
+						yield(nil, fmt.Errorf("save async tasks: %w", err))
+						return false
+					}
+					turnState.Phase = PhaseWaitingForAsync
+					if err := store.SaveTurnState(threadID, *turnState); err != nil {
+						yield(nil, fmt.Errorf("save turn state (waiting_for_async): %w", err))
+						return false
+					}
+					continue
+				}
+				if resolveResult.Approval != nil {
+					return pauseForApproval(store, threadID, turnState, *cfg, assistantMsg, stepIndex, &toolResults, &pendingApprovalPause{
+						toolCallID: answerCall.ToolCallID,
+						approval:   resolveResult.Approval,
+					}, yield)
+				}
+				resolved = resolveResult.Result
 			}
-			completedTools[answer.ToolCallID] = resolved
+			completedTools[pendingQuestion.ToolCallID] = resolved
 
 			// Yield the resolved tool result so consumers (e.g. the CLI) can
 			// observe the approval outcome — for example to switch plan mode off
@@ -946,6 +1012,81 @@ func saveStepMessages(
 	return toolMsg, nil
 }
 
+func pauseForApproval(
+	store *Store,
+	threadID string,
+	turnState *TurnState,
+	cfg TurnConfig,
+	assistantMsg message.Message,
+	stepIndex int,
+	toolResults *StepToolResults,
+	pause *pendingApprovalPause,
+	yield func(message.MessageChunk, error) bool,
+) bool {
+	if pause == nil || pause.approval == nil {
+		return false
+	}
+
+	approvalID := pause.approval.ApprovalID
+	if approvalID == "" {
+		approvalID = generateID()
+	}
+
+	if err := store.SaveQuestion(threadID, turnState.ID, PendingQuestionState{
+		ApprovalID: approvalID,
+		ToolCallID: pause.toolCallID,
+		StepIndex:  stepIndex,
+		TaskID:     pause.taskID,
+		Questions:  pause.approval.Questions,
+	}); err != nil {
+		yield(nil, fmt.Errorf("save question: %w", err))
+		return false
+	}
+
+	if len(toolResults.Results) > 0 {
+		if err := store.SaveToolResults(threadID, turnState.ID, stepIndex, *toolResults); err != nil {
+			yield(nil, fmt.Errorf("save tool results: %w", err))
+			return false
+		}
+	}
+
+	approvalPart := message.ToolApprovalRequest{
+		ApprovalID: approvalID,
+		ToolCallID: pause.toolCallID,
+	}
+	msgWithApproval := assistantMsg
+	msgWithApproval.Parts = append(append([]message.Part{}, assistantMsg.Parts...), approvalPart)
+	msgWithApproval.Metadata = buildMessageMetadata(cfg, turnState.StartedAt, nil)
+
+	assistantMsgID := resolveMessageID(assistantMsg)
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:       assistantMsgID,
+		ParentID: turnState.LeafMsgID,
+		Message:  msgWithApproval,
+	}); err != nil {
+		yield(nil, fmt.Errorf("save assistant message (waiting): %w", err))
+		return false
+	}
+	turnState.LeafMsgID = assistantMsgID
+
+	if !yield(message.ToolApprovalRequestChunk{
+		ApprovalID: approvalID,
+		ToolCallID: pause.toolCallID,
+	}, nil) {
+		return false
+	}
+
+	turnState.Phase = PhaseWaitingForAnswer
+	turnState.CurrentStep = stepIndex
+	turnState.PendingApprovalID = approvalID
+	if err := store.SaveTurnState(threadID, *turnState); err != nil {
+		yield(nil, fmt.Errorf("save turn state (waiting): %w", err))
+		return false
+	}
+
+	return true
+}
+
 func yieldFinishStep(stepIndex int, yield func(message.MessageChunk, error) bool) bool {
 	if stepIndex == 0 {
 		return true
@@ -965,45 +1106,72 @@ func waitForAsyncTasks(
 	allResults map[string]message.ToolResultPart,
 	toolResults *StepToolResults,
 	yield func(message.MessageChunk, error) bool,
-) bool {
+) (*pendingApprovalPause, bool) {
 	type asyncResult struct {
 		toolCallID string
-		result     message.ToolResultPart
+		taskID     string
+		result     AsyncWaitResult
+		err        error
 	}
 
 	ch := make(chan asyncResult, len(pending))
 	for _, pa := range pending {
 		go func(pa pendingAsyncEntry) {
 			result, err := pa.handle.Wait(ctx)
-			if err != nil {
-				result = message.ToolResultPart{
-					ToolCallID: pa.toolCallID,
-					ToolName:   pa.toolName,
-					Output:     message.ErrorTextOutput{Value: err.Error()},
-				}
+			ch <- asyncResult{
+				toolCallID: pa.toolCallID,
+				taskID:     pa.handle.TaskID,
+				result:     result,
+				err:        err,
 			}
-			ch <- asyncResult{toolCallID: pa.toolCallID, result: result}
 		}(pa)
 	}
 
+	var pause *pendingApprovalPause
 	for range pending {
 		ar := <-ch
-		allResults[ar.toolCallID] = ar.result
-		toolResults.Results = append(toolResults.Results, ar.result)
+		if ar.err != nil {
+			ar.result.Result = message.ToolResultPart{
+				ToolCallID: ar.toolCallID,
+				ToolName:   lookupPendingToolName(pending, ar.toolCallID),
+				Output:     message.ErrorTextOutput{Value: ar.err.Error()},
+			}
+		}
+		if ar.result.Approval != nil {
+			if pause == nil {
+				pause = &pendingApprovalPause{
+					toolCallID: ar.toolCallID,
+					taskID:     ar.taskID,
+					approval:   ar.result.Approval,
+				}
+			}
+			continue
+		}
+		allResults[ar.toolCallID] = ar.result.Result
+		toolResults.Results = append(toolResults.Results, ar.result.Result)
 
 		if err := store.SaveToolResults(threadID, turnID, stepIndex, *toolResults); err != nil {
 			yield(nil, fmt.Errorf("save async tool results: %w", err))
-			return false
+			return nil, false
 		}
 
-		for _, mc := range message.ToolResultToChunks(ar.result) {
+		for _, mc := range message.ToolResultToChunks(ar.result.Result) {
 			if !yield(mc, nil) {
-				return false
+				return nil, false
 			}
 		}
 	}
 
-	return true
+	return pause, true
+}
+
+func lookupPendingToolName(pending []pendingAsyncEntry, toolCallID string) string {
+	for _, entry := range pending {
+		if entry.toolCallID == toolCallID {
+			return entry.toolName
+		}
+	}
+	return ""
 }
 
 // runCompletion calls the LLM provider and persists the result.
@@ -1301,7 +1469,7 @@ func replayCompletedSteps(
 		q, _ := store.LoadQuestion(threadID, turnID, turnState.PendingApprovalID)
 		if q != nil {
 			if !yield(message.ToolApprovalRequestChunk{
-				ApprovalID: q.ToolCallID,
+				ApprovalID: q.ApprovalID,
 				ToolCallID: q.ToolCallID,
 			}, nil) {
 				return false

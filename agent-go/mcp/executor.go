@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/thread"
 )
@@ -33,14 +34,14 @@ func (e *Executor) Execute(ctx context.Context, toolCtx *thread.ToolContext, cal
 	return thread.ToolExecuteResult{Result: result}, nil
 }
 
-// ResolveApproval delegates to the inner executor.
+// ResolveAnswer delegates to the inner executor.
 // MCP tools are synchronous and never require user approval.
-func (e *Executor) ResolveApproval(toolCtx *thread.ToolContext, call message.ToolCallPart, answers map[string]string) (message.ToolResultPart, error) {
-	return e.inner.ResolveApproval(toolCtx, call, answers)
+func (e *Executor) ResolveAnswer(toolCtx *thread.ToolContext, call message.ToolCallPart, req api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	return e.inner.ResolveAnswer(toolCtx, call, req)
 }
 
 // ResumeAsync delegates to the inner executor.
 // MCP tools are synchronous and never produce async tasks.
-func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string) (thread.ToolExecuteResult, error) {
-	return e.inner.ResumeAsync(ctx, toolCtx, call, taskID)
+func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	return e.inner.ResumeAsync(ctx, toolCtx, call, taskID, req)
 }

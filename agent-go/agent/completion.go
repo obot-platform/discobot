@@ -6,6 +6,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
@@ -348,9 +349,9 @@ func (cm *CompletionManager) PendingQuestion(threadID string) (*PendingQuestion,
 	return cm.agent.PendingQuestion(threadID)
 }
 
-// SubmitAnswer persists the user's answer for a pending AskUserQuestion.
-func (cm *CompletionManager) SubmitAnswer(threadID, toolCallID string, answers map[string]string) error {
-	return cm.agent.SubmitAnswer(threadID, toolCallID, answers)
+// SubmitAnswer persists the user's response for a pending approval.
+func (cm *CompletionManager) SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error {
+	return cm.agent.SubmitAnswer(threadID, approvalID, req)
 }
 
 // SetOnTurnComplete sets a callback that fires when any completion finishes.

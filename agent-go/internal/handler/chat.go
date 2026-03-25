@@ -464,12 +464,12 @@ func (h *Handler) GetQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if pending != nil && pending.ToolCallID == questionID {
+	if pending != nil && pending.ApprovalID == questionID {
 		// Question is pending — return it directly.
 		h.JSON(w, http.StatusOK, api.PendingQuestionResponse{
 			Status: "pending",
 			Question: &api.PendingQuestion{
-				ToolUseID: pending.ToolCallID,
+				ToolUseID: pending.ApprovalID,
 				Questions: pending.Questions,
 			},
 		})
@@ -509,7 +509,7 @@ func (h *Handler) PostAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist the answer.
-	if err := h.completions.SubmitAnswer(threadID, questionID, req.Answers); err != nil {
+	if err := h.completions.SubmitAnswer(threadID, questionID, req); err != nil {
 		h.Error(w, http.StatusNotFound, err.Error())
 		return
 	}

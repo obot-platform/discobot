@@ -989,14 +989,19 @@ func (a *DefaultAgent) PendingQuestion(threadID string) (*agent.PendingQuestion,
 		return nil, nil
 	}
 	var questions []api.AskUserQuestion
-	if err := json.Unmarshal(q.Questions, &questions); err != nil {
-		return nil, fmt.Errorf("unmarshal questions: %w", err)
+	if len(q.Questions) > 0 {
+		if err := json.Unmarshal(q.Questions, &questions); err != nil {
+			return nil, fmt.Errorf("unmarshal questions: %w", err)
+		}
 	}
-	return &agent.PendingQuestion{ToolCallID: q.ToolCallID, Questions: questions}, nil
+	return &agent.PendingQuestion{
+		ApprovalID: q.ApprovalID,
+		Questions:  questions,
+	}, nil
 }
 
-// SubmitAnswer persists the user's answer for a pending AskUserQuestion.
-func (a *DefaultAgent) SubmitAnswer(threadID, toolCallID string, answers map[string]string) error {
+// SubmitAnswer persists the user's response for a pending approval.
+func (a *DefaultAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error {
 	state, err := a.store.LoadTurnState(threadID)
 	if err != nil {
 		return fmt.Errorf("load turn state: %w", err)
@@ -1006,17 +1011,17 @@ func (a *DefaultAgent) SubmitAnswer(threadID, toolCallID string, answers map[str
 	}
 
 	// Verify the toolCallID matches.
-	q, err := a.store.LoadQuestion(threadID, state.ID, toolCallID)
+	q, err := a.store.LoadQuestion(threadID, state.ID, approvalID)
 	if err != nil {
 		return fmt.Errorf("load question: %w", err)
 	}
-	if q == nil || q.ToolCallID != toolCallID {
-		return fmt.Errorf("question %s not found for thread %s", toolCallID, threadID)
+	if q == nil || q.ApprovalID != approvalID {
+		return fmt.Errorf("question %s not found for thread %s", approvalID, threadID)
 	}
 
 	return a.store.SaveAnswer(threadID, state.ID, thread.QuestionAnswer{
-		ToolCallID: toolCallID,
-		Answers:    answers,
+		ApprovalID: approvalID,
+		Answers:    req.Answers,
 	})
 }
 

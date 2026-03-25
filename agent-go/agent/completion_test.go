@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
@@ -56,7 +57,7 @@ func (m *mockAgent) PendingQuestion(_ string) (*PendingQuestion, error) {
 	return nil, nil
 }
 
-func (m *mockAgent) SubmitAnswer(_, _ string, _ map[string]string) error {
+func (m *mockAgent) SubmitAnswer(_, _ string, _ api.AnswerQuestionRequest) error {
 	return nil
 }
 

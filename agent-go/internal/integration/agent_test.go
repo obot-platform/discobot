@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 	"github.com/obot-platform/discobot/agent-go/thread"
@@ -43,11 +44,11 @@ func (e *testToolExecutor) Execute(_ context.Context, _ *thread.ToolContext, cal
 	return thread.ToolExecuteResult{Result: result}, nil
 }
 
-func (e *testToolExecutor) ResolveApproval(_ *thread.ToolContext, _ message.ToolCallPart, _ map[string]string) (message.ToolResultPart, error) {
-	return message.ToolResultPart{}, fmt.Errorf("approval not supported in test executor")
+func (e *testToolExecutor) ResolveAnswer(_ *thread.ToolContext, _ message.ToolCallPart, _ api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	return thread.ToolExecuteResult{}, fmt.Errorf("approval not supported in test executor")
 }
 
-func (e *testToolExecutor) ResumeAsync(_ context.Context, _ *thread.ToolContext, _ message.ToolCallPart, _ string) (thread.ToolExecuteResult, error) {
+func (e *testToolExecutor) ResumeAsync(_ context.Context, _ *thread.ToolContext, _ message.ToolCallPart, _ string, _ *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
 	return thread.ToolExecuteResult{}, fmt.Errorf("async not supported in test executor")
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobot/agent-go/agent"
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 	"github.com/obot-platform/discobot/agent-go/thread"
@@ -35,9 +36,11 @@ func (m *mockSubAgent) InterruptedThreads() ([]string, error)                   
 func (m *mockSubAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error) {
 	return nil, nil
 }
-func (m *mockSubAgent) SubmitAnswer(_, _ string, _ map[string]string) error { return nil }
-func (m *mockSubAgent) ListCommands() ([]agent.Command, error)              { return nil, nil }
-func (m *mockSubAgent) IsLeaf(_, _ string) (bool, error)                    { return true, nil }
+func (m *mockSubAgent) SubmitAnswer(_, _ string, _ api.AnswerQuestionRequest) error {
+	return nil
+}
+func (m *mockSubAgent) ListCommands() ([]agent.Command, error) { return nil, nil }
+func (m *mockSubAgent) IsLeaf(_, _ string) (bool, error)       { return true, nil }
 func (m *mockSubAgent) FinalResponse(threadID string) (string, error) {
 	if m.finalResponseFn != nil {
 		return m.finalResponseFn(threadID)
@@ -70,7 +73,10 @@ func waitHandle(t *testing.T, handle *thread.AsyncTaskHandle, timeout time.Durat
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
-	return res
+	if res.Approval != nil {
+		t.Fatalf("Wait returned unexpected approval: %#v", res.Approval)
+	}
+	return res.Result
 }
 
 func textOutput(res message.ToolResultPart) string {
@@ -235,8 +241,8 @@ func TestTask_Cancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
-	if !isErrorOutput(res) {
-		t.Errorf("expected ErrorTextOutput (cancelled), got %T", res.Output)
+	if !isErrorOutput(res.Result) {
+		t.Errorf("expected ErrorTextOutput (cancelled), got %T", res.Result.Output)
 	}
 
 	// The sub-agent goroutine should have been cancelled too.
@@ -284,8 +290,8 @@ func TestTask_CancellationBeforeGoroutineStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
-	if !isErrorOutput(res) {
-		t.Errorf("expected ErrorTextOutput (cancelled), got %T", res.Output)
+	if !isErrorOutput(res.Result) {
+		t.Errorf("expected ErrorTextOutput (cancelled), got %T", res.Result.Output)
 	}
 
 	select {
@@ -327,7 +333,7 @@ func TestTask_Resumption_InMemory(t *testing.T) {
 
 	// ResumeAsync should find the record still in globalTasks and return a handle.
 	call := makeTaskCall(t, "some work")
-	resumed, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID)
+	resumed, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, nil)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}
@@ -364,7 +370,7 @@ func TestTask_Resumption_AlreadyCompleted(t *testing.T) {
 	call := makeTaskCall(t, "task that finished before crash")
 	call.ToolCallID = t.Name() + "-recover"
 
-	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID)
+	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, nil)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}
@@ -416,7 +422,7 @@ func TestTask_Resumption_MidTurn(t *testing.T) {
 	call := makeTaskCall(t, "task interrupted mid-turn")
 	call.ToolCallID = t.Name() + "-midturn"
 
-	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID)
+	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, nil)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}

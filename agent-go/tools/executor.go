@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/thread"
 )
@@ -475,22 +476,34 @@ func (e *Executor) spillToFile(toolCtx *thread.ToolContext, call message.ToolCal
 	return path, nil
 }
 
-// ResolveApproval converts a user's answers into a tool result after an ApprovalRequest.
-func (e *Executor) ResolveApproval(toolCtx *thread.ToolContext, call message.ToolCallPart, answers map[string]string) (message.ToolResultPart, error) {
+// ResolveAnswer converts a user's response into the next tool execution result.
+func (e *Executor) ResolveAnswer(toolCtx *thread.ToolContext, call message.ToolCallPart, req api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
 	switch call.ToolName {
 	case "AskUserQuestion":
-		return e.resolveAskUserQuestion(call, answers)
+		result, err := e.resolveAskUserQuestion(call, req)
+		if err != nil {
+			return thread.ToolExecuteResult{}, err
+		}
+		return thread.ToolExecuteResult{Result: result}, nil
 	case "EnterPlanMode":
-		return e.resolveEnterPlanMode(call, answers)
+		result, err := e.resolveEnterPlanMode(call, req)
+		if err != nil {
+			return thread.ToolExecuteResult{}, err
+		}
+		return thread.ToolExecuteResult{Result: result}, nil
 	case "ExitPlanMode":
-		return e.resolveExitPlanMode(toolCtx, call, answers)
+		result, err := e.resolveExitPlanMode(toolCtx, call, req)
+		if err != nil {
+			return thread.ToolExecuteResult{}, err
+		}
+		return thread.ToolExecuteResult{Result: result}, nil
 	default:
-		return message.ToolResultPart{}, fmt.Errorf("ResolveApproval not supported for tool %s", call.ToolName)
+		return thread.ToolExecuteResult{}, fmt.Errorf("ResolveAnswer not supported for tool %s", call.ToolName)
 	}
 }
 
 // ResumeAsync re-attaches to a previously launched async background task.
-func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string) (thread.ToolExecuteResult, error) {
+func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string, _ *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
 	switch call.ToolName {
 	case "Task", "Agent":
 		return e.resumeTask(ctx, toolCtx, call, taskID)

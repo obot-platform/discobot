@@ -7,6 +7,7 @@ import (
 	"iter"
 	"testing"
 
+	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
@@ -62,11 +63,11 @@ func (m *mockExecutor) Execute(_ context.Context, _ *ToolContext, call message.T
 	}}, nil
 }
 
-func (m *mockExecutor) ResolveApproval(_ *ToolContext, _ message.ToolCallPart, _ map[string]string) (message.ToolResultPart, error) {
-	return message.ToolResultPart{}, fmt.Errorf("no approvals in mock")
+func (m *mockExecutor) ResolveAnswer(_ *ToolContext, _ message.ToolCallPart, _ api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	return ToolExecuteResult{}, fmt.Errorf("no approvals in mock")
 }
 
-func (m *mockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string) (ToolExecuteResult, error) {
+func (m *mockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string, _ *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
 	return ToolExecuteResult{}, fmt.Errorf("no async in mock executor")
 }
 
@@ -559,11 +560,11 @@ func (e *errorExecutor) Execute(_ context.Context, _ *ToolContext, _ message.Too
 	return ToolExecuteResult{}, e.err
 }
 
-func (e *errorExecutor) ResolveApproval(_ *ToolContext, _ message.ToolCallPart, _ map[string]string) (message.ToolResultPart, error) {
-	return message.ToolResultPart{}, fmt.Errorf("no approvals in error executor")
+func (e *errorExecutor) ResolveAnswer(_ *ToolContext, _ message.ToolCallPart, _ api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	return ToolExecuteResult{}, fmt.Errorf("no approvals in error executor")
 }
 
-func (e *errorExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string) (ToolExecuteResult, error) {
+func (e *errorExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string, _ *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
 	return ToolExecuteResult{}, fmt.Errorf("no async in error executor")
 }
 
@@ -1573,11 +1574,11 @@ func (e *countingExecutor) Execute(_ context.Context, _ *ToolContext, call messa
 	}}, nil
 }
 
-func (e *countingExecutor) ResolveApproval(_ *ToolContext, _ message.ToolCallPart, _ map[string]string) (message.ToolResultPart, error) {
-	return message.ToolResultPart{}, fmt.Errorf("no approvals in counting executor")
+func (e *countingExecutor) ResolveAnswer(_ *ToolContext, _ message.ToolCallPart, _ api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	return ToolExecuteResult{}, fmt.Errorf("no approvals in counting executor")
 }
 
-func (e *countingExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string) (ToolExecuteResult, error) {
+func (e *countingExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string, _ *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
 	return ToolExecuteResult{}, fmt.Errorf("no async in counting executor")
 }
 
@@ -1608,11 +1609,11 @@ func (e *asyncMockExecutor) Execute(_ context.Context, _ *ToolContext, call mess
 		return ToolExecuteResult{
 			Async: &AsyncTaskHandle{
 				TaskID: taskID,
-				Wait: func(_ context.Context) (message.ToolResultPart, error) {
+				Wait: func(_ context.Context) (AsyncWaitResult, error) {
 					if waitErr != nil {
-						return message.ToolResultPart{}, waitErr
+						return AsyncWaitResult{}, waitErr
 					}
-					return result, nil
+					return AsyncWaitResult{Result: result}, nil
 				},
 			},
 		}, nil
@@ -1627,11 +1628,11 @@ func (e *asyncMockExecutor) Execute(_ context.Context, _ *ToolContext, call mess
 	}}, nil
 }
 
-func (e *asyncMockExecutor) ResolveApproval(_ *ToolContext, _ message.ToolCallPart, _ map[string]string) (message.ToolResultPart, error) {
-	return message.ToolResultPart{}, fmt.Errorf("no approvals in async mock")
+func (e *asyncMockExecutor) ResolveAnswer(_ *ToolContext, _ message.ToolCallPart, _ api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	return ToolExecuteResult{}, fmt.Errorf("no approvals in async mock")
 }
 
-func (e *asyncMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, taskID string) (ToolExecuteResult, error) {
+func (e *asyncMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, taskID string, _ *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
 	if err, ok := e.resumeErrors[taskID]; ok {
 		return ToolExecuteResult{}, err
 	}
@@ -2189,11 +2190,11 @@ func TestResumeTurn_CrashedDuringToolPhase_WithAsyncTasks(t *testing.T) {
 		resumeResults: map[string]ToolExecuteResult{
 			"task-bg": {Async: &AsyncTaskHandle{
 				TaskID: "task-bg",
-				Wait: func(_ context.Context) (message.ToolResultPart, error) {
-					return message.ToolResultPart{
+				Wait: func(_ context.Context) (AsyncWaitResult, error) {
+					return AsyncWaitResult{Result: message.ToolResultPart{
 						ToolCallID: "tc2", ToolName: "launch_task",
 						Output: message.TextOutput{Value: "task result"},
-					}, nil
+					}}, nil
 				},
 			}},
 		},
@@ -2256,8 +2257,8 @@ func (e *approvalMockExecutor) Execute(_ context.Context, _ *ToolContext, call m
 		return ToolExecuteResult{
 			Async: &AsyncTaskHandle{
 				TaskID: taskID,
-				Wait: func(_ context.Context) (message.ToolResultPart, error) {
-					return result, nil
+				Wait: func(_ context.Context) (AsyncWaitResult, error) {
+					return AsyncWaitResult{Result: result}, nil
 				},
 			},
 		}, nil
@@ -2272,14 +2273,14 @@ func (e *approvalMockExecutor) Execute(_ context.Context, _ *ToolContext, call m
 	}}, nil
 }
 
-func (e *approvalMockExecutor) ResolveApproval(_ *ToolContext, call message.ToolCallPart, _ map[string]string) (message.ToolResultPart, error) {
+func (e *approvalMockExecutor) ResolveAnswer(_ *ToolContext, call message.ToolCallPart, _ api.AnswerQuestionRequest) (ToolExecuteResult, error) {
 	if result, ok := e.resolvedResults[call.ToolCallID]; ok {
-		return result, nil
+		return ToolExecuteResult{Result: result}, nil
 	}
-	return message.ToolResultPart{}, fmt.Errorf("no resolved result for %s", call.ToolCallID)
+	return ToolExecuteResult{}, fmt.Errorf("no resolved result for %s", call.ToolCallID)
 }
 
-func (e *approvalMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string) (ToolExecuteResult, error) {
+func (e *approvalMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, _ string, _ *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
 	return ToolExecuteResult{}, fmt.Errorf("no async resume in approval mock")
 }
 
@@ -2435,8 +2436,10 @@ func TestResumeTurn_ApprovalAnswered(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	approvalID := "approval-1"
 	// Save question.
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
+		ApprovalID: approvalID,
 		ToolCallID: "tc1",
 		StepIndex:  0,
 		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
@@ -2446,7 +2449,7 @@ func TestResumeTurn_ApprovalAnswered(t *testing.T) {
 
 	// Save answer.
 	if err := store.SaveAnswer(threadID, turnID, QuestionAnswer{
-		ToolCallID: "tc1",
+		ApprovalID: approvalID,
 		Answers:    map[string]string{"q1": "yes"},
 	}); err != nil {
 		t.Fatal(err)
@@ -2460,7 +2463,7 @@ func TestResumeTurn_ApprovalAnswered(t *testing.T) {
 		Phase:             PhaseWaitingForAnswer,
 		LeafMsgID:         assistantMsgID,
 		Config:            TurnConfig{Model: "test-model"},
-		PendingApprovalID: "tc1",
+		PendingApprovalID: approvalID,
 	}
 	if err := store.SaveTurnState(threadID, *turnState); err != nil {
 		t.Fatal(err)
@@ -2594,7 +2597,9 @@ func TestResumeTurn_ApprovalAnswered_LiveContinuationSkipsReplayPreamble(t *test
 		t.Fatal(err)
 	}
 
+	approvalID := "approval-1"
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
+		ApprovalID: approvalID,
 		ToolCallID: "tc1",
 		StepIndex:  0,
 		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
@@ -2603,7 +2608,7 @@ func TestResumeTurn_ApprovalAnswered_LiveContinuationSkipsReplayPreamble(t *test
 	}
 
 	if err := store.SaveAnswer(threadID, turnID, QuestionAnswer{
-		ToolCallID: "tc1",
+		ApprovalID: approvalID,
 		Answers:    map[string]string{"q1": "yes"},
 	}); err != nil {
 		t.Fatal(err)
@@ -2616,7 +2621,7 @@ func TestResumeTurn_ApprovalAnswered_LiveContinuationSkipsReplayPreamble(t *test
 		Phase:             PhaseWaitingForAnswer,
 		LeafMsgID:         assistantMsgID,
 		Config:            TurnConfig{Model: "test-model"},
-		PendingApprovalID: "tc1",
+		PendingApprovalID: approvalID,
 	}
 	if err := store.SaveTurnState(threadID, *turnState); err != nil {
 		t.Fatal(err)
@@ -2726,7 +2731,9 @@ func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) 
 		t.Fatal(err)
 	}
 
+	approvalID := "approval-1"
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
+		ApprovalID: approvalID,
 		ToolCallID: "tc1",
 		StepIndex:  0,
 		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
@@ -2735,7 +2742,7 @@ func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) 
 	}
 
 	if err := store.SaveAnswer(threadID, turnID, QuestionAnswer{
-		ToolCallID: "tc1",
+		ApprovalID: approvalID,
 		Answers:    map[string]string{"q1": "yes"},
 	}); err != nil {
 		t.Fatal(err)
@@ -2748,7 +2755,7 @@ func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) 
 		Phase:             PhaseWaitingForAnswer,
 		LeafMsgID:         assistantMsgID,
 		Config:            TurnConfig{Model: "test-model", UserMessage: userMsg},
-		PendingApprovalID: "tc1",
+		PendingApprovalID: approvalID,
 		ReplayTurn:        true,
 	}
 	if err := store.SaveTurnState(threadID, *turnState); err != nil {
@@ -2861,7 +2868,9 @@ func TestResumeTurn_ApprovalNoAnswer(t *testing.T) {
 	}
 
 	// Save question but NO answer.
+	approvalID := "approval-1"
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
+		ApprovalID: approvalID,
 		ToolCallID: "tc1",
 		StepIndex:  0,
 		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
@@ -2876,7 +2885,7 @@ func TestResumeTurn_ApprovalNoAnswer(t *testing.T) {
 		Phase:             PhaseWaitingForAnswer,
 		LeafMsgID:         assistantMsgID,
 		Config:            TurnConfig{Model: "test-model"},
-		PendingApprovalID: "tc1",
+		PendingApprovalID: approvalID,
 	}
 	if err := store.SaveTurnState(threadID, *turnState); err != nil {
 		t.Fatal(err)

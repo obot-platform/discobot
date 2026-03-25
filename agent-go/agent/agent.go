@@ -37,9 +37,9 @@ type Command struct {
 	Kind CommandKind
 }
 
-// PendingQuestion represents an outstanding AskUserQuestion tool request.
+// PendingQuestion represents an outstanding approval request that needs user input.
 type PendingQuestion struct {
-	ToolCallID string
+	ApprovalID string
 	Questions  []api.AskUserQuestion
 }
 
@@ -83,10 +83,10 @@ type Agent interface {
 	// or nil if no question is pending. Used by GET /chat/question.
 	PendingQuestion(threadID string) (*PendingQuestion, error)
 
-	// SubmitAnswer persists the user's answer for a pending question.
+	// SubmitAnswer persists the user's response for a pending approval.
 	// The turn is resumed by calling Prompt again (which detects the
 	// waiting_for_answer state and resumes with the answer).
-	SubmitAnswer(threadID, toolCallID string, answers map[string]string) error
+	SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error
 
 	// FinalResponse returns the last assistant text from a completed thread turn.
 	// Returns empty string (no error) if the thread has no content yet or if a
