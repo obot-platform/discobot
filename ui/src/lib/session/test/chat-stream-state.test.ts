@@ -6,6 +6,7 @@ import type { ChatMessage } from "$lib/api-types";
 import {
 	bindChatStreamEventSource,
 	createChatStreamState,
+	type ChatStreamStateOptions,
 } from "$lib/thread/conversation-stream";
 
 function makeTextMessage(
@@ -91,7 +92,10 @@ async function flushStreamEvents() {
 	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function createHarness(initialMessages: ChatMessage[] = []): {
+function createHarness(
+	initialMessages: ChatMessage[] = [],
+	overrides: Partial<ChatStreamStateOptions> = {},
+): {
 	messages: ChatMessage[];
 	modeChanges: string[];
 	modelChanges: string[];
@@ -116,25 +120,36 @@ function createHarness(initialMessages: ChatMessage[] = []): {
 		setMessages: (nextMessages) => {
 			currentMessages = nextMessages;
 			setCount += 1;
+			overrides.setMessages?.(nextMessages);
 		},
 		onActionableQuestion: () => {
 			actionableQuestionCount += 1;
+			return overrides.onActionableQuestion?.();
 		},
 		onMeaningfulToolOutput: () => {
 			meaningfulToolOutputCount += 1;
+			return overrides.onMeaningfulToolOutput?.();
 		},
 		setMode: (mode) => {
 			modeChanges.push(mode);
+			return overrides.setMode?.(mode);
 		},
 		setModel: (model) => {
 			modelChanges.push(model);
+			return overrides.setModel?.(model);
 		},
 		setReasoning: (reasoning) => {
 			reasoningChanges.push(reasoning);
+			return overrides.setReasoning?.(reasoning);
 		},
 		setThreadName: (name) => {
 			threadNameChanges.push(name);
+			return overrides.setThreadName?.(name);
 		},
+		onStart: overrides.onStart,
+		onFinish: overrides.onFinish,
+		onHistoryReplayEnd: overrides.onHistoryReplayEnd,
+		onChunkError: overrides.onChunkError,
 	});
 
 	return {
@@ -433,6 +448,102 @@ test("chunk events surface mode, model, and reasoning updates", async () => {
 	]);
 	assert.deepEqual(harness.reasoningChanges, ["enabled", "disabled"]);
 	assert.equal(harness.messages[0]?.id, "assistant-1");
+});
+
+test("pending async stream callbacks do not block meaningful tool output handling", async () => {
+	let releaseRefresh!: () => void;
+	const refreshStarted = new Promise<void>((resolve) => {
+		releaseRefresh = resolve;
+	});
+	const harness = createHarness([], {
+		onMeaningfulToolOutput: async () => {
+			await refreshStarted;
+		},
+	});
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "start", messageId: "assistant-tool" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-start",
+			toolCallId: "tool-1",
+			toolName: "Read",
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-output-available",
+			toolCallId: "tool-1",
+			output: { file: "/tmp/demo.txt", contents: "hello" },
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "finish", finishReason: "stop" }),
+	});
+
+	assert.equal(harness.meaningfulToolOutputCount, 1);
+	assert.equal(
+		harness.messages[0]?.parts[0]?.type === "tool-Read" ||
+			harness.messages[0]?.parts[0]?.type === "dynamic-tool",
+		true,
+	);
+
+	releaseRefresh();
+	await flushStreamEvents();
+});
+
+test("rejected async stream callbacks are logged without failing the stream", async () => {
+	const loggedErrors: unknown[][] = [];
+	const originalConsoleError = console.error;
+	console.error = (...args: unknown[]) => {
+		loggedErrors.push(args);
+	};
+
+	try {
+		const harness = createHarness([], {
+			onMeaningfulToolOutput: async () => {
+				throw new Error("refresh failed");
+			},
+		});
+
+		await harness.state.handleStreamEvent({
+			event: "chunk",
+			data: JSON.stringify({ type: "start", messageId: "assistant-tool" }),
+		});
+		await harness.state.handleStreamEvent({
+			event: "chunk",
+			data: JSON.stringify({
+				type: "tool-input-start",
+				toolCallId: "tool-1",
+				toolName: "Read",
+			}),
+		});
+		await harness.state.handleStreamEvent({
+			event: "chunk",
+			data: JSON.stringify({
+				type: "tool-output-available",
+				toolCallId: "tool-1",
+				output: { file: "/tmp/demo.txt", contents: "hello" },
+			}),
+		});
+		await flushStreamEvents();
+
+		assert.equal(harness.meaningfulToolOutputCount, 1);
+		assert.equal(loggedErrors.length, 1);
+		assert.equal(
+			loggedErrors[0]?.[0],
+			"Failed to run onMeaningfulToolOutput chat stream callback",
+		);
+		assert.equal(loggedErrors[0]?.[1] instanceof Error, true);
+		assert.equal((loggedErrors[0]?.[1] as Error).message, "refresh failed");
+	} finally {
+		console.error = originalConsoleError;
+	}
 });
 
 test("AskUserQuestion becoming answerable triggers a single actionable callback", async () => {

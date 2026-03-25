@@ -71,17 +71,17 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		onStart: () => {
 			streamError = null;
 			streamStatus = "streaming";
-			void args.refreshThread();
+			return args.refreshThread();
 		},
 		onFinish: () => {
 			streamStatus = null;
-			void args.afterTurn?.();
+			return args.afterTurn?.();
 		},
 		onMeaningfulToolOutput: () => {
-			void args.refreshSessionState?.();
+			return args.refreshSessionState?.();
 		},
 		onActionableQuestion: () => {
-			void args.refreshThread();
+			return args.refreshThread();
 		},
 		onHistoryReplayEnd: () => {
 			historyReplayVersion += 1;
@@ -91,16 +91,16 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamError = errorText;
 		},
 		setMode: () => {
-			void args.refreshThread();
+			return args.refreshThread();
 		},
 		setModel: () => {
-			void args.refreshThread();
+			return args.refreshThread();
 		},
 		setReasoning: () => {
-			void args.refreshThread();
+			return args.refreshThread();
 		},
 		setThreadName: () => {
-			void args.refreshThread();
+			return args.refreshThread();
 		},
 	});
 

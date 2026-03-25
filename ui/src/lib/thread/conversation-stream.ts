@@ -49,20 +49,20 @@ export type ChatStreamEventSourceOptions = {
 export type ChatStreamStateOptions = {
 	getMessages: () => ChatMessage[];
 	setMessages: (messages: ChatMessage[]) => void;
-	onStart?: () => void;
-	onFinish?: () => void;
+	onStart?: () => void | Promise<void>;
+	onFinish?: () => void | Promise<void>;
 	// Fires once per streamed assistant response for the first non-preliminary
 	// tool result. This is the earliest stable point where session-derived state
 	// like files, hooks, env sets, or services may need a refresh without waiting
 	// for the whole turn to finish.
-	onMeaningfulToolOutput?: () => void;
-	onActionableQuestion?: () => void;
-	onHistoryReplayEnd?: () => void;
-	onChunkError?: (errorText: string) => void;
-	setMode?: (mode: string) => void;
-	setModel?: (model: string) => void;
-	setReasoning?: (reasoning: string) => void;
-	setThreadName?: (name: string) => void;
+	onMeaningfulToolOutput?: () => void | Promise<void>;
+	onActionableQuestion?: () => void | Promise<void>;
+	onHistoryReplayEnd?: () => void | Promise<void>;
+	onChunkError?: (errorText: string) => void | Promise<void>;
+	setMode?: (mode: string) => void | Promise<void>;
+	setModel?: (model: string) => void | Promise<void>;
+	setReasoning?: (reasoning: string) => void | Promise<void>;
+	setThreadName?: (name: string) => void | Promise<void>;
 };
 
 type StreamMessageMetadata = {
@@ -76,6 +76,10 @@ type ActiveAssistantStream = {
 	readerTask: Promise<void>;
 	writer: WritableStreamDefaultWriter<UIMessageChunk>;
 };
+
+type StreamStateCallback<TResult = void, TArgs extends unknown[] = []> = (
+	...args: TArgs
+) => TResult | Promise<TResult>;
 
 type UserMessageChunk = {
 	type: "data-user-message";
@@ -130,6 +134,20 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		}
 
 		Object.assign(mutableTarget, sourceRecord);
+	};
+
+	const invokeNonBlockingCallback = <TArgs extends unknown[]>(
+		label: string,
+		callback: StreamStateCallback<void, TArgs> | undefined,
+		...args: TArgs
+	) => {
+		const result = callback?.(...args);
+		if (!(result instanceof Promise)) {
+			return;
+		}
+		void result.catch((error) => {
+			console.error(`Failed to run ${label} chat stream callback`, error);
+		});
 	};
 
 	const upsertMessage = (
@@ -248,10 +266,14 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		}
 
 		if (metadata.model) {
-			options.setModel?.(metadata.model);
+			invokeNonBlockingCallback("setModel", options.setModel, metadata.model);
 		}
 		if (metadata.reasoning) {
-			options.setReasoning?.(metadata.reasoning);
+			invokeNonBlockingCallback(
+				"setReasoning",
+				options.setReasoning,
+				metadata.reasoning,
+			);
 		}
 	};
 
@@ -453,7 +475,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		if (isToolOutputAvailableChunk(chunk) && chunk.preliminary !== true) {
 			if (!hasNotifiedMeaningfulToolOutput) {
 				hasNotifiedMeaningfulToolOutput = true;
-				options.onMeaningfulToolOutput?.();
+				invokeNonBlockingCallback(
+					"onMeaningfulToolOutput",
+					options.onMeaningfulToolOutput,
+				);
 			}
 		}
 
@@ -469,7 +494,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			!actionableQuestionToolCallIds.has(actionableQuestionToolCallId)
 		) {
 			actionableQuestionToolCallIds.add(actionableQuestionToolCallId);
-			options.onActionableQuestion?.();
+			invokeNonBlockingCallback(
+				"onActionableQuestion",
+				options.onActionableQuestion,
+			);
 		}
 
 		const assistantMessage = getAssistantMessage(stream.messageId);
@@ -486,19 +514,26 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 				!actionableQuestionToolCallIds.has(toolPart.toolCallId)
 			) {
 				actionableQuestionToolCallIds.add(toolPart.toolCallId);
-				options.onActionableQuestion?.();
+				invokeNonBlockingCallback(
+					"onActionableQuestion",
+					options.onActionableQuestion,
+				);
 			}
 		}
 	};
 
 	const applyChunkEvent = async (chunk: UIMessageChunk) => {
 		if (isModeChangeChunk(chunk) && typeof chunk.data?.mode === "string") {
-			options.setMode?.(chunk.data.mode);
+			invokeNonBlockingCallback("setMode", options.setMode, chunk.data.mode);
 			return;
 		}
 
 		if (isThreadNameChunk(chunk) && typeof chunk.data?.name === "string") {
-			options.setThreadName?.(chunk.data.name);
+			invokeNonBlockingCallback(
+				"setThreadName",
+				options.setThreadName,
+				chunk.data.name,
+			);
 			return;
 		}
 
@@ -514,7 +549,11 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		}
 
 		if (isErrorChunk(chunk)) {
-			options.onChunkError?.(chunk.errorText ?? "Unknown chat error");
+			invokeNonBlockingCallback(
+				"onChunkError",
+				options.onChunkError,
+				chunk.errorText ?? "Unknown chat error",
+			);
 			return;
 		}
 
@@ -522,7 +561,7 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			applyStreamMetadata(parseMessageMetadata(chunk.messageMetadata));
 			hasNotifiedMeaningfulToolOutput = false;
 			actionableQuestionToolCallIds = new Set();
-			options.onStart?.();
+			invokeNonBlockingCallback("onStart", options.onStart);
 			await startAssistantStream(chunk.messageId);
 		}
 
@@ -535,7 +574,7 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 		if (terminalChunkTypes.has(chunk.type)) {
 			await closeActiveAssistantStream(activeStream);
-			options.onFinish?.();
+			invokeNonBlockingCallback("onFinish", options.onFinish);
 			return;
 		}
 
@@ -562,7 +601,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			if (historyMessages !== null) {
 				options.setMessages(historyMessages);
 				historyMessages = null;
-				options.onHistoryReplayEnd?.();
+				invokeNonBlockingCallback(
+					"onHistoryReplayEnd",
+					options.onHistoryReplayEnd,
+				);
 			}
 			return;
 		}
