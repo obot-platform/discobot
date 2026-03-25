@@ -24,6 +24,9 @@ export default defineConfig({
 	plugins: [fixNoVncCjs(), sveltekit(), tailwindcss(), devtoolsJson()],
 	server: { port: 3100, strictPort: true },
 	preview: { port: 3100, strictPort: true },
+	worker: {
+		format: "es",
+	},
 	clearScreen: false,
 	build: {
 		// Increase chunk size warning limit for the Svelte UI bundle.

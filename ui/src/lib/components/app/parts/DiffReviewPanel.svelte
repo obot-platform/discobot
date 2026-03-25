@@ -1,6 +1,5 @@
 <script lang="ts">
-	import type { FileContents, FileDiffOptions } from "@pierre/diffs";
-	import { FileDiff as PierreFileDiff } from "@pierre/diffs";
+	import type { FileContents } from "@pierre/diffs";
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
@@ -14,8 +13,16 @@
 		SessionSingleFileDiffResponse,
 	} from "$lib/api-types";
 	import DockWindowChrome from "$lib/components/app/parts/DockWindowChrome.svelte";
+	import DiffReviewFileRenderer from "$lib/components/app/parts/DiffReviewFileRenderer.svelte";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
+	import {
+		buildDiffFileContents,
+		DIFF_HARD_LIMIT,
+		DIFF_WARNING_THRESHOLD,
+		type DiffRendererParams,
+		type DiffStyle,
+	} from "$lib/pierre-diff";
 	import {
 		countDiffLinesFast,
 		hashString,
@@ -27,10 +34,6 @@
 
 	const APPROVAL_STORAGE_KEY = "discobot.ui.diff-review.approved";
 	const DIFF_STYLE_STORAGE_KEY = "discobot.ui.diff-review.style";
-	const DIFF_WARNING_THRESHOLD = 10000;
-	const DIFF_HARD_LIMIT = 20000;
-
-	type DiffStyle = "split" | "unified";
 
 	type Props = {
 		dockMaximized: boolean;
@@ -59,9 +62,15 @@
 		snapshotStatus: "idle" | "loading" | "ready" | "error";
 		snapshot?: SnapshotState;
 		snapshotError?: string;
+		oldFile?: FileContents;
+		newFile?: FileContents;
 	};
 
 	type LoadedDiffState =
+		| {
+				status: "idle";
+				snapshotStatus: "idle";
+		  }
 		| {
 				status: "loading";
 				snapshotStatus: "idle";
@@ -72,51 +81,6 @@
 				snapshotStatus: "idle";
 		  }
 		| ReadyDiffState;
-
-	type DiffRendererParams = {
-		diffStyle: DiffStyle;
-		resolvedTheme: ResolvedTheme;
-		oldFile: FileContents;
-		newFile: FileContents;
-	};
-
-	const LANGUAGE_MAP: Record<string, string> = {
-		js: "javascript",
-		jsx: "javascript",
-		ts: "typescript",
-		tsx: "typescript",
-		py: "python",
-		rb: "ruby",
-		go: "go",
-		rs: "rust",
-		java: "java",
-		c: "c",
-		cpp: "cpp",
-		h: "c",
-		hpp: "cpp",
-		cs: "csharp",
-		php: "php",
-		swift: "swift",
-		kt: "kotlin",
-		html: "html",
-		css: "css",
-		scss: "scss",
-		json: "json",
-		xml: "xml",
-		yaml: "yaml",
-		yml: "yaml",
-		md: "markdown",
-		sql: "sql",
-		sh: "bash",
-		bash: "bash",
-		zsh: "bash",
-		dockerfile: "docker",
-		makefile: "make",
-		toml: "toml",
-		graphql: "graphql",
-		gql: "graphql",
-		svelte: "svelte",
-	};
 
 	let {
 		dockMaximized,
@@ -135,7 +99,6 @@
 	let approvedBySession = $state<Record<string, Record<string, string>>>({});
 	let storageLoaded = $state(false);
 	let expandedPath = $state<string | null>(null);
-	let forceLoadedPaths = $state<string[]>([]);
 	let refreshing = $state(false);
 	let loadGeneration = 0;
 	let diffStyle = $state<DiffStyle>("unified");
@@ -156,11 +119,6 @@
 	);
 	const maximizeTitle = $derived.by(() =>
 		dockMaximized ? "Restore split view" : "Maximize diff review panel",
-	);
-	const diffKey = $derived.by(() =>
-		sortedDiff
-			.map((file) => `${file.path}:${file.status}:${file.oldPath ?? ""}`)
-			.join("|"),
 	);
 
 	onMount(() => {
@@ -185,49 +143,44 @@
 
 	$effect(() => {
 		const currentSessionId = sessionId;
-		const currentDiffKey = diffKey;
-		void currentDiffKey;
+		const currentEntries = sortedDiff;
+		void currentEntries;
 
-		if (!currentSessionId) {
+		if (!currentSessionId || currentEntries.length === 0) {
 			diffStates = {};
 			expandedPath = null;
-			forceLoadedPaths = [];
 			return;
 		}
 
-		const generation = ++loadGeneration;
+		loadGeneration += 1;
 		const currentExpandedPath = untrack(() => expandedPath);
-		const currentForceLoadedPaths = untrack(() => forceLoadedPaths);
-		const nextStates = Object.fromEntries(
-			sortedDiff.map((file) => [
-				file.path,
-				{ status: "loading", snapshotStatus: "idle" } satisfies LoadedDiffState,
-			]),
-		);
-		if (sortedDiff.length === 0) {
-			diffStates = {};
-			expandedPath = null;
-			forceLoadedPaths = [];
-			return;
-		}
 		if (
 			currentExpandedPath &&
-			!sortedDiff.some((file) => file.path === currentExpandedPath)
+			!currentEntries.some((file) => file.path === currentExpandedPath)
 		) {
 			expandedPath = null;
 		}
-		forceLoadedPaths = currentForceLoadedPaths.filter((path) =>
-			sortedDiff.some((file) => file.path === path),
+
+		diffStates = Object.fromEntries(
+			currentEntries.map((file) => [
+				file.path,
+				{ status: "idle", snapshotStatus: "idle" } satisfies LoadedDiffState,
+			]),
 		);
-		diffStates = nextStates;
-		void loadDiffEntries(generation, currentSessionId, sortedDiff);
 	});
 
 	$effect(() => {
-		if (!expandedPath) {
+		const currentExpandedPath = expandedPath;
+		const currentSessionId = sessionId;
+		const generation = loadGeneration;
+		if (!currentExpandedPath || !currentSessionId) {
 			return;
 		}
-		void ensureSnapshot(expandedPath);
+		void ensureExpandedDiffReady(
+			currentExpandedPath,
+			currentSessionId,
+			generation,
+		);
 	});
 
 	function readApprovalState(): Record<string, Record<string, string>> {
@@ -261,126 +214,88 @@
 		return "Unable to load diff.";
 	}
 
-	function getLanguageFromPath(path: string): string | undefined {
-		const filename = path.split("/").at(-1)?.toLowerCase() ?? "";
-		if (filename === "dockerfile") return "docker";
-		if (filename === "makefile") return "make";
-		const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
-		return LANGUAGE_MAP[extension];
-	}
-
-	function buildFileContents(
+	function updateDiffState(
 		path: string,
-		content: string,
-		cacheKey: string | null,
-	): FileContents {
-		const language = getLanguageFromPath(path);
-		return {
-			name: path,
-			contents: content,
-			lang: language,
-			cacheKey: cacheKey ?? `${path}:${content.length}`,
-		};
-	}
-
-	function getRendererOptions(
-		style: DiffStyle,
-		theme: ResolvedTheme,
-	): FileDiffOptions<undefined> {
-		return {
-			diffStyle: style,
-			theme: {
-				light: "github-light",
-				dark: "github-dark",
-			},
-			themeType: theme === "dark" ? "dark" : "light",
-			disableFileHeader: true,
-			hunkSeparators: "line-info",
-			expandUnchanged: false,
-			collapsedContextThreshold: 3,
-			expansionLineCount: 20,
-			lineDiffType: "word",
-			overflow: "scroll",
-		};
-	}
-
-	function renderPierreDiff(node: HTMLDivElement, params: DiffRendererParams) {
-		const instance = new PierreFileDiff(
-			getRendererOptions(params.diffStyle, params.resolvedTheme),
-		);
-
-		function render(next: DiffRendererParams) {
-			instance.setOptions(
-				getRendererOptions(next.diffStyle, next.resolvedTheme),
-			);
-			instance.render({
-				oldFile: next.oldFile,
-				newFile: next.newFile,
-				containerWrapper: node,
-				forceRender: true,
-			});
-		}
-
-		render(params);
-
-		return {
-			update(next: DiffRendererParams) {
-				render(next);
-			},
-			destroy() {
-				instance.cleanUp();
-				node.replaceChildren();
-			},
-		};
-	}
-
-	async function loadDiffEntries(
-		generation: number,
-		currentSessionId: string,
-		entries: SessionDiffFileEntry[],
+		updater: (current: LoadedDiffState) => LoadedDiffState,
 	) {
-		const loadedEntries = await Promise.all(
-			entries.map(async (entry) => {
-				try {
-					const response = (await api.getSessionDiff(currentSessionId, {
-						path: entry.path,
-					})) as SessionSingleFileDiffResponse;
-					const patchHash = response.patch
-						? await hashString(response.patch)
-						: null;
-					return [
-						entry.path,
-						{
-							status: "ready",
-							response,
-							patchHash,
-							lineCount: response.patch
-								? countDiffLinesFast(response.patch)
-								: 0,
-							snapshotStatus: "idle",
-						} satisfies LoadedDiffState,
-					] as const;
-				} catch (error) {
-					return [
-						entry.path,
-						{
-							status: "error",
-							errorMessage: errorMessage(error),
-							snapshotStatus: "idle",
-						} satisfies LoadedDiffState,
-					] as const;
-				}
-			}),
-		);
+		const current = diffStates[path];
+		if (!current) {
+			return;
+		}
+		diffStates = {
+			...diffStates,
+			[path]: updater(current),
+		};
+	}
 
-		if (generation !== loadGeneration) {
+	async function loadDiffEntry(
+		path: string,
+		currentSessionId: string,
+		generation: number,
+	) {
+		const state = diffStates[path];
+		if (!state || state.status === "loading" || state.status === "ready") {
 			return;
 		}
 
-		diffStates = Object.fromEntries(loadedEntries);
+		updateDiffState(path, () => ({
+			status: "loading",
+			snapshotStatus: "idle",
+		}));
+
+		try {
+			const response = (await api.getSessionDiff(currentSessionId, {
+				path,
+			})) as SessionSingleFileDiffResponse;
+			const patchHash = response.patch
+				? await hashString(response.patch)
+				: null;
+			if (generation !== loadGeneration || currentSessionId !== sessionId) {
+				return;
+			}
+
+			diffStates = {
+				...diffStates,
+				[path]: {
+					status: "ready",
+					response,
+					patchHash,
+					lineCount: response.patch ? countDiffLinesFast(response.patch) : 0,
+					snapshotStatus: "idle",
+				},
+			};
+		} catch (error) {
+			if (generation !== loadGeneration || currentSessionId !== sessionId) {
+				return;
+			}
+			diffStates = {
+				...diffStates,
+				[path]: {
+					status: "error",
+					errorMessage: errorMessage(error),
+					snapshotStatus: "idle",
+				},
+			};
+		}
 	}
 
-	async function ensureSnapshot(path: string) {
+	async function ensureExpandedDiffReady(
+		path: string,
+		currentSessionId: string,
+		generation: number,
+	) {
+		await loadDiffEntry(path, currentSessionId, generation);
+		if (generation !== loadGeneration || currentSessionId !== sessionId) {
+			return;
+		}
+		await ensureSnapshot(path, currentSessionId, generation);
+	}
+
+	async function ensureSnapshot(
+		path: string,
+		currentSessionId: string,
+		generation: number,
+	) {
 		const state = diffStates[path];
 		if (!state || state.status !== "ready") {
 			return;
@@ -395,13 +310,15 @@
 			return;
 		}
 
-		diffStates = {
-			...diffStates,
-			[path]: {
-				...state,
+		updateDiffState(path, (current) => {
+			if (current.status !== "ready") {
+				return current;
+			}
+			return {
+				...current,
 				snapshotStatus: "loading",
-			},
-		};
+			};
+		});
 
 		try {
 			let originalContent = "";
@@ -414,7 +331,7 @@
 					state.response.patch,
 				);
 				if (originalContent.length === 0 && state.response.deletions > 0) {
-					const baseFile = await api.readSessionFile(sessionId, path, {
+					const baseFile = await api.readSessionFile(currentSessionId, path, {
 						fromBase: true,
 					});
 					originalContent = baseFile.content;
@@ -423,7 +340,7 @@
 			} else {
 				modifiedContent =
 					fileContents[path] ??
-					(await api.readSessionFile(sessionId, path)).content;
+					(await api.readSessionFile(currentSessionId, path)).content;
 				originalContent =
 					state.response.status === "added"
 						? ""
@@ -433,36 +350,51 @@
 							);
 			}
 
-			const nextState = diffStates[path];
-			if (!nextState || nextState.status !== "ready") {
+			if (generation !== loadGeneration || currentSessionId !== sessionId) {
 				return;
 			}
 
-			diffStates = {
-				...diffStates,
-				[path]: {
-					...nextState,
+			updateDiffState(path, (current) => {
+				if (current.status !== "ready") {
+					return current;
+				}
+				const oldPath = current.response.oldPath ?? path;
+				const oldFile = buildDiffFileContents(
+					oldPath,
+					originalContent,
+					current.patchHash ? `${current.patchHash}:old` : null,
+				);
+				const newFile = buildDiffFileContents(
+					path,
+					modifiedContent,
+					current.patchHash ? `${current.patchHash}:new` : null,
+				);
+				return {
+					...current,
 					snapshotStatus: "ready",
 					snapshot: {
 						originalContent,
 						modifiedContent,
 						source,
 					},
-				},
-			};
+					oldFile,
+					newFile,
+				};
+			});
 		} catch (error) {
-			const nextState = diffStates[path];
-			if (!nextState || nextState.status !== "ready") {
+			if (generation !== loadGeneration || currentSessionId !== sessionId) {
 				return;
 			}
-			diffStates = {
-				...diffStates,
-				[path]: {
-					...nextState,
+			updateDiffState(path, (current) => {
+				if (current.status !== "ready") {
+					return current;
+				}
+				return {
+					...current,
 					snapshotStatus: "error",
 					snapshotError: errorMessage(error),
-				},
-			};
+				};
+			});
 		}
 	}
 
@@ -523,12 +455,6 @@
 		};
 	}
 
-	function loadLargeDiff(path: string) {
-		if (!forceLoadedPaths.includes(path)) {
-			forceLoadedPaths = [...forceLoadedPaths, path];
-		}
-	}
-
 	function statusBadgeClass(
 		status:
 			| SessionSingleFileDiffResponse["status"]
@@ -567,45 +493,32 @@
 		}
 	}
 
-	function showLargeDiffFallback(
-		path: string,
-		state: LoadedDiffState,
-	): boolean {
-		if (state.status !== "ready") {
-			return false;
-		}
-		if (state.lineCount > DIFF_HARD_LIMIT) {
-			return true;
-		}
-		return (
-			state.lineCount > DIFF_WARNING_THRESHOLD &&
-			!forceLoadedPaths.includes(path)
-		);
+	function showLargeDiffFallback(state: LoadedDiffState): boolean {
+		return state.status === "ready" && state.lineCount > DIFF_HARD_LIMIT;
+	}
+
+	function useVirtualizedDiff(state: LoadedDiffState): boolean {
+		return state.status === "ready" && state.lineCount > DIFF_WARNING_THRESHOLD;
 	}
 
 	function getRendererParams(
 		path: string,
 		state: ReadyDiffState,
 	): DiffRendererParams | null {
-		if (state.snapshotStatus !== "ready" || !state.snapshot) {
+		if (
+			state.snapshotStatus !== "ready" ||
+			!state.snapshot ||
+			!state.oldFile ||
+			!state.newFile
+		) {
 			return null;
 		}
-		const oldPath = state.response.oldPath ?? path;
-		const oldFile = buildFileContents(
-			oldPath,
-			state.snapshot.originalContent,
-			state.patchHash ? `${state.patchHash}:old` : null,
-		);
-		const newFile = buildFileContents(
-			path,
-			state.snapshot.modifiedContent,
-			state.patchHash ? `${state.patchHash}:new` : null,
-		);
 		return {
 			diffStyle,
 			resolvedTheme,
-			oldFile,
-			newFile,
+			oldFile: state.oldFile,
+			newFile: state.newFile,
+			virtualized: useVirtualizedDiff(state),
 		};
 	}
 
@@ -823,6 +736,9 @@
 													<span
 														>{state.lineCount.toLocaleString()} diff lines</span
 													>
+													{#if useVirtualizedDiff(state)}
+														<span>Virtualized rendering enabled</span>
+													{/if}
 												{/if}
 												{#if state.snapshotStatus === "ready" && state.snapshot?.source === "base-read"}
 													<span>Deleted snapshot loaded from base</span>
@@ -853,7 +769,7 @@
 										</div>
 									</div>
 
-									{#if !state || state.status === "loading"}
+									{#if !state || state.status === "idle" || state.status === "loading"}
 										<div
 											class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
 										>
@@ -872,7 +788,7 @@
 											This is a binary file, so the text diff cannot be rendered
 											here.
 										</div>
-									{:else if showLargeDiffFallback(file.path, state)}
+									{:else if showLargeDiffFallback(state)}
 										<div
 											class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
 										>
@@ -880,18 +796,9 @@
 												Large diff ({state.lineCount.toLocaleString()} lines)
 											</p>
 											<p class="mt-1">
-												This file exceeds the inline rendering threshold.
+												This file exceeds the inline rendering hard limit.
 											</p>
 											<div class="mt-3 flex flex-wrap items-center gap-2">
-												{#if state.lineCount <= DIFF_HARD_LIMIT}
-													<Button
-														variant="outline"
-														size="sm"
-														onclick={() => loadLargeDiff(file.path)}
-													>
-														Load anyway
-													</Button>
-												{/if}
 												<Button
 													variant="outline"
 													size="sm"
@@ -915,8 +822,9 @@
 										{#if rendererParams}
 											<div
 												class="overflow-hidden rounded-md border border-border bg-background"
-												use:renderPierreDiff={rendererParams}
-											></div>
+											>
+												<DiffReviewFileRenderer params={rendererParams} />
+											</div>
 										{/if}
 									{/if}
 								</div>
