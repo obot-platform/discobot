@@ -108,7 +108,7 @@ function createThreadContext(
 		};
 	});
 
-	const clearStoredComposerDraft = () => {
+	const clearStoredComposerDraft = (storageKey = composerDraftStorageKey) => {
 		clearComposerDraftState({
 			cancelPersist: () => {
 				if (composerDraftPersistTimer !== null) {
@@ -117,7 +117,10 @@ function createThreadContext(
 				}
 			},
 			clearStoredDraft: () => {
-				clearComposerDraft(composerDraftStorageKey);
+				clearComposerDraft(storageKey);
+				if (storageKey === composerDraftStorageKey) {
+					lastStoredComposerDraft = "";
+				}
 			},
 			clearInMemoryDraft: () => {
 				session.ui.setComposerDraft("");

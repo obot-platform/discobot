@@ -160,7 +160,7 @@ export type ThreadContextValue = {
 	planEntries: PlanEntry[];
 	status: AsyncStatus | "streaming";
 	error: string | null;
-	clearComposerDraft: () => void;
+	clearComposerDraft: (storageKey?: string) => void;
 	submit: (payload: {
 		parts: ChatMessage["parts"];
 		mode: "build" | "plan";

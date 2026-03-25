@@ -15,6 +15,7 @@
 	import ConversationHooksPanel from "$lib/components/app/ConversationHooksPanel.svelte";
 	import ConversationQueuePanel from "$lib/components/app/parts/ConversationQueuePanel.svelte";
 	import ConversationWorkspaceSelector from "$lib/components/app/ConversationWorkspaceSelector.svelte";
+	import { resolveComposerDraftStorageKey } from "$lib/composer-draft-storage";
 	import type {
 		ComposerAttachment,
 		ComposerMode,
@@ -255,6 +256,10 @@
 		}
 
 		const trimmedText = sessionView.composerDraft.trim();
+		const pendingDraftStorageKey = resolveComposerDraftStorageKey({
+			isPending: true,
+			threadId: thread.threadId,
+		});
 		const messageParts = await createMessageParts(trimmedText);
 		const model = normalizeModelId(effectiveModelId);
 
@@ -282,7 +287,7 @@
 			if (trimmedText) {
 				preferences.addPromptToHistory(trimmedText);
 			}
-			thread.clearComposerDraft();
+			thread.clearComposerDraft(pendingDraftStorageKey);
 			if (mounted) {
 				sessions.openThread(response.sessionId, response.threadId);
 			}

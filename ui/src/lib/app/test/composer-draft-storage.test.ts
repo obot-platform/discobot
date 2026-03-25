@@ -99,3 +99,17 @@ test("pending drafts stay isolated from thread drafts", () => {
 		assert.equal(readComposerDraft(threadKey), "thread draft");
 	});
 });
+
+test("pending submit can capture the shared pending draft key before session state changes", () => {
+	const pendingKey = resolveComposerDraftStorageKey({
+		isPending: true,
+		threadId: "session-123",
+	});
+	const savedThreadKey = resolveComposerDraftStorageKey({
+		isPending: false,
+		threadId: "session-123",
+	});
+
+	assert.equal(pendingKey, PENDING_COMPOSER_DRAFT_STORAGE_KEY);
+	assert.notEqual(savedThreadKey, pendingKey);
+});
