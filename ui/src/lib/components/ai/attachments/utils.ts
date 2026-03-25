@@ -31,6 +31,15 @@ export function getMediaCategory(
 	return "unknown";
 }
 
+export function canOpenAttachmentFullscreen(data: AttachmentData): boolean {
+	return (
+		data.type === "file" &&
+		getMediaCategory(data) === "image" &&
+		typeof data.url === "string" &&
+		data.url.length > 0
+	);
+}
+
 export function getAttachmentLabel(data: AttachmentData): string {
 	if (data.type === "source-document") {
 		return data.title || data.filename || "Source";

@@ -6,8 +6,10 @@
 	import PaperclipIcon from "@lucide/svelte/icons/paperclip";
 	import VideoIcon from "@lucide/svelte/icons/video";
 	import type { Component } from "svelte";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import { cn } from "$lib/utils";
 	import { useAttachmentContext } from "./context";
+	import { canOpenAttachmentFullscreen, getAttachmentLabel } from "./utils";
 
 	type IconComponent = Component<{ class?: string }>;
 
@@ -21,6 +23,12 @@
 
 	const iconSize = $derived.by(() =>
 		attachment.variant === "inline" ? "size-3" : "size-4",
+	);
+	const attachmentLabel = $derived.by(() =>
+		getAttachmentLabel(attachment.data),
+	);
+	const canPreviewFullscreen = $derived.by(() =>
+		canOpenAttachmentFullscreen(attachment.data),
 	);
 
 	const Icon = $derived.by(() => {
@@ -53,11 +61,47 @@
 	)}
 	{...restProps}
 >
-	{#if attachment.mediaCategory === "image" && attachment.data.type === "file" && attachment.data.url}
+	{#if canPreviewFullscreen && attachment.data.type === "file" && attachment.data.url}
+		<Dialog.Root>
+			<Dialog.Trigger
+				class="focus-visible:ring-ring flex size-full cursor-zoom-in items-center justify-center overflow-hidden rounded-[inherit] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden"
+				aria-label={`Open ${attachmentLabel} full screen`}
+			>
+				{#if attachment.variant === "grid"}
+					<img
+						src={attachment.data.url}
+						alt={attachmentLabel}
+						width="96"
+						height="96"
+						class="size-full object-cover"
+					/>
+				{:else}
+					<img
+						src={attachment.data.url}
+						alt={attachmentLabel}
+						width="20"
+						height="20"
+						class="size-full rounded object-cover"
+					/>
+				{/if}
+			</Dialog.Trigger>
+			<Dialog.Content
+				class="flex max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] items-center justify-center border-none bg-transparent p-0 shadow-none sm:max-w-[calc(100vw-2rem)]"
+				showCloseButton={false}
+			>
+				<Dialog.Title class="sr-only">{attachmentLabel}</Dialog.Title>
+				<img
+					src={attachment.data.url}
+					alt={attachmentLabel}
+					class="max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg object-contain"
+				/>
+			</Dialog.Content>
+		</Dialog.Root>
+	{:else if attachment.mediaCategory === "image" && attachment.data.type === "file" && attachment.data.url}
 		{#if attachment.variant === "grid"}
 			<img
 				src={attachment.data.url}
-				alt={attachment.data.filename || "Image"}
+				alt={attachmentLabel}
 				width="96"
 				height="96"
 				class="size-full object-cover"
@@ -65,7 +109,7 @@
 		{:else}
 			<img
 				src={attachment.data.url}
-				alt={attachment.data.filename || "Image"}
+				alt={attachmentLabel}
 				width="20"
 				height="20"
 				class="size-full rounded object-cover"
