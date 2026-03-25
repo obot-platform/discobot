@@ -4,10 +4,14 @@ import { api } from "$lib/api-client";
 import type { EnvSetWithVars } from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
 
+import { RequestCoalescer } from "./request-coalescer";
+
 export class EnvSetStore {
 	#items = $state<EnvSetWithVars[]>([]);
 	#status = $state<AsyncStatus>("idle");
 	#inflight = new SvelteSet<string>();
+	#fetchRequests = new RequestCoalescer<"list">();
+	#fetchOneRequests = new RequestCoalescer<string>();
 
 	get list(): EnvSetWithVars[] {
 		return this.#items;
@@ -28,31 +32,37 @@ export class EnvSetStore {
 	}
 
 	async fetch(): Promise<void> {
-		this.#status = "loading";
-		try {
-			const { envSets } = await api.listEnvSets();
-			this.#items = await Promise.all(envSets.map((e) => api.getEnvSet(e.id)));
-			this.#status = "ready";
-		} catch {
-			this.#status = "error";
-		}
+		return this.#fetchRequests.run("list", async () => {
+			this.#status = "loading";
+			try {
+				const { envSets } = await api.listEnvSets();
+				this.#items = await Promise.all(
+					envSets.map((e) => api.getEnvSet(e.id)),
+				);
+				this.#status = "ready";
+			} catch {
+				this.#status = "error";
+			}
+		});
 	}
 
 	async fetchOne(id: string): Promise<void> {
-		try {
-			const envSet = await api.getEnvSet(id);
-			const idx = this.#items.findIndex((e) => e.id === id);
-			if (idx === -1) {
-				this.#items = [...this.#items, envSet];
-			} else {
-				this.#items = this.#items.map((e, i) => (i === idx ? envSet : e));
+		return this.#fetchOneRequests.run(id, async () => {
+			try {
+				const envSet = await api.getEnvSet(id);
+				const idx = this.#items.findIndex((e) => e.id === id);
+				if (idx === -1) {
+					this.#items = [...this.#items, envSet];
+				} else {
+					this.#items = this.#items.map((e, i) => (i === idx ? envSet : e));
+				}
+				if (this.#status !== "ready") {
+					this.#status = "ready";
+				}
+			} catch (error) {
+				console.error("[EnvSetStore] Failed to fetch env set:", id, error);
 			}
-			if (this.#status !== "ready") {
-				this.#status = "ready";
-			}
-		} catch (error) {
-			console.error("[EnvSetStore] Failed to fetch env set:", id, error);
-		}
+		});
 	}
 
 	async create(

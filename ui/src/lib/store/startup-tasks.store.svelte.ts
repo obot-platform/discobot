@@ -2,9 +2,12 @@ import { api } from "$lib/api-client";
 import type { StartupTask } from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
 
+import { RequestCoalescer } from "./request-coalescer";
+
 export class StartupTaskStore {
 	#items = $state<StartupTask[]>([]);
 	#status = $state<AsyncStatus>("idle");
+	#fetchRequests = new RequestCoalescer<"list">();
 
 	get list(): StartupTask[] {
 		return this.#items;
@@ -24,13 +27,15 @@ export class StartupTaskStore {
 	}
 
 	async fetch(): Promise<void> {
-		this.#status = "loading";
-		try {
-			const status = await api.getSystemStatus();
-			this.#items = status.startupTasks ?? [];
-			this.#status = "ready";
-		} catch {
-			this.#status = "error";
-		}
+		return this.#fetchRequests.run("list", async () => {
+			this.#status = "loading";
+			try {
+				const status = await api.getSystemStatus();
+				this.#items = status.startupTasks ?? [];
+				this.#status = "ready";
+			} catch {
+				this.#status = "error";
+			}
+		});
 	}
 }

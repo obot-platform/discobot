@@ -6,10 +6,13 @@ import type {
 } from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
 
+import { RequestCoalescer } from "./request-coalescer";
+
 export class CredentialStore {
 	#items = $state<CredentialInfo[]>([]);
 	#credentialTypes = $state<CredentialType[]>([]);
 	#status = $state<AsyncStatus>("idle");
+	#fetchRequests = new RequestCoalescer<"list">();
 
 	get list(): CredentialInfo[] {
 		return this.#items;
@@ -36,18 +39,20 @@ export class CredentialStore {
 	}
 
 	async fetch(): Promise<void> {
-		this.#status = "loading";
-		try {
-			const [{ credentialTypes }, { credentials }] = await Promise.all([
-				api.getCredentialTypes(),
-				api.getCredentials(),
-			]);
-			this.#credentialTypes = credentialTypes;
-			this.#items = credentials;
-			this.#status = "ready";
-		} catch {
-			this.#status = "error";
-		}
+		return this.#fetchRequests.run("list", async () => {
+			this.#status = "loading";
+			try {
+				const [{ credentialTypes }, { credentials }] = await Promise.all([
+					api.getCredentialTypes(),
+					api.getCredentials(),
+				]);
+				this.#credentialTypes = credentialTypes;
+				this.#items = credentials;
+				this.#status = "ready";
+			} catch {
+				this.#status = "error";
+			}
+		});
 	}
 
 	async save(

@@ -8,10 +8,14 @@ import type {
 } from "$lib/api-types";
 import type { AsyncStatus } from "$lib/shell-types";
 
+import { RequestCoalescer } from "./request-coalescer";
+
 export class WorkspaceStore {
 	#items = $state<Workspace[]>([]);
 	#status = $state<AsyncStatus>("idle");
 	#inflight = new SvelteSet<string>();
+	#fetchRequests = new RequestCoalescer<"list">();
+	#fetchOneRequests = new RequestCoalescer<string>();
 
 	get list(): Workspace[] {
 		return this.#items;
@@ -32,31 +36,35 @@ export class WorkspaceStore {
 	}
 
 	async fetch(): Promise<void> {
-		this.#status = "loading";
-		try {
-			const { workspaces } = await api.getWorkspaces();
-			this.#items = workspaces;
-			this.#status = "ready";
-		} catch {
-			this.#status = "error";
-		}
+		return this.#fetchRequests.run("list", async () => {
+			this.#status = "loading";
+			try {
+				const { workspaces } = await api.getWorkspaces();
+				this.#items = workspaces;
+				this.#status = "ready";
+			} catch {
+				this.#status = "error";
+			}
+		});
 	}
 
 	async fetchOne(id: string): Promise<void> {
-		try {
-			const workspace = await api.getWorkspace(id);
-			const idx = this.#items.findIndex((w) => w.id === id);
-			if (idx === -1) {
-				this.#items = [...this.#items, workspace];
-			} else {
-				this.#items = this.#items.map((w, i) => (i === idx ? workspace : w));
+		return this.#fetchOneRequests.run(id, async () => {
+			try {
+				const workspace = await api.getWorkspace(id);
+				const idx = this.#items.findIndex((w) => w.id === id);
+				if (idx === -1) {
+					this.#items = [...this.#items, workspace];
+				} else {
+					this.#items = this.#items.map((w, i) => (i === idx ? workspace : w));
+				}
+				if (this.#status !== "ready") {
+					this.#status = "ready";
+				}
+			} catch (error) {
+				console.error("[WorkspaceStore] Failed to fetch workspace:", id, error);
 			}
-			if (this.#status !== "ready") {
-				this.#status = "ready";
-			}
-		} catch (error) {
-			console.error("[WorkspaceStore] Failed to fetch workspace:", id, error);
-		}
+		});
 	}
 
 	async validate(
