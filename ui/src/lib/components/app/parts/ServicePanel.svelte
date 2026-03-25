@@ -65,7 +65,6 @@
 	}: Props = $props();
 
 	let isLoading = $state(true);
-	let hasLoadedOnce = $state(false);
 	let error = $state<string | null>(null);
 	let internalRefreshKey = $state(0);
 	let currentPath = $state("/");
@@ -204,7 +203,6 @@
 	}
 
 	function handleIframeLoad() {
-		hasLoadedOnce = true;
 		isLoading = false;
 		error = null;
 	}
@@ -296,7 +294,6 @@
 		void currentService?.https;
 		currentPath = normalizePath(currentService?.urlPath);
 		inputPath = normalizePath(currentService?.urlPath);
-		hasLoadedOnce = false;
 		isLoading = true;
 		error = null;
 		internalRefreshKey = 0;
@@ -652,17 +649,6 @@
 									Start service
 								</Button>
 							{/if}
-						</div>
-					</div>
-				{/if}
-
-				{#if shouldShowIframe && isLoading && !hasLoadedOnce}
-					<div
-						class="absolute inset-0 z-10 flex items-center justify-center bg-background/80"
-					>
-						<div class="flex flex-col items-center gap-2 text-muted-foreground">
-							<RefreshCwIcon class="size-6 animate-spin" />
-							<span class="text-sm">Loading service...</span>
 						</div>
 					</div>
 				{/if}
