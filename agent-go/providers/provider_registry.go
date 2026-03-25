@@ -126,6 +126,21 @@ func (r *ProviderRegistry) Resolve(modelRef string) (Provider, string, error) {
 //   - ref == "providerID":    use that provider's default for taskType.
 //   - ref == "provider/model": parse and return as-is.
 func (r *ProviderRegistry) ResolveModel(ref string, taskType string) (ModelRef, error) {
+	return r.ResolveModelInProvider("", ref, taskType)
+}
+
+// ResolveModelInProvider resolves a model reference string relative to the
+// given current provider when needed. taskType should be one of the ModelTask*
+// constants (e.g. ModelTaskChat).
+//
+// Resolution order:
+//   - ref == "":                    resolve the default for taskType
+//   - ref == "providerID":          resolve that provider's default for taskType
+//   - ref == "provider/model":      parse and return as-is
+//   - ref == "model":               resolve as currentProviderID/model when currentProviderID is set
+//   - ref == "supporting_model":    resolve the current provider's default for that supporting model type
+func (r *ProviderRegistry) ResolveModelInProvider(currentProviderID, ref string, taskType string) (ModelRef, error) {
+	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ids := r.IDs()
 		if len(ids) == 0 {
@@ -149,12 +164,20 @@ func (r *ProviderRegistry) ResolveModel(ref string, taskType string) (ModelRef, 
 		)
 	}
 
-	if !strings.Contains(ref, "/") {
-		// Provider-only ref: look up that provider's default.
-		p, err := r.Get(ref)
-		if err != nil {
-			return ModelRef{}, fmt.Errorf("provider %q: %w", ref, err)
+	if strings.Contains(ref, "/") {
+		// Fully-qualified "providerId/modelId".
+		return ParseModelRef(ref)
+	}
+
+	if resolvedTaskType, ok := supportingModelTaskType(SupportingModelType(ref)); ok {
+		if currentProviderID == "" {
+			return ModelRef{}, fmt.Errorf("supporting model type %q requires a current provider", ref)
 		}
+		return r.ResolveModelInProvider("", currentProviderID, resolvedTaskType)
+	}
+
+	// Provider-only ref: look up that provider's default.
+	if p, err := r.Get(ref); err == nil {
 		modelRef := p.DefaultModels()[taskType]
 		if modelRef.ModelID == "" {
 			return ModelRef{}, fmt.Errorf("provider %q has no default %q model", ref, taskType)
@@ -162,8 +185,69 @@ func (r *ProviderRegistry) ResolveModel(ref string, taskType string) (ModelRef, 
 		return modelRef, nil
 	}
 
-	// Fully-qualified "providerId/modelId".
-	return ParseModelRef(ref)
+	if currentProviderID != "" {
+		return ModelRef{ProviderID: currentProviderID, ModelID: ref}, nil
+	}
+
+	// Fall back to the provider-only path so the caller gets the provider-focused
+	// error when no current provider was available for a bare model ID.
+	p, err := r.Get(ref)
+	if err != nil {
+		return ModelRef{}, fmt.Errorf("provider %q: %w", ref, err)
+	}
+	modelRef := p.DefaultModels()[taskType]
+	if modelRef.ModelID == "" {
+		return ModelRef{}, fmt.Errorf("provider %q has no default %q model", ref, taskType)
+	}
+	return modelRef, nil
+}
+
+func supportingModelTaskType(modelType SupportingModelType) (ModelTaskType, bool) {
+	switch modelType {
+	case SupportingModelThreadSummarization:
+		return ModelTaskThreadSummarization, true
+	default:
+		return "", false
+	}
+}
+
+func CurrentProviderFromRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	if strings.Contains(ref, "/") {
+		parsed, err := ParseModelRef(ref)
+		if err != nil {
+			return ""
+		}
+		return parsed.ProviderID
+	}
+	return ref
+}
+
+// ResolveSupportingModel resolves a task-specific supporting model using the
+// already-resolved main model as the fallback anchor.
+//
+// Resolution order:
+//   - explicit override in overrides[taskType], if provided
+//   - the main model's provider default for taskType
+//   - the resolved main model itself
+func (r *ProviderRegistry) ResolveSupportingModel(main ModelRef, overrides SupportingModels, modelType SupportingModelType) (ModelRef, error) {
+	taskType := string(modelType)
+	if override := strings.TrimSpace(overrides[modelType]); override != "" {
+		return r.ResolveModelInProvider(main.ProviderID, override, taskType)
+	}
+
+	p, err := r.Get(main.ProviderID)
+	if err != nil {
+		return ModelRef{}, fmt.Errorf("provider %q: %w", main.ProviderID, err)
+	}
+	if ref := p.DefaultModels()[taskType]; ref.ModelID != "" {
+		return ref, nil
+	}
+
+	return main, nil
 }
 
 // ListModels queries all providers that are currently configured (have

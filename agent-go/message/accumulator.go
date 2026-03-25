@@ -30,6 +30,7 @@ type ChunkAccumulator struct {
 	finish   *FinishChunk
 	respMeta *ResponseMetadataChunk
 	warnings []Warning
+	errors   []ErrorChunk
 
 	closed bool
 }
@@ -183,7 +184,10 @@ func (a *ChunkAccumulator) Push(chunk ProviderMessageChunk) {
 	case ResponseMetadataChunk:
 		a.respMeta = &c
 
-	case RawChunk, ErrorChunk:
+	case ErrorChunk:
+		a.errors = append(a.errors, c)
+
+	case RawChunk:
 		// Not accumulated into the message.
 	}
 }
@@ -253,4 +257,9 @@ func (a *ChunkAccumulator) Sources() []SourceChunk {
 // Warnings returns any warnings from the StreamStartChunk.
 func (a *ChunkAccumulator) Warnings() []Warning {
 	return a.warnings
+}
+
+// Errors returns any provider error chunks received during the stream.
+func (a *ChunkAccumulator) Errors() []ErrorChunk {
+	return a.errors
 }

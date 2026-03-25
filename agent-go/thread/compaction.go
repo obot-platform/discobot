@@ -176,6 +176,7 @@ func estimateTokens(messages []message.Message) int {
 func maybeCompact(
 	ctx context.Context,
 	provider providers.Provider,
+	providerResolver providers.ProviderResolver,
 	store *Store,
 	threadID string,
 	_ *TurnState,
@@ -213,7 +214,7 @@ func maybeCompact(
 		// Existing compaction no longer fits — re-compact using it as the base
 		// so the LLM sees [old summary + new messages] rather than the full raw
 		// history. This avoids re-processing already-summarised messages.
-		return performCompaction(ctx, provider, store, threadID, cfg, historyEntries, compacted, budget)
+		return performCompaction(ctx, provider, providerResolver, store, threadID, cfg, historyEntries, compacted, budget)
 	}
 
 	// No existing compaction — count tokens on the full history.
@@ -223,7 +224,7 @@ func maybeCompact(
 	}
 
 	// Perform first-time compaction of the full conversation.
-	return performCompaction(ctx, provider, store, threadID, cfg, historyEntries, nil, budget)
+	return performCompaction(ctx, provider, providerResolver, store, threadID, cfg, historyEntries, nil, budget)
 }
 
 // forceCompact unconditionally compacts the conversation, ignoring any
@@ -232,6 +233,7 @@ func maybeCompact(
 func forceCompact(
 	ctx context.Context,
 	provider providers.Provider,
+	providerResolver providers.ProviderResolver,
 	store *Store,
 	threadID string,
 	cfg *TurnConfig,
@@ -255,7 +257,7 @@ func forceCompact(
 		baseMessages = applyCompaction(existing, historyEntries)
 	}
 
-	return performCompaction(ctx, provider, store, threadID, cfg, historyEntries, baseMessages, budget)
+	return performCompaction(ctx, provider, providerResolver, store, threadID, cfg, historyEntries, baseMessages, budget)
 }
 
 // ForceCompactThread forces compaction immediately for the specified thread leaf.
@@ -264,6 +266,7 @@ func forceCompact(
 func ForceCompactThread(
 	ctx context.Context,
 	provider providers.Provider,
+	providerResolver providers.ProviderResolver,
 	store *Store,
 	threadID string,
 	leafID string,
@@ -288,7 +291,7 @@ func ForceCompactThread(
 		return false, nil
 	}
 
-	if _, err := forceCompact(ctx, provider, store, threadID, cfg, historyEntries); err != nil {
+	if _, err := forceCompact(ctx, provider, providerResolver, store, threadID, cfg, historyEntries); err != nil {
 		return false, err
 	}
 
@@ -305,6 +308,7 @@ func ForceCompactThread(
 func performCompaction(
 	ctx context.Context,
 	provider providers.Provider,
+	providerResolver providers.ProviderResolver,
 	store *Store,
 	threadID string,
 	cfg *TurnConfig,
@@ -356,7 +360,7 @@ func performCompaction(
 	}
 
 	// Generate the summary.
-	summaryText, err := generateSummary(ctx, provider, cfg, messagesToSummarize, budget)
+	summaryText, err := generateSummary(ctx, provider, providerResolver, cfg, messagesToSummarize, budget)
 	if err != nil {
 		return fullHistory, fmt.Errorf("generate summary: %w", err)
 	}
@@ -489,6 +493,7 @@ func allToolCallsResolved(messages []message.Message, endPos int) bool {
 func generateSummary(
 	ctx context.Context,
 	provider providers.Provider,
+	providerResolver providers.ProviderResolver,
 	cfg *TurnConfig,
 	messagesToSummarize []message.Message,
 	budget tokenBudget,
@@ -498,7 +503,7 @@ func generateSummary(
 
 	for {
 		// Try to summarise everything that remains.
-		text, err := doSummaryCall(ctx, provider, cfg, messages, budget)
+		text, err := doSummaryCall(ctx, provider, providerResolver, cfg, messages, budget)
 		if err == nil {
 			return text, nil
 		}
@@ -523,7 +528,7 @@ func generateSummary(
 		var subText string
 		var subErr error
 		for n >= 1 {
-			subText, subErr = doSummaryCall(ctx, provider, cfg, messages[:n], budget)
+			subText, subErr = doSummaryCall(ctx, provider, providerResolver, cfg, messages[:n], budget)
 			if subErr == nil {
 				break
 			}
@@ -558,6 +563,7 @@ func generateSummary(
 func doSummaryCall(
 	ctx context.Context,
 	provider providers.Provider,
+	providerResolver providers.ProviderResolver,
 	cfg *TurnConfig,
 	messages []message.Message,
 	budget tokenBudget,
@@ -569,15 +575,21 @@ func doSummaryCall(
 		Parts: []message.Part{message.TextPart{Text: summaryRequestPrompt}},
 	}
 
+	summaryRef, summaryProvider, err := resolveSupportingProvider(provider, providerResolver, cfg, providers.SupportingModelThreadSummarization)
+	if err != nil {
+		return "", err
+	}
+
 	maxTokens := budget.SummaryMaxTokens
 	req := providers.CompleteRequest{
-		Model:     providers.ModelRef{ProviderID: cfg.ProviderID, ModelID: cfg.Model},
+		Model:     summaryRef,
 		Messages:  withRequest,
 		MaxTokens: &maxTokens,
+		Reasoning: providers.ReasoningNone,
 	}
 
 	acc := message.NewChunkAccumulator()
-	for chunk, chunkErr := range provider.Complete(ctx, req) {
+	for chunk, chunkErr := range summaryProvider.Complete(ctx, req) {
 		if chunkErr != nil {
 			acc.Close()
 			return "", fmt.Errorf("summary completion: %w", chunkErr)
@@ -598,6 +610,33 @@ func doSummaryCall(
 		return "", fmt.Errorf("empty summary generated")
 	}
 	return text, nil
+}
+
+func resolveSupportingProvider(
+	mainProvider providers.Provider,
+	providerResolver providers.ProviderResolver,
+	cfg *TurnConfig,
+	taskType providers.SupportingModelType,
+) (providers.ModelRef, providers.Provider, error) {
+	ref := providers.ModelRef{ProviderID: cfg.ProviderID, ModelID: cfg.Model}
+	if rawRef := strings.TrimSpace(cfg.SupportingModels[taskType]); rawRef != "" {
+		parsed, err := providers.ParseModelRef(rawRef)
+		if err != nil {
+			return providers.ModelRef{}, nil, fmt.Errorf("parse supporting model %q: %w", taskType, err)
+		}
+		ref = parsed
+	}
+	if ref.ProviderID == cfg.ProviderID {
+		return ref, mainProvider, nil
+	}
+	if providerResolver == nil {
+		return providers.ModelRef{}, nil, fmt.Errorf("resolve provider for supporting model %q: provider resolver unavailable", taskType)
+	}
+	provider, err := providerResolver.Get(ref.ProviderID)
+	if err != nil {
+		return providers.ModelRef{}, nil, fmt.Errorf("resolve provider for supporting model %q: %w", taskType, err)
+	}
+	return ref, provider, nil
 }
 
 // formatTranscript converts messages into a human-readable transcript.

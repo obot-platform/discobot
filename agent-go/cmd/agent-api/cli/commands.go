@@ -355,9 +355,15 @@ func handleModelsCommand(ctx context.Context, reg *providers.ProviderRegistry, c
 			return
 		}
 
-		// Accept a bare provider ID or a full "provider/model" ref.
-		if _, err := reg.ResolveModel(input, providers.ModelTaskChat); err == nil {
-			*currentModel = input
+		// Accept a bare provider ID, a bare model relative to the current
+		// provider, a supporting model type relative to the current provider,
+		// or a full "provider/model" ref.
+		if ref, err := reg.ResolveModelInProvider(providers.CurrentProviderFromRef(*currentModel), input, providers.ModelTaskChat); err == nil {
+			if input == ref.ProviderID {
+				*currentModel = input
+			} else {
+				*currentModel = ref.String()
+			}
 			fmt.Fprintf(os.Stderr, "Model set to %s\n", *currentModel)
 			return
 		}

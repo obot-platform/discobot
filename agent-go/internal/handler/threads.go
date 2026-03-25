@@ -24,9 +24,6 @@ func threadResponse(threadID string, cfg thread.Config, fallbackName string) api
 	if name == "" {
 		name = strings.TrimSpace(fallbackName)
 	}
-	if name == "" {
-		name = threadID
-	}
 
 	mode := ""
 	if cfg.PlanMode {
@@ -62,7 +59,7 @@ func (h *Handler) ListThreads(w http.ResponseWriter, _ *http.Request) {
 	store := h.defaultAgent.Store()
 	for _, threadID := range threadIDs {
 		cfg, _ := store.LoadConfig(threadID)
-		threads = append(threads, threadResponse(threadID, cfg, threadID))
+		threads = append(threads, threadResponse(threadID, cfg, ""))
 	}
 
 	h.JSON(w, http.StatusOK, api.ListThreadsResponse{Threads: threads})
@@ -107,6 +104,7 @@ func (h *Handler) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 	if trimmedName := strings.TrimSpace(req.Name); trimmedName != "" {
 		cfg.Name = trimmedName
+		cfg.NameSource = thread.ThreadNameSourceUser
 		if err := store.SaveConfig(req.ID, cfg); err != nil {
 			h.Error(w, http.StatusInternalServerError, err.Error())
 			return
@@ -145,7 +143,7 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.JSON(w, http.StatusOK, threadResponse(threadID, cfg, threadID))
+	h.JSON(w, http.StatusOK, threadResponse(threadID, cfg, ""))
 }
 
 // UpdateThread handles PUT/PATCH /threads/{id} — updates thread metadata.
@@ -187,6 +185,7 @@ func (h *Handler) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg.Name = req.Name
+	cfg.NameSource = thread.ThreadNameSourceUser
 	if err := store.SaveConfig(threadID, cfg); err != nil {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return

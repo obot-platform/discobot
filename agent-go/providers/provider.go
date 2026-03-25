@@ -11,11 +11,26 @@ import (
 // ModelTaskType identifies the intended use of a model within a provider's
 // default model map.
 type ModelTaskType = string
+type SupportingModelType string
+type SupportingModels map[SupportingModelType]string
 
 const (
 	// ModelTaskChat is the default general-purpose conversational/agent model.
 	ModelTaskChat ModelTaskType = "chat"
+
+	// SupportingModelThreadSummarization is the auxiliary model kind used for
+	// thread title generation and conversation summarization.
+	SupportingModelThreadSummarization SupportingModelType = "thread_summarization"
+
+	// ModelTaskThreadSummarization is used for auxiliary thread title and
+	// conversation summary generation.
+	ModelTaskThreadSummarization ModelTaskType = string(SupportingModelThreadSummarization)
 )
+
+// ProviderResolver resolves providers by ID.
+type ProviderResolver interface {
+	Get(id string) (Provider, error)
+}
 
 // Provider is the interface that LLM provider implementations must satisfy.
 // Each provider is identified by an ID matching its models.dev ID
@@ -42,7 +57,6 @@ type Provider interface {
 	ListModels(ctx context.Context) ([]ModelInfo, error)
 
 	// DefaultModels returns the provider's recommended models keyed by task type.
-	// The only task type currently used is "chat".
 	// Returns nil if the provider has no defaults.
 	DefaultModels() map[string]ModelRef
 }

@@ -88,7 +88,8 @@ The agent-go message format is compatible with the existing UI. Key points:
 - Chat SSE additionally emits `ping` events with `{}` payloads to keep the
   connection alive between completions
 - Chat SSE may emit `data-thread-name` chunks before the assistant reply when
-  the backend auto-generates a friendly thread title from the first user prompt
+  the backend auto-generates or refines a friendly thread title from the first
+  user prompt using agent-go's internal supporting-model selection
 
 ## System Prompt Delivery
 

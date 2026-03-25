@@ -110,7 +110,8 @@ func (a *DefaultAgent) Close() {
 // If req.SubagentType is set, the named SubAgentConfig from session config is
 // used to restrict tools, override the model, and set the system prompt.
 //
-// The req.Model field should be in "providerId/modelId" format for new turns.
+// Model references may be empty, a bare provider ID, a bare model/supporting
+// type relative to the current provider, or a full "providerId/modelId" ref.
 // For resume (empty req), the provider is resolved from the persisted turn state.
 //
 // If the user message is exactly "/clear", the thread is marked to start a fresh
@@ -144,6 +145,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		PromptRequestPlanMode: promptRequestPlanMode,
 		SubagentDepth:         currentDepth,
 		CurrentTaskID:         req.ParentTaskID,
+		ProviderResolver:      a.registry,
 		Agent:                 a,
 	}
 
@@ -183,10 +185,12 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		tools = filterTools(tools, subAgentCfg.AllowedTools, subAgentCfg.DisallowedTools)
 	}
 
-	// Determine model: sub-agent model overrides request model.
+	// Determine model: the request/thread selects the base current provider,
+	// then a sub-agent override can resolve relative to that provider.
 	model := req.Model
-	if subAgentCfg != nil && subAgentCfg.Model != "" {
-		model = subAgentCfg.Model
+	supportingModels := req.SupportingModels
+	if subAgentCfg != nil && len(subAgentCfg.SupportingModels) > 0 {
+		supportingModels = mergeSupportingModels(req.SupportingModels, subAgentCfg.SupportingModels)
 	}
 
 	// Determine system prompt: sub-agent prompt overrides session default.
@@ -227,11 +231,26 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		model = threadCfg.Model
 	}
 
-	// Resolve the model reference: "" → provider default, "providerID" → provider default,
-	// "provider/model" → explicit. Always resolves to a concrete provider/model pair.
-	ref, err := a.registry.ResolveModel(model, providers.ModelTaskChat)
+	currentProviderID := ""
+	if threadCfgErr == nil {
+		currentProviderID = providers.CurrentProviderFromRef(threadCfg.Model)
+	}
+
+	// Resolve the base model first so later references can resolve relative to
+	// its provider when they use a bare model ID or supporting model type.
+	ref, err := a.registry.ResolveModelInProvider(currentProviderID, model, providers.ModelTaskChat)
 	if err != nil {
 		return errorIter(fmt.Errorf("invalid model: %w", err))
+	}
+	if subAgentCfg != nil && subAgentCfg.Model != "" {
+		ref, err = a.registry.ResolveModelInProvider(ref.ProviderID, subAgentCfg.Model, providers.ModelTaskChat)
+		if err != nil {
+			return errorIter(fmt.Errorf("invalid sub-agent model: %w", err))
+		}
+	}
+	threadSummaryRef, err := a.registry.ResolveSupportingModel(ref, supportingModels, providers.SupportingModelThreadSummarization)
+	if err != nil {
+		return errorIter(fmt.Errorf("invalid thread summarization model: %w", err))
 	}
 	providerID, modelID := ref.ProviderID, ref.ModelID
 	toolCtx.ProviderID = providerID
@@ -262,6 +281,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 	cfg := thread.TurnConfig{
 		ProviderID:            providerID,
 		Model:                 modelID,
+		SupportingModels:      compactSupportingModels(ref, map[providers.SupportingModelType]providers.ModelRef{providers.SupportingModelThreadSummarization: threadSummaryRef}),
 		Reasoning:             providers.Reasoning(req.Reasoning),
 		PromptRequestPlanMode: promptRequestPlanMode,
 		UserParts:             message.UIPartsToParts(expandLegacyCommand(a.cwd, req.UserParts)),
@@ -423,6 +443,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			if model != "" {
 				state.Config.ProviderID = providerID
 				state.Config.Model = modelID
+				state.Config.SupportingModels = cfg.SupportingModels
 				state.Config.Reasoning = cfg.Reasoning
 				state.Config.MaxSteps = cfg.MaxSteps
 			}
@@ -444,15 +465,39 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			return
 		}
 
-		if generatedName := generatedThreadName(req.UserParts); shouldGenerateThreadName(threadCfg) && generatedName != "" {
-			threadCfg.Name = generatedName
+		threadNameChanged := false
+		if shouldGenerateThreadName(threadCfg) {
+			generatedName := threadCfg.Name
+			if strings.TrimSpace(generatedName) == "" {
+				generatedName = generatedThreadName(req.UserParts)
+			}
+			log.Printf("agent: thread naming start for %s: current=%q source=%q fallback=%q model=%s",
+				threadID, threadCfg.Name, threadCfg.NameSource, generatedName, threadSummaryRef.String())
+			if aiName, err := a.generateThreadName(ctx, req.UserParts, threadSummaryRef); err != nil {
+				log.Printf("agent: warning: generate thread name: %v", err)
+			} else if aiName != "" {
+				log.Printf("agent: thread naming AI result for %s: %q", threadID, aiName)
+				generatedName = aiName
+			} else {
+				log.Printf("agent: thread naming AI result for %s was empty; keeping fallback %q", threadID, generatedName)
+			}
+			if generatedName != "" {
+				threadNameChanged = threadCfg.Name != generatedName
+				threadCfg.Name = generatedName
+				threadCfg.NameSource = thread.ThreadNameSourceGenerated
+				log.Printf("agent: thread naming final for %s: final=%q changed=%t", threadID, threadCfg.Name, threadNameChanged)
+			} else {
+				log.Printf("agent: thread naming produced no name for %s", threadID)
+			}
+		}
+		if threadNameChanged {
 			if err := a.store.SaveConfig(threadID, threadCfg); err != nil {
 				yield(nil, fmt.Errorf("save thread name: %w", err))
 				return
 			}
 			if !yield(message.ThreadNameChunk{
 				Data: message.ThreadNameData{
-					Name: generatedName,
+					Name: threadCfg.Name,
 				},
 			}, nil) {
 				return
@@ -501,6 +546,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		}
 		_ = a.store.SaveConfig(threadID, thread.Config{
 			Name:         threadCfg.Name,
+			NameSource:   threadCfg.NameSource,
 			Model:        cfg.ProviderID + "/" + cfg.Model,
 			Reasoning:    cfg.Reasoning,
 			CWD:          cwd,
@@ -554,7 +600,10 @@ func formatModeChangeReminder(planMode bool) string {
 const generatedThreadNameMaxRunes = 72
 
 func shouldGenerateThreadName(cfg thread.Config) bool {
-	return strings.TrimSpace(cfg.Name) == ""
+	if strings.TrimSpace(cfg.Name) == "" {
+		return true
+	}
+	return cfg.NameSource == thread.ThreadNameSourceGenerated
 }
 
 func generatedThreadName(parts []message.UIPart) string {
@@ -580,6 +629,110 @@ func generatedThreadName(parts []message.UIPart) string {
 		return text
 	}
 	return strings.TrimSpace(string(runes[:generatedThreadNameMaxRunes-1])) + "…"
+}
+
+func mergeSupportingModels(base, override providers.SupportingModels) providers.SupportingModels {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := make(providers.SupportingModels, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+	return merged
+}
+
+func compactSupportingModels(main providers.ModelRef, resolved map[providers.SupportingModelType]providers.ModelRef) providers.SupportingModels {
+	if len(resolved) == 0 {
+		return nil
+	}
+	compacted := make(providers.SupportingModels, len(resolved))
+	for taskType, ref := range resolved {
+		if ref == main || ref.ModelID == "" {
+			continue
+		}
+		compacted[taskType] = ref.String()
+	}
+	if len(compacted) == 0 {
+		return nil
+	}
+	return compacted
+}
+
+func (a *DefaultAgent) generateThreadName(ctx context.Context, parts []message.UIPart, modelRef providers.ModelRef) (string, error) {
+	starter := generatedThreadName(parts)
+	if starter == "" {
+		return "", nil
+	}
+
+	provider, err := a.registry.Get(modelRef.ProviderID)
+	if err != nil {
+		return "", err
+	}
+
+	maxTokens := 48
+	req := providers.CompleteRequest{
+		Model: providers.ModelRef{
+			ProviderID: modelRef.ProviderID,
+			ModelID:    modelRef.ModelID,
+		},
+		Messages: []message.Message{{
+			Role: "user",
+			Parts: []message.Part{message.TextPart{Text: fmt.Sprintf(
+				"Generate a concise thread title for this conversation starter.\n\nRules:\n- Return only the title.\n- Do not use quotes.\n- Keep it under %d characters.\n- Preserve important technical terms.\n\nConversation starter:\n%s",
+				generatedThreadNameMaxRunes,
+				starter,
+			)}},
+		}},
+		MaxTokens: &maxTokens,
+		Reasoning: providers.ReasoningNone,
+	}
+
+	acc := message.NewChunkAccumulator()
+	for chunk, chunkErr := range provider.Complete(ctx, req) {
+		if chunkErr != nil {
+			acc.Close()
+			return "", chunkErr
+		}
+		log.Printf("agent: thread naming chunk for model %s: %T", modelRef.String(), chunk)
+		acc.Push(chunk)
+	}
+	acc.Close()
+
+	result := acc.Message()
+	partTypes := make([]string, 0, len(result.Parts))
+	var sb strings.Builder
+	for _, part := range result.Parts {
+		partTypes = append(partTypes, fmt.Sprintf("%T", part))
+		if tp, ok := part.(message.TextPart); ok {
+			sb.WriteString(tp.Text)
+		}
+	}
+	log.Printf("agent: thread naming accumulated result for model %s: parts=%v rawTextLen=%d rawText=%q",
+		modelRef.String(), partTypes, sb.Len(), sb.String())
+	if len(acc.Errors()) > 0 {
+		log.Printf("agent: thread naming accumulated errors for model %s: %#v", modelRef.String(), acc.Errors())
+	}
+
+	name := strings.TrimSpace(sb.String())
+	if idx := strings.IndexByte(name, '\n'); idx >= 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+	name = strings.Trim(name, "\"'`")
+	name = strings.Join(strings.Fields(name), " ")
+	log.Printf("agent: thread naming normalized result for model %s: len=%d value=%q", modelRef.String(), len(name), name)
+	if name == "" {
+		return "", nil
+	}
+
+	runes := []rune(name)
+	if len(runes) > generatedThreadNameMaxRunes {
+		name = strings.TrimSpace(string(runes[:generatedThreadNameMaxRunes-1])) + "…"
+	}
+	return name, nil
 }
 
 func firstThreadNameText(parts []message.UIPart) string {
@@ -715,7 +868,8 @@ func (a *DefaultAgent) handleCompactCommand(ctx context.Context, threadID string
 		model = threadCfg.Model
 	}
 
-	ref, err := a.registry.ResolveModel(model, providers.ModelTaskChat)
+	currentProviderID := providers.CurrentProviderFromRef(threadCfg.Model)
+	ref, err := a.registry.ResolveModelInProvider(currentProviderID, model, providers.ModelTaskChat)
 	if err != nil {
 		return errorIter(fmt.Errorf("resolve model for /compact: %w", err))
 	}
@@ -726,9 +880,14 @@ func (a *DefaultAgent) handleCompactCommand(ctx context.Context, threadID string
 	}
 
 	turnCfg := &thread.TurnConfig{ProviderID: ref.ProviderID, Model: ref.ModelID}
+	if summaryRef, err := a.registry.ResolveSupportingModel(ref, req.SupportingModels, providers.SupportingModelThreadSummarization); err == nil {
+		turnCfg.SupportingModels = compactSupportingModels(ref, map[providers.SupportingModelType]providers.ModelRef{
+			providers.SupportingModelThreadSummarization: summaryRef,
+		})
+	}
 
 	return func(yield func(message.MessageChunk, error) bool) {
-		compacted, compactErr := thread.ForceCompactThread(ctx, provider, a.store, threadID, leafID, turnCfg)
+		compacted, compactErr := thread.ForceCompactThread(ctx, provider, a.registry, a.store, threadID, leafID, turnCfg)
 		if compactErr != nil {
 			yield(nil, fmt.Errorf("force compaction: %w", compactErr))
 			return

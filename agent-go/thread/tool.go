@@ -7,6 +7,7 @@ import (
 	"github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
+	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
 // ToolExecuteResult is returned by ToolExecutor.Execute.
@@ -51,6 +52,7 @@ type ToolContext struct {
 	SubagentDepth         int
 	MaxSubagentDepth      int
 	CurrentTaskID         string
+	ProviderResolver      providers.ProviderResolver
 	Agent                 agent.Agent
 	ModeChange            *string // set by a tool that changes the mode; consumed by the turn loop
 }

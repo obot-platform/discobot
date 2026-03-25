@@ -114,6 +114,12 @@ type PromptRequest struct {
 	// Model overrides the default model for this request.
 	Model string
 
+	// SupportingModels overrides task-specific auxiliary models used internally
+	// by agent-go (for example, thread summarization). Keys are known
+	// SupportingModelType values and values are model refs understood by
+	// ProviderRegistry.ResolveModel.
+	SupportingModels providers.SupportingModels
+
 	// Reasoning controls extended thinking ("enabled" or "").
 	Reasoning string
 

@@ -299,8 +299,8 @@ func TestPostChat_SeedsThreadMetadataBeforePromptStarts(t *testing.T) {
 	if err := json.NewDecoder(threadResp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "Investigate thread metadata" {
-		t.Fatalf("expected seeded thread name, got %+v", got)
+	if got.Name != "" {
+		t.Fatalf("expected empty thread name before AI rename, got %+v", got)
 	}
 	if got.Model != "openai/gpt-5.4" {
 		t.Fatalf("expected seeded model, got %+v", got)

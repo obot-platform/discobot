@@ -175,3 +175,160 @@ func TestProviderRegistry_ResolveModel_NoDefaultIncludesAvailableProviders(t *te
 		t.Fatalf("unexpected error: %q", got)
 	}
 }
+
+func TestProviderRegistry_ResolveModelInProvider_UsesCurrentProviderForBareModel(t *testing.T) {
+	r := NewProviderRegistry(nil)
+
+	got, err := r.ResolveModelInProvider("openai", "gpt-5.4-nano", ModelTaskChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "openai", ModelID: "gpt-5.4-nano"}) {
+		t.Fatalf("unexpected model ref: %+v", got)
+	}
+}
+
+func TestProviderRegistry_ResolveModelInProvider_UsesSupportingTypeOnCurrentProvider(t *testing.T) {
+	r := NewProviderRegistry(nil)
+	r.Add(&testProvider{
+		id: "openai",
+		defaults: map[string]ModelRef{
+			ModelTaskChat:                {ProviderID: "openai", ModelID: "gpt-5.4"},
+			ModelTaskThreadSummarization: {ProviderID: "openai", ModelID: "gpt-5.4-nano"},
+		},
+	})
+
+	got, err := r.ResolveModelInProvider("openai", "thread_summarization", ModelTaskChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "openai", ModelID: "gpt-5.4-nano"}) {
+		t.Fatalf("unexpected model ref: %+v", got)
+	}
+}
+
+func TestProviderRegistry_ResolveModelInProvider_PrefersProviderDefaultForProviderID(t *testing.T) {
+	r := NewProviderRegistry(nil)
+	r.Add(&testProvider{
+		id: "openai",
+		defaults: map[string]ModelRef{
+			ModelTaskChat: {ProviderID: "openai", ModelID: "gpt-5.4"},
+		},
+	})
+
+	got, err := r.ResolveModelInProvider("anthropic", "openai", ModelTaskChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"}) {
+		t.Fatalf("unexpected model ref: %+v", got)
+	}
+}
+
+func TestProviderRegistry_ResolveSupportingModel_UsesOverride(t *testing.T) {
+	r := NewProviderRegistry(nil)
+	r.Add(&testProvider{
+		id: "openai",
+		defaults: map[string]ModelRef{
+			ModelTaskChat:                {ProviderID: "openai", ModelID: "gpt-5.4"},
+			ModelTaskThreadSummarization: {ProviderID: "openai", ModelID: "gpt-5.4-mini"},
+		},
+	})
+	r.Add(&testProvider{id: "anthropic"})
+
+	got, err := r.ResolveSupportingModel(
+		ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"},
+		SupportingModels{SupportingModelThreadSummarization: "anthropic/claude-sonnet-4-6"},
+		SupportingModelThreadSummarization,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "anthropic", ModelID: "claude-sonnet-4-6"}) {
+		t.Fatalf("unexpected supporting model: %+v", got)
+	}
+}
+
+func TestProviderRegistry_ResolveSupportingModel_UsesCurrentProviderForBareModelOverride(t *testing.T) {
+	r := NewProviderRegistry(nil)
+
+	got, err := r.ResolveSupportingModel(
+		ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"},
+		SupportingModels{SupportingModelThreadSummarization: "gpt-5.4-nano"},
+		SupportingModelThreadSummarization,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "openai", ModelID: "gpt-5.4-nano"}) {
+		t.Fatalf("unexpected supporting model: %+v", got)
+	}
+}
+
+func TestProviderRegistry_ResolveSupportingModel_UsesSupportingTypeOverride(t *testing.T) {
+	r := NewProviderRegistry(nil)
+	r.Add(&testProvider{
+		id: "openai",
+		defaults: map[string]ModelRef{
+			ModelTaskChat:                {ProviderID: "openai", ModelID: "gpt-5.4"},
+			ModelTaskThreadSummarization: {ProviderID: "openai", ModelID: "gpt-5.4-nano"},
+		},
+	})
+
+	got, err := r.ResolveSupportingModel(
+		ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"},
+		SupportingModels{SupportingModelThreadSummarization: "thread_summarization"},
+		SupportingModelThreadSummarization,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "openai", ModelID: "gpt-5.4-nano"}) {
+		t.Fatalf("unexpected supporting model: %+v", got)
+	}
+}
+
+func TestProviderRegistry_ResolveSupportingModel_UsesProviderDefault(t *testing.T) {
+	r := NewProviderRegistry(nil)
+	r.Add(&testProvider{
+		id: "openai",
+		defaults: map[string]ModelRef{
+			ModelTaskChat:                {ProviderID: "openai", ModelID: "gpt-5.4"},
+			ModelTaskThreadSummarization: {ProviderID: "openai", ModelID: "gpt-5.4-mini"},
+		},
+	})
+
+	got, err := r.ResolveSupportingModel(
+		ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"},
+		nil,
+		SupportingModelThreadSummarization,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "openai", ModelID: "gpt-5.4-mini"}) {
+		t.Fatalf("unexpected supporting model: %+v", got)
+	}
+}
+
+func TestProviderRegistry_ResolveSupportingModel_FallsBackToMainModel(t *testing.T) {
+	r := NewProviderRegistry(nil)
+	r.Add(&testProvider{
+		id: "openai",
+		defaults: map[string]ModelRef{
+			ModelTaskChat: {ProviderID: "openai", ModelID: "gpt-5.4"},
+		},
+	})
+
+	got, err := r.ResolveSupportingModel(
+		ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"},
+		nil,
+		SupportingModelThreadSummarization,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != (ModelRef{ProviderID: "openai", ModelID: "gpt-5.4"}) {
+		t.Fatalf("unexpected supporting model: %+v", got)
+	}
+}

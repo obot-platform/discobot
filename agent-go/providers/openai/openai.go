@@ -245,11 +245,13 @@ func buildWebSocketIncrementalBody(baseBody map[string]any, msgs []message.Messa
 func (p *Provider) DefaultModels() map[string]providers.ModelRef {
 	if p.isCodex {
 		return map[string]providers.ModelRef{
-			providers.ModelTaskChat: {ProviderID: codexProviderID, ModelID: "gpt-5.4"},
+			providers.ModelTaskChat:                {ProviderID: codexProviderID, ModelID: "gpt-5.4"},
+			providers.ModelTaskThreadSummarization: {ProviderID: codexProviderID, ModelID: "gpt-5.4-mini"},
 		}
 	}
 	return map[string]providers.ModelRef{
-		providers.ModelTaskChat: {ProviderID: providerID, ModelID: "gpt-5.4"},
+		providers.ModelTaskChat:                {ProviderID: providerID, ModelID: "gpt-5.4"},
+		providers.ModelTaskThreadSummarization: {ProviderID: providerID, ModelID: "gpt-5.4-mini"},
 	}
 }
 

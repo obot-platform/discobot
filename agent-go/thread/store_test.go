@@ -458,6 +458,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 
 	cfg := Config{
 		Name:         "Friendly thread name",
+		NameSource:   ThreadNameSourceGenerated,
 		Model:        "anthropic/claude-sonnet-4-6",
 		CWD:          "/tmp/project",
 		PlanMode:     true,
@@ -477,6 +478,9 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 	if loaded.Name != cfg.Name {
 		t.Errorf("expected name=%q, got %q", cfg.Name, loaded.Name)
+	}
+	if loaded.NameSource != cfg.NameSource {
+		t.Errorf("expected nameSource=%q, got %q", cfg.NameSource, loaded.NameSource)
 	}
 	if loaded.CWD != cfg.CWD {
 		t.Errorf("expected cwd=%q, got %q", cfg.CWD, loaded.CWD)

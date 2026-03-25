@@ -3,6 +3,8 @@ package sessionconfig
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
 func TestDiscoverSubAgents_WithFrontmatter(t *testing.T) {
@@ -14,6 +16,8 @@ func TestDiscoverSubAgents_WithFrontmatter(t *testing.T) {
 name: code-reviewer
 description: Reviews code for quality
 model: gpt-4
+supportingModels:
+  thread_summarization: openai/gpt-5.4-mini
 allowedTools:
   - Read
   - Grep
@@ -40,6 +44,9 @@ You are a code reviewer. Review the code for quality and correctness.`)
 	if a.Model != "gpt-4" {
 		t.Errorf("model = %s, want gpt-4", a.Model)
 	}
+	if got := a.SupportingModels[providers.SupportingModelThreadSummarization]; got != "openai/gpt-5.4-mini" {
+		t.Errorf("supportingModels.thread_summarization = %q", got)
+	}
 	if len(a.AllowedTools) != 3 {
 		t.Errorf("allowedTools = %v, want 3 items", a.AllowedTools)
 	}
@@ -48,6 +55,72 @@ You are a code reviewer. Review the code for quality and correctness.`)
 	}
 	if a.Prompt != "You are a code reviewer. Review the code for quality and correctness." {
 		t.Errorf("prompt = %q", a.Prompt)
+	}
+}
+
+func TestDiscoverSubAgents_WithSupportingModelsKeyValueString(t *testing.T) {
+	root := t.TempDir()
+	agentsDir := filepath.Join(root, ".claude", "agents")
+	mkdirAll(t, agentsDir)
+
+	writeFile(t, filepath.Join(agentsDir, "reviewer.md"), `---
+name: code-reviewer
+supportingModels: thread_summarization=openai/gpt-5.4-nano
+---
+You are a code reviewer.`)
+
+	agents, err := discoverSubAgents(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(agents))
+	}
+	if got := agents[0].SupportingModels[providers.SupportingModelThreadSummarization]; got != "openai/gpt-5.4-nano" {
+		t.Fatalf("supportingModels.thread_summarization = %q", got)
+	}
+}
+
+func TestDiscoverSubAgents_WithSupportingModelsKeyValueStringList(t *testing.T) {
+	root := t.TempDir()
+	agentsDir := filepath.Join(root, ".claude", "agents")
+	mkdirAll(t, agentsDir)
+
+	writeFile(t, filepath.Join(agentsDir, "reviewer.md"), `---
+name: code-reviewer
+supportingModels: thread_summarization=openai/gpt-5.4-nano, custom_helper=anthropic/claude-haiku-4-5-20251001
+---
+You are a code reviewer.`)
+
+	agents, err := discoverSubAgents(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(agents))
+	}
+	if got := agents[0].SupportingModels[providers.SupportingModelThreadSummarization]; got != "openai/gpt-5.4-nano" {
+		t.Fatalf("thread_summarization = %q", got)
+	}
+	if got := agents[0].SupportingModels[providers.SupportingModelType("custom_helper")]; got != "anthropic/claude-haiku-4-5-20251001" {
+		t.Fatalf("custom_helper = %q", got)
+	}
+}
+
+func TestDiscoverSubAgents_InvalidSupportingModelsKeyValueString(t *testing.T) {
+	root := t.TempDir()
+	agentsDir := filepath.Join(root, ".claude", "agents")
+	mkdirAll(t, agentsDir)
+
+	writeFile(t, filepath.Join(agentsDir, "reviewer.md"), `---
+name: code-reviewer
+supportingModels: thread_summarization
+---
+You are a code reviewer.`)
+
+	_, err := discoverSubAgents(root)
+	if err == nil {
+		t.Fatal("expected parse error")
 	}
 }
 

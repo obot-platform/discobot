@@ -20,6 +20,7 @@ import (
 type TurnConfig struct {
 	ProviderID            string                     `json:"providerId"`
 	Model                 string                     `json:"model"`
+	SupportingModels      providers.SupportingModels `json:"supportingModels,omitempty"` // supporting model type -> full "providerId/modelId" ref
 	UserParts             []message.Part             `json:"-"`
 	UserMessage           message.Message            `json:"userMessage"` // serializable form of UserParts
 	Tools                 []providers.ToolDefinition `json:"tools,omitempty"`
@@ -295,7 +296,7 @@ func executeLoop(
 			}
 
 			// Apply compaction if context window info is available (from cfg or models.dev).
-			compacted, compactErr := maybeCompact(ctx, provider, store, threadID, turnState, cfg, historyEntries, lastUsage)
+			compacted, compactErr := maybeCompact(ctx, provider, toolCtx.ProviderResolver, store, threadID, turnState, cfg, historyEntries, lastUsage)
 			if compactErr != nil {
 				log.Printf("compaction: %v (using full history)", compactErr)
 				history = entriesToMessages(historyEntries)
@@ -327,7 +328,7 @@ func executeLoop(
 					// attempt a one-shot emergency compaction and retry.
 					if isContextLengthExceeded(completionErr) {
 						log.Printf("compaction: context_length_exceeded — forcing emergency compaction for thread %s", threadID)
-						forceCompacted, forceErr := forceCompact(ctx, provider, store, threadID, cfg, historyEntries)
+						forceCompacted, forceErr := forceCompact(ctx, provider, toolCtx.ProviderResolver, store, threadID, cfg, historyEntries)
 						if forceErr != nil {
 							log.Printf("compaction: emergency compaction failed: %v", forceErr)
 							if !yield(nil, completionErr) {

@@ -156,6 +156,42 @@ func TestAccumulator_FinishAndMetadata(t *testing.T) {
 	}
 }
 
+func TestAccumulator_RetainsErrorChunks(t *testing.T) {
+	acc := NewChunkAccumulator()
+	acc.Push(TextStartChunk{ID: "t1"})
+	acc.Push(TextDeltaChunk{ID: "t1", Delta: "partial"})
+	acc.Push(ErrorChunk{ErrorText: "provider failed"})
+	acc.Close()
+
+	msg := acc.Message()
+	if len(msg.Parts) != 1 {
+		t.Fatalf("Parts: got %d, want 1", len(msg.Parts))
+	}
+	if tp, ok := msg.Parts[0].(TextPart); !ok || tp.Text != "partial" {
+		t.Fatalf("unexpected accumulated text part: %#v", msg.Parts[0])
+	}
+	if len(acc.Errors()) != 1 {
+		t.Fatalf("Errors: got %d, want 1", len(acc.Errors()))
+	}
+	if acc.Errors()[0].ErrorText != "provider failed" {
+		t.Fatalf("ErrorText: got %q", acc.Errors()[0].ErrorText)
+	}
+}
+
+func TestAccumulator_RetainsMultipleErrorChunksInOrder(t *testing.T) {
+	acc := NewChunkAccumulator()
+	acc.Push(ErrorChunk{ErrorText: "first"})
+	acc.Push(ErrorChunk{ErrorText: "second"})
+	acc.Close()
+
+	if len(acc.Errors()) != 2 {
+		t.Fatalf("Errors: got %d, want 2", len(acc.Errors()))
+	}
+	if acc.Errors()[0].ErrorText != "first" || acc.Errors()[1].ErrorText != "second" {
+		t.Fatalf("unexpected errors: %#v", acc.Errors())
+	}
+}
+
 func TestAccumulator_CloseWithPartialToolInput(t *testing.T) {
 	acc := NewChunkAccumulator()
 	acc.Push(ToolInputStartChunk{ToolCallID: "tc1", ToolName: "read"})

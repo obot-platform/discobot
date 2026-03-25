@@ -21,24 +21,6 @@ import (
 
 const defaultChatStreamPingInterval = 15 * time.Second
 
-func deriveThreadName(messages []message.UIMessage) string {
-	for _, msg := range messages {
-		if msg.Role != "user" {
-			continue
-		}
-		for _, part := range msg.Parts {
-			textPart, ok := part.(message.UITextPart)
-			if !ok {
-				continue
-			}
-			if trimmed := strings.TrimSpace(textPart.Text); trimmed != "" {
-				return trimmed
-			}
-		}
-	}
-	return ""
-}
-
 func (h *Handler) ensureThreadMetadata(threadID string, req api.ChatRequest) error {
 	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
 		return nil
@@ -58,9 +40,6 @@ func (h *Handler) ensureThreadMetadata(threadID string, req api.ChatRequest) err
 	cfg, err := store.LoadConfig(threadID)
 	if err != nil {
 		return err
-	}
-	if strings.TrimSpace(cfg.Name) == "" {
-		cfg.Name = deriveThreadName(req.Messages)
 	}
 	if strings.TrimSpace(cfg.Model) == "" && strings.Contains(req.Model, "/") {
 		cfg.Model = req.Model

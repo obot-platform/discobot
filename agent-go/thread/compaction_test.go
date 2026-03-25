@@ -45,6 +45,16 @@ func (m *compactionMockProvider) ListModels(_ context.Context) ([]providers.Mode
 	return nil, nil
 }
 
+type staticProviderResolver map[string]providers.Provider
+
+func (r staticProviderResolver) Get(id string) (providers.Provider, error) {
+	p, ok := r[id]
+	if !ok {
+		return nil, fmt.Errorf("provider %q not found", id)
+	}
+	return p, nil
+}
+
 // --- Tests ---
 
 func TestIsContextLengthExceeded(t *testing.T) {
@@ -421,7 +431,7 @@ func TestMaybeCompact_NoCompactionNeeded(t *testing.T) {
 
 	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +462,7 @@ func TestMaybeCompact_SkipsWhenNoContextWindow(t *testing.T) {
 
 	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,7 +524,7 @@ func TestMaybeCompact_CompactionTriggered(t *testing.T) {
 		},
 	}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,6 +563,49 @@ func TestMaybeCompact_CompactionTriggered(t *testing.T) {
 	}
 }
 
+func TestDoSummaryCall_UsesSupportingSummarizationModel(t *testing.T) {
+	mainProvider := &compactionMockProvider{}
+	summaryProvider := &compactionMockProvider{
+		responses: [][]message.ProviderMessageChunk{{
+			message.StreamStartChunk{},
+			message.TextStartChunk{ID: "s1"},
+			message.TextDeltaChunk{ID: "s1", Delta: "Summary from helper."},
+			message.TextEndChunk{ID: "s1"},
+			message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+		}},
+	}
+
+	text, err := doSummaryCall(
+		context.Background(),
+		mainProvider,
+		staticProviderResolver{"summary": summaryProvider},
+		&TurnConfig{
+			ProviderID: "mock",
+			Model:      "main-model",
+			SupportingModels: providers.SupportingModels{
+				providers.SupportingModelThreadSummarization: "summary/thread-title-model",
+			},
+		},
+		[]message.Message{{Role: "user", Parts: []message.Part{message.TextPart{Text: "starter"}}}},
+		tokenBudget{SummaryMaxTokens: 80},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "Summary from helper." {
+		t.Fatalf("unexpected summary text %q", text)
+	}
+	if mainProvider.callIndex != 0 {
+		t.Fatalf("expected main provider not to be used, got %d calls", mainProvider.callIndex)
+	}
+	if summaryProvider.callIndex != 1 {
+		t.Fatalf("expected summary provider to be used once, got %d", summaryProvider.callIndex)
+	}
+	if got := summaryProvider.requests[0].Model.String(); got != "summary/thread-title-model" {
+		t.Fatalf("expected supporting model ref, got %q", got)
+	}
+}
+
 func TestMaybeCompact_ExistingCompactionValid(t *testing.T) {
 	store := NewStore(t.TempDir())
 	threadID := "thread1"
@@ -588,7 +641,7 @@ func TestMaybeCompact_ExistingCompactionValid(t *testing.T) {
 
 	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +724,7 @@ func TestMaybeCompact_ReCompaction(t *testing.T) {
 		},
 	}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,7 +829,7 @@ func TestMaybeCompact_SystemRemindersDontInflateCount(t *testing.T) {
 
 	prov := &compactionMockProvider{}
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -847,7 +900,7 @@ func TestMaybeCompact_SystemRemindersFilteredFromSummaryInput(t *testing.T) {
 		},
 	}
 
-	_, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, nil)
+	_, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -966,7 +1019,7 @@ func TestGenerateSummary_IterativeCompaction(t *testing.T) {
 	budget := tokenBudget{InputLimit: 400, SummaryMaxTokens: 80}
 	cfg := &TurnConfig{Model: "test"}
 
-	text, err := generateSummary(context.Background(), failFirstProv, cfg, msgs, budget)
+	text, err := generateSummary(context.Background(), failFirstProv, nil, cfg, msgs, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1038,7 +1091,7 @@ func TestGenerateSummary_CanceledContextStopsImmediately(t *testing.T) {
 		{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "hi"}}},
 	}
 
-	_, err := generateSummary(ctx, prov, &TurnConfig{Model: "test"}, msgs, tokenBudget{InputLimit: 400, SummaryMaxTokens: 80})
+	_, err := generateSummary(ctx, prov, nil, &TurnConfig{Model: "test"}, msgs, tokenBudget{InputLimit: 400, SummaryMaxTokens: 80})
 	if err == nil {
 		t.Fatal("expected cancellation error")
 	}
@@ -1064,7 +1117,7 @@ func TestGenerateSummary_StopsAtSingleMessage(t *testing.T) {
 		{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "four"}}},
 	}
 
-	_, err := generateSummary(context.Background(), prov, &TurnConfig{Model: "test"}, msgs, tokenBudget{InputLimit: 400, SummaryMaxTokens: 80})
+	_, err := generateSummary(context.Background(), prov, nil, &TurnConfig{Model: "test"}, msgs, tokenBudget{InputLimit: 400, SummaryMaxTokens: 80})
 	if err == nil {
 		t.Fatal("expected compaction failure")
 	}
@@ -1416,7 +1469,7 @@ func TestForceCompactThread_CompactsImmediately(t *testing.T) {
 		},
 	}
 
-	compacted, err := ForceCompactThread(context.Background(), prov, store, threadID, "msg2", &TurnConfig{ProviderID: "mock", Model: "test-model"})
+	compacted, err := ForceCompactThread(context.Background(), prov, nil, store, threadID, "msg2", &TurnConfig{ProviderID: "mock", Model: "test-model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1452,7 +1505,7 @@ func TestForceCompactThread_NoConversationContent(t *testing.T) {
 
 	prov := &compactionMockProvider{}
 
-	compacted, err := ForceCompactThread(context.Background(), prov, store, threadID, "sys", &TurnConfig{ProviderID: "mock", Model: "test-model"})
+	compacted, err := ForceCompactThread(context.Background(), prov, nil, store, threadID, "sys", &TurnConfig{ProviderID: "mock", Model: "test-model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1577,7 +1630,7 @@ func TestMaybeCompact_TriggersCompactionFromLastUsage(t *testing.T) {
 	// lastUsage reports 7000 total tokens — above the 6400 trigger.
 	lastUsage := makeUsage(6500, 500)
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, lastUsage)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, lastUsage)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1628,7 +1681,7 @@ func TestMaybeCompact_SkipsCompactionFromLastUsage(t *testing.T) {
 	// lastUsage reports only 2000 total tokens — well below the 6400 trigger.
 	lastUsage := makeUsage(1800, 200)
 
-	result, err := maybeCompact(context.Background(), prov, store, threadID, turnState, cfg, entries, lastUsage)
+	result, err := maybeCompact(context.Background(), prov, nil, store, threadID, turnState, cfg, entries, lastUsage)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
