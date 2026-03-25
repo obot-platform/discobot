@@ -297,7 +297,7 @@ func TestSandboxChatClient_GetStream_NoContent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestSandboxChatClient_GetStream_CompletionInactive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestSandboxChatClient_GetStream_PreservesEventAndID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", "test-session", &RequestOptions{LastEventID: "completion-1:0"}, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", &RequestOptions{LastEventID: "completion-1:0"})
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestSandboxChatClient_GetStream_AllowsLargeSSEDataLine(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestSandboxChatClient_GetStream_ScannerErrorEmitsErrorEvent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", "test-session", nil, false)
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil)
 	if err != nil {
 		t.Fatalf("GetStream failed: %v", err)
 	}

@@ -519,11 +519,12 @@ func (h *Handler) PostAnswer(w http.ResponseWriter, r *http.Request) {
 	h.answeredQuestions[questionID] = true
 	h.answeredMu.Unlock()
 
-	// Resume the turn. If there is no in-memory completion snapshot for this
-	// thread (for example after an agent restart), force the resumed turn to
-	// replay its prefix so the client gets the original start envelope and
-	// cached chunks before the approval continuation.
-	replayTurn := h.completions.PollChunks(threadID, 0) == nil
+	// Resume the turn. If there is no cached completion, or the only cached
+	// completion is already finished, force the resumed turn to replay its
+	// prefix so the client gets the original start envelope and cached chunks
+	// before the approval continuation.
+	snapshot := h.completions.PollChunks(threadID, 0)
+	replayTurn := snapshot == nil || snapshot.Done
 	completionID, chatErr := h.completions.Chat(threadID, agent.PromptRequest{ReplayTurn: replayTurn})
 	if chatErr != nil {
 		// Answer was saved but resume failed — log but still return success.

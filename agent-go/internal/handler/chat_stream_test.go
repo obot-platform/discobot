@@ -447,7 +447,7 @@ func TestPostAnswer_UsesReplayTurnWithoutCachedCompletion(t *testing.T) {
 	}
 }
 
-func TestPostAnswer_SkipsReplayTurnWhenCachedCompletionExists(t *testing.T) {
+func TestPostAnswer_UsesReplayTurnWhenOnlyDoneCachedCompletionExists(t *testing.T) {
 	reqCh := make(chan agent.PromptRequest, 2)
 	ma := &streamTestAgent{
 		submitAnswerFn: func(_ string, _ string, _ api.AnswerQuestionRequest) error {
@@ -491,8 +491,8 @@ func TestPostAnswer_SkipsReplayTurnWhenCachedCompletionExists(t *testing.T) {
 
 	select {
 	case req := <-reqCh:
-		if req.ReplayTurn {
-			t.Fatal("expected ReplayTurn to be false when cached completion exists")
+		if !req.ReplayTurn {
+			t.Fatal("expected ReplayTurn to be true when the cached completion is already done")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for resumed Prompt request")

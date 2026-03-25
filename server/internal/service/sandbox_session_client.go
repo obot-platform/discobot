@@ -116,10 +116,10 @@ func (c *SessionClient) SendMessages(ctx context.Context, threadID string, messa
 	return c.trackStream(ch), nil
 }
 
-// GetStream returns a channel of SSE events for an in-progress completion.
-func (c *SessionClient) GetStream(ctx context.Context, threadID string, opts *RequestOptions, replay bool) (<-chan SSELine, error) {
+// GetStream returns a channel of SSE events for a thread.
+func (c *SessionClient) GetStream(ctx context.Context, threadID string, opts *RequestOptions) (<-chan SSELine, error) {
 	ch, err := withReconciliation(ctx, c, func() (<-chan SSELine, error) {
-		return c.inner.GetStream(ctx, c.sessionID, threadID, opts, replay)
+		return c.inner.GetStream(ctx, c.sessionID, threadID, opts)
 	})
 	if err != nil {
 		return nil, err

@@ -346,14 +346,14 @@ func (c *SandboxChatClient) SendMessages(ctx context.Context, sessionID, threadI
 	}
 
 	// POST returns 202 Accepted - now GET the SSE stream
-	return c.GetStream(ctx, sessionID, threadID, opts, false)
+	return c.GetStream(ctx, sessionID, threadID, opts)
 }
 
 // GetStream connects to the sandbox's long-lived SSE stream for a thread.
 // Returns a channel of raw SSE lines. If the sandbox reports 204 No Content,
 // this method returns an empty closed channel.
 // Retries with exponential backoff on connection errors and 5xx responses.
-func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID string, opts *RequestOptions, _ bool) (<-chan SSELine, error) {
+func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID string, opts *RequestOptions) (<-chan SSELine, error) {
 	// Use retry logic to handle transient connection errors during container startup
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
 		client, err := c.getHTTPClient(ctx, sessionID)

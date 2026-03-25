@@ -146,10 +146,8 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, response)
 }
 
-// ChatStream handles resuming an in-progress chat stream.
+// ChatStream handles resuming a thread chat stream.
 // GET /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/stream
-// Query params:
-//   - replay=true: stream the last completed turn even if no completion is active
 //
 // Response: long-lived SSE stream for the thread, or 204 No Content if the
 // thread/session cannot currently provide a stream
@@ -161,11 +159,11 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	replay := r.URL.Query().Get("replay") == "true"
 	lastEventID := r.Header.Get("Last-Event-ID")
 
-	// Get the stream from sandbox
-	sseCh, err := h.chatService.GetStream(ctx, projectID, sessionID, threadID, replay, lastEventID)
+	// Get the stream from sandbox. Fresh requests replay persisted history by
+	// default; valid Last-Event-ID reconnects continue from the requested offset.
+	sseCh, err := h.chatService.GetStream(ctx, projectID, sessionID, threadID, lastEventID)
 	if err != nil {
 		// Sandbox unavailable or error - return 204 (no active stream)
 		log.Printf("[ChatStream] Error getting stream: %v", err)
@@ -175,19 +173,17 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 	// Store the first message if we consume one during this initial readiness check.
 	var firstLine *service.SSELine
-	if !replay {
-		select {
-		case line, ok := <-sseCh:
-			if !ok {
-				// Channel closed immediately - no active stream
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			// We consumed a message - store it to send after setting headers
-			firstLine = &line
-		default:
-			// Channel not ready yet - we have a stream, set up SSE
+	select {
+	case line, ok := <-sseCh:
+		if !ok {
+			// Channel closed immediately - no active stream
+			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+		// We consumed a message - store it to send after setting headers
+		firstLine = &line
+	default:
+		// Channel not ready yet - we have a stream, set up SSE
 	}
 
 	// Set up SSE headers

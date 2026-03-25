@@ -227,11 +227,11 @@ func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID, t
 	return innerCh, nil
 }
 
-// GetStream returns a channel of SSE events for an in-progress completion.
-// If no completion is in progress, returns an empty closed channel.
-// This is used by the resume endpoint to catch up on events.
+// GetStream returns a channel of SSE events for a thread.
+// Fresh requests replay persisted history by default; valid Last-Event-ID
+// reconnects continue from the requested offset.
 // The sandbox is automatically reconciled if not running.
-func (c *ChatService) GetStream(ctx context.Context, projectID, sessionID, threadID string, replay bool, lastEventID string) (<-chan SSELine, error) {
+func (c *ChatService) GetStream(ctx context.Context, projectID, sessionID, threadID, lastEventID string) (<-chan SSELine, error) {
 	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
 		return nil, err
 	}
@@ -243,7 +243,7 @@ func (c *ChatService) GetStream(ctx context.Context, projectID, sessionID, threa
 		return nil, err
 	}
 
-	return client.GetStream(ctx, threadID, &RequestOptions{LastEventID: lastEventID}, replay)
+	return client.GetStream(ctx, threadID, &RequestOptions{LastEventID: lastEventID})
 }
 
 // GetMessages returns all messages for a session by querying the sandbox.
