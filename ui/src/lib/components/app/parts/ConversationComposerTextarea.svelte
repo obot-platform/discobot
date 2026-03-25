@@ -22,6 +22,7 @@
 		onAddFiles: (files: File[] | FileList) => void;
 		onRemoveLastAttachment: () => void;
 		onSubmit: () => void | Promise<void>;
+		onRequestMentionSession?: () => void | Promise<boolean>;
 	};
 
 	let {
@@ -32,6 +33,7 @@
 		onAddFiles,
 		onRemoveLastAttachment,
 		onSubmit,
+		onRequestMentionSession,
 	}: Props = $props();
 
 	let isComposing = $state(false);
@@ -43,6 +45,20 @@
 
 	function shouldSubmitComposerOnEnter(draft: string): boolean {
 		return draft.trim().length > 0;
+	}
+
+	function hasActiveFileMention(value: string, cursor: number): boolean {
+		return /@([^\s@]*)$/.test(value.slice(0, cursor));
+	}
+
+	function syncFileMentionDropdown() {
+		const textarea = fileMentionTextareaRef;
+		if (!textarea) {
+			return;
+		}
+
+		const cursor = textarea.selectionStart ?? textarea.value.length;
+		fileMentionDropdownRef?.handleInput(textarea.value, cursor);
 	}
 
 	function handleTextareaKeydown(event: KeyboardEvent) {
@@ -80,10 +96,11 @@
 		const textarea = event.currentTarget as HTMLTextAreaElement;
 		onDraftChange(textarea.value);
 		promptHistoryDropdownRef?.closePromptHistoryDropdown();
-		fileMentionDropdownRef?.handleInput(
-			textarea.value,
-			textarea.selectionStart ?? textarea.value.length,
-		);
+		const cursor = textarea.selectionStart ?? textarea.value.length;
+		if (!sessionId && hasActiveFileMention(textarea.value, cursor)) {
+			void onRequestMentionSession?.();
+		}
+		fileMentionDropdownRef?.handleInput(textarea.value, cursor);
 	}
 
 	function handleTextareaPaste(event: ClipboardEvent) {
@@ -118,7 +135,14 @@
 	}
 
 	export function focus() {
-		fileMentionTextareaRef?.focus();
+		const textarea = fileMentionTextareaRef;
+		if (!textarea) {
+			return;
+		}
+		textarea.focus();
+		const cursor = textarea.value.length;
+		textarea.setSelectionRange(cursor, cursor);
+		syncFileMentionDropdown();
 	}
 </script>
 

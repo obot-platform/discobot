@@ -32,3 +32,19 @@ export function writeComposerDraft(storageKey: string, value: string): void {
 export function clearComposerDraft(storageKey: string): void {
 	writeStorage(storageKey, null);
 }
+
+export function moveComposerDraft({
+	fromStorageKey,
+	toStorageKey,
+	value,
+}: {
+	fromStorageKey: string;
+	toStorageKey: string;
+	value?: string;
+}): void {
+	const nextValue = value ?? readComposerDraft(fromStorageKey);
+	writeComposerDraft(toStorageKey, nextValue);
+	if (fromStorageKey !== toStorageKey) {
+		clearComposerDraft(fromStorageKey);
+	}
+}

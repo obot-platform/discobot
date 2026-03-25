@@ -152,6 +152,12 @@ export type SessionConversationDomain = {
 	refresh: () => Promise<void>;
 };
 
+export type ThreadSubmitResult = {
+	sessionId: string;
+	threadId: string;
+	materialized: boolean;
+};
+
 export type ThreadContextValue = {
 	threadId: string;
 	thread: ThreadSummary | null;
@@ -166,7 +172,11 @@ export type ThreadContextValue = {
 		mode: "build" | "plan";
 		modelId: string | null;
 		reasoning: boolean;
-	}) => Promise<void>;
+		workspaceId?: string;
+		workspaceType?: "local" | "git" | null;
+		workspacePath?: string | null;
+		allowEmptyPendingMessage?: boolean;
+	}) => Promise<ThreadSubmitResult | void>;
 	cancel: () => Promise<void>;
 	load: () => Promise<void>;
 	refresh: () => Promise<void>;

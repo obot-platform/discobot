@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	clearComposerDraft,
+	moveComposerDraft,
 	PENDING_COMPOSER_DRAFT_STORAGE_KEY,
 	readComposerDraft,
 	resolveComposerDraftStorageKey,
@@ -97,6 +98,51 @@ test("pending drafts stay isolated from thread drafts", () => {
 
 		assert.equal(readComposerDraft(pendingKey), "pending draft");
 		assert.equal(readComposerDraft(threadKey), "thread draft");
+	});
+});
+
+test("moveComposerDraft transfers a pending draft to a created thread", () => {
+	withLocalStorage((storage) => {
+		const pendingKey = resolveComposerDraftStorageKey({
+			isPending: true,
+			threadId: "pending-thread",
+		});
+		const threadKey = resolveComposerDraftStorageKey({
+			isPending: false,
+			threadId: "created-thread",
+		});
+
+		writeComposerDraft(pendingKey, "@src/lib");
+		moveComposerDraft({
+			fromStorageKey: pendingKey,
+			toStorageKey: threadKey,
+		});
+
+		assert.equal(storage.getItem(pendingKey), null);
+		assert.equal(readComposerDraft(threadKey), "@src/lib");
+	});
+});
+
+test("moveComposerDraft can preserve the in-memory draft value during session creation", () => {
+	withLocalStorage((storage) => {
+		const pendingKey = resolveComposerDraftStorageKey({
+			isPending: true,
+			threadId: "pending-thread",
+		});
+		const threadKey = resolveComposerDraftStorageKey({
+			isPending: false,
+			threadId: "created-thread",
+		});
+
+		writeComposerDraft(pendingKey, "@");
+		moveComposerDraft({
+			fromStorageKey: pendingKey,
+			toStorageKey: threadKey,
+			value: "@src/lib/components",
+		});
+
+		assert.equal(storage.getItem(pendingKey), null);
+		assert.equal(readComposerDraft(threadKey), "@src/lib/components");
 	});
 });
 

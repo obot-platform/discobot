@@ -35,6 +35,13 @@ export function getSubmitMessages(userMessage: ChatMessage): ChatMessage[] {
 	return [submittedMessage];
 }
 
+export function removeProvisionalSubmitMessage(
+	messages: ChatMessage[],
+	messageId: string,
+): ChatMessage[] {
+	return messages.filter((message) => message.id !== messageId);
+}
+
 export function createConversationDomain(args: CreateConversationDomainArgs) {
 	const app = useAppContext();
 	let messages = $state<ChatMessage[]>([]);
@@ -255,13 +262,25 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			mode,
 			modelId,
 			reasoning,
+			workspaceId,
+			workspaceType,
+			workspacePath,
+			allowEmptyPendingMessage,
 		}: {
 			parts: ChatMessage["parts"];
 			mode: "build" | "plan";
 			modelId: string | null;
 			reasoning: boolean;
+			workspaceId?: string;
+			workspaceType?: "local" | "git" | null;
+			workspacePath?: string | null;
+			allowEmptyPendingMessage?: boolean;
 		}) => {
-			if (!hasUserMessageContent(parts)) {
+			const hasMessageContent = hasUserMessageContent(parts);
+			if (
+				!hasMessageContent &&
+				!(allowEmptyPendingMessage && !args.hasSession())
+			) {
 				return;
 			}
 
@@ -269,31 +288,65 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			const nextModel = normalizeModelId(modelId ?? null);
 			const nextReasoning = reasoning ? "enabled" : undefined;
 			const nextMode = mode === "plan" ? "plan" : "";
-			const userMessage = createUserMessageFromParts(parts, {
-				provisional: true,
-			});
+			const userMessage = hasMessageContent
+				? createUserMessageFromParts(parts, {
+						provisional: true,
+					})
+				: null;
 
-			if (!args.hasSession()) {
-				return;
+			if (userMessage) {
+				messages = [...messages, userMessage];
 			}
 
-			messages = [...messages, userMessage];
-
 			try {
+				if (!args.hasSession()) {
+					const response = await app.chat({
+						sessionId: args.sessionId,
+						threadId: args.threadId,
+						messages: userMessage ? getSubmitMessages(userMessage) : [],
+						...(workspaceId ? { workspaceId } : {}),
+						...(workspaceType && workspacePath
+							? {
+									workspaceType,
+									workspacePath,
+								}
+							: {}),
+						...(nextModel ? { model: nextModel } : {}),
+						...(nextReasoning !== undefined
+							? { reasoning: nextReasoning }
+							: {}),
+						mode: nextMode,
+					});
+					return {
+						sessionId: response.sessionId,
+						threadId: response.threadId,
+						materialized: true,
+					};
+				}
+
 				ensureStream();
 				await app.chat({
 					sessionId: args.sessionId,
 					threadId: args.threadId,
-					messages: getSubmitMessages(userMessage),
+					messages: userMessage ? getSubmitMessages(userMessage) : [],
 					...(nextModel ? { model: nextModel } : {}),
 					...(nextReasoning !== undefined ? { reasoning: nextReasoning } : {}),
 					mode: nextMode,
 				});
+				return {
+					sessionId: args.sessionId,
+					threadId: args.threadId,
+					materialized: false,
+				};
 			} catch (error) {
 				streamStatus = null;
 				const errorMessage =
 					error instanceof Error ? error.message : "Failed to start chat";
-				await refresh();
+				if (args.hasSession()) {
+					await refresh();
+				} else if (userMessage) {
+					messages = removeProvisionalSubmitMessage(messages, userMessage.id);
+				}
 				streamError = errorMessage;
 				throw error;
 			}

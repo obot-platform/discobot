@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ChatMessage } from "$lib/api-types";
-import { getSubmitMessages } from "./conversation.svelte";
+import {
+	getSubmitMessages,
+	removeProvisionalSubmitMessage,
+} from "./conversation.svelte";
 
 function makeUserMessage(
 	parts: ChatMessage["parts"] = [{ type: "text", text: "latest prompt" }],
@@ -66,4 +69,24 @@ test("getSubmitMessages preserves attachment parts", () => {
 			],
 		},
 	]);
+});
+
+test("removeProvisionalSubmitMessage removes the failed optimistic message", () => {
+	const failedMessage = makeUserMessage(
+		[{ type: "text", text: "pending" }],
+		true,
+	);
+	const keptMessage: ChatMessage = {
+		id: "assistant-1",
+		role: "assistant",
+		parts: [{ type: "text", text: "existing" }],
+	};
+
+	assert.deepEqual(
+		removeProvisionalSubmitMessage(
+			[failedMessage, keptMessage],
+			failedMessage.id,
+		),
+		[keptMessage],
+	);
 });

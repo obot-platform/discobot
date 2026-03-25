@@ -15,7 +15,10 @@
 	import ConversationHooksPanel from "$lib/components/app/ConversationHooksPanel.svelte";
 	import ConversationQueuePanel from "$lib/components/app/parts/ConversationQueuePanel.svelte";
 	import ConversationWorkspaceSelector from "$lib/components/app/ConversationWorkspaceSelector.svelte";
-	import { resolveComposerDraftStorageKey } from "$lib/composer-draft-storage";
+	import {
+		moveComposerDraft,
+		resolveComposerDraftStorageKey,
+	} from "$lib/composer-draft-storage";
 	import type {
 		ComposerAttachment,
 		ComposerMode,
@@ -29,7 +32,6 @@
 	import {
 		buildUserMessageParts,
 		createUserMessageAttachment,
-		createUserMessageFromParts,
 		getLatestPlanState,
 	} from "$lib/session/domains/session-domain.helpers";
 
@@ -50,6 +52,7 @@
 	);
 	let sessionSetupRef = $state<WorkspaceSelectorHandle | null>(null);
 	let pendingSubmitError = $state<string | null>(null);
+	let pendingMentionSessionCreation = $state<Promise<boolean> | null>(null);
 	let mounted = true;
 
 	function normalizeComposerMode(
@@ -199,109 +202,166 @@
 		mounted = false;
 	});
 
-	async function submitComposer() {
+	async function getPendingWorkspaceSelection() {
+		return (
+			sessionSetupRef?.getWorkspaceSelection() ??
+			Promise.resolve<WorkspaceSelectionResult>({
+				ready: false,
+				workspaceId: null,
+				workspaceType: null,
+				workspacePath: null,
+			})
+		);
+	}
+
+	async function getPendingSubmitOptions() {
+		const workspaceSelection = await getPendingWorkspaceSelection();
+		if (!workspaceSelection.ready) {
+			return null;
+		}
+
+		return {
+			...(workspaceSelection.workspaceId
+				? { workspaceId: workspaceSelection.workspaceId }
+				: {}),
+			...(workspaceSelection.workspaceType && workspaceSelection.workspacePath
+				? {
+						workspaceType: workspaceSelection.workspaceType,
+						workspacePath: workspaceSelection.workspacePath,
+					}
+				: {}),
+		};
+	}
+
+	function finalizePendingSessionStart(sessionId: string, threadId: string) {
+		if (mounted) {
+			sessions.openThread(sessionId, threadId);
+		}
+		clearComposerOverrides();
+		sessionView.resetPendingWorkspaceSetup();
+	}
+
+	function movePendingDraftToThread(threadId: string, draft: string) {
+		moveComposerDraft({
+			fromStorageKey: resolveComposerDraftStorageKey({
+				isPending: true,
+				threadId: thread.threadId,
+			}),
+			toStorageKey: resolveComposerDraftStorageKey({
+				isPending: false,
+				threadId,
+			}),
+			value: draft,
+		});
+	}
+
+	function clearCurrentDraft() {
+		thread.clearComposerDraft();
+	}
+
+	async function createSessionForFileMentions(): Promise<boolean> {
+		if (!session.isPending) {
+			return true;
+		}
+
+		if (pendingMentionSessionCreation) {
+			return pendingMentionSessionCreation;
+		}
+
+		const creation = submitComposer({
+			forceEmptyPendingMessage: true,
+			preserveDraft: true,
+		});
+		pendingMentionSessionCreation = creation;
+		return creation.finally(() => {
+			if (pendingMentionSessionCreation === creation) {
+				pendingMentionSessionCreation = null;
+			}
+		});
+	}
+
+	async function submitComposer({
+		forceEmptyPendingMessage = false,
+		preserveDraft = false,
+	}: {
+		forceEmptyPendingMessage?: boolean;
+		preserveDraft?: boolean;
+	} = {}) {
 		if (isGenerating()) {
 			await thread.cancel();
 			composerTextareaRef?.closeMentionDropdown();
 			composerTextareaRef?.closePromptHistoryDropdown();
-			return;
-		}
-
-		if (session.isPending) {
-			await submitNewSession();
-			return;
+			return false;
 		}
 
 		const emptyWithoutAttachments =
 			inputEmpty() && attachmentFiles.length === 0;
-		if (emptyWithoutAttachments) {
-			return;
+		if (!session.isPending && emptyWithoutAttachments) {
+			return false;
 		}
 
-		const nextMessageText = sessionView.composerDraft.trim();
-		const nextMessageParts = await createMessageParts(nextMessageText);
+		pendingSubmitError = null;
+		const wasPending = session.isPending;
+		const currentDraft = sessionView.composerDraft;
+		const nextMessageText = forceEmptyPendingMessage ? "" : currentDraft.trim();
+		const shouldAllowEmptyPendingMessage =
+			wasPending &&
+			(forceEmptyPendingMessage ||
+				(attachmentFiles.length === 0 && nextMessageText.length === 0));
+		const nextMessageParts = forceEmptyPendingMessage
+			? []
+			: shouldAllowEmptyPendingMessage
+				? []
+				: await createMessageParts(nextMessageText);
+		const pendingSubmitOptions = wasPending
+			? await getPendingSubmitOptions()
+			: null;
+		if (wasPending && !pendingSubmitOptions) {
+			return false;
+		}
+
+		if (!preserveDraft) {
+			if (nextMessageText) {
+				preferences.addPromptToHistory(nextMessageText);
+			}
+			clearCurrentDraft();
+		}
+
 		try {
-			await thread.submit({
+			const result = await thread.submit({
 				parts: nextMessageParts,
 				mode: effectiveMode,
 				modelId: effectiveModelId,
 				reasoning: effectiveReasoning,
+				allowEmptyPendingMessage: shouldAllowEmptyPendingMessage,
+				...pendingSubmitOptions,
 			});
-			preferences.addPromptToHistory(nextMessageText);
-			thread.clearComposerDraft();
-			clearComposerOverrides();
-			composerTextareaRef?.closeMentionDropdown();
-			composerTextareaRef?.closePromptHistoryDropdown();
-			clearAttachments();
+			if (wasPending && result?.materialized) {
+				if (preserveDraft) {
+					movePendingDraftToThread(result.threadId, currentDraft);
+				}
+				finalizePendingSessionStart(result.sessionId, result.threadId);
+			}
+			if (!preserveDraft) {
+				clearComposerOverrides();
+				composerTextareaRef?.closeMentionDropdown();
+				composerTextareaRef?.closePromptHistoryDropdown();
+				clearAttachments();
+				await focusComposerTextarea();
+			}
+			return true;
+		} catch (err) {
+			if (wasPending) {
+				pendingSubmitError =
+					err instanceof Error ? err.message : "Failed to start chat";
+			}
 			await focusComposerTextarea();
-		} catch {
-			// Error is already surfaced via thread.error in ConversationPane
-			await focusComposerTextarea();
+			return false;
 		}
 	}
 
-	async function submitNewSession() {
-		pendingSubmitError = null;
-
-		const workspaceSelection =
-			await (sessionSetupRef?.getWorkspaceSelection() ??
-				Promise.resolve<WorkspaceSelectionResult>({
-					ready: false,
-					workspaceId: null,
-					workspaceType: null,
-					workspacePath: null,
-				}));
-		if (!workspaceSelection.ready) {
-			return;
-		}
-
-		const trimmedText = sessionView.composerDraft.trim();
-		const pendingDraftStorageKey = resolveComposerDraftStorageKey({
-			isPending: true,
-			threadId: thread.threadId,
-		});
-		const messageParts = await createMessageParts(trimmedText);
-		const model = normalizeModelId(effectiveModelId);
-
-		try {
-			const response = await app.chat({
-				sessionId: session.sessionId,
-				threadId: thread.threadId,
-				messages:
-					messageParts.length > 0
-						? [createUserMessageFromParts(messageParts)]
-						: [],
-				...(workspaceSelection.workspaceId
-					? { workspaceId: workspaceSelection.workspaceId }
-					: {}),
-				...(workspaceSelection.workspaceType && workspaceSelection.workspacePath
-					? {
-							workspaceType: workspaceSelection.workspaceType,
-							workspacePath: workspaceSelection.workspacePath,
-						}
-					: {}),
-				...(model ? { model } : {}),
-				...(effectiveReasoning ? { reasoning: "enabled" } : {}),
-				mode: effectiveMode === "plan" ? "plan" : "",
-			});
-			if (trimmedText) {
-				preferences.addPromptToHistory(trimmedText);
-			}
-			thread.clearComposerDraft(pendingDraftStorageKey);
-			if (mounted) {
-				sessions.openThread(response.sessionId, response.threadId);
-			}
-
-			clearComposerOverrides();
-			composerTextareaRef?.closeMentionDropdown();
-			composerTextareaRef?.closePromptHistoryDropdown();
-			clearAttachments();
-			sessionView.resetPendingWorkspaceSetup();
-		} catch (err) {
-			pendingSubmitError =
-				err instanceof Error ? err.message : "Failed to start session";
-			await focusComposerTextarea();
-		}
+	async function handleComposerSubmit() {
+		await submitComposer();
 	}
 </script>
 
@@ -358,7 +418,8 @@
 						attachmentCount={attachmentFiles.length}
 						onAddFiles={addFiles}
 						onRemoveLastAttachment={removeLastAttachment}
-						onSubmit={submitComposer}
+						onRequestMentionSession={createSessionForFileMentions}
+						onSubmit={handleComposerSubmit}
 					/>
 
 					<InputGroupAddon align="block-end" class="justify-between gap-1">
@@ -407,7 +468,7 @@
 								status={submitStatus}
 								inputEmpty={inputEmpty()}
 								disabled={session.isPending ? sessionSetupDisabled : false}
-								onPress={submitComposer}
+								onPress={handleComposerSubmit}
 							/>
 						</div>
 					</InputGroupAddon>
