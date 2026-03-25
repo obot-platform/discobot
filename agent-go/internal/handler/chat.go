@@ -194,6 +194,20 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	threadID := chi.URLParam(r, "id")
 
 	snapshot := h.completions.PollChunks(threadID, 0)
+	if snapshot == nil {
+		interrupted, err := h.completions.HasInterruptedTurn(threadID)
+		if err != nil {
+			h.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if interrupted {
+			if _, err := h.completions.Chat(threadID, agent.PromptRequest{}); err != nil && !strings.Contains(err.Error(), "completion_in_progress") {
+				h.Error(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			snapshot = h.completions.PollChunks(threadID, 0)
+		}
+	}
 	freshRequest := false
 	offset := 0
 	if lastEventID := r.Header.Get("Last-Event-ID"); lastEventID != "" {

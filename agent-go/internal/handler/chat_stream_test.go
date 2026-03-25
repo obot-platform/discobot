@@ -23,9 +23,10 @@ import (
 )
 
 type streamTestAgent struct {
-	promptFn       func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
-	messagesFn     func(threadID, leafID string) ([]message.UIMessage, error)
-	submitAnswerFn func(threadID, approvalID string, req api.AnswerQuestionRequest) error
+	promptFn             func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	messagesFn           func(threadID, leafID string) ([]message.UIMessage, error)
+	submitAnswerFn       func(threadID, approvalID string, req api.AnswerQuestionRequest) error
+	hasInterruptedTurnFn func(threadID string) (bool, error)
 }
 
 func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
@@ -45,8 +46,13 @@ func (m *streamTestAgent) Messages(threadID, leafID string) ([]message.UIMessage
 func (m *streamTestAgent) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
 	return nil, nil
 }
-func (m *streamTestAgent) ListThreads() ([]string, error)                           { return nil, nil }
-func (m *streamTestAgent) InterruptedThreads() ([]string, error)                    { return nil, nil }
+func (m *streamTestAgent) ListThreads() ([]string, error) { return nil, nil }
+func (m *streamTestAgent) HasInterruptedTurn(threadID string) (bool, error) {
+	if m.hasInterruptedTurnFn != nil {
+		return m.hasInterruptedTurnFn(threadID)
+	}
+	return false, nil
+}
 func (m *streamTestAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error) { return nil, nil }
 func (m *streamTestAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error {
 	if m.submitAnswerFn != nil {
@@ -625,6 +631,76 @@ func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *tes
 	}
 	if frames[4].Event != "ping" {
 		t.Fatalf("expected ping after replay completes, got %+v", frames[4])
+	}
+}
+
+func TestChatStream_FreshRequest_StartsInterruptedTurnRecovery(t *testing.T) {
+	reqCh := make(chan agent.PromptRequest, 1)
+	release := make(chan struct{})
+	liveChunk := message.TextDeltaChunk{ID: "delta-recover-1", Delta: "resumed"}
+	liveChunkJSON, err := message.MarshalChunk(liveChunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{
+		promptFn: func(ctx context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			reqCh <- req
+			return func(yield func(message.MessageChunk, error) bool) {
+				<-release
+				if !yield(liveChunk, nil) {
+					return
+				}
+				<-ctx.Done()
+			}
+		},
+		messagesFn: func(_, _ string) ([]message.UIMessage, error) {
+			return nil, nil
+		},
+		hasInterruptedTurnFn: func(threadID string) (bool, error) {
+			return threadID == "thread-recover", nil
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = time.Second
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-recover/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	select {
+	case req := <-reqCh:
+		if len(req.UserParts) != 0 {
+			t.Fatalf("expected recovery prompt to have no user parts, got %d", len(req.UserParts))
+		}
+		if req.LeafID != "" {
+			t.Fatalf("expected empty leaf ID for recovery prompt, got %q", req.LeafID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for recovery prompt")
+	}
+
+	close(release)
+
+	frames := readFrames(t, resp.Body, 3, false)
+	if len(frames) != 3 {
+		t.Fatalf("expected 3 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start frame, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-end" {
+		t.Fatalf("expected history-end frame, got %+v", frames[1])
+	}
+	if frames[2].Event != "chunk" || frames[2].Data != string(liveChunkJSON) {
+		t.Fatalf("unexpected recovery chunk frame: %+v", frames[2])
 	}
 }
 

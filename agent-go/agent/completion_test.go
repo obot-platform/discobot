@@ -49,8 +49,13 @@ func (m *mockAgent) ListThreads() ([]string, error) {
 	return m.threads, nil
 }
 
-func (m *mockAgent) InterruptedThreads() ([]string, error) {
-	return m.interruptedThreads, nil
+func (m *mockAgent) HasInterruptedTurn(threadID string) (bool, error) {
+	for _, interrupted := range m.interruptedThreads {
+		if interrupted == threadID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *mockAgent) PendingQuestion(_ string) (*PendingQuestion, error) {

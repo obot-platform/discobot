@@ -73,9 +73,6 @@ func Run(cfg *config.Config) {
 	// ── CompletionManager ────────────────────────────────────────────────────
 	completions := agent.NewCompletionManager(a)
 
-	// Resume any turns that were interrupted by a previous crash.
-	completions.Recover()
-
 	// ── Hook manager ─────────────────────────────────────────────────────────
 	var hookMgr *hooks.Manager
 	if cfg.HooksEnabled {

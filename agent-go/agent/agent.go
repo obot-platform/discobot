@@ -74,10 +74,9 @@ type Agent interface {
 	// ListThreads returns all thread IDs.
 	ListThreads() ([]string, error)
 
-	// InterruptedThreads returns thread IDs that have unfinished turns
-	// from a previous crash. Used for startup recovery.
-	// Threads paused for AskUserQuestion are NOT included.
-	InterruptedThreads() ([]string, error)
+	// HasInterruptedTurn reports whether threadID has an unfinished turn from a
+	// previous crash. Threads paused for AskUserQuestion return false.
+	HasInterruptedTurn(threadID string) (bool, error)
 
 	// PendingQuestion returns the pending AskUserQuestion for a thread,
 	// or nil if no question is pending. Used by GET /chat/question.

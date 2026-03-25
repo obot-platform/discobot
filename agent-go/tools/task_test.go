@@ -32,7 +32,7 @@ func (m *mockSubAgent) Cancel(_ string) bool                                    
 func (m *mockSubAgent) Messages(_, _ string) ([]message.UIMessage, error)           { return nil, nil }
 func (m *mockSubAgent) ListModels(_ context.Context) ([]providers.ModelInfo, error) { return nil, nil }
 func (m *mockSubAgent) ListThreads() ([]string, error)                              { return nil, nil }
-func (m *mockSubAgent) InterruptedThreads() ([]string, error)                       { return nil, nil }
+func (m *mockSubAgent) HasInterruptedTurn(string) (bool, error)                     { return false, nil }
 func (m *mockSubAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error) {
 	return nil, nil
 }

@@ -214,22 +214,6 @@ func Run(cfg *config.Config, flags *Flags) {
 	showResume, showHistory := startupCommandHints(store, cfg, threadID)
 	fmt.Fprintln(os.Stderr, startupMessage(showResume, showHistory))
 
-	// Resume any turn interrupted by a previous crash.
-	interrupted, _ := a.InterruptedThreads()
-	for _, id := range interrupted {
-		if id == threadID {
-			fmt.Fprintln(os.Stderr, "Resuming interrupted turn from previous session...")
-			startTurn(func(ctx context.Context, cancel context.CancelFunc) {
-				runTurnLoop(ctx, cancel, a, threadID, agent.PromptRequest{Mode: planModeStr(planMode)}, func(enabled bool) {
-					planMode = enabled
-					saveThreadPlanMode(store, threadID, enabled)
-				})
-				planMode = getThreadPlanMode(store, threadID)
-			})
-			break
-		}
-	}
-
 	// Handle any pending AskUserQuestion left from a previous session.
 	if pending, _ := a.PendingQuestion(threadID); pending != nil {
 		fmt.Fprintln(os.Stderr, "Resuming pending approval from previous session...")
@@ -315,19 +299,6 @@ func Run(cfg *config.Config, flags *Flags) {
 						planMode = getThreadPlanMode(store, threadID)
 						fmt.Fprintf(os.Stderr, "Switched to thread %s\n", threadID)
 						printThreadHistory(store, threadID)
-						// Resume any interrupted turn or pending question in the new thread.
-						interrupted, _ := a.InterruptedThreads()
-						for _, id := range interrupted {
-							if id == threadID {
-								fmt.Fprintln(os.Stderr, "Resuming interrupted turn...")
-								runTurnLoop(ctx, cancel, a, threadID, agent.PromptRequest{Mode: planModeStr(planMode)}, func(enabled bool) {
-									planMode = enabled
-									saveThreadPlanMode(store, threadID, enabled)
-								})
-								planMode = getThreadPlanMode(store, threadID)
-								break
-							}
-						}
 						if pending, _ := a.PendingQuestion(threadID); pending != nil {
 							fmt.Fprintln(os.Stderr, "Resuming pending approval...")
 							if handlePendingQuestion(ctx, a, threadID, pending) {

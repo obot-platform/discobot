@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
@@ -53,21 +52,6 @@ func NewCompletionManager(agent Agent) *CompletionManager {
 	return cm
 }
 
-// Recover checks all threads for interrupted turns and resumes them.
-// Call this on startup before handling any requests.
-func (cm *CompletionManager) Recover() {
-	threads, err := cm.agent.InterruptedThreads()
-	if err != nil {
-		log.Printf("completion: recover: %v", err)
-		return
-	}
-
-	for _, threadID := range threads {
-		log.Printf("completion: recovering interrupted thread %s", threadID)
-		cm.startPrompt(threadID, PromptRequest{})
-	}
-}
-
 // Chat starts a new turn for the given thread. It returns the completion ID
 // or an error if a completion is already running for this thread.
 // The turn runs in a background goroutine; chunks are cached for SSE replay.
@@ -100,28 +84,6 @@ func (cm *CompletionManager) Chat(threadID string, req PromptRequest) (string, e
 	go cm.runCompletion(ctx, comp, threadID, req)
 
 	return completionID, nil
-}
-
-// startPrompt starts a background prompt for recovery or hook re-prompting.
-// It does NOT check for existing active completions (caller must handle that).
-func (cm *CompletionManager) startPrompt(threadID string, req PromptRequest) {
-	completionID := generateID()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	comp := &activeCompletion{
-		id:       completionID,
-		threadID: threadID,
-		cancel:   cancel,
-		leafMsg:  req.LeafID,
-	}
-	comp.cond = sync.NewCond(&comp.mu)
-
-	cm.mu.Lock()
-	cm.active[threadID] = comp
-	cm.cond.Broadcast()
-	cm.mu.Unlock()
-
-	go cm.runCompletion(ctx, comp, threadID, req)
 }
 
 // runCompletion drives the Agent.Prompt iterator in a goroutine, caching chunks.
@@ -342,6 +304,11 @@ func (cm *CompletionManager) ListModels(ctx context.Context) ([]providers.ModelI
 // ListThreads returns all thread IDs.
 func (cm *CompletionManager) ListThreads() ([]string, error) {
 	return cm.agent.ListThreads()
+}
+
+// HasInterruptedTurn reports whether threadID has an unfinished turn.
+func (cm *CompletionManager) HasInterruptedTurn(threadID string) (bool, error) {
+	return cm.agent.HasInterruptedTurn(threadID)
 }
 
 // PendingQuestion returns the pending AskUserQuestion for a thread, or nil.

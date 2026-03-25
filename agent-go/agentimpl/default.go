@@ -950,26 +950,14 @@ func (a *DefaultAgent) ListThreads() ([]string, error) {
 	return a.store.ListThreads()
 }
 
-// InterruptedThreads returns thread IDs that have unfinished turns.
+// HasInterruptedTurn reports whether threadID has an unfinished turn.
 // Threads paused for AskUserQuestion (waiting_for_answer) are excluded.
-func (a *DefaultAgent) InterruptedThreads() ([]string, error) {
-	threads, err := a.store.ListThreads()
+func (a *DefaultAgent) HasInterruptedTurn(threadID string) (bool, error) {
+	state, err := a.store.LoadTurnState(threadID)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-
-	var interrupted []string
-	for _, threadID := range threads {
-		state, err := a.store.LoadTurnState(threadID)
-		if err != nil {
-			log.Printf("agent: check interrupted turn for %s: %v", threadID, err)
-			continue
-		}
-		if state != nil && state.Phase != thread.PhaseWaitingForAnswer {
-			interrupted = append(interrupted, threadID)
-		}
-	}
-	return interrupted, nil
+	return state != nil && state.Phase != thread.PhaseWaitingForAnswer, nil
 }
 
 // PendingQuestion returns the pending AskUserQuestion for a thread, or nil.
