@@ -193,12 +193,15 @@
 		}
 
 		const styles = window.getComputedStyle(element);
+		const turnStyles = window.getComputedStyle(turnElement);
 		const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
 		const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+		const turnTopPadding = Number.parseFloat(turnStyles.paddingTop) || 0;
 
 		return getReservedTurnMinHeight({
 			currentTurnHeight: turnElement.getBoundingClientRect().height,
 			contentTopPadding,
+			turnTopPadding,
 			viewportClientHeight: element.clientHeight,
 			viewportPaddingBottom: paddingBottom,
 			viewportPaddingTop: paddingTop,
@@ -383,11 +386,11 @@
 					<div
 						class={`w-full space-y-4 ${effectiveChatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
 					>
-						{#each conversationTurns as turn (turn.id)}
+						{#each conversationTurns as turn, index (turn.id)}
 							<div
 								data-active-turn={turn.id === activeTurnId}
 								data-conversation-turn-id={turn.id}
-								class="space-y-4"
+								class={`space-y-4 ${index > 0 && turn.userMessages.length > 0 ? "pt-20" : ""}`}
 								style={getTurnStyle(turn.id === activeTurnId)}
 							>
 								{#each turn.userMessages as message (message.id)}

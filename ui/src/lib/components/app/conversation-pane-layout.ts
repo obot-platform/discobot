@@ -9,6 +9,7 @@ export type ConversationTurn = {
 export type ReservedTurnMinHeightArgs = {
 	currentTurnHeight: number;
 	contentTopPadding: number;
+	turnTopPadding: number;
 	viewportClientHeight: number;
 	viewportPaddingBottom: number;
 	viewportPaddingTop: number;
@@ -55,6 +56,7 @@ export function groupMessagesIntoTurns(
 export function getReservedTurnMinHeight({
 	currentTurnHeight,
 	contentTopPadding,
+	turnTopPadding,
 	viewportClientHeight,
 	viewportPaddingBottom,
 	viewportPaddingTop,
@@ -67,9 +69,11 @@ export function getReservedTurnMinHeight({
 		0,
 		viewportInnerHeight - Math.max(0, contentTopPadding),
 	);
+	const compensatedAvailableTurnHeight =
+		availableTurnHeight + Math.max(0, turnTopPadding);
 
 	return Math.max(
 		Math.ceil(currentTurnHeight),
-		Math.floor(availableTurnHeight),
+		Math.floor(compensatedAvailableTurnHeight),
 	);
 }

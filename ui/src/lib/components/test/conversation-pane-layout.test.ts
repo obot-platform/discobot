@@ -85,6 +85,7 @@ test("getReservedTurnMinHeight fills the visible viewport when the turn is short
 		getReservedTurnMinHeight({
 			currentTurnHeight: 124.2,
 			contentTopPadding: 12,
+			turnTopPadding: 0,
 			viewportClientHeight: 640,
 			viewportPaddingBottom: 16,
 			viewportPaddingTop: 16,
@@ -93,11 +94,26 @@ test("getReservedTurnMinHeight fills the visible viewport when the turn is short
 	);
 });
 
+test("getReservedTurnMinHeight compensates for turn top padding", () => {
+	assert.equal(
+		getReservedTurnMinHeight({
+			currentTurnHeight: 124.2,
+			contentTopPadding: 12,
+			turnTopPadding: 64,
+			viewportClientHeight: 640,
+			viewportPaddingBottom: 16,
+			viewportPaddingTop: 16,
+		}),
+		660,
+	);
+});
+
 test("getReservedTurnMinHeight preserves taller turns", () => {
 	assert.equal(
 		getReservedTurnMinHeight({
 			currentTurnHeight: 712.4,
 			contentTopPadding: 24,
+			turnTopPadding: 0,
 			viewportClientHeight: 640,
 			viewportPaddingBottom: 16,
 			viewportPaddingTop: 16,
