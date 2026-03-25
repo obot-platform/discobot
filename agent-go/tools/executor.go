@@ -503,10 +503,10 @@ func (e *Executor) ResolveAnswer(toolCtx *thread.ToolContext, call message.ToolC
 }
 
 // ResumeAsync re-attaches to a previously launched async background task.
-func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string, _ *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
 	switch call.ToolName {
 	case "Task", "Agent":
-		return e.resumeTask(ctx, toolCtx, call, taskID)
+		return e.resumeTask(ctx, toolCtx, call, taskID, req)
 	default:
 		return thread.ToolExecuteResult{
 			Result: errorResult(call, fmt.Sprintf("async task for %s lost after crash (taskID: %s)", call.ToolName, taskID)),

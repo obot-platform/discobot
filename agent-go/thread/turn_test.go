@@ -1594,17 +1594,22 @@ type asyncMockExecutor struct {
 	asyncToolIDs map[string]string
 	// results maps toolCallID → result (used for both sync and async Wait).
 	results map[string]message.ToolResultPart
+	// waitApprovals maps toolCallID → approval questions returned by Wait.
+	waitApprovals map[string]json.RawMessage
 	// waitErrors maps toolCallID → error returned by Wait.
 	waitErrors map[string]error
 	// resumeResults maps taskID → result for ResumeAsync (nil Async = completed).
 	resumeResults map[string]ToolExecuteResult
 	// resumeErrors maps taskID → error for ResumeAsync.
 	resumeErrors map[string]error
+	// resumeRequests captures answer payloads passed to ResumeAsync.
+	resumeRequests map[string]api.AnswerQuestionRequest
 }
 
 func (e *asyncMockExecutor) Execute(_ context.Context, _ *ToolContext, call message.ToolCallPart) (ToolExecuteResult, error) {
 	if taskID, ok := e.asyncToolIDs[call.ToolCallID]; ok {
 		result := e.results[call.ToolCallID]
+		waitApproval := e.waitApprovals[call.ToolCallID]
 		waitErr := e.waitErrors[call.ToolCallID]
 		return ToolExecuteResult{
 			Async: &AsyncTaskHandle{
@@ -1612,6 +1617,11 @@ func (e *asyncMockExecutor) Execute(_ context.Context, _ *ToolContext, call mess
 				Wait: func(_ context.Context) (AsyncWaitResult, error) {
 					if waitErr != nil {
 						return AsyncWaitResult{}, waitErr
+					}
+					if len(waitApproval) > 0 {
+						return AsyncWaitResult{
+							Approval: &ApprovalRequest{Questions: waitApproval},
+						}, nil
 					}
 					return AsyncWaitResult{Result: result}, nil
 				},
@@ -1632,7 +1642,13 @@ func (e *asyncMockExecutor) ResolveAnswer(_ *ToolContext, _ message.ToolCallPart
 	return ToolExecuteResult{}, fmt.Errorf("no approvals in async mock")
 }
 
-func (e *asyncMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, taskID string, _ *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+func (e *asyncMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.ToolCallPart, taskID string, req *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	if req != nil {
+		if e.resumeRequests == nil {
+			e.resumeRequests = make(map[string]api.AnswerQuestionRequest)
+		}
+		e.resumeRequests[taskID] = *req
+	}
 	if err, ok := e.resumeErrors[taskID]; ok {
 		return ToolExecuteResult{}, err
 	}
@@ -2226,6 +2242,121 @@ func TestResumeTurn_CrashedDuringToolPhase_WithAsyncTasks(t *testing.T) {
 	tr2 := toolMsg.Parts[1].(message.ToolResultPart)
 	if tr1.ToolCallID != "tc1" || tr2.ToolCallID != "tc2" {
 		t.Errorf("expected tc1,tc2 order, got %s,%s", tr1.ToolCallID, tr2.ToolCallID)
+	}
+}
+
+func TestRunTurn_AsyncToolApprovalBubblesToParentAndResumes(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-async-approval"
+
+	questionsJSON := json.RawMessage(`[{"question":"Proceed with the sub-agent plan?"}]`)
+
+	initialProvider := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{
+			{
+				message.StreamStartChunk{},
+				message.ToolCallChunk{ToolCallID: "tc1", ToolName: "Task", Input: `{"prompt":"delegate"}`},
+				message.FinishChunk{FinishReason: message.FinishReason{Unified: "tool-calls"}},
+			},
+		},
+	}
+	initialExec := &asyncMockExecutor{
+		asyncToolIDs:  map[string]string{"tc1": "task-subagent"},
+		waitApprovals: map[string]json.RawMessage{"tc1": questionsJSON},
+	}
+
+	chunks := collectChunks(t, RunTurn(context.Background(), initialProvider, initialExec, store, threadID, "", TurnConfig{
+		Model:     "test-model",
+		UserParts: []message.Part{message.TextPart{Text: "delegate this"}},
+	}))
+
+	var hasApprovalChunk bool
+	for _, c := range chunks {
+		if approval, ok := c.(message.ToolApprovalRequestChunk); ok && approval.ToolCallID == "tc1" {
+			hasApprovalChunk = true
+		}
+	}
+	if !hasApprovalChunk {
+		t.Fatal("expected approval chunk for async task")
+	}
+
+	turnState, err := store.LoadTurnState(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turnState == nil || turnState.Phase != PhaseWaitingForAnswer {
+		t.Fatalf("expected waiting_for_answer turn state, got %#v", turnState)
+	}
+
+	question, err := store.LoadQuestion(threadID, turnState.ID, turnState.PendingApprovalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if question == nil {
+		t.Fatal("expected pending question to be saved")
+	}
+	if question.TaskID != "task-subagent" {
+		t.Fatalf("expected pending question taskID=task-subagent, got %q", question.TaskID)
+	}
+
+	if err := store.SaveAnswer(threadID, turnState.ID, QuestionAnswer{
+		ApprovalID: turnState.PendingApprovalID,
+		Answers:    map[string]string{"Proceed with the sub-agent plan?": "Yes"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resumeProvider := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{
+			{
+				message.StreamStartChunk{},
+				message.TextStartChunk{ID: "t1"},
+				message.TextDeltaChunk{ID: "t1", Delta: "Delegation complete"},
+				message.TextEndChunk{ID: "t1"},
+				message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+			},
+		},
+	}
+	resumeExec := &asyncMockExecutor{
+		resumeResults: map[string]ToolExecuteResult{
+			"task-subagent": {
+				Result: message.ToolResultPart{
+					ToolCallID: "tc1",
+					ToolName:   "Task",
+					Output:     message.TextOutput{Value: "sub-agent finished"},
+				},
+			},
+		},
+	}
+
+	resumedChunks := collectChunks(t, ResumeTurn(context.Background(), resumeProvider, resumeExec, store, turnState))
+
+	var hasToolOutput, hasFinalText bool
+	for _, c := range resumedChunks {
+		switch chunk := c.(type) {
+		case message.ToolOutputAvailableChunk:
+			if chunk.ToolCallID == "tc1" {
+				hasToolOutput = true
+			}
+		case message.TextDeltaChunk:
+			if chunk.Delta == "Delegation complete" {
+				hasFinalText = true
+			}
+		}
+	}
+	if !hasToolOutput {
+		t.Fatal("expected tool output after answering async approval")
+	}
+	if !hasFinalText {
+		t.Fatal("expected final assistant text after async approval resume")
+	}
+
+	req, ok := resumeExec.resumeRequests["task-subagent"]
+	if !ok {
+		t.Fatal("expected ResumeAsync to receive the saved answer")
+	}
+	if req.Answers["Proceed with the sub-agent plan?"] != "Yes" {
+		t.Fatalf("unexpected resume answers: %#v", req.Answers)
 	}
 }
 

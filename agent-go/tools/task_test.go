@@ -17,8 +17,10 @@ import (
 // --- Mock sub-agent ---
 
 type mockSubAgent struct {
-	promptFn        func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
-	finalResponseFn func(threadID string) (string, error)
+	promptFn          func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	finalResponseFn   func(threadID string) (string, error)
+	pendingQuestionFn func(threadID string) (*agent.PendingQuestion, error)
+	submitAnswerFn    func(threadID, approvalID string, req api.AnswerQuestionRequest) error
 }
 
 func (m *mockSubAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
@@ -33,10 +35,16 @@ func (m *mockSubAgent) Messages(_, _ string) ([]message.UIMessage, error)       
 func (m *mockSubAgent) ListModels(_ context.Context) ([]providers.ModelInfo, error) { return nil, nil }
 func (m *mockSubAgent) ListThreads() ([]string, error)                              { return nil, nil }
 func (m *mockSubAgent) HasInterruptedTurn(string) (bool, error)                     { return false, nil }
-func (m *mockSubAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error) {
+func (m *mockSubAgent) PendingQuestion(threadID string) (*agent.PendingQuestion, error) {
+	if m.pendingQuestionFn != nil {
+		return m.pendingQuestionFn(threadID)
+	}
 	return nil, nil
 }
-func (m *mockSubAgent) SubmitAnswer(_, _ string, _ api.AnswerQuestionRequest) error {
+func (m *mockSubAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error {
+	if m.submitAnswerFn != nil {
+		return m.submitAnswerFn(threadID, approvalID, req)
+	}
 	return nil
 }
 func (m *mockSubAgent) ListCommands() ([]agent.Command, error) { return nil, nil }
@@ -67,16 +75,22 @@ func makeTaskCall(t *testing.T, prompt string) message.ToolCallPart {
 
 func waitHandle(t *testing.T, handle *thread.AsyncTaskHandle, timeout time.Duration) message.ToolResultPart {
 	t.Helper()
+	res := waitAsyncResult(t, handle, timeout)
+	if res.Approval != nil {
+		t.Fatalf("Wait returned unexpected approval: %#v", res.Approval)
+	}
+	return res.Result
+}
+
+func waitAsyncResult(t *testing.T, handle *thread.AsyncTaskHandle, timeout time.Duration) thread.AsyncWaitResult {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	res, err := handle.Wait(ctx)
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
-	if res.Approval != nil {
-		t.Fatalf("Wait returned unexpected approval: %#v", res.Approval)
-	}
-	return res.Result
+	return res
 }
 
 func textOutput(res message.ToolResultPart) string {
@@ -434,6 +448,176 @@ func TestTask_Resumption_MidTurn(t *testing.T) {
 	res := waitHandle(t, result.Async, 5*time.Second)
 	if got := textOutput(res); got != want {
 		t.Errorf("output: got %q, want %q", got, want)
+	}
+}
+
+func TestTask_SubAgentQuestionPropagatesApproval(t *testing.T) {
+	const (
+		approvalID = "sub-approval-1"
+		question   = "Which option should I use?"
+		finalText  = "completed after answer"
+	)
+
+	answered := false
+	gotAnswers := map[string]string(nil)
+	gotApprovalID := ""
+
+	subAgent := &mockSubAgent{
+		promptFn: func(_ context.Context, _ string, _ agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+		pendingQuestionFn: func(_ string) (*agent.PendingQuestion, error) {
+			if answered {
+				return nil, nil
+			}
+			return &agent.PendingQuestion{
+				ApprovalID: approvalID,
+				Questions: []api.AskUserQuestion{{
+					Question: question,
+					Header:   "Option",
+					Options: []api.AskUserQuestionOption{
+						{Label: "A", Description: "Use option A"},
+						{Label: "B", Description: "Use option B"},
+					},
+				}},
+			}, nil
+		},
+		submitAnswerFn: func(_ string, submittedApprovalID string, req api.AnswerQuestionRequest) error {
+			answered = true
+			gotApprovalID = submittedApprovalID
+			gotAnswers = req.Answers
+			return nil
+		},
+		finalResponseFn: func(_ string) (string, error) {
+			if answered {
+				return finalText, nil
+			}
+			return "", nil
+		},
+	}
+
+	exec := New(t.TempDir(), t.TempDir(), "parent-thread")
+	toolCtx := &thread.ToolContext{ThreadID: "parent-thread", Agent: subAgent}
+
+	result, err := exec.Execute(context.Background(), toolCtx, makeTaskCall(t, "ask the sub-agent"))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Async == nil {
+		t.Fatal("expected Async handle")
+	}
+	taskID := result.Async.TaskID
+	t.Cleanup(func() { cleanupTask(taskID) })
+
+	waitResult := waitAsyncResult(t, result.Async, 5*time.Second)
+	if waitResult.Approval == nil {
+		t.Fatal("expected approval request from sub-agent task")
+	}
+
+	var questions []api.AskUserQuestion
+	if err := json.Unmarshal(waitResult.Approval.Questions, &questions); err != nil {
+		t.Fatalf("unmarshal approval questions: %v", err)
+	}
+	if len(questions) != 1 || questions[0].Question != question {
+		t.Fatalf("unexpected approval questions: %#v", questions)
+	}
+
+	answerReq := &api.AnswerQuestionRequest{
+		Answers: map[string]string{question: "A"},
+	}
+	resumed, err := exec.ResumeAsync(context.Background(), toolCtx, makeTaskCall(t, "ask the sub-agent"), taskID, answerReq)
+	if err != nil {
+		t.Fatalf("ResumeAsync: %v", err)
+	}
+	if resumed.Async == nil {
+		t.Fatal("expected Async handle after answering sub-agent question")
+	}
+
+	res := waitHandle(t, resumed.Async, 5*time.Second)
+	if got := textOutput(res); got != finalText {
+		t.Fatalf("output: got %q, want %q", got, finalText)
+	}
+	if gotApprovalID != approvalID {
+		t.Fatalf("approval ID: got %q, want %q", gotApprovalID, approvalID)
+	}
+	if gotAnswers[question] != "A" {
+		t.Fatalf("answers: got %#v", gotAnswers)
+	}
+}
+
+func TestTask_ResumeAsync_CrashRecoveryAfterSubAgentQuestion(t *testing.T) {
+	const (
+		approvalID = "sub-approval-crash"
+		question   = "Continue with the risky step?"
+		finalText  = "resumed after crash"
+		taskID     = "paused-task-after-crash"
+	)
+
+	answered := false
+	gotApprovalID := ""
+	gotAnswers := map[string]string(nil)
+
+	subAgent := &mockSubAgent{
+		pendingQuestionFn: func(_ string) (*agent.PendingQuestion, error) {
+			if answered {
+				return nil, nil
+			}
+			return &agent.PendingQuestion{
+				ApprovalID: approvalID,
+				Questions: []api.AskUserQuestion{{
+					Question: question,
+					Header:   "Confirmation",
+					Options: []api.AskUserQuestionOption{
+						{Label: "Yes", Description: "Continue"},
+						{Label: "No", Description: "Stop"},
+					},
+				}},
+			}, nil
+		},
+		submitAnswerFn: func(_ string, submittedApprovalID string, req api.AnswerQuestionRequest) error {
+			answered = true
+			gotApprovalID = submittedApprovalID
+			gotAnswers = req.Answers
+			return nil
+		},
+		promptFn: func(_ context.Context, _ string, _ agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+		finalResponseFn: func(_ string) (string, error) {
+			if answered {
+				return finalText, nil
+			}
+			return "", nil
+		},
+	}
+
+	exec := New(t.TempDir(), t.TempDir(), "parent-thread")
+	toolCtx := &thread.ToolContext{ThreadID: "parent-thread", Agent: subAgent}
+
+	call := makeTaskCall(t, "recover paused sub-agent")
+	call.ToolCallID = t.Name() + "-recover"
+
+	answerReq := &api.AnswerQuestionRequest{
+		Answers: map[string]string{question: "Yes"},
+	}
+	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, answerReq)
+	if err != nil {
+		t.Fatalf("ResumeAsync: %v", err)
+	}
+	if result.Async == nil {
+		t.Fatal("expected Async handle for crash recovery")
+	}
+	t.Cleanup(func() { cleanupTask(taskID) })
+
+	res := waitHandle(t, result.Async, 5*time.Second)
+	if got := textOutput(res); got != finalText {
+		t.Fatalf("output: got %q, want %q", got, finalText)
+	}
+	if gotApprovalID != approvalID {
+		t.Fatalf("approval ID: got %q, want %q", gotApprovalID, approvalID)
+	}
+	if gotAnswers[question] != "Yes" {
+		t.Fatalf("answers: got %#v", gotAnswers)
 	}
 }
 
