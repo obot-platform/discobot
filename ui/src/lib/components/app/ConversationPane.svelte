@@ -26,7 +26,6 @@
 		getReservedTurnMinHeight,
 		groupMessagesIntoTurns,
 	} from "$lib/components/app/conversation-pane-layout";
-	import LazyMount from "$lib/components/app/parts/LazyMount.svelte";
 	import { Alert, AlertDescription } from "$lib/components/ui/alert";
 	import { Button } from "$lib/components/ui/button";
 	import {
@@ -52,8 +51,6 @@
 	};
 
 	const SCROLL_TO_BOTTOM_BUFFER = 64;
-	const USER_MESSAGE_PLACEHOLDER_HEIGHT = 96;
-	const ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT = 320;
 
 	let {
 		contentTopPadding = 0,
@@ -117,12 +114,6 @@
 		message: ChatMessage | undefined,
 	): message is ChatMessage & { role: "user"; provisional: true } {
 		return message?.role === "user" && message.provisional === true;
-	}
-
-	function getMessagePlaceholderHeight(message: ChatMessage) {
-		return message.role === "assistant"
-			? ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT
-			: USER_MESSAGE_PLACEHOLDER_HEIGHT;
 	}
 
 	function isAssistantStepMessageExpanded(messageId: string): boolean {
@@ -368,17 +359,12 @@
 										data-conversation-message-id={message.id}
 										from="user"
 									>
-										<LazyMount
-											estimatedHeight={getMessagePlaceholderHeight(message)}
-											root={viewport}
-										>
-											<MessageContent>
-												{@render renderMessageParts(
-													message,
-													partGroups.visibleParts,
-												)}
-											</MessageContent>
-										</LazyMount>
+										<MessageContent>
+											{@render renderMessageParts(
+												message,
+												partGroups.visibleParts,
+											)}
+										</MessageContent>
 									</Message>
 								{/each}
 								{#if turn.assistantMessage}
@@ -394,69 +380,57 @@
 										data-conversation-message-id={assistantMessage.id}
 										from="assistant"
 									>
-										<LazyMount
-											estimatedHeight={getMessagePlaceholderHeight(
-												assistantMessage,
-											)}
-											root={viewport}
-										>
-											<MessageContent>
-												{#if partGroups.hasCollapsedSteps}
-													<Collapsible
-														open={isAssistantStepMessageExpanded(
+										<MessageContent>
+											{#if partGroups.hasCollapsedSteps}
+												<Collapsible
+													open={isAssistantStepMessageExpanded(
+														assistantMessage.id,
+													)}
+													onOpenChange={(open) =>
+														setAssistantStepMessageExpanded(
 															assistantMessage.id,
+															open,
 														)}
-														onOpenChange={(open) =>
-															setAssistantStepMessageExpanded(
-																assistantMessage.id,
-																open,
-															)}
+												>
+													<CollapsibleTrigger
+														aria-label={`${isAssistantStepMessageExpanded(assistantMessage.id) ? "Hide" : "Show"} ${getCollapsedStepLabel(partGroups.collapsedStepCount)}`}
+														class="flex w-full items-center gap-3 py-1 text-left"
+														type="button"
 													>
-														<CollapsibleTrigger
-															aria-label={`${isAssistantStepMessageExpanded(assistantMessage.id) ? "Hide" : "Show"} ${getCollapsedStepLabel(partGroups.collapsedStepCount)}`}
-															class="flex w-full items-center gap-3 py-1 text-left"
-															type="button"
+														<span class="h-px flex-1 bg-border"></span>
+														<span
+															class="rounded-full border border-border/70 bg-background px-3 py-1 font-medium text-[11px] text-muted-foreground uppercase tracking-[0.14em] transition-colors hover:border-border hover:text-foreground"
 														>
-															<span class="h-px flex-1 bg-border"></span>
-															<span
-																class="rounded-full border border-border/70 bg-background px-3 py-1 font-medium text-[11px] text-muted-foreground uppercase tracking-[0.14em] transition-colors hover:border-border hover:text-foreground"
-															>
-																{getCollapsedStepLabel(
-																	partGroups.collapsedStepCount,
-																)}
-															</span>
-															<span class="h-px flex-1 bg-border"></span>
-														</CollapsibleTrigger>
-														<CollapsibleContent
-															class="flex min-w-0 flex-col gap-2 overflow-hidden [&>[data-ai-stack]+[data-ai-stack]]:-mt-8"
-														>
-															{@render renderMessageParts(
-																assistantMessage,
-																partGroups.collapsedParts,
+															{getCollapsedStepLabel(
+																partGroups.collapsedStepCount,
 															)}
-														</CollapsibleContent>
-													</Collapsible>
-												{/if}
-												{@render renderMessageParts(
-													assistantMessage,
-													partGroups.visibleParts,
-												)}
-											</MessageContent>
-										</LazyMount>
+														</span>
+														<span class="h-px flex-1 bg-border"></span>
+													</CollapsibleTrigger>
+													<CollapsibleContent
+														class="flex min-w-0 flex-col gap-2 overflow-hidden [&>[data-ai-stack]+[data-ai-stack]]:-mt-8"
+													>
+														{@render renderMessageParts(
+															assistantMessage,
+															partGroups.collapsedParts,
+														)}
+													</CollapsibleContent>
+												</Collapsible>
+											{/if}
+											{@render renderMessageParts(
+												assistantMessage,
+												partGroups.visibleParts,
+											)}
+										</MessageContent>
 									</Message>
 								{/if}
 								{#if isStreaming && turn.id === activeTurnId}
 									<Message from="assistant">
-										<LazyMount
-											estimatedHeight={ASSISTANT_MESSAGE_PLACEHOLDER_HEIGHT}
-											root={viewport}
-										>
-											<MessageContent>
-												<div class="text-muted-foreground">
-													<Loader size={18} />
-												</div>
-											</MessageContent>
-										</LazyMount>
+										<MessageContent>
+											<div class="text-muted-foreground">
+												<Loader size={18} />
+											</div>
+										</MessageContent>
 									</Message>
 								{/if}
 							</div>
