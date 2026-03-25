@@ -1,14 +1,18 @@
 import type { ChatMessage } from "$lib/api-types";
 
 export type ConversationPaneMessagePart = ChatMessage["parts"][number];
-export type ConversationPaneRenderablePart = Extract<
+export type AssistantConversationPaneRenderablePart = Extract<
 	ConversationPaneMessagePart,
 	{ type: "text" | "reasoning" | "dynamic-tool" }
 >;
+export type UserConversationPaneRenderablePart = Extract<
+	ConversationPaneMessagePart,
+	{ type: "text" | "file" }
+>;
 
 export type AssistantMessagePartGroups = {
-	collapsedParts: ConversationPaneRenderablePart[];
-	visibleParts: ConversationPaneRenderablePart[];
+	collapsedParts: AssistantConversationPaneRenderablePart[];
+	visibleParts: AssistantConversationPaneRenderablePart[];
 	collapsedStepCount: number;
 	hasCollapsedSteps: boolean;
 };
@@ -23,9 +27,9 @@ export function isConversationPaneMessageStreaming(
 	return (message as { status?: string } | undefined)?.status === "streaming";
 }
 
-function isRenderablePart(
+function isAssistantRenderablePart(
 	part: ConversationPaneMessagePart,
-): part is ConversationPaneRenderablePart {
+): part is AssistantConversationPaneRenderablePart {
 	switch (part.type) {
 		case "text":
 		case "reasoning":
@@ -37,17 +41,30 @@ function isRenderablePart(
 	}
 }
 
-export function getConversationPaneRenderableParts(
+function isUserRenderablePart(
+	part: ConversationPaneMessagePart,
+): part is UserConversationPaneRenderablePart {
+	switch (part.type) {
+		case "text":
+			return part.text.length > 0;
+		case "file":
+			return true;
+		default:
+			return false;
+	}
+}
+
+export function getUserMessageRenderableParts(
 	message: ChatMessage,
-): ConversationPaneRenderablePart[] {
-	return message.parts.filter(isRenderablePart);
+): UserConversationPaneRenderablePart[] {
+	return message.parts.filter(isUserRenderablePart);
 }
 
 export function getAssistantMessagePartGroups(
 	message: ChatMessage,
 	options: AssistantMessagePartGroupOptions = {},
 ): AssistantMessagePartGroups {
-	const renderableParts = getConversationPaneRenderableParts(message);
+	const renderableParts = message.parts.filter(isAssistantRenderablePart);
 	const isMessageComplete =
 		options.isMessageComplete ?? !isConversationPaneMessageStreaming(message);
 

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ChatMessage } from "$lib/api-types";
-import { getAssistantMessagePartGroups } from "../app/conversation-pane-message-parts";
+import {
+	getAssistantMessagePartGroups,
+	getUserMessageRenderableParts,
+} from "../app/conversation-pane-message-parts";
 
 function createAssistantMessage(
 	parts: ChatMessage["parts"],
@@ -13,6 +16,14 @@ function createAssistantMessage(
 		role: "assistant",
 		parts,
 		...extra,
+	};
+}
+
+function createUserMessage(parts: ChatMessage["parts"]): ChatMessage {
+	return {
+		id: "user-1",
+		role: "user",
+		parts,
 	};
 }
 
@@ -134,4 +145,28 @@ test("getAssistantMessagePartGroups keeps all trailing text parts visible", () =
 		),
 		["First summary paragraph.", "Second summary paragraph."],
 	);
+});
+
+test("getUserMessageRenderableParts keeps text and file parts for user messages", () => {
+	const parts = getUserMessageRenderableParts(
+		createUserMessage([
+			{ type: "text", text: "Please review this screenshot." },
+			{
+				type: "file",
+				filename: "preview.png",
+				mediaType: "image/png",
+				url: "data:image/png;base64,abc123",
+			},
+		]),
+	);
+
+	assert.deepEqual(
+		parts.map((part) => part.type),
+		["text", "file"],
+	);
+	assert.equal(parts[1]?.type, "file");
+	if (parts[1]?.type === "file") {
+		assert.equal(parts[1].filename, "preview.png");
+		assert.equal(parts[1].mediaType, "image/png");
+	}
 });

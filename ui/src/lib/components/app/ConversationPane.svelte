@@ -3,12 +3,22 @@
 	import { tick } from "svelte";
 	import type { ChatMessage } from "$lib/api-types";
 	import type { ChatWidthMode } from "$lib/app/app-context.types";
-	import type { ConversationPaneRenderablePart } from "$lib/components/app/conversation-pane-message-parts";
+	import type {
+		AssistantConversationPaneRenderablePart,
+		UserConversationPaneRenderablePart,
+	} from "$lib/components/app/conversation-pane-message-parts";
 	import {
 		getAssistantMessagePartGroups,
+		getUserMessageRenderableParts,
 		isConversationPaneMessageStreaming,
 	} from "$lib/components/app/conversation-pane-message-parts";
-	import { Loader } from "$lib/components/ai";
+	import {
+		Attachment,
+		AttachmentInfo,
+		AttachmentPreview,
+		Attachments,
+		Loader,
+	} from "$lib/components/ai";
 	import {
 		Message,
 		MessageContent,
@@ -289,9 +299,39 @@
 	});
 </script>
 
-{#snippet renderMessageParts(
+{#snippet renderUserMessageParts(
 	message: ChatMessage,
-	parts: ConversationPaneRenderablePart[],
+	parts: UserConversationPaneRenderablePart[],
+)}
+	{@const fileParts = parts.filter((part) => part.type === "file")}
+	{#each parts as part, index (`${message.id}-${part.type}-${index}`)}
+		{#if part.type === "text"}
+			<MessageResponse text={part.text} />
+		{/if}
+	{/each}
+	{#if fileParts.length > 0}
+		<Attachments variant="inline" class="max-w-full">
+			{#each fileParts as part, index (`${message.id}-file-${index}`)}
+				<Attachment
+					data={{
+						id: `${message.id}-file-${index}`,
+						type: "file",
+						filename: part.filename,
+						mediaType: part.mediaType,
+						url: part.url,
+					}}
+				>
+					<AttachmentPreview />
+					<AttachmentInfo />
+				</Attachment>
+			{/each}
+		</Attachments>
+	{/if}
+{/snippet}
+
+{#snippet renderAssistantMessageParts(
+	message: ChatMessage,
+	parts: AssistantConversationPaneRenderablePart[],
 )}
 	{#each parts as part, index (`${message.id}-${part.type}-${index}`)}
 		{#if part.type === "reasoning"}
@@ -351,19 +391,13 @@
 								style={getTurnStyle(turn.id === activeTurnId)}
 							>
 								{#each turn.userMessages as message (message.id)}
-									{@const partGroups = getAssistantMessagePartGroups(message, {
-										isMessageComplete:
-											!isActiveStreamingAssistantMessage(message),
-									})}
+									{@const userParts = getUserMessageRenderableParts(message)}
 									<Message
 										data-conversation-message-id={message.id}
 										from="user"
 									>
 										<MessageContent>
-											{@render renderMessageParts(
-												message,
-												partGroups.visibleParts,
-											)}
+											{@render renderUserMessageParts(message, userParts)}
 										</MessageContent>
 									</Message>
 								{/each}
@@ -410,14 +444,14 @@
 													<CollapsibleContent
 														class="flex min-w-0 flex-col gap-2 overflow-hidden [&>[data-ai-stack]+[data-ai-stack]]:-mt-8"
 													>
-														{@render renderMessageParts(
+														{@render renderAssistantMessageParts(
 															assistantMessage,
 															partGroups.collapsedParts,
 														)}
 													</CollapsibleContent>
 												</Collapsible>
 											{/if}
-											{@render renderMessageParts(
+											{@render renderAssistantMessageParts(
 												assistantMessage,
 												partGroups.visibleParts,
 											)}
