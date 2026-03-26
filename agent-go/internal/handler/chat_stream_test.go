@@ -27,6 +27,7 @@ type streamTestAgent struct {
 	messagesFn           func(threadID, leafID string) ([]message.UIMessage, error)
 	submitAnswerFn       func(threadID, approvalID string, req api.AnswerQuestionRequest) error
 	hasInterruptedTurnFn func(threadID string) (bool, error)
+	listThreadsFn        func() ([]string, error)
 }
 
 func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
@@ -46,7 +47,12 @@ func (m *streamTestAgent) Messages(threadID, leafID string) ([]message.UIMessage
 func (m *streamTestAgent) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
 	return nil, nil
 }
-func (m *streamTestAgent) ListThreads() ([]string, error) { return nil, nil }
+func (m *streamTestAgent) ListThreads() ([]string, error) {
+	if m.listThreadsFn != nil {
+		return m.listThreadsFn()
+	}
+	return nil, nil
+}
 func (m *streamTestAgent) HasInterruptedTurn(threadID string) (bool, error) {
 	if m.hasInterruptedTurnFn != nil {
 		return m.hasInterruptedTurnFn(threadID)
@@ -169,6 +175,13 @@ func newChatTestServer(t *testing.T, h *Handler) *httptest.Server {
 	r := chi.NewRouter()
 	r.Post("/threads/{id}/chat", h.PostChat)
 	r.Get("/threads/{id}", h.GetThread)
+	return httptest.NewServer(r)
+}
+
+func newFullHandlerTestServer(t *testing.T, h *Handler) *httptest.Server {
+	t.Helper()
+	r := chi.NewRouter()
+	h.RegisterRoutes(r)
 	return httptest.NewServer(r)
 }
 
@@ -316,6 +329,58 @@ func TestPostChat_SeedsThreadMetadataBeforePromptStarts(t *testing.T) {
 	case <-reqCh:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for Prompt request")
+	}
+}
+
+func TestRegisterRoutes_GetThreadMatchesListThreads(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{Name: "Thread 1", NameSource: thread.ThreadNameSourceUser}); err != nil {
+		t.Fatal(err)
+	}
+
+	listResp, err := ts.Client().Get(ts.URL + "/threads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d", listResp.StatusCode)
+	}
+
+	var listed api.ListThreadsResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Threads) != 1 {
+		t.Fatalf("expected 1 listed thread, got %d", len(listed.Threads))
+	}
+
+	threadResp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer threadResp.Body.Close()
+	if threadResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(threadResp.Body)
+		t.Fatalf("expected get status 200, got %d: %s", threadResp.StatusCode, string(body))
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(threadResp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != listed.Threads[0] {
+		t.Fatalf("expected get thread %+v to match listed thread %+v", got, listed.Threads[0])
 	}
 }
 

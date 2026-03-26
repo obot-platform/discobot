@@ -125,25 +125,25 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			Description: "Create a thread",
 			Body:        map[string]any{"id": "thread-1", "name": "Debug build failure"},
 		}})
-	reg.Register(r, routes.Route{Method: "GET", Pattern: "/threads/{id}", Handler: h.GetThread,
-		Meta: routes.Meta{Group: "Threads", Description: "Get thread metadata"}})
-	reg.Register(r, routes.Route{Method: "PUT", Pattern: "/threads/{id}", Handler: h.UpdateThread,
-		Meta: routes.Meta{
-			Group:       "Threads",
-			Description: "Replace thread metadata",
-			Body:        map[string]any{"name": "Investigate failing CI"},
-		}})
-	reg.Register(r, routes.Route{Method: "PATCH", Pattern: "/threads/{id}", Handler: h.UpdateThread,
-		Meta: routes.Meta{
-			Group:       "Threads",
-			Description: "Update thread metadata",
-			Body:        map[string]any{"name": "Investigate failing CI"},
-		}})
-	reg.Register(r, routes.Route{Method: "DELETE", Pattern: "/threads/{id}", Handler: h.DeleteThread,
-		Meta: routes.Meta{Group: "Threads", Description: "Delete a thread"}})
-
 	r.Route("/threads/{id}", func(r chi.Router) {
 		threadReg := reg.WithPrefix("/threads/{id}")
+
+		threadReg.Register(r, routes.Route{Method: "GET", Pattern: "/", Handler: h.GetThread,
+			Meta: routes.Meta{Group: "Threads", Description: "Get thread metadata"}})
+		threadReg.Register(r, routes.Route{Method: "PUT", Pattern: "/", Handler: h.UpdateThread,
+			Meta: routes.Meta{
+				Group:       "Threads",
+				Description: "Replace thread metadata",
+				Body:        map[string]any{"name": "Investigate failing CI"},
+			}})
+		threadReg.Register(r, routes.Route{Method: "PATCH", Pattern: "/", Handler: h.UpdateThread,
+			Meta: routes.Meta{
+				Group:       "Threads",
+				Description: "Update thread metadata",
+				Body:        map[string]any{"name": "Investigate failing CI"},
+			}})
+		threadReg.Register(r, routes.Route{Method: "DELETE", Pattern: "/", Handler: h.DeleteThread,
+			Meta: routes.Meta{Group: "Threads", Description: "Delete a thread"}})
 
 		threadReg.Register(r, routes.Route{Method: "GET", Pattern: "/models", Handler: h.ListModels,
 			Meta: routes.Meta{Group: "Threads", Description: "List available models"}})
