@@ -52,6 +52,16 @@ type DefaultAgent struct {
 	mcpServers []sessionconfig.MCPServerConfig // config the manager was initialized with
 }
 
+type threadNameResult struct {
+	name string
+}
+
+type backgroundThreadName struct {
+	agent    *DefaultAgent
+	threadID string
+	resultCh <-chan threadNameResult
+}
+
 // Store returns the underlying thread store.
 func (a *DefaultAgent) Store() *thread.Store {
 	return a.store
@@ -465,44 +475,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			return
 		}
 
-		threadNameChanged := false
-		if shouldGenerateThreadName(threadCfg) {
-			generatedName := threadCfg.Name
-			if strings.TrimSpace(generatedName) == "" {
-				generatedName = generatedThreadName(req.UserParts)
-			}
-			log.Printf("agent: thread naming start for %s: current=%q source=%q fallback=%q model=%s",
-				threadID, threadCfg.Name, threadCfg.NameSource, generatedName, threadSummaryRef.String())
-			if aiName, err := a.generateThreadName(ctx, req.UserParts, threadSummaryRef); err != nil {
-				log.Printf("agent: warning: generate thread name: %v", err)
-			} else if aiName != "" {
-				log.Printf("agent: thread naming AI result for %s: %q", threadID, aiName)
-				generatedName = aiName
-			} else {
-				log.Printf("agent: thread naming AI result for %s was empty; keeping fallback %q", threadID, generatedName)
-			}
-			if generatedName != "" {
-				threadNameChanged = threadCfg.Name != generatedName
-				threadCfg.Name = generatedName
-				threadCfg.NameSource = thread.ThreadNameSourceGenerated
-				log.Printf("agent: thread naming final for %s: final=%q changed=%t", threadID, threadCfg.Name, threadNameChanged)
-			} else {
-				log.Printf("agent: thread naming produced no name for %s", threadID)
-			}
-		}
-		if threadNameChanged {
-			if err := a.store.SaveConfig(threadID, threadCfg); err != nil {
-				yield(nil, fmt.Errorf("save thread name: %w", err))
-				return
-			}
-			if !yield(message.ThreadNameChunk{
-				Data: message.ThreadNameData{
-					Name: threadCfg.Name,
-				},
-			}, nil) {
-				return
-			}
-		}
+		threadNameBg := a.startBackgroundThreadName(promptCtx, threadID, threadCfg, req.UserParts, threadSummaryRef)
 
 		if modeChangedByPrompt {
 			modeReminderID := "mode-" + agent.GenerateID()
@@ -523,6 +496,9 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			newMode := "build"
 			if planMode {
 				newMode = "plan"
+			}
+			if !threadNameBg.flush(false, yield) {
+				return
 			}
 			if !yield(message.ModeChangeChunk{Data: message.ModeChangeData{Mode: newMode}}, nil) {
 				return
@@ -556,11 +532,17 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 
 		// Start new turn.
 		for chunk, chunkErr := range thread.RunTurn(promptCtx, provider, executor, a.store, threadID, req.LeafID, cfg, toolCtx) {
+			if !threadNameBg.flush(false, yield) {
+				return
+			}
 			if !yield(chunk, chunkErr) {
 				return
 			}
 		}
 		a.persistActiveLeaf(threadID)
+		if !threadNameBg.flush(true, yield) {
+			return
+		}
 	}
 }
 
@@ -697,24 +679,16 @@ func (a *DefaultAgent) generateThreadName(ctx context.Context, parts []message.U
 			acc.Close()
 			return "", chunkErr
 		}
-		log.Printf("agent: thread naming chunk for model %s: %T", modelRef.String(), chunk)
 		acc.Push(chunk)
 	}
 	acc.Close()
 
 	result := acc.Message()
-	partTypes := make([]string, 0, len(result.Parts))
 	var sb strings.Builder
 	for _, part := range result.Parts {
-		partTypes = append(partTypes, fmt.Sprintf("%T", part))
 		if tp, ok := part.(message.TextPart); ok {
 			sb.WriteString(tp.Text)
 		}
-	}
-	log.Printf("agent: thread naming accumulated result for model %s: parts=%v rawTextLen=%d rawText=%q",
-		modelRef.String(), partTypes, sb.Len(), sb.String())
-	if len(acc.Errors()) > 0 {
-		log.Printf("agent: thread naming accumulated errors for model %s: %#v", modelRef.String(), acc.Errors())
 	}
 
 	name := strings.TrimSpace(sb.String())
@@ -723,7 +697,6 @@ func (a *DefaultAgent) generateThreadName(ctx context.Context, parts []message.U
 	}
 	name = strings.Trim(name, "\"'`")
 	name = strings.Join(strings.Fields(name), " ")
-	log.Printf("agent: thread naming normalized result for model %s: len=%d value=%q", modelRef.String(), len(name), name)
 	if name == "" {
 		return "", nil
 	}
@@ -733,6 +706,97 @@ func (a *DefaultAgent) generateThreadName(ctx context.Context, parts []message.U
 		name = strings.TrimSpace(string(runes[:generatedThreadNameMaxRunes-1])) + "…"
 	}
 	return name, nil
+}
+
+func (a *DefaultAgent) startBackgroundThreadName(
+	ctx context.Context,
+	threadID string,
+	cfg thread.Config,
+	parts []message.UIPart,
+	modelRef providers.ModelRef,
+) *backgroundThreadName {
+	if !shouldGenerateThreadName(cfg) {
+		return nil
+	}
+
+	fallbackName := cfg.Name
+	if strings.TrimSpace(fallbackName) == "" {
+		fallbackName = generatedThreadName(parts)
+	}
+
+	resultCh := make(chan threadNameResult, 1)
+	go func() {
+		generatedName := fallbackName
+		if aiName, err := a.generateThreadName(ctx, parts, modelRef); err == nil && aiName != "" {
+			generatedName = aiName
+		}
+		resultCh <- threadNameResult{name: generatedName}
+	}()
+
+	return &backgroundThreadName{
+		agent:    a,
+		threadID: threadID,
+		resultCh: resultCh,
+	}
+}
+
+func (a *DefaultAgent) saveGeneratedThreadName(threadID, generatedName string) (string, bool, error) {
+	if strings.TrimSpace(generatedName) == "" {
+		return "", false, nil
+	}
+
+	cfg, err := a.store.LoadConfig(threadID)
+	if err != nil {
+		return "", false, err
+	}
+	if !shouldGenerateThreadName(cfg) {
+		return cfg.Name, false, nil
+	}
+
+	changed := cfg.Name != generatedName
+	cfg.Name = generatedName
+	cfg.NameSource = thread.ThreadNameSourceGenerated
+	if !changed {
+		return cfg.Name, false, nil
+	}
+	if err := a.store.SaveConfig(threadID, cfg); err != nil {
+		return "", false, err
+	}
+	return cfg.Name, true, nil
+}
+
+func (b *backgroundThreadName) flush(
+	block bool,
+	yield func(message.MessageChunk, error) bool,
+) bool {
+	if b == nil || b.resultCh == nil {
+		return true
+	}
+
+	var result threadNameResult
+	if block {
+		result = <-b.resultCh
+	} else {
+		select {
+		case result = <-b.resultCh:
+		default:
+			return true
+		}
+	}
+	b.resultCh = nil
+
+	savedName, changed, err := b.agent.saveGeneratedThreadName(b.threadID, result.name)
+	if err != nil {
+		return yield(nil, fmt.Errorf("save thread name: %w", err))
+	}
+	if !changed {
+		return true
+	}
+	return yield(message.ThreadNameChunk{
+		Data: message.ThreadNameData{
+			Name: savedName,
+		},
+	}, nil)
 }
 
 func firstThreadNameText(parts []message.UIPart) string {

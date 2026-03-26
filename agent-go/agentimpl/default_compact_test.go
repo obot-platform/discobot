@@ -5,7 +5,10 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/message"
@@ -14,26 +17,55 @@ import (
 )
 
 type compactCommandMockProvider struct {
-	completeCalls int
-	responses     []string
-	requests      []providers.CompleteRequest
+	mu             sync.Mutex
+	completeCalls  int
+	responses      []string
+	requests       []providers.CompleteRequest
+	beforeRespond  func(req providers.CompleteRequest)
+	beforeChunk    func(req providers.CompleteRequest, chunkIndex int)
+	responseForReq func(req providers.CompleteRequest) string
 }
 
 func (m *compactCommandMockProvider) ID() string { return "mock" }
 
 func (m *compactCommandMockProvider) Complete(_ context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
+	m.mu.Lock()
 	m.requests = append(m.requests, req)
 	m.completeCalls++
+	completeCalls := m.completeCalls
+	beforeRespond := m.beforeRespond
+	beforeChunk := m.beforeChunk
+	responseForReq := m.responseForReq
 	text := "Compacted summary."
-	if i := m.completeCalls - 1; i >= 0 && i < len(m.responses) {
+	if responseForReq != nil {
+		text = responseForReq(req)
+	} else if i := completeCalls - 1; i >= 0 && i < len(m.responses) {
 		text = m.responses[i]
 	}
+	m.mu.Unlock()
 	return func(yield func(message.ProviderMessageChunk, error) bool) {
-		yield(message.StreamStartChunk{}, nil)
-		yield(message.TextStartChunk{ID: "s1"}, nil)
-		yield(message.TextDeltaChunk{ID: "s1", Delta: text}, nil)
-		yield(message.TextEndChunk{ID: "s1"}, nil)
-		yield(message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}}, nil)
+		if beforeRespond != nil {
+			beforeRespond(req)
+		}
+		emit := func(chunkIndex int, chunk message.ProviderMessageChunk) bool {
+			if beforeChunk != nil {
+				beforeChunk(req, chunkIndex)
+			}
+			return yield(chunk, nil)
+		}
+		if !emit(0, message.StreamStartChunk{}) {
+			return
+		}
+		if !emit(1, message.TextStartChunk{ID: "s1"}) {
+			return
+		}
+		if !emit(2, message.TextDeltaChunk{ID: "s1", Delta: text}) {
+			return
+		}
+		if !emit(3, message.TextEndChunk{ID: "s1"}) {
+			return
+		}
+		emit(4, message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}})
 	}
 }
 
@@ -181,13 +213,27 @@ func TestListCommands_IncludesCompactBuiltin(t *testing.T) {
 	}
 }
 
-func TestPrompt_GeneratesThreadNameBeforeAssistantResponse(t *testing.T) {
+func TestPrompt_GeneratesThreadNameInBackground(t *testing.T) {
 	store := thread.NewStore(t.TempDir())
 	registry := providers.NewProviderRegistry(nil)
-	mockProvider := &compactCommandMockProvider{responses: []string{
-		"Agent-go thread naming fix",
-		"Assistant response.",
-	}}
+	mockProvider := &compactCommandMockProvider{
+		beforeRespond: func(req providers.CompleteRequest) {
+			if isThreadNameRequest(req) {
+				time.Sleep(10 * time.Millisecond)
+			}
+		},
+		beforeChunk: func(req providers.CompleteRequest, chunkIndex int) {
+			if !isThreadNameRequest(req) && chunkIndex == 3 {
+				time.Sleep(25 * time.Millisecond)
+			}
+		},
+		responseForReq: func(req providers.CompleteRequest) string {
+			if isThreadNameRequest(req) {
+				return "Agent-go thread naming fix"
+			}
+			return "Assistant response."
+		},
+	}
 	registry.Add(mockProvider)
 
 	agentImpl := NewDefaultAgent(store, registry, nil, t.TempDir(), MCPConfig{})
@@ -208,9 +254,50 @@ func TestPrompt_GeneratesThreadNameBeforeAssistantResponse(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatal("expected streamed chunks")
 	}
-	nameChunk, ok := chunks[0].(message.ThreadNameChunk)
-	if !ok {
-		t.Fatalf("expected first chunk to be ThreadNameChunk, got %T", chunks[0])
+
+	nameIndex := -1
+	startIndex := -1
+	finishIndex := -1
+	textIndex := -1
+	var nameChunk message.ThreadNameChunk
+	for i, chunk := range chunks {
+		switch chunk := chunk.(type) {
+		case message.StartChunk:
+			if startIndex < 0 {
+				startIndex = i
+			}
+		case message.ThreadNameChunk:
+			if nameIndex < 0 {
+				nameIndex = i
+				nameChunk = chunk
+			}
+		case message.TextDeltaChunk:
+			if chunk.Delta == "Assistant response." && textIndex < 0 {
+				textIndex = i
+			}
+		case message.ResponseFinishChunk:
+			if finishIndex < 0 {
+				finishIndex = i
+			}
+		}
+	}
+	if startIndex < 0 {
+		t.Fatalf("expected assistant start chunk, got %#v", chunks)
+	}
+	if textIndex < 0 {
+		t.Fatalf("expected assistant response chunk, got %#v", chunks)
+	}
+	if nameIndex < 0 {
+		t.Fatalf("expected thread name chunk, got %#v", chunks)
+	}
+	if finishIndex < 0 {
+		t.Fatalf("expected assistant finish chunk, got %#v", chunks)
+	}
+	if nameIndex <= startIndex {
+		t.Fatalf("expected thread name chunk after assistant streaming started, got nameIndex=%d startIndex=%d", nameIndex, startIndex)
+	}
+	if nameIndex >= finishIndex {
+		t.Fatalf("expected thread name chunk before assistant finish, got nameIndex=%d finishIndex=%d", nameIndex, finishIndex)
 	}
 	if nameChunk.Data.Name != "Agent-go thread naming fix" {
 		t.Fatalf("unexpected generated thread name %q", nameChunk.Data.Name)
@@ -231,10 +318,14 @@ func TestPrompt_GeneratesThreadNameBeforeAssistantResponse(t *testing.T) {
 func TestPrompt_FallsBackToGeneratedThreadNameWhenAIReturnsEmpty(t *testing.T) {
 	store := thread.NewStore(t.TempDir())
 	registry := providers.NewProviderRegistry(nil)
-	mockProvider := &compactCommandMockProvider{responses: []string{
-		"",
-		"Assistant response.",
-	}}
+	mockProvider := &compactCommandMockProvider{
+		responseForReq: func(req providers.CompleteRequest) string {
+			if isThreadNameRequest(req) {
+				return ""
+			}
+			return "Assistant response."
+		},
+	}
 	registry.Add(mockProvider)
 
 	agentImpl := NewDefaultAgent(store, registry, nil, t.TempDir(), MCPConfig{})
@@ -255,9 +346,18 @@ func TestPrompt_FallsBackToGeneratedThreadNameWhenAIReturnsEmpty(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatal("expected streamed chunks")
 	}
-	nameChunk, ok := chunks[0].(message.ThreadNameChunk)
-	if !ok {
-		t.Fatalf("expected first chunk to be ThreadNameChunk, got %T", chunks[0])
+	var nameChunk message.ThreadNameChunk
+	foundNameChunk := false
+	for _, chunk := range chunks {
+		var ok bool
+		nameChunk, ok = chunk.(message.ThreadNameChunk)
+		if ok {
+			foundNameChunk = true
+			break
+		}
+	}
+	if !foundNameChunk {
+		t.Fatalf("expected a ThreadNameChunk, got %#v", chunks)
 	}
 	if nameChunk.Data.Name != "Fix thread naming in agent-go" {
 		t.Fatalf("unexpected fallback generated thread name %q", nameChunk.Data.Name)
@@ -273,6 +373,17 @@ func TestPrompt_FallsBackToGeneratedThreadNameWhenAIReturnsEmpty(t *testing.T) {
 	if cfg.NameSource != thread.ThreadNameSourceGenerated {
 		t.Fatalf("expected generated name source, got %q", cfg.NameSource)
 	}
+}
+
+func isThreadNameRequest(req providers.CompleteRequest) bool {
+	if len(req.Messages) != 1 || len(req.Messages[0].Parts) != 1 {
+		return false
+	}
+	textPart, ok := req.Messages[0].Parts[0].(message.TextPart)
+	if !ok {
+		return false
+	}
+	return strings.Contains(textPart.Text, "Generate a concise thread title for this conversation starter.")
 }
 
 func TestPrompt_SubAgentModelResolvesSupportingTypeOnCurrentProvider(t *testing.T) {
