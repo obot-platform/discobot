@@ -635,7 +635,7 @@ function renderElement(
 			break;
 		case "ol":
 			element.className = cn(
-				"list-inside list-decimal whitespace-normal [li_&]:pl-6",
+				"list-outside list-decimal whitespace-normal pl-6 [li_&]:pl-6",
 				element.className,
 			);
 			break;
@@ -665,7 +665,7 @@ function renderElement(
 			break;
 		case "ul":
 			element.className = cn(
-				"list-inside list-disc whitespace-normal [li_&]:pl-6",
+				"list-outside list-disc whitespace-normal pl-6 [li_&]:pl-6",
 				element.className,
 			);
 			break;
