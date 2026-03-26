@@ -29,6 +29,26 @@ func TestLookup(t *testing.T) {
 		}
 	})
 
+	t.Run("custom tools capability from overlay", func(t *testing.T) {
+		m := Lookup("openai", "gpt-5")
+		if m == nil {
+			t.Fatal("expected gpt-5 to be found")
+		}
+		if !m.CustomTools {
+			t.Error("expected gpt-5 to support custom tools")
+		}
+	})
+
+	t.Run("custom tools default false", func(t *testing.T) {
+		m := Lookup("openai", "gpt-4o")
+		if m == nil {
+			t.Fatal("expected gpt-4o to be found")
+		}
+		if m.CustomTools {
+			t.Error("expected gpt-4o to not support custom tools by default")
+		}
+	})
+
 	t.Run("image modality support", func(t *testing.T) {
 		m := Lookup("openai", "gpt-4o")
 		if m == nil {

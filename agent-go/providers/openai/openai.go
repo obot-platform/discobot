@@ -134,7 +134,7 @@ func (p *Provider) setAuthHeaders(req *http.Request) {
 
 func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
 	return func(yield func(message.ProviderMessageChunk, error) bool) {
-		customToolNameSet := customToolNames(req.Tools)
+		customToolNameSet := customToolNamesForModel(req.Model.ProviderID, req.Model.ModelID, req.Tools)
 		instructions, inputMessages := extractInstructionsFromMessages(req.Messages)
 		inputItems, err := convertMessagesWithCustomTools(inputMessages, customToolNameSet)
 		if err != nil {
@@ -151,7 +151,7 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 		if !p.isCodex {
 			body["truncation"] = "disabled"
 		}
-		if tools := convertTools(req.Tools); len(tools) > 0 {
+		if tools := convertTools(req.Tools, customToolNameSet); len(tools) > 0 {
 			body["tools"] = tools
 		}
 		if req.MaxTokens != nil {
@@ -189,7 +189,6 @@ func (p *Provider) Complete(ctx context.Context, req providers.CompleteRequest) 
 
 		// HTTP SSE path.
 		body["stream"] = true
-
 		jsonBody, err := json.Marshal(body)
 		if err != nil {
 			yield(nil, fmt.Errorf("openai: marshal request: %w", err))
@@ -429,6 +428,20 @@ func customToolNames(tools []providers.ToolDefinition) map[string]struct{} {
 		return nil
 	}
 	return names
+}
+
+func customToolNamesForModel(provider, modelID string, tools []providers.ToolDefinition) map[string]struct{} {
+	if provider == "" {
+		provider = providerID
+	}
+	if provider == "" || modelID == "" {
+		return nil
+	}
+	md := modelsdev.Lookup(provider, modelID)
+	if md == nil || !md.CustomTools {
+		return nil
+	}
+	return customToolNames(tools)
 }
 
 func isCustomTool(name string, customToolNames map[string]struct{}) bool {
@@ -850,13 +863,13 @@ func contentOutputToOpenAIItems(contentOutput message.ContentOutput) ([]any, boo
 // --- Tool conversion ---
 
 // convertTools maps our ToolDefinition to Responses API function/custom tools.
-func convertTools(tools []providers.ToolDefinition) []map[string]any {
+func convertTools(tools []providers.ToolDefinition, customToolNames map[string]struct{}) []map[string]any {
 	if len(tools) == 0 {
 		return nil
 	}
 	result := make([]map[string]any, len(tools))
 	for i, t := range tools {
-		if t.Type == "custom" && t.Format != nil {
+		if isCustomTool(t.Name, customToolNames) && t.Format != nil {
 			tool := map[string]any{
 				"type": "custom",
 				"name": t.Name,

@@ -526,6 +526,37 @@ func TestConvertMessages(t *testing.T) {
 			t.Fatalf("expected custom_tool_call_output, got %v", item["type"])
 		}
 	})
+
+	t.Run("custom tool call falls back to function format when model lacks capability", func(t *testing.T) {
+		msgs := []message.Message{
+			{Role: "assistant", Parts: []message.Part{
+				message.ToolCallPart{
+					ToolCallID: "call_function_1",
+					ToolName:   "apply_patch",
+					Input:      `{"input":"*** Begin Patch\n*** End Patch"}`,
+				},
+			}},
+		}
+		items, err := convertMessagesWithCustomTools(msgs, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(items))
+		}
+
+		var callItem map[string]any
+		json.Unmarshal(items[0], &callItem)
+		if callItem["type"] != "function_call" {
+			t.Fatalf("expected type function_call, got %v", callItem["type"])
+		}
+
+		var outItem map[string]any
+		json.Unmarshal(items[1], &outItem)
+		if outItem["type"] != "function_call_output" {
+			t.Fatalf("expected type function_call_output, got %v", outItem["type"])
+		}
+	})
 }
 
 func TestConvertTools(t *testing.T) {
@@ -537,7 +568,7 @@ func TestConvertTools(t *testing.T) {
 				InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}}}`),
 			},
 		}
-		result := convertTools(tools)
+		result := convertTools(tools, nil)
 		if len(result) != 1 {
 			t.Fatalf("expected 1 tool, got %d", len(result))
 		}
@@ -557,7 +588,7 @@ func TestConvertTools(t *testing.T) {
 		tools := []providers.ToolDefinition{
 			{Name: "fn", InputSchema: json.RawMessage(`{}`)},
 		}
-		result := convertTools(tools)
+		result := convertTools(tools, nil)
 		if _, ok := result[0]["description"]; ok {
 			t.Error("expected description to be omitted when empty")
 		}
@@ -576,7 +607,7 @@ func TestConvertTools(t *testing.T) {
 				},
 			},
 		}
-		result := convertTools(tools)
+		result := convertTools(tools, map[string]struct{}{"apply_patch": {}})
 		if got := result[0]["type"]; got != "custom" {
 			t.Fatalf("expected custom tool type, got %v", got)
 		}
@@ -592,8 +623,31 @@ func TestConvertTools(t *testing.T) {
 		}
 	})
 
+	t.Run("maps custom tool to function without capability", func(t *testing.T) {
+		tools := []providers.ToolDefinition{
+			{
+				Type:        "custom",
+				Name:        "apply_patch",
+				Description: "Raw patch tool",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"input":{"type":"string"}}}`),
+				Format: &providers.ToolFormat{
+					Type:       "grammar",
+					Syntax:     "lark",
+					Definition: "start: /[\\s\\S]+/",
+				},
+			},
+		}
+		result := convertTools(tools, nil)
+		if got := result[0]["type"]; got != "function" {
+			t.Fatalf("expected function tool type, got %v", got)
+		}
+		if _, ok := result[0]["parameters"]; !ok {
+			t.Fatal("expected function tool parameters")
+		}
+	})
+
 	t.Run("nil tools returns nil", func(t *testing.T) {
-		result := convertTools(nil)
+		result := convertTools(nil, nil)
 		if result != nil {
 			t.Errorf("expected nil, got %v", result)
 		}
@@ -1202,6 +1256,57 @@ func TestComplete(t *testing.T) {
 				},
 			}},
 		}
+		for _, err := range p.Complete(context.Background(), req) {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	t.Run("sends custom-like tools as functions when model lacks capability", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+
+			tools := body["tools"].([]any)
+			if len(tools) != 1 {
+				t.Fatalf("expected 1 tool, got %d", len(tools))
+			}
+			tool := tools[0].(map[string]any)
+			if tool["type"] != "function" {
+				t.Fatalf("expected gpt-4o request to send function tool, got %v", tool["type"])
+			}
+			if _, ok := tool["parameters"]; !ok {
+				t.Fatal("expected function tool parameters")
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, buildSSE(
+				"response.created", `{"response":{"id":"resp_function","model":"gpt-4o"}}`,
+				"response.completed", `{"response":{"status":"completed","output":[],"usage":{"input_tokens":1,"input_tokens_details":{"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0}}}}`,
+			))
+		}))
+		defer server.Close()
+
+		p := &Provider{apiKey: "k", baseURL: server.URL, client: server.Client()}
+		req := providers.CompleteRequest{
+			Model: providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
+			Messages: []message.Message{
+				{Role: "user", Parts: []message.Part{message.TextPart{Text: "x"}}},
+			},
+			Tools: []providers.ToolDefinition{{
+				Type:        "custom",
+				Name:        "apply_patch",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"input":{"type":"string"}},"required":["input"]}`),
+				Format: &providers.ToolFormat{
+					Type:       "grammar",
+					Syntax:     "lark",
+					Definition: "start: /[\\s\\S]+/",
+				},
+			}},
+		}
+
 		for _, err := range p.Complete(context.Background(), req) {
 			if err != nil {
 				t.Fatal(err)

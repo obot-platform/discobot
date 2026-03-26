@@ -1,6 +1,6 @@
 // Package modelsdev provides access to merged model metadata from models.dev
 // combined with a static overlay of custom fields (reasoning levels, default
-// reasoning level) that models.dev does not supply.
+// reasoning level, custom tool support) that models.dev does not supply.
 //
 // Both the base models.dev API snapshot (models-dev-api.json) and the overlay
 // (model-overlay.json) are embedded at compile time. The overlay is applied
@@ -57,6 +57,7 @@ type ModelInfo struct {
 	InputModalities    []string
 	OutputModalities   []string
 	ToolCall           bool // whether this model supports tool/function calling
+	CustomTools        bool // whether this model supports provider-specific custom grammar tools
 	Cost               ModelCost
 }
 
@@ -92,6 +93,7 @@ type modelMetadata struct {
 	ReasoningLevels    []string        `json:"reasoningLevels"`
 	DefaultReasonLevel string          `json:"defaultReasonLevel"`
 	ToolCall           bool            `json:"tool_call"`
+	CustomTools        bool            `json:"customTools"`
 	Cost               modelCost       `json:"cost"`
 	Limit              modelLimit      `json:"limit"`
 	Modalities         modelModalities `json:"modalities"`
@@ -117,10 +119,11 @@ type overlayEntry struct {
 	ReasoningLevels    []string `json:"reasoningLevels"`
 	DefaultReasonLevel string   `json:"defaultReasonLevel"`
 	// Fields only meaningful when creating a new model (not present in base data).
-	Name      string   `json:"name"`
-	Family    string   `json:"family"`
-	Reasoning *bool    `json:"reasoning"`
-	ToolCall  *bool    `json:"tool_call"`
+	Name        string `json:"name"`
+	Family      string `json:"family"`
+	Reasoning   *bool  `json:"reasoning"`
+	ToolCall    *bool  `json:"tool_call"`
+	CustomTools *bool  `json:"customTools"`
 }
 
 // ── singleton ─────────────────────────────────────────────────────────────────
@@ -145,7 +148,7 @@ func load() {
 // applyOverlay merges model-overlay.json into the loaded base data.
 //
 // For existing providers and models the overlay can update ReasoningLevels and
-// DefaultReasonLevel (and optionally Name/Family/Reasoning/ToolCall).
+// DefaultReasonLevel (and optionally Name/Family/Reasoning/ToolCall/CustomTools).
 //
 // The overlay also supports adding entirely new providers and models that are
 // not present in the base models.dev snapshot:
@@ -220,6 +223,9 @@ func applyOverlay() {
 			}
 			if ov.ToolCall != nil {
 				m.ToolCall = *ov.ToolCall
+			}
+			if ov.CustomTools != nil {
+				m.CustomTools = *ov.CustomTools
 			}
 			if len(ov.ReasoningLevels) > 0 {
 				m.ReasoningLevels = append([]string(nil), ov.ReasoningLevels...)
@@ -366,6 +372,7 @@ func toModelInfo(m modelMetadata) *ModelInfo {
 		InputModalities:    append([]string(nil), m.Modalities.Input...),
 		OutputModalities:   append([]string(nil), m.Modalities.Output...),
 		ToolCall:           m.ToolCall,
+		CustomTools:        m.CustomTools,
 		Cost:               ModelCost{Input: m.Cost.Input, Output: m.Cost.Output},
 	}
 }

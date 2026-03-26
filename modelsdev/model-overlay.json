@@ -71,78 +71,97 @@
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5-chat-latest": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5-codex": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5-mini": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5-nano": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5-pro": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.1": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.1-chat-latest": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.1-codex": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.1-codex-max": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.1-codex-mini": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.2": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.2-chat-latest": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.2-codex": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.2-pro": {
+			"customTools": true,
 			"reasoningLevels": ["medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.3-codex": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.3-codex-spark": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.4": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
 		"gpt-5.4-pro": {
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
@@ -205,6 +224,7 @@
 			"family": "gpt-codex",
 			"reasoning": true,
 			"tool_call": true,
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
@@ -213,6 +233,7 @@
 			"family": "gpt-codex",
 			"reasoning": true,
 			"tool_call": true,
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
@@ -221,6 +242,7 @@
 			"family": "gpt-codex",
 			"reasoning": true,
 			"tool_call": true,
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high"],
 			"defaultReasonLevel": "medium"
 		},
@@ -229,6 +251,7 @@
 			"family": "gpt",
 			"reasoning": true,
 			"tool_call": true,
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
@@ -237,6 +260,7 @@
 			"family": "gpt-codex",
 			"reasoning": true,
 			"tool_call": true,
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
@@ -245,6 +269,7 @@
 			"family": "gpt-codex",
 			"reasoning": true,
 			"tool_call": true,
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		},
@@ -253,6 +278,7 @@
 			"family": "gpt",
 			"reasoning": true,
 			"tool_call": true,
+			"customTools": true,
 			"reasoningLevels": ["low", "medium", "high", "xhigh"],
 			"defaultReasonLevel": "medium"
 		}
