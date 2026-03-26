@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Collapsible } from "$lib/components/ui/collapsible";
 	import { cn } from "$lib/utils";
+	import { setToolContext } from "./context";
 
 	type Props = {
 		open?: boolean;
@@ -18,6 +19,19 @@
 		children,
 		...restProps
 	}: Props = $props();
+
+	const tool = $state({
+		isOpen: open,
+		setIsOpen: (next: boolean) => {
+			open = next;
+		},
+	});
+
+	$effect(() => {
+		tool.isOpen = open;
+	});
+
+	setToolContext(tool);
 </script>
 
 <Collapsible

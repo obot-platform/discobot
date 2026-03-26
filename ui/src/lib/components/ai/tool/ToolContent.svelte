@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CollapsibleContent } from "$lib/components/ui/collapsible";
 	import { cn } from "$lib/utils";
+	import { useToolContext } from "./context";
 
 	type Props = {
 		class?: string;
@@ -8,6 +9,7 @@
 	};
 
 	let { class: className, children, ...restProps }: Props = $props();
+	const tool = useToolContext();
 </script>
 
 <CollapsibleContent
@@ -17,5 +19,7 @@
 	)}
 	{...restProps}
 >
-	{@render children?.()}
+	{#if tool.isOpen}
+		{@render children?.()}
+	{/if}
 </CollapsibleContent>

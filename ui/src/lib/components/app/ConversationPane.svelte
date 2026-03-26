@@ -418,11 +418,11 @@
 										from="assistant"
 									>
 										<MessageContent>
+											{@const isCollapsedStepSectionExpanded =
+												isAssistantStepMessageExpanded(assistantMessage.id)}
 											{#if partGroups.hasCollapsedSteps}
 												<Collapsible
-													open={isAssistantStepMessageExpanded(
-														assistantMessage.id,
-													)}
+													open={isCollapsedStepSectionExpanded}
 													onOpenChange={(open) =>
 														setAssistantStepMessageExpanded(
 															assistantMessage.id,
@@ -430,7 +430,7 @@
 														)}
 												>
 													<CollapsibleTrigger
-														aria-label={`${isAssistantStepMessageExpanded(assistantMessage.id) ? "Hide" : "Show"} ${getCollapsedStepLabel(partGroups.collapsedStepCount)}`}
+														aria-label={`${isCollapsedStepSectionExpanded ? "Hide" : "Show"} ${getCollapsedStepLabel(partGroups.collapsedStepCount)}`}
 														class="flex w-full items-center gap-3 py-1 text-left"
 														type="button"
 													>
@@ -447,10 +447,12 @@
 													<CollapsibleContent
 														class="flex min-w-0 flex-col gap-2 overflow-hidden [&>[data-ai-stack]+[data-ai-stack]]:-mt-8"
 													>
-														{@render renderAssistantMessageParts(
-															assistantMessage,
-															partGroups.collapsedParts,
-														)}
+														{#if isCollapsedStepSectionExpanded}
+															{@render renderAssistantMessageParts(
+																assistantMessage,
+																partGroups.collapsedParts,
+															)}
+														{/if}
 													</CollapsibleContent>
 												</Collapsible>
 											{/if}
