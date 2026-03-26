@@ -699,12 +699,18 @@
             sessionId: {
                 resourceType: 'sessions',
                 fetchFn: fetchSessions,
+                getLabel: (item) => item.displayName || item.name || item.id,
+                getId: (item) => item.id,
+            },
+            threadId: {
+                resourceType: 'threads',
+                fetchFn: fetchThreads,
                 getLabel: (item) => item.name || item.id,
                 getId: (item) => item.id,
-                // Sessions need workspaceId context
+                dependsOn: ['sessionId'],
                 getDependentParams: () => {
-                    const wsInput = document.querySelector('.param-input[data-param="workspaceId"]');
-                    return wsInput ? { workspaceId: wsInput.value } : {};
+                    const sessionInput = document.querySelector('.param-input[data-param="sessionId"]');
+                    return sessionInput ? { sessionId: sessionInput.value } : {};
                 },
             },
             agentId: {
@@ -729,33 +735,24 @@
 
         async function fetchSessions(params = {}) {
             if (!defaultProjectId) return [];
-            const workspaceId = params.workspaceId;
-            if (!workspaceId) {
-                // Fetch sessions from all workspaces
-                const workspaces = await fetchWorkspaces();
-                const allSessions = [];
-                for (const ws of workspaces) {
-                    try {
-                        const response = await fetch(`/api/projects/${encodeURIComponent(defaultProjectId)}/workspaces/${encodeURIComponent(ws.id)}/sessions`, {
-                            credentials: 'include',
-                        });
-                        if (response.ok) {
-                            const data = await response.json();
-                            const sessions = Array.isArray(data) ? data : (data.sessions || []);
-                            allSessions.push(...sessions);
-                        }
-                    } catch (_e) {
-                        // Skip workspaces we can't fetch sessions from
-                    }
-                }
-                return allSessions;
-            }
-            const response = await fetch(`/api/projects/${encodeURIComponent(defaultProjectId)}/workspaces/${encodeURIComponent(workspaceId)}/sessions`, {
+            const response = await fetch(`/api/projects/${encodeURIComponent(defaultProjectId)}/sessions`, {
                 credentials: 'include',
             });
             if (!response.ok) throw new Error(`Failed to fetch sessions: ${response.status}`);
             const data = await response.json();
             return Array.isArray(data) ? data : (data.sessions || []);
+        }
+
+        async function fetchThreads(params = {}) {
+            if (!defaultProjectId) return [];
+            const sessionId = params.sessionId;
+            if (!sessionId) return [];
+            const response = await fetch(`/api/projects/${encodeURIComponent(defaultProjectId)}/sessions/${encodeURIComponent(sessionId)}/threads`, {
+                credentials: 'include',
+            });
+            if (!response.ok) throw new Error(`Failed to fetch threads: ${response.status}`);
+            const data = await response.json();
+            return Array.isArray(data) ? data : (data.threads || []);
         }
 
         async function fetchAgents() {
@@ -976,6 +973,17 @@
 
         // Initialize all comboboxes in the current view
         function initializeComboboxes() {
+            function refreshDependentComboboxes(changedParamName) {
+                document.querySelectorAll('.param-combobox').forEach(dependentContainer => {
+                    const dependentParamName = dependentContainer.dataset.combobox;
+                    const dependentConfig = COMBOBOX_PARAMS[dependentParamName];
+                    const controller = dependentContainer._comboboxController;
+                    if (!dependentConfig || !controller) return;
+                    if (!dependentConfig.dependsOn?.includes(changedParamName)) return;
+                    controller.reload({ resetValue: true });
+                });
+            }
+
             document.querySelectorAll('.param-combobox').forEach(container => {
                 const paramName = container.dataset.combobox;
                 const config = COMBOBOX_PARAMS[paramName];
@@ -1015,7 +1023,7 @@
                     const filterLower = filter.toLowerCase();
                     const filtered = items.filter(item => {
                         const id = config.getId(item);
-                        const label = config.getLabel(item);
+                        const label = config.getLabel(item) || '';
                         return id.toLowerCase().includes(filterLower) ||
                                label.toLowerCase().includes(filterLower);
                     });
@@ -1058,6 +1066,19 @@
                     highlightedIndex = -1;
                 }
 
+                container._comboboxController = {
+                    reload({ resetValue = false } = {}) {
+                        if (resetValue) {
+                            input.value = '';
+                        }
+                        if (isOpen) {
+                            loadData();
+                            return;
+                        }
+                        void loadData();
+                    },
+                };
+
                 function toggleDropdown() {
                     if (isOpen) {
                         closeDropdown();
@@ -1088,6 +1109,10 @@
                 input.addEventListener('input', (e) => {
                     openDropdown();
                     renderDropdown(e.target.value);
+                });
+
+                input.addEventListener('change', () => {
+                    refreshDependentComboboxes(paramName);
                 });
 
                 input.addEventListener('keydown', (e) => {
@@ -1135,6 +1160,7 @@
                             items = Array.isArray(result) ? result : [];
                             if (items.length > 0) {
                                 input.value = config.getId(items[0]);
+                                input.dispatchEvent(new Event('change', { bubbles: true }));
                             }
                         } catch (_e) {
                             // Silently fail on init
