@@ -112,6 +112,14 @@
 	const approvedCount = $derived.by(
 		() => sortedDiff.filter((file) => isApproved(file.path)).length,
 	);
+	const unresolvedApprovalCount = $derived.by(
+		() =>
+			sortedDiff.filter((file) => {
+				const state = diffStates[file.path];
+				return !state || state.status === "idle" || state.status === "loading";
+			}).length,
+	);
+	const approvalsLoading = $derived.by(() => unresolvedApprovalCount > 0);
 	const allApproved = $derived.by(
 		() =>
 			sortedDiff.length > 0 &&
@@ -180,6 +188,20 @@
 			currentExpandedPath,
 			currentSessionId,
 			generation,
+		);
+	});
+
+	$effect(() => {
+		const currentEntries = sortedDiff;
+		const currentSessionId = sessionId;
+		const generation = loadGeneration;
+		if (!currentSessionId || currentEntries.length === 0) {
+			return;
+		}
+		void Promise.all(
+			currentEntries.map((file) =>
+				loadDiffEntry(file.path, currentSessionId, generation),
+			),
 		);
 	});
 
@@ -408,6 +430,11 @@
 		return Boolean(patchHash && sessionApprovals[path] === patchHash);
 	}
 
+	function isApprovalStateLoading(path: string): boolean {
+		const state = diffStates[path];
+		return !state || state.status === "idle" || state.status === "loading";
+	}
+
 	function toggleApproved(path: string) {
 		const state = diffStates[path];
 		if (!state || state.status !== "ready" || !state.patchHash) {
@@ -547,7 +574,14 @@
 			<span class="truncate text-sidebar-foreground/70">
 				{sortedDiff.length} changed {sortedDiff.length === 1 ? "file" : "files"}
 			</span>
-			{#if approvedCount > 0}
+			{#if approvalsLoading}
+				<span
+					class="flex items-center gap-1 truncate text-sidebar-foreground/70"
+				>
+					<RefreshCwIcon class="size-3.5 animate-spin" />
+					Loading approvals…
+				</span>
+			{:else if approvedCount > 0}
 				<span class="truncate text-sidebar-foreground/70"
 					>{approvedCount} approved</span
 				>
@@ -618,7 +652,14 @@
 							? "file"
 							: "files"}
 					</p>
-					{#if approvedCount > 0}
+					{#if approvalsLoading}
+						<p
+							class="mt-1 flex items-center gap-1 text-xs text-sidebar-foreground/60"
+						>
+							<RefreshCwIcon class="size-3.5 animate-spin" />
+							Loading approvals…
+						</p>
+					{:else if approvedCount > 0}
 						<p class="mt-1 text-xs text-sidebar-foreground/60">
 							{approvedCount} approved
 						</p>
@@ -633,7 +674,7 @@
 						variant="ghost"
 						size="sm"
 						onclick={markAllApproved}
-						disabled={allApproved}
+						disabled={allApproved || approvalsLoading}
 					>
 						<CheckIcon class="size-4" />
 						Mark all approved
@@ -692,7 +733,14 @@
 											</p>
 										{/if}
 									</div>
-									{#if approved}
+									{#if isApprovalStateLoading(file.path)}
+										<span
+											class="flex items-center gap-1 text-xs text-muted-foreground"
+										>
+											<RefreshCwIcon class="size-3.5 animate-spin" />
+											Loading approval…
+										</span>
+									{:else if approved}
 										<span
 											class="flex items-center gap-1 text-xs text-green-500"
 										>
@@ -755,6 +803,7 @@
 												variant={approved ? "secondary" : "outline"}
 												size="sm"
 												onclick={() => toggleApproved(file.path)}
+												disabled={!state || state.status !== "ready"}
 											>
 												<CheckIcon class="size-4" />
 												{approved ? "Approved" : "Mark approved"}
