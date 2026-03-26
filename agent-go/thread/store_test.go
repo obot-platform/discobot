@@ -459,6 +459,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	cfg := Config{
 		Name:         "Friendly thread name",
 		NameSource:   ThreadNameSourceGenerated,
+		LastMessage:  "latest prompt",
 		Model:        "anthropic/claude-sonnet-4-6",
 		CWD:          "/tmp/project",
 		PlanMode:     true,
@@ -481,6 +482,9 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 	if loaded.NameSource != cfg.NameSource {
 		t.Errorf("expected nameSource=%q, got %q", cfg.NameSource, loaded.NameSource)
+	}
+	if loaded.LastMessage != cfg.LastMessage {
+		t.Errorf("expected lastMessage=%q, got %q", cfg.LastMessage, loaded.LastMessage)
 	}
 	if loaded.CWD != cfg.CWD {
 		t.Errorf("expected cwd=%q, got %q", cfg.CWD, loaded.CWD)

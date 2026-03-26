@@ -555,6 +555,7 @@ export interface CancelChatResponse {
 export interface Thread {
 	id: string;
 	name: string;
+	lastMessage?: string;
 	model?: string;
 	reasoning?: string;
 	mode: string;

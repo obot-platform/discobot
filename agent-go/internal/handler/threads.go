@@ -31,11 +31,12 @@ func threadResponse(threadID string, cfg thread.Config, fallbackName string) api
 	}
 
 	return api.Thread{
-		ID:        threadID,
-		Name:      name,
-		Model:     cfg.Model,
-		Reasoning: string(cfg.Reasoning),
-		Mode:      mode,
+		ID:          threadID,
+		Name:        name,
+		LastMessage: strings.TrimSpace(cfg.LastMessage),
+		Model:       cfg.Model,
+		Reasoning:   string(cfg.Reasoning),
+		Mode:        mode,
 	}
 }
 

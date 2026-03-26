@@ -431,6 +431,7 @@ test("toRecentThreadSummaries preserves stored insertion order", () => {
 					sessionName: "One old",
 					threadId: "thread-1",
 					threadName: "Thread One",
+					lastMessage: "First prompt",
 					lastAccessedAt: "2026-01-01T00:00:00Z",
 				},
 				{
@@ -438,6 +439,7 @@ test("toRecentThreadSummaries preserves stored insertion order", () => {
 					sessionName: "Three old",
 					threadId: "thread-3",
 					threadName: "Thread Three",
+					lastMessage: "Third prompt",
 					lastAccessedAt: "2026-01-03T00:00:00Z",
 				},
 			],
@@ -449,6 +451,7 @@ test("toRecentThreadSummaries preserves stored insertion order", () => {
 				sessionStatus: "ready",
 				threadId: "thread-1",
 				threadName: "Thread One",
+				lastMessage: "First prompt",
 				lastAccessedAt: "2026-01-01T00:00:00Z",
 			},
 			{
@@ -457,6 +460,7 @@ test("toRecentThreadSummaries preserves stored insertion order", () => {
 				sessionStatus: "ready",
 				threadId: "thread-3",
 				threadName: "Thread Three",
+				lastMessage: "Third prompt",
 				lastAccessedAt: "2026-01-03T00:00:00Z",
 			},
 		],
@@ -524,6 +528,7 @@ test("recent threads persist in local storage without reordering duplicates", ()
 				sessionName: "One",
 				threadId: "thread-1",
 				threadName: "Thread One",
+				lastMessage: "first prompt",
 			},
 			"2026-01-01T00:00:00Z",
 		);
@@ -534,6 +539,7 @@ test("recent threads persist in local storage without reordering duplicates", ()
 				sessionName: "Two",
 				threadId: "thread-2",
 				threadName: "Thread Two",
+				lastMessage: "second prompt",
 			},
 			"2026-01-02T00:00:00Z",
 		);
@@ -544,6 +550,7 @@ test("recent threads persist in local storage without reordering duplicates", ()
 				sessionName: "One updated",
 				threadId: "thread-1",
 				threadName: "Thread One updated",
+				lastMessage: "updated prompt",
 			},
 			"2026-02-01T00:00:00Z",
 		);
@@ -559,6 +566,7 @@ test("recent threads persist in local storage without reordering duplicates", ()
 					sessionName: "One updated",
 					threadId: "thread-1",
 					threadName: "Thread One updated",
+					lastMessage: "updated prompt",
 					lastAccessedAt: "2026-02-01T00:00:00Z",
 				},
 				{
@@ -566,6 +574,7 @@ test("recent threads persist in local storage without reordering duplicates", ()
 					sessionName: "Two",
 					threadId: "thread-2",
 					threadName: "Thread Two",
+					lastMessage: "second prompt",
 					lastAccessedAt: "2026-01-02T00:00:00Z",
 				},
 			]),
@@ -576,6 +585,7 @@ test("recent threads persist in local storage without reordering duplicates", ()
 				sessionName: "One updated",
 				threadId: "thread-1",
 				threadName: "Thread One updated",
+				lastMessage: "updated prompt",
 				lastAccessedAt: "2026-02-01T00:00:00Z",
 			},
 			{
@@ -583,7 +593,36 @@ test("recent threads persist in local storage without reordering duplicates", ()
 				sessionName: "Two",
 				threadId: "thread-2",
 				threadName: "Thread Two",
+				lastMessage: "second prompt",
 				lastAccessedAt: "2026-01-02T00:00:00Z",
+			},
+		]);
+	});
+});
+
+test("readRecentThreadEntries migrates stored entries without lastMessage", () => {
+	withLocalStorage((storage) => {
+		storage.setItem(
+			RECENT_THREADS_STORAGE_KEY,
+			JSON.stringify([
+				{
+					sessionId: "session-1",
+					sessionName: "One",
+					threadId: "thread-1",
+					threadName: "Thread One",
+					lastAccessedAt: "2026-01-01T00:00:00Z",
+				},
+			]),
+		);
+
+		assert.deepEqual(readRecentThreadEntries(), [
+			{
+				sessionId: "session-1",
+				sessionName: "One",
+				threadId: "thread-1",
+				threadName: "Thread One",
+				lastMessage: "",
+				lastAccessedAt: "2026-01-01T00:00:00Z",
 			},
 		]);
 	});

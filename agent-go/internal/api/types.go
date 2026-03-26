@@ -74,11 +74,12 @@ type ErrorResponse struct {
 
 // Thread represents a single conversation thread.
 type Thread struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Model     string `json:"model,omitempty"`     // full "providerId/modelId" ref
-	Reasoning string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
-	Mode      string `json:"mode"`                // "build" or "plan"
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	LastMessage string `json:"lastMessage,omitempty"`
+	Model       string `json:"model,omitempty"`     // full "providerId/modelId" ref
+	Reasoning   string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
+	Mode        string `json:"mode"`                // "build" or "plan"
 }
 
 // ListThreadsResponse is the GET /threads response.

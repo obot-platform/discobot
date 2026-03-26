@@ -103,12 +103,13 @@ type ErrorResponse struct {
 
 // Thread represents a conversation thread persisted by the agent.
 type Thread struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Model     string `json:"model,omitempty"`     // full "providerId/modelId" ref
-	Reasoning string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", or "default"
-	Mode      string `json:"mode"`                // "build" or "plan"
-	Pending   bool   `json:"pending,omitempty"`   // true when the thread exists in concept but the sandbox hasn't created it yet
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	LastMessage string `json:"lastMessage,omitempty"`
+	Model       string `json:"model,omitempty"`     // full "providerId/modelId" ref
+	Reasoning   string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", or "default"
+	Mode        string `json:"mode"`                // "build" or "plan"
+	Pending     bool   `json:"pending,omitempty"`   // true when the thread exists in concept but the sandbox hasn't created it yet
 }
 
 // ListThreadsResponse is the GET /threads response.

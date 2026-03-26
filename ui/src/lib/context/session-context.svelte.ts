@@ -63,20 +63,22 @@ function createSessionContext(sessionId: string): SessionContextValue {
 		setSelectedId: (threadId) => {
 			ui.selectThread(threadId);
 		},
-		onThreadActivated: (threadId, threadName) => {
+		onThreadActivated: (thread) => {
 			app.sessions.recordRecentThread({
 				sessionId,
 				sessionName: getSessionName(),
-				threadId,
-				threadName,
+				threadId: thread.id,
+				threadName: thread.name,
+				lastMessage: thread.lastMessage || "",
 			});
 		},
-		onThreadRenamed: (threadId, threadName) => {
+		onThreadRenamed: (thread) => {
 			app.sessions.refreshRecentThread({
 				sessionId,
 				sessionName: getSessionName(),
-				threadId,
-				threadName,
+				threadId: thread.id,
+				threadName: thread.name,
+				lastMessage: thread.lastMessage || "",
 			});
 		},
 		onThreadRemoved: (threadId) => {

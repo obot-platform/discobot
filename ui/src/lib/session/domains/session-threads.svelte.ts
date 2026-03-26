@@ -1,6 +1,6 @@
 import { generateId } from "ai";
 
-import type { Session } from "$lib/api-types";
+import type { Session, Thread } from "$lib/api-types";
 import {
 	buildImplicitThread,
 	getNextSelectedThreadId,
@@ -15,8 +15,8 @@ type CreateSessionThreadsDomainArgs = {
 	getSession: () => Session | null;
 	getSelectedId: () => string | null;
 	setSelectedId: (threadId: string | null) => void;
-	onThreadActivated?: (threadId: string, threadName: string) => void;
-	onThreadRenamed?: (threadId: string, threadName: string) => void;
+	onThreadActivated?: (thread: Thread) => void;
+	onThreadRenamed?: (thread: Thread) => void;
 	onThreadRemoved?: (threadId: string) => void;
 	onThreadListChanged?: (threadIds: string[]) => void;
 };
@@ -53,7 +53,7 @@ export function createSessionThreadsDomain(
 			return;
 		}
 
-		args.onThreadActivated?.(thread.id, thread.name);
+		args.onThreadActivated?.(thread);
 	}
 
 	function notifyThreadListChanged(nextList = currentList()) {
@@ -101,7 +101,7 @@ export function createSessionThreadsDomain(
 			const selectedThread = list.find((thread) => thread.id === threadId);
 			if (selectedThread) {
 				args.setSelectedId(threadId);
-				args.onThreadActivated?.(selectedThread.id, selectedThread.name);
+				args.onThreadActivated?.(selectedThread);
 			}
 		},
 		create: (name?: string) => {
@@ -119,7 +119,7 @@ export function createSessionThreadsDomain(
 				});
 				args.setSelectedId(created.id);
 				notifyThreadListChanged();
-				args.onThreadActivated?.(created.id, created.name);
+				args.onThreadActivated?.(created);
 			})();
 		},
 		rename: (threadId: string, nextName: string) => {
@@ -138,13 +138,13 @@ export function createSessionThreadsDomain(
 						name: trimmedName,
 					});
 					notifyThreadListChanged();
-					args.onThreadRenamed?.(created.id, created.name);
+					args.onThreadRenamed?.(created);
 				} else {
 					const updated = await store.update(args.sessionId, threadId, {
 						name: trimmedName,
 					});
 					notifyThreadListChanged();
-					args.onThreadRenamed?.(updated.id, updated.name);
+					args.onThreadRenamed?.(updated);
 				}
 			})();
 		},

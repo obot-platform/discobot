@@ -62,10 +62,10 @@
 		onThreadSelect?.();
 	}
 
-	function shouldShowRecentThreadSessionName(
+	function hasRecentThreadSubtitle(
 		threadObj: (typeof sessions.recentThreads)[number],
 	) {
-		return threadObj.threadName !== threadObj.sessionName;
+		return (threadObj.lastMessage ?? "").trim().length > 0;
 	}
 
 	function openRenameDialog(sessionId: string) {
@@ -200,7 +200,7 @@
 		type="button"
 		onclick={() =>
 			handleSelectRecentThread(threadObj.sessionId, threadObj.threadId)}
-		class={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${shouldShowRecentThreadSessionName(threadObj) ? "min-h-10" : ""} ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+		class={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${hasRecentThreadSubtitle(threadObj) ? "min-h-10" : ""} ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
 	>
 		<SessionStatus
 			status={threadObj.sessionStatus}
@@ -211,9 +211,9 @@
 			<span class="block truncate text-sm font-medium"
 				>{threadObj.threadName || "New Thread"}</span
 			>
-			{#if shouldShowRecentThreadSessionName(threadObj)}
+			{#if hasRecentThreadSubtitle(threadObj)}
 				<span class="block truncate text-xs text-current/60"
-					>{threadObj.sessionName || "New Session"}</span
+					>{threadObj.lastMessage ?? ""}</span
 				>
 			{/if}
 		</span>

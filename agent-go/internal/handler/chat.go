@@ -21,7 +21,23 @@ import (
 
 const defaultChatStreamPingInterval = 15 * time.Second
 
-func (h *Handler) ensureThreadMetadata(threadID string, req api.ChatRequest) error {
+func lastUserPromptFromParts(parts []message.UIPart) string {
+	textParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		textPart, ok := part.(message.UITextPart)
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(textPart.Text)
+		if text == "" {
+			continue
+		}
+		textParts = append(textParts, text)
+	}
+	return strings.TrimSpace(strings.Join(textParts, "\n"))
+}
+
+func (h *Handler) ensureThreadMetadata(threadID string, req api.ChatRequest, userParts []message.UIPart) error {
 	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
 		return nil
 	}
@@ -49,6 +65,9 @@ func (h *Handler) ensureThreadMetadata(threadID string, req api.ChatRequest) err
 	}
 	if req.Mode != "" {
 		cfg.PlanMode = req.Mode == "plan"
+	}
+	if lastMessage := lastUserPromptFromParts(userParts); lastMessage != "" {
+		cfg.LastMessage = lastMessage
 	}
 
 	return store.SaveConfig(threadID, cfg)
@@ -118,7 +137,7 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	// Reset hook state for user-initiated completions.
 	h.resetHookState()
 
-	if err := h.ensureThreadMetadata(threadID, req); err != nil {
+	if err := h.ensureThreadMetadata(threadID, req, userParts); err != nil {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}

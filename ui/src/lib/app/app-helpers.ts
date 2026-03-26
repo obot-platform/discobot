@@ -29,6 +29,7 @@ export type RecentThreadEntry = {
 	sessionName: string;
 	threadId: string;
 	threadName: string;
+	lastMessage?: string;
 	lastAccessedAt: string;
 };
 
@@ -162,6 +163,8 @@ function isRecentThreadEntry(value: unknown): value is RecentThreadEntry {
 		typeof candidate.threadId === "string" &&
 		candidate.threadId.length > 0 &&
 		typeof candidate.threadName === "string" &&
+		(candidate.lastMessage === undefined ||
+			typeof candidate.lastMessage === "string") &&
 		typeof candidate.lastAccessedAt === "string"
 	);
 }
@@ -178,6 +181,7 @@ function areRecentThreadEntriesEqual(
 				entry.sessionName === right[index]?.sessionName &&
 				entry.threadId === right[index]?.threadId &&
 				entry.threadName === right[index]?.threadName &&
+				(entry.lastMessage ?? "") === (right[index]?.lastMessage ?? "") &&
 				entry.lastAccessedAt === right[index]?.lastAccessedAt,
 		)
 	);
@@ -222,7 +226,11 @@ export function readRecentThreadEntries(): RecentThreadEntry[] {
 			return [];
 		}
 
-		return normalizeRecentThreadEntries(parsed.filter(isRecentThreadEntry));
+		return normalizeRecentThreadEntries(
+			parsed
+				.filter(isRecentThreadEntry)
+				.map((entry) => ({ ...entry, lastMessage: entry.lastMessage ?? "" })),
+		);
 	} catch {
 		return [];
 	}
@@ -366,6 +374,7 @@ export function toRecentThreadSummaries(
 						sessionStatus: summary.status,
 						threadId: entry.threadId,
 						threadName: entry.threadName,
+						lastMessage: entry.lastMessage ?? "",
 						lastAccessedAt: entry.lastAccessedAt,
 					},
 				]

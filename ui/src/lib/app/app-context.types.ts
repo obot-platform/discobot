@@ -137,12 +137,14 @@ export type AppSessions = {
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		lastMessage: string;
 	}) => void;
 	refreshRecentThread: (payload: {
 		sessionId: string;
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		lastMessage: string;
 	}) => void;
 	removeRecentThread: (sessionId: string, threadId: string) => void;
 	reconcileRecentThreadsForSession: (

@@ -49,6 +49,7 @@ export function createAppSessionsDomain(
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		lastMessage: string;
 	}) => {
 		persistRecentThreadEntries(touchRecentThread(recentThreadEntries, payload));
 	};
@@ -58,6 +59,7 @@ export function createAppSessionsDomain(
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		lastMessage: string;
 	}) => {
 		const nextEntries = refreshRecentThread(recentThreadEntries, payload);
 		if (nextEntries === recentThreadEntries) {

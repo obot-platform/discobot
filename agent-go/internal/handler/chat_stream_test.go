@@ -324,6 +324,9 @@ func TestPostChat_SeedsThreadMetadataBeforePromptStarts(t *testing.T) {
 	if got.Mode != "plan" {
 		t.Fatalf("expected seeded mode, got %+v", got)
 	}
+	if got.LastMessage != "Investigate thread metadata" {
+		t.Fatalf("expected seeded lastMessage, got %+v", got)
+	}
 
 	select {
 	case <-reqCh:
@@ -432,6 +435,65 @@ func TestRegisterRoutes_ThreadModeIncludesPlanAndBuild(t *testing.T) {
 	}
 	if modes["thread-plan"] != "plan" {
 		t.Fatalf("expected plan thread mode %q, got %q", "plan", modes["thread-plan"])
+	}
+}
+
+func TestRegisterRoutes_ThreadIncludesLastUserPrompt(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{
+		Name:        "Thread 1",
+		NameSource:  thread.ThreadNameSourceUser,
+		LastMessage: "latest prompt",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	listResp, err := ts.Client().Get(ts.URL + "/threads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d", listResp.StatusCode)
+	}
+
+	var listed api.ListThreadsResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Threads) != 1 {
+		t.Fatalf("expected 1 listed thread, got %d", len(listed.Threads))
+	}
+	if listed.Threads[0].LastMessage != "latest prompt" {
+		t.Fatalf("expected listed lastMessage %q, got %+v", "latest prompt", listed.Threads[0])
+	}
+
+	threadResp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer threadResp.Body.Close()
+	if threadResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(threadResp.Body)
+		t.Fatalf("expected get status 200, got %d: %s", threadResp.StatusCode, string(body))
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(threadResp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.LastMessage != "latest prompt" {
+		t.Fatalf("expected get lastMessage %q, got %+v", "latest prompt", got)
 	}
 }
 
