@@ -28,6 +28,7 @@ type TurnConfig struct {
 	Temperature           *float64                   `json:"temperature,omitempty"`
 	TopP                  *float64                   `json:"topP,omitempty"`
 	Reasoning             providers.Reasoning        `json:"reasoning,omitempty"`
+	PlanMode              bool                       `json:"planMode,omitempty"`
 	PromptRequestPlanMode bool                       `json:"promptRequestPlanMode,omitempty"`
 	ProviderOptions       json.RawMessage            `json:"providerOptions,omitempty"`
 	ContextWindow         int                        `json:"contextWindow,omitempty"`   // model context window in tokens

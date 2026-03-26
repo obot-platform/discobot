@@ -11,6 +11,29 @@ import (
 	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
+type threadStoreOwner interface {
+	Store() *thread.Store
+}
+
+func persistToolContextPlanMode(toolCtx *thread.ToolContext) {
+	if toolCtx == nil || toolCtx.Agent == nil || strings.TrimSpace(toolCtx.ThreadID) == "" {
+		return
+	}
+	owner, ok := toolCtx.Agent.(threadStoreOwner)
+	if !ok || owner.Store() == nil {
+		return
+	}
+	cfg, err := owner.Store().LoadConfig(toolCtx.ThreadID)
+	if err != nil {
+		return
+	}
+	if cfg.PlanMode == toolCtx.PlanMode {
+		return
+	}
+	cfg.PlanMode = toolCtx.PlanMode
+	_ = owner.Store().SaveConfig(toolCtx.ThreadID, cfg)
+}
+
 // AskUserQuestion — pauses the turn and presents questions to the user.
 // The LLM sends a questions array; we route this through the ApprovalRequest
 // mechanism so the handler can surface it to the client.
@@ -92,6 +115,9 @@ func (e *Executor) resolveAskUserQuestion(call message.ToolCallPart, req api.Ans
 func (e *Executor) executeEnterPlanMode(toolCtx *thread.ToolContext, call message.ToolCallPart) (thread.ToolExecuteResult, error) {
 	if toolCtx != nil {
 		toolCtx.PlanMode = true
+		mode := "plan"
+		toolCtx.ModeChange = &mode
+		persistToolContextPlanMode(toolCtx)
 	}
 	planFile := e.newPlanFilePath(toolCtx)
 	result := fmt.Sprintf(`Plan mode activated. Plan file: %s

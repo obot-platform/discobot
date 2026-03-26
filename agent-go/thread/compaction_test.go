@@ -227,7 +227,7 @@ func TestApplyCompaction(t *testing.T) {
 		LeafMessageID: "msg3",
 	}
 
-	result := applyCompaction(record, entries)
+	result := applyCompaction(record, entries, false)
 
 	// Should be: system, summary, msg4, msg5.
 	if len(result) != 4 {
@@ -271,7 +271,7 @@ func TestApplyCompaction_LeafIsLast(t *testing.T) {
 		LeafMessageID: "msg3",
 	}
 
-	result := applyCompaction(record, entries)
+	result := applyCompaction(record, entries, false)
 
 	// Should be: system + summary only, no messages after.
 	if len(result) != 2 {
@@ -300,7 +300,7 @@ func TestApplyCompaction_StaleRecord(t *testing.T) {
 		LeafMessageID: "nonexistent", // stale
 	}
 
-	result := applyCompaction(record, entries)
+	result := applyCompaction(record, entries, false)
 
 	// Should return full history since leaf not found.
 	if len(result) != 2 {
@@ -319,7 +319,7 @@ func TestApplyCompaction_SystemReminder(t *testing.T) {
 	}
 
 	record := &CompactionRecord{SummaryText: "summary", LeafMessageID: "msg2"}
-	result := applyCompaction(record, entries)
+	result := applyCompaction(record, entries, false)
 
 	// Expected: [sys] + [reminder] + [summary] + [msg3]
 	if len(result) != 4 {
@@ -345,6 +345,67 @@ func TestApplyCompaction_SystemReminder(t *testing.T) {
 	tp3, _ := result[3].Parts[0].(message.TextPart)
 	if tp3.Text != "new" {
 		t.Errorf("result[3]: want 'new', got %q", tp3.Text)
+	}
+}
+
+func TestApplyCompaction_ReinjectsBuildReminderWhenLastReminderWasPlan(t *testing.T) {
+	planReminder := makeModeReminderMessage(true)
+	entries := []HistoryEntry{
+		{ID: "sys", Message: message.Message{Role: "system", Parts: []message.Part{message.TextPart{Text: "sys"}}}},
+		{ID: "rem-plan", ParentID: "sys", Message: planReminder},
+		{ID: "msg1", ParentID: "rem-plan", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello"}}}},
+		{ID: "msg2", ParentID: "msg1", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "world"}}}},
+	}
+
+	record := &CompactionRecord{SummaryText: "summary", LeafMessageID: "msg2"}
+	result := applyCompaction(record, entries, false)
+
+	if len(result) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(result))
+	}
+	mode, ok := extractModeReminder(result[3])
+	if !ok {
+		t.Fatal("expected trailing mode reminder")
+	}
+	if mode != "build" {
+		t.Fatalf("expected build mode reminder, got %q", mode)
+	}
+}
+
+func TestApplyCompaction_DoesNotInjectInitialBuildReminder(t *testing.T) {
+	entries := []HistoryEntry{
+		{ID: "sys", Message: message.Message{Role: "system", Parts: []message.Part{message.TextPart{Text: "sys"}}}},
+		{ID: "msg1", ParentID: "sys", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello"}}}},
+		{ID: "msg2", ParentID: "msg1", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "world"}}}},
+	}
+
+	record := &CompactionRecord{SummaryText: "summary", LeafMessageID: "msg2"}
+	result := applyCompaction(record, entries, false)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result))
+	}
+}
+
+func TestApplyCompaction_InjectsPlanReminderWhenNoPriorModeReminderExists(t *testing.T) {
+	entries := []HistoryEntry{
+		{ID: "sys", Message: message.Message{Role: "system", Parts: []message.Part{message.TextPart{Text: "sys"}}}},
+		{ID: "msg1", ParentID: "sys", Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "hello"}}}},
+		{ID: "msg2", ParentID: "msg1", Message: message.Message{Role: "assistant", Parts: []message.Part{message.TextPart{Text: "world"}}}},
+	}
+
+	record := &CompactionRecord{SummaryText: "summary", LeafMessageID: "msg2"}
+	result := applyCompaction(record, entries, true)
+
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(result))
+	}
+	mode, ok := extractModeReminder(result[2])
+	if !ok {
+		t.Fatal("expected trailing mode reminder")
+	}
+	if mode != "plan" {
+		t.Fatalf("expected plan mode reminder, got %q", mode)
 	}
 }
 

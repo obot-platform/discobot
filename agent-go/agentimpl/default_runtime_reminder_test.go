@@ -60,6 +60,9 @@ func TestFormatModeChangeReminder_IncludesTargetMode(t *testing.T) {
 	if !strings.Contains(build, "mode is now build") {
 		t.Errorf("expected build reminder to mention build mode, got %q", build)
 	}
+	if !strings.Contains(build, "Plan mode has been exited") {
+		t.Errorf("expected build reminder to mention exiting plan mode, got %q", build)
+	}
 }
 
 func TestResolvePlanMode_OnlyChangesOnExplicitRequest(t *testing.T) {
@@ -87,8 +90,8 @@ func TestResolvePlanMode_OnlyChangesOnExplicitRequest(t *testing.T) {
 	}
 
 	planMode, changed = resolvePlanMode("plan", cfgBuild, false)
-	if !planMode || changed {
-		t.Fatalf("explicit plan without prior config should set plan but not mark changed, got planMode=%v changed=%v", planMode, changed)
+	if !planMode || !changed {
+		t.Fatalf("explicit plan without prior config should set plan and mark changed from default build, got planMode=%v changed=%v", planMode, changed)
 	}
 
 	planMode, changed = resolvePlanMode("build", cfgPlan, true)

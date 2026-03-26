@@ -364,6 +364,9 @@ func TestRegisterRoutes_GetThreadMatchesListThreads(t *testing.T) {
 	if len(listed.Threads) != 1 {
 		t.Fatalf("expected 1 listed thread, got %d", len(listed.Threads))
 	}
+	if listed.Threads[0].Mode != "build" {
+		t.Fatalf("expected listed thread mode %q, got %q", "build", listed.Threads[0].Mode)
+	}
 
 	threadResp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
 	if err != nil {
@@ -381,6 +384,54 @@ func TestRegisterRoutes_GetThreadMatchesListThreads(t *testing.T) {
 	}
 	if got != listed.Threads[0] {
 		t.Fatalf("expected get thread %+v to match listed thread %+v", got, listed.Threads[0])
+	}
+}
+
+func TestRegisterRoutes_ThreadModeIncludesPlanAndBuild(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if err := store.CreateThread("thread-build"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-build", thread.Config{Name: "Build Thread", NameSource: thread.ThreadNameSourceUser, PlanMode: false}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateThread("thread-plan"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-plan", thread.Config{Name: "Plan Thread", NameSource: thread.ThreadNameSourceUser, PlanMode: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	listResp, err := ts.Client().Get(ts.URL + "/threads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d", listResp.StatusCode)
+	}
+
+	var listed api.ListThreadsResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+
+	modes := map[string]string{}
+	for _, item := range listed.Threads {
+		modes[item.ID] = item.Mode
+	}
+	if modes["thread-build"] != "build" {
+		t.Fatalf("expected build thread mode %q, got %q", "build", modes["thread-build"])
+	}
+	if modes["thread-plan"] != "plan" {
+		t.Fatalf("expected plan thread mode %q, got %q", "plan", modes["thread-plan"])
 	}
 }
 

@@ -19,6 +19,10 @@ type DiscobotPartMetadata struct {
 	// OriginalCommand is the raw slash-command string the user typed (e.g.
 	// "/commit fix the bug") before it was expanded into the message text.
 	OriginalCommand string `json:"originalCommand,omitempty"`
+	// ReminderKind classifies framework-injected reminder parts.
+	ReminderKind string `json:"reminderKind,omitempty"`
+	// Mode records the current execution mode for mode-reminder parts.
+	Mode string `json:"mode,omitempty"`
 }
 
 // MarshalProviderMetadata encodes a DiscobotPartMetadata value into the
@@ -33,6 +37,27 @@ func MarshalProviderMetadata(meta DiscobotPartMetadata) json.RawMessage {
 		return nil
 	}
 	return data
+}
+
+// UnmarshalProviderMetadata decodes Discobot provider metadata from the nested
+// AI SDK providerMetadata shape. It returns false when no discobot metadata is present.
+func UnmarshalProviderMetadata(data json.RawMessage) (DiscobotPartMetadata, bool) {
+	if len(data) == 0 {
+		return DiscobotPartMetadata{}, false
+	}
+	var nested map[string]json.RawMessage
+	if json.Unmarshal(data, &nested) != nil {
+		return DiscobotPartMetadata{}, false
+	}
+	rawMeta, ok := nested["discobot"]
+	if !ok {
+		return DiscobotPartMetadata{}, false
+	}
+	var meta DiscobotPartMetadata
+	if json.Unmarshal(rawMeta, &meta) != nil {
+		return DiscobotPartMetadata{}, false
+	}
+	return meta, true
 }
 
 func toolInputJSONValue(input string) json.RawMessage {

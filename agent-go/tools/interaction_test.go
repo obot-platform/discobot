@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/obot-platform/discobot/agent-go/agentimpl"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/thread"
 )
@@ -23,8 +24,10 @@ func setTempHome(t *testing.T) string {
 func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	dataDir := t.TempDir()
 	home := setTempHome(t)
+	store := thread.NewStore(t.TempDir())
+	agent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
 	e := New(t.TempDir(), dataDir, "thread-1")
-	toolCtx := &thread.ToolContext{ThreadID: "thread-1"}
+	toolCtx := &thread.ToolContext{ThreadID: "thread-1", Agent: agent}
 
 	result, err := e.Execute(context.Background(), toolCtx, message.ToolCallPart{
 		ToolCallID: "tc-enter",
@@ -39,6 +42,17 @@ func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	}
 	if !toolCtx.PlanMode {
 		t.Fatal("expected PlanMode=true after EnterPlanMode")
+	}
+	if toolCtx.ModeChange == nil || *toolCtx.ModeChange != "plan" {
+		t.Fatalf("expected ModeChange=plan, got %v", toolCtx.ModeChange)
+	}
+
+	cfg, err := store.LoadConfig("thread-1")
+	if err != nil {
+		t.Fatalf("LoadConfig returned error: %v", err)
+	}
+	if !cfg.PlanMode {
+		t.Fatal("expected persisted planMode=true after EnterPlanMode")
 	}
 
 	textOut, ok := result.Result.Output.(message.TextOutput)

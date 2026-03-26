@@ -78,7 +78,7 @@ type Thread struct {
 	Name      string `json:"name"`
 	Model     string `json:"model,omitempty"`     // full "providerId/modelId" ref
 	Reasoning string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
-	Mode      string `json:"mode,omitempty"`      // "plan" or ""
+	Mode      string `json:"mode"`                // "build" or "plan"
 }
 
 // ListThreadsResponse is the GET /threads response.

@@ -25,7 +25,7 @@ func threadResponse(threadID string, cfg thread.Config, fallbackName string) api
 		name = strings.TrimSpace(fallbackName)
 	}
 
-	mode := ""
+	mode := "build"
 	if cfg.PlanMode {
 		mode = "plan"
 	}

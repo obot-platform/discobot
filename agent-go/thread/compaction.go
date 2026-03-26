@@ -206,7 +206,7 @@ func maybeCompact(
 	// Check if existing compaction applies.
 	existing, _ := store.LoadCompaction(threadID)
 	if existing != nil {
-		compacted := applyCompaction(existing, historyEntries)
+		compacted := applyCompaction(existing, historyEntries, cfg.PlanMode)
 
 		if countTokens(compacted, lastUsage) <= budget.InputLimit {
 			return compacted, nil
@@ -254,7 +254,7 @@ func forceCompact(
 	existing, _ := store.LoadCompaction(threadID)
 	var baseMessages []message.Message
 	if existing != nil {
-		baseMessages = applyCompaction(existing, historyEntries)
+		baseMessages = applyCompaction(existing, historyEntries, cfg.PlanMode)
 	}
 
 	return performCompaction(ctx, provider, providerResolver, store, threadID, cfg, historyEntries, baseMessages, budget)
@@ -383,9 +383,10 @@ func performCompaction(
 	}
 
 	// Build compacted history: [system messages] + [system-reminder messages] + [summary].
-	compacted := make([]message.Message, 0, reminderEnd+1)
+	compacted := make([]message.Message, 0, reminderEnd+2)
 	compacted = append(compacted, fullHistory[:reminderEnd]...)
 	compacted = append(compacted, summaryMsg)
+	compacted = appendModeReminderIfNeeded(compacted, cfg.PlanMode)
 	return compacted, nil
 }
 
@@ -698,7 +699,7 @@ func toolResultOutputToString(output message.ToolResultOutput) string {
 
 // applyCompaction builds a compacted history from an existing record.
 // Returns [system messages] + [system-reminder messages] + [summary] + [messages after leaf].
-func applyCompaction(record *CompactionRecord, entries []HistoryEntry) []message.Message {
+func applyCompaction(record *CompactionRecord, entries []HistoryEntry, currentPlanMode bool) []message.Message {
 	systemEnd := 0
 	for systemEnd < len(entries) && entries[systemEnd].Message.Role == "system" {
 		systemEnd++
@@ -730,7 +731,7 @@ func applyCompaction(record *CompactionRecord, entries []HistoryEntry) []message
 
 	// Build: [system messages] + [system-reminder messages] + [summary] + [messages after leaf].
 	afterLeafStart := leafIndex + 1
-	compacted := make([]message.Message, 0, reminderEnd+1+(len(entries)-afterLeafStart))
+	compacted := make([]message.Message, 0, reminderEnd+2+(len(entries)-afterLeafStart))
 	for i := 0; i < reminderEnd; i++ {
 		compacted = append(compacted, entries[i].Message)
 	}
@@ -738,7 +739,79 @@ func applyCompaction(record *CompactionRecord, entries []HistoryEntry) []message
 	for i := afterLeafStart; i < len(entries); i++ {
 		compacted = append(compacted, entries[i].Message)
 	}
+	compacted = appendModeReminderIfNeeded(compacted, currentPlanMode)
 	return compacted
+}
+
+// modeString returns the canonical persisted mode string.
+func modeString(planMode bool) string {
+	if planMode {
+		return "plan"
+	}
+	return "build"
+}
+
+func makeModeReminderMessage(planMode bool) message.Message {
+	mode := modeString(planMode)
+	return message.Message{
+		Role:      "user",
+		Synthetic: true,
+		Parts: []message.Part{
+			message.TextPart{
+				Text: formatModeReminderText(planMode),
+				ProviderMetadata: message.MarshalProviderMetadata(message.DiscobotPartMetadata{
+					ReminderKind: "mode",
+					Mode:         mode,
+				}),
+			},
+		},
+	}
+}
+
+func formatModeReminderText(planMode bool) string {
+	if planMode {
+		return "<system-reminder>\nMode update: the current mode is now plan. This reminder is being re-applied after compaction so the current mode remains explicit in context.\n</system-reminder>"
+	}
+	return "<system-reminder>\nMode update: the current mode is now build. Plan mode has been exited. This reminder is being re-applied after compaction so the current mode remains explicit in context.\n</system-reminder>"
+}
+
+func extractModeReminder(msg message.Message) (string, bool) {
+	if msg.Role != "user" {
+		return "", false
+	}
+	for _, part := range msg.Parts {
+		tp, ok := part.(message.TextPart)
+		if !ok {
+			continue
+		}
+		meta, ok := message.UnmarshalProviderMetadata(tp.ProviderMetadata)
+		if !ok || meta.ReminderKind != "mode" || meta.Mode == "" {
+			continue
+		}
+		return meta.Mode, true
+	}
+	return "", false
+}
+
+func lastModeReminder(messages []message.Message) (string, bool) {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if mode, ok := extractModeReminder(messages[i]); ok {
+			return mode, true
+		}
+	}
+	return "", false
+}
+
+func appendModeReminderIfNeeded(messages []message.Message, currentPlanMode bool) []message.Message {
+	currentMode := modeString(currentPlanMode)
+	lastMode, ok := lastModeReminder(messages)
+	if ok && lastMode == currentMode {
+		return messages
+	}
+	if !currentPlanMode && !ok {
+		return messages
+	}
+	return append(messages, makeModeReminderMessage(currentPlanMode))
 }
 
 // isSystemReminder reports whether a message is a framework-injected system

@@ -293,6 +293,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		Model:                 modelID,
 		SupportingModels:      compactSupportingModels(ref, map[providers.SupportingModelType]providers.ModelRef{providers.SupportingModelThreadSummarization: threadSummaryRef}),
 		Reasoning:             providers.Reasoning(req.Reasoning),
+		PlanMode:              planMode,
 		PromptRequestPlanMode: promptRequestPlanMode,
 		UserParts:             message.UIPartsToParts(expandLegacyCommand(a.cwd, req.UserParts)),
 		Tools:                 tools,
@@ -483,8 +484,15 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 				ID:       modeReminderID,
 				ParentID: req.LeafID,
 				Message: message.Message{
-					Role:  "user",
-					Parts: []message.Part{message.TextPart{Text: formatModeChangeReminder(planMode)}},
+					Role:      "user",
+					Synthetic: true,
+					Parts: []message.Part{message.TextPart{
+						Text: formatModeChangeReminder(planMode),
+						ProviderMetadata: message.MarshalProviderMetadata(message.DiscobotPartMetadata{
+							ReminderKind: "mode",
+							Mode:         map[bool]string{true: "plan", false: "build"}[planMode],
+						}),
+					}},
 				},
 			}); err != nil {
 				yield(nil, fmt.Errorf("save mode reminder: %w", err))
@@ -558,25 +566,23 @@ func mcpServersEqual(a, b []sessionconfig.MCPServerConfig) bool {
 }
 
 func resolvePlanMode(reqMode string, cfg thread.Config, hasConfig bool) (planMode bool, changedByPrompt bool) {
+	previousPlanMode := false
 	if hasConfig {
+		previousPlanMode = cfg.PlanMode
 		planMode = cfg.PlanMode
 	}
 	if reqMode == "" {
 		return planMode, false
 	}
 	planMode = reqMode == "plan"
-	if !hasConfig {
-		return planMode, false
-	}
-	return planMode, planMode != cfg.PlanMode
+	return planMode, planMode != previousPlanMode
 }
 
 func formatModeChangeReminder(planMode bool) string {
-	mode := "build"
 	if planMode {
-		mode = "plan"
+		return "<system-reminder>\nMode update: the current mode is now plan. This change was triggered by the current prompt request.\n</system-reminder>"
 	}
-	return fmt.Sprintf("<system-reminder>\nMode update: the current mode is now %s. This change was triggered by the current prompt request.\n</system-reminder>", mode)
+	return "<system-reminder>\nMode update: the current mode is now build. Plan mode has been exited. This change was triggered by the current prompt request.\n</system-reminder>"
 }
 
 const generatedThreadNameMaxRunes = 72
