@@ -185,8 +185,8 @@ func (a *recursiveTaskAgent) Messages(_, _ string) ([]message.UIMessage, error) 
 func (a *recursiveTaskAgent) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
 	return nil, nil
 }
-func (a *recursiveTaskAgent) ListThreads() ([]string, error)        { return nil, nil }
-func (a *recursiveTaskAgent) InterruptedThreads() ([]string, error) { return nil, nil }
+func (a *recursiveTaskAgent) ListThreads() ([]string, error)          { return nil, nil }
+func (a *recursiveTaskAgent) HasInterruptedTurn(string) (bool, error) { return false, nil }
 func (a *recursiveTaskAgent) PendingQuestion(threadID string) (*agent.PendingQuestion, error) {
 	return a.state(threadID).pending, nil
 }
