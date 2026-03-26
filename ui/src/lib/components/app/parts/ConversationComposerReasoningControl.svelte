@@ -43,9 +43,6 @@
 			: levels,
 	);
 	const buttonLabel = $derived.by(() => formatReasoningLabel(resolvedValue));
-	const buttonSuffix = $derived.by(() =>
-		value === undefined || value === "default" ? " (default)" : "",
-	);
 	const defaultLabel = $derived.by(() =>
 		resolvedDefaultValue
 			? `${formatReasoningLabel(resolvedDefaultValue)} (default)`
@@ -64,10 +61,10 @@
 			size="xs"
 			variant="ghost"
 			class="h-6 gap-1.5 px-2 text-xs"
-			title={`Reasoning: ${buttonLabel}${buttonSuffix}`}
+			title={`Reasoning: ${buttonLabel}`}
 		>
 			<BrainIcon class="size-3.5 shrink-0" />
-			<span>{buttonLabel}{buttonSuffix}</span>
+			<span>{buttonLabel}</span>
 		</InputGroupButton>
 	</DropdownMenuTrigger>
 	<DropdownMenuContent align="start" class="w-64">
