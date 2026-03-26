@@ -130,7 +130,7 @@ export type ThreadSummary = {
 	name: string;
 	model?: string;
 	reasoning?: string;
-	mode?: string;
+	mode: string;
 };
 
 export type PlanEntry = {

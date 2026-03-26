@@ -270,7 +270,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			parts: ChatMessage["parts"];
 			mode: "build" | "plan";
 			modelId: string | null;
-			reasoning: boolean;
+			reasoning: string | undefined;
 			workspaceId?: string;
 			workspaceType?: "local" | "git" | null;
 			workspacePath?: string | null;
@@ -285,9 +285,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			}
 
 			streamError = null;
-			const nextModel = normalizeModelId(modelId ?? null);
-			const nextReasoning = reasoning ? "enabled" : undefined;
-			const nextMode = mode === "plan" ? "plan" : "";
+			const nextModel = normalizeModelId(modelId ?? null) ?? "";
+			const nextReasoning = reasoning ?? "";
+			const nextMode = mode === "plan" ? "plan" : "build";
 			const userMessage = hasMessageContent
 				? createUserMessageFromParts(parts, {
 						provisional: true,
@@ -311,10 +311,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 									workspacePath,
 								}
 							: {}),
-						...(nextModel ? { model: nextModel } : {}),
-						...(nextReasoning !== undefined
-							? { reasoning: nextReasoning }
-							: {}),
+						model: nextModel,
+						reasoning: nextReasoning,
 						mode: nextMode,
 					});
 					return {
@@ -329,8 +327,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 					sessionId: args.sessionId,
 					threadId: args.threadId,
 					messages: userMessage ? getSubmitMessages(userMessage) : [],
-					...(nextModel ? { model: nextModel } : {}),
-					...(nextReasoning !== undefined ? { reasoning: nextReasoning } : {}),
+					model: nextModel,
+					reasoning: nextReasoning,
 					mode: nextMode,
 				});
 				return {

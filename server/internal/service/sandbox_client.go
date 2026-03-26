@@ -219,7 +219,9 @@ type RequestOptions struct {
 	// By default, credentials are fetched and sent with requests.
 	SkipCredentials bool
 
-	// Reasoning controls extended thinking: "enabled", "disabled", or "" for default.
+	// Reasoning controls extended thinking using a string reasoning level such as
+	// "auto", "low", "medium", "high", "xhigh", "none", "default", or
+	// "" for model/provider default behavior.
 	Reasoning string
 
 	// Mode is the permission mode: "plan" for planning mode, "" for default.

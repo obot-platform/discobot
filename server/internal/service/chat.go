@@ -188,7 +188,9 @@ func (c *ChatService) StartChat(ctx context.Context, projectID, sessionID, threa
 // Credentials for the project are automatically included in the request header.
 // Git user configuration is automatically included in request headers (cached on first use).
 // If the sandbox is not running or doesn't exist, it will be reconciled on-demand.
-// reasoning can be "enabled", "disabled", or "" for default behavior.
+// Reasoning can be any supported reasoning level string (for example "auto",
+// "low", "medium", "high", "xhigh", "none", "default") or "" for
+// model/provider default behavior.
 // mode can be "plan" for planning mode, or "" for default (build mode).
 func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID, threadID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (<-chan SSELine, error) {
 	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, requestModel, reasoning, mode)

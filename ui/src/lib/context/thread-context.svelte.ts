@@ -14,9 +14,85 @@ import type {
 	SessionContextValue,
 	ThreadContextValue,
 } from "$lib/session/session-context.types";
+import type { ThreadSummary } from "$lib/shell-types";
 
 const THREAD_CONTEXT_KEY = Symbol.for("discobot-ui-thread-context");
 const COMPOSER_DRAFT_PERSIST_DELAY_MS = 300;
+
+export function normalizeThreadComposerMode(
+	mode: string | null | undefined,
+): "build" | "plan" {
+	if (!mode || mode === "" || mode === "build") {
+		return "build";
+	}
+	return "plan";
+}
+
+export function normalizeThreadComposerReasoning(
+	reasoning: string | null | undefined,
+): string | undefined {
+	return reasoning && reasoning.length > 0 ? reasoning : undefined;
+}
+
+export function parseComposerModelSelection(
+	modelId: string | null | undefined,
+): { modelId: string | null } {
+	return {
+		modelId: modelId && modelId.length > 0 ? modelId : null,
+	};
+}
+
+export function getThreadComposerValues(
+	thread: ThreadSummary | null,
+	defaultModel: string | null,
+): {
+	mode: "build" | "plan";
+	modelId: string | null;
+	reasoning: string | undefined;
+} {
+	return {
+		mode: normalizeThreadComposerMode(thread?.mode),
+		modelId: thread?.model ?? defaultModel,
+		reasoning: normalizeThreadComposerReasoning(thread?.reasoning),
+	};
+}
+
+export function getThreadComposerValuesKey(values: {
+	mode: "build" | "plan";
+	modelId: string | null;
+	reasoning: string | undefined;
+}): string {
+	return JSON.stringify(values);
+}
+
+export function resolveThreadComposerSubmitValues({
+	mode,
+	modelId,
+	reasoning,
+	nextMode,
+	nextModelId,
+	nextReasoning,
+}: {
+	mode: "build" | "plan";
+	modelId: string | null;
+	reasoning: string | undefined;
+	nextMode: "build" | "plan" | undefined;
+	nextModelId: string | null | undefined;
+	nextReasoning: string | undefined;
+}): {
+	mode: "build" | "plan";
+	modelId: string | null;
+	reasoning: string | undefined;
+} {
+	const resolvedModelId = nextModelId !== undefined ? nextModelId : modelId;
+	return {
+		mode: nextMode ?? mode,
+		modelId: resolvedModelId,
+		reasoning: resolvedModelId
+			? normalizeThreadComposerReasoning(nextReasoning ?? reasoning)
+			: undefined,
+	};
+}
 
 export function clearComposerDraftState({
 	cancelPersist,
@@ -63,9 +139,45 @@ function createThreadContext(
 			await refreshSessionState();
 		},
 	});
+	const threadSummary = $derived.by(
+		() => session.threads.list.find((t) => t.id === threadId) ?? null,
+	);
+	const sourceComposerValues = $derived.by(() =>
+		getThreadComposerValues(
+			threadSummary,
+			app.preferences.defaultModel || null,
+		),
+	);
+	const initialComposerValues = getThreadComposerValues(
+		session.threads.list.find((t) => t.id === threadId) ?? null,
+		app.preferences.defaultModel || null,
+	);
+	let sourceComposerValuesKey = $state(
+		getThreadComposerValuesKey(initialComposerValues),
+	);
+	let mode = $state<"build" | "plan">(initialComposerValues.mode);
+	let modelId = $state<string | null>(initialComposerValues.modelId);
+	let reasoning = $state<string | undefined>(initialComposerValues.reasoning);
+	let nextMode = $state<"build" | "plan" | undefined>(undefined);
+	let nextModelId = $state<string | null | undefined>(undefined);
+	let nextReasoning = $state<string | undefined>(undefined);
 	let loadedComposerDraftStorageKey = $state<string | null>(null);
 	let lastStoredComposerDraft = $state("");
 	let composerDraftPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		const nextSourceComposerValues = sourceComposerValues;
+		const nextSourceComposerValuesKey = getThreadComposerValuesKey(
+			nextSourceComposerValues,
+		);
+		if (nextSourceComposerValuesKey === sourceComposerValuesKey) {
+			return;
+		}
+		sourceComposerValuesKey = nextSourceComposerValuesKey;
+		mode = nextSourceComposerValues.mode;
+		modelId = nextSourceComposerValues.modelId;
+		reasoning = nextSourceComposerValues.reasoning;
+	});
 
 	const composerDraftStorageKey = $derived.by(() =>
 		resolveComposerDraftStorageKey({
@@ -128,13 +240,79 @@ function createThreadContext(
 		});
 	};
 
+	const clearNextComposerValues = () => {
+		nextMode = undefined;
+		nextModelId = undefined;
+		nextReasoning = undefined;
+	};
+
+	const submit: ThreadContextValue["submit"] = async ({
+		parts,
+		workspaceId,
+		workspaceType,
+		workspacePath,
+		allowEmptyPendingMessage,
+	}) => {
+		const submitValues = resolveThreadComposerSubmitValues({
+			mode,
+			modelId,
+			reasoning,
+			nextMode,
+			nextModelId,
+			nextReasoning,
+		});
+		const result = await conversation.submit({
+			parts,
+			mode: submitValues.mode,
+			modelId: submitValues.modelId,
+			reasoning: submitValues.reasoning,
+			workspaceId,
+			workspaceType,
+			workspacePath,
+			allowEmptyPendingMessage,
+		});
+		mode = submitValues.mode;
+		modelId = submitValues.modelId;
+		reasoning = submitValues.reasoning;
+		clearNextComposerValues();
+		return result;
+	};
+
 	return {
 		get threadId() {
 			return threadId;
 		},
 		get thread() {
-			return session.threads.list.find((t) => t.id === threadId) ?? null;
+			return threadSummary;
 		},
+		get mode() {
+			return mode;
+		},
+		get modelId() {
+			return modelId;
+		},
+		get reasoning() {
+			return reasoning;
+		},
+		get nextMode() {
+			return nextMode;
+		},
+		get nextModelId() {
+			return nextModelId;
+		},
+		get nextReasoning() {
+			return nextReasoning;
+		},
+		setNextMode: (value) => {
+			nextMode = value;
+		},
+		setNextModelId: (value) => {
+			nextModelId = value;
+		},
+		setNextReasoning: (value) => {
+			nextReasoning = value;
+		},
+		clearNextComposerValues,
 		get messages() {
 			return conversation.messages;
 		},
@@ -151,7 +329,7 @@ function createThreadContext(
 			return conversation.error;
 		},
 		clearComposerDraft: clearStoredComposerDraft,
-		submit: conversation.submit,
+		submit,
 		cancel: conversation.cancel,
 		load: conversation.load,
 		refresh: conversation.refresh,

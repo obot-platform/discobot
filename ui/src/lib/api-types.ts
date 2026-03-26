@@ -67,7 +67,7 @@ export interface Session {
 	workspaceId?: string;
 	model?: string;
 	reasoning?: string;
-	/** Permission mode: "plan" for planning mode, or empty/undefined for default (build mode) */
+	/** Permission mode: "plan" for planning mode, or "build" for normal execution */
 	mode?: string;
 	/** IDs of the active env sets for this session (in order; later sets override earlier on key conflicts) */
 	activeEnvSetIds?: string[];
@@ -174,6 +174,8 @@ export interface ModelInfo {
 	description?: string;
 	/** Whether this model supports extended thinking/reasoning */
 	reasoning?: boolean;
+	reasoningLevels?: string[];
+	defaultReasoning?: string;
 }
 
 export interface ModelsResponse {
@@ -555,7 +557,7 @@ export interface Thread {
 	name: string;
 	model?: string;
 	reasoning?: string;
-	mode?: string;
+	mode: string;
 	pending?: boolean;
 }
 

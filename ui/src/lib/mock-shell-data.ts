@@ -161,10 +161,38 @@ export const envSets: EnvSetWithVars[] = [
 ];
 
 export const settingsModels: ModelInfo[] = [
-	{ id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", provider: "anthropic" },
-	{ id: "claude-opus-4", name: "Claude Opus 4", provider: "anthropic" },
-	{ id: "gpt-5.3-codex", name: "GPT-5.3 Codex", provider: "openai" },
-	{ id: "gpt-5.3-mini", name: "GPT-5.3 Mini", provider: "openai" },
+	{
+		id: "claude-sonnet-4.5",
+		name: "Claude Sonnet 4.5",
+		provider: "anthropic",
+		reasoning: true,
+		reasoningLevels: ["auto", "low", "medium", "high", "xhigh", "none"],
+		defaultReasoning: "auto",
+	},
+	{
+		id: "claude-opus-4",
+		name: "Claude Opus 4",
+		provider: "anthropic",
+		reasoning: true,
+		reasoningLevels: ["auto", "low", "medium", "high", "xhigh", "none"],
+		defaultReasoning: "auto",
+	},
+	{
+		id: "gpt-5.3-codex",
+		name: "GPT-5.3 Codex",
+		provider: "openai",
+		reasoning: true,
+		reasoningLevels: ["low", "medium", "high", "xhigh"],
+		defaultReasoning: "medium",
+	},
+	{
+		id: "gpt-5.3-mini",
+		name: "GPT-5.3 Mini",
+		provider: "openai",
+		reasoning: true,
+		reasoningLevels: ["low", "medium", "high"],
+		defaultReasoning: "medium",
+	},
 ];
 
 export const authProviders: AuthProvider[] = [
@@ -427,8 +455,16 @@ const sessionFixtures: SessionData[] = allSessionStatuses.map(
 				pullRequestReference: `PR #${188 + index}`,
 			},
 			threads: [
-				{ id: `thread-${status}-main`, name: `${statusLabel} thread` },
-				{ id: `thread-${status}-review`, name: "Review follow-up" },
+				{
+					id: `thread-${status}-main`,
+					name: `${statusLabel} thread`,
+					mode: index % 3 === 0 ? "plan" : "build",
+				},
+				{
+					id: `thread-${status}-review`,
+					name: "Review follow-up",
+					mode: "build",
+				},
 			],
 			conversation: makeConversation(statusLabel),
 			planEntries: makePlanEntries(statusLabel),

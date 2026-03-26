@@ -12,13 +12,6 @@
 	} from "$lib/components/ui/dropdown-menu";
 	import { InputGroupButton } from "$lib/components/ui/input-group";
 
-	type ModelVariant = {
-		id: string;
-		displayName: string;
-		model: ModelInfo;
-		reasoning: boolean;
-	};
-
 	type Props = {
 		value?: string | null;
 		onSelect?: (value: string | null) => void;
@@ -27,7 +20,7 @@
 
 	let { value = null, onSelect = () => {}, models }: Props = $props();
 
-	const modelVariants = $derived.by(() => {
+	const dedupedModels = $derived.by(() => {
 		const modelByName: Record<string, ModelInfo> = {};
 
 		for (const model of models) {
@@ -43,29 +36,9 @@
 			}
 		}
 
-		const variants: ModelVariant[] = [];
-		for (const model of Object.values(modelByName)) {
-			if (model.reasoning) {
-				variants.push({
-					id: `${model.id}:thinking`,
-					displayName: `${model.name} (thinking)`,
-					model,
-					reasoning: true,
-				});
-			}
-
-			variants.push({
-				id: model.id,
-				displayName: model.name,
-				model,
-				reasoning: false,
-			});
-		}
-
 		const getBaseName = (name: string) =>
 			name
 				.replace(/\s*\(latest\)\s*/gi, "")
-				.replace(/\s*\(thinking\)\s*/gi, "")
 				.replace(/\s+v\d+\s*/gi, "")
 				.replace(/\s+[\d.]+\s*$/, "")
 				.trim();
@@ -78,39 +51,32 @@
 			return Number.parseFloat(matches[matches.length - 1]);
 		};
 
-		return [...variants].sort((left, right) => {
-			const baseLeft = getBaseName(left.displayName);
-			const baseRight = getBaseName(right.displayName);
+		return Object.values(modelByName).sort((left, right) => {
+			const baseLeft = getBaseName(left.name);
+			const baseRight = getBaseName(right.name);
 			const baseCompare = baseLeft.localeCompare(baseRight);
 			if (baseCompare !== 0) {
 				return baseCompare;
 			}
 
-			const versionLeft = extractVersion(left.displayName);
-			const versionRight = extractVersion(right.displayName);
+			const versionLeft = extractVersion(left.name);
+			const versionRight = extractVersion(right.name);
 			if (versionLeft !== versionRight) {
 				return versionRight - versionLeft;
 			}
 
-			if (left.reasoning && !right.reasoning) {
-				return -1;
-			}
-			if (!left.reasoning && right.reasoning) {
-				return 1;
-			}
-
-			return left.displayName.localeCompare(right.displayName);
+			return left.name.localeCompare(right.name);
 		});
 	});
 
 	const modelProviderEntries = $derived.by(() => {
-		const grouped: Record<string, ModelVariant[]> = {};
-		for (const variant of modelVariants) {
-			const provider = variant.model.provider || "Other";
+		const grouped: Record<string, ModelInfo[]> = {};
+		for (const model of dedupedModels) {
+			const provider = model.provider || "Other";
 			if (!grouped[provider]) {
 				grouped[provider] = [];
 			}
-			grouped[provider].push(variant);
+			grouped[provider].push(model);
 		}
 
 		return Object.entries(grouped).sort(([left], [right]) =>
@@ -118,8 +84,8 @@
 		);
 	});
 
-	const selectedModelVariant = $derived.by(
-		() => modelVariants.find((variant) => variant.id === value) ?? null,
+	const selectedModel = $derived.by(
+		() => dedupedModels.find((model) => model.id === value) ?? null,
 	);
 </script>
 
@@ -129,18 +95,11 @@
 			size="xs"
 			variant="ghost"
 			class="h-6 max-w-[160px] gap-1.5 px-2 text-xs"
-			title={selectedModelVariant
-				? `Model: ${selectedModelVariant.displayName}`
-				: "Model"}
+			title={selectedModel ? `Model: ${selectedModel.name}` : "Model"}
 		>
-			{#if selectedModelVariant}
-				<span class="truncate">
-					{selectedModelVariant.displayName.replace(/\s*\(thinking\)\s*/i, "")}
-				</span>
+			{#if selectedModel}
+				<span class="truncate">{selectedModel.name}</span>
 			{:else}
-				<BrainIcon class="size-3.5 shrink-0" />
-			{/if}
-			{#if selectedModelVariant?.reasoning}
 				<BrainIcon class="size-3.5 shrink-0" />
 			{/if}
 		</InputGroupButton>
@@ -162,7 +121,7 @@
 			<DropdownMenuSeparator />
 		{/if}
 
-		{#each modelProviderEntries as [provider, variants], providerIndex (provider)}
+		{#each modelProviderEntries as [provider, providerModels], providerIndex (provider)}
 			{#if providerIndex > 0}
 				<DropdownMenuSeparator />
 			{/if}
@@ -171,22 +130,22 @@
 			>
 				{provider}
 			</DropdownMenuLabel>
-			{#each variants as variant (variant.id)}
+			{#each providerModels as model (model.id)}
 				<DropdownMenuItem
 					onclick={() => {
-						onSelect(variant.id);
+						onSelect(model.id);
 					}}
 					class="justify-between gap-3"
 				>
 					<div class="min-w-0 flex-1 pl-3">
-						<div class="truncate font-medium">{variant.displayName}</div>
-						{#if variant.model.description && !variant.reasoning}
+						<div class="truncate font-medium">{model.name}</div>
+						{#if model.description}
 							<div class="truncate text-xs text-muted-foreground">
-								{variant.model.description}
+								{model.description}
 							</div>
 						{/if}
 					</div>
-					{#if value === variant.id}
+					{#if value === model.id}
 						<CheckIcon class="size-3.5 text-primary" />
 					{/if}
 				</DropdownMenuItem>

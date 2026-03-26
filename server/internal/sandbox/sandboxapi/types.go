@@ -25,8 +25,9 @@ type ChatRequest struct {
 	Messages json.RawMessage `json:"messages"`
 	// Model is the optional model to use for this chat request.
 	Model string `json:"model,omitempty"`
-	// Reasoning controls extended thinking: "enabled", "disabled", or "" for default.
-	// Empty string means use the model's default behavior.
+	// Reasoning controls extended thinking. This is passed through as a string
+	// reasoning level such as "auto", "low", "medium", "high", "xhigh",
+	// "none", "default", or "" for model/provider default behavior.
 	Reasoning string `json:"reasoning,omitempty"`
 	// Mode is the permission mode: "plan" for planning mode, "" for default (build mode).
 	Mode string `json:"mode,omitempty"`
@@ -105,8 +106,8 @@ type Thread struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Model     string `json:"model,omitempty"`     // full "providerId/modelId" ref
-	Reasoning string `json:"reasoning,omitempty"` // "enabled", "disabled", or ""
-	Mode      string `json:"mode,omitempty"`      // "plan" or ""
+	Reasoning string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", or "default"
+	Mode      string `json:"mode"`                // "build" or "plan"
 	Pending   bool   `json:"pending,omitempty"`   // true when the thread exists in concept but the sandbox hasn't created it yet
 }
 

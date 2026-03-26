@@ -8,6 +8,7 @@
 	import ConversationComposerModeControl from "$lib/components/app/parts/ConversationComposerModeControl.svelte";
 	import ConversationComposerPlanControl from "$lib/components/app/parts/ConversationComposerPlanControl.svelte";
 	import ConversationComposerQueueControl from "$lib/components/app/parts/ConversationComposerQueueControl.svelte";
+	import ConversationComposerReasoningControl from "$lib/components/app/parts/ConversationComposerReasoningControl.svelte";
 	import ConversationComposerSessionSetupStatus from "$lib/components/app/ConversationComposerSessionSetupStatus.svelte";
 	import ConversationComposerSubmitButton from "$lib/components/app/parts/ConversationComposerSubmitButton.svelte";
 	import ConversationComposerTextarea from "$lib/components/app/parts/ConversationComposerTextarea.svelte";
@@ -26,9 +27,14 @@
 		WorkspaceSelectionResult,
 		WorkspaceSelectorHandle,
 	} from "$lib/components/app/conversation-composer.types";
+	import type { ModelInfo } from "$lib/api-types";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
-	import { useThreadContext } from "$lib/context/thread-context.svelte";
+	import {
+		normalizeThreadComposerReasoning,
+		parseComposerModelSelection,
+		useThreadContext,
+	} from "$lib/context/thread-context.svelte";
 	import {
 		buildUserMessageParts,
 		createUserMessageAttachment,
@@ -45,8 +51,6 @@
 	const sessionHooks = session.hooks;
 
 	let attachmentFiles = $state<ComposerAttachment[]>([]);
-	let modeOverride = $state<ComposerMode | undefined>(undefined);
-	let modelIdOverride = $state<string | null | undefined>(undefined);
 	let composerTextareaRef = $state<ConversationComposerTextareaHandle | null>(
 		null,
 	);
@@ -55,57 +59,81 @@
 	let pendingMentionSessionCreation = $state<Promise<boolean> | null>(null);
 	let mounted = true;
 
-	function normalizeComposerMode(
-		mode: string | null | undefined,
-	): ComposerMode {
-		if (!mode || mode === "" || mode === "build") {
-			return "build";
+	function findModelById(modelId: string | null): ModelInfo | null {
+		if (!modelId) {
+			return null;
 		}
-		return "plan";
+		return models.list.find((model) => model.id === modelId) ?? null;
 	}
 
-	function normalizeModelId(modelId: string | null): string | undefined {
-		if (!modelId) return undefined;
-		return modelId.endsWith(":thinking")
-			? modelId.slice(0, -":thinking".length)
-			: modelId;
-	}
-
-	function composerModelUsesReasoning(modelId: string | null | undefined) {
-		return modelId?.endsWith(":thinking") ?? false;
-	}
-
-	function clearComposerOverrides() {
-		modeOverride = undefined;
-		modelIdOverride = undefined;
-	}
-
-	// When pending, thread.thread is null so these fall back to defaults ("build", preferences.defaultModel).
-	const sessionMode = $derived.by(() =>
-		normalizeComposerMode(thread.thread?.mode),
-	);
-
-	const sessionModelId = $derived.by(() => {
-		const t = thread.thread;
-		if (!t?.model) {
-			return session.isPending ? preferences.defaultModel || null : null;
+	function normalizeReasoningForModel(
+		model: ModelInfo | null,
+		reasoning: string | undefined,
+	): string | undefined {
+		if (!model?.reasoning) {
+			return undefined;
 		}
+		const normalizedReasoning = normalizeThreadComposerReasoning(reasoning);
+		if (!normalizedReasoning) {
+			return undefined;
+		}
+		if (normalizedReasoning === "default") {
+			return "default";
+		}
+		const levels = model.reasoningLevels ?? [];
+		if (levels.length === 0 || levels.includes(normalizedReasoning)) {
+			return normalizedReasoning;
+		}
+		return undefined;
+	}
 
-		const supportsReasoning = models.list.some(
-			(model) => model.id === t.model && model.reasoning,
+	function getReasoningForModel(
+		model: ModelInfo | null,
+		preferredReasoning: string | undefined,
+		fallbackReasoning: string | undefined,
+	): string | undefined {
+		return (
+			normalizeReasoningForModel(model, preferredReasoning) ??
+			normalizeReasoningForModel(model, fallbackReasoning)
 		);
+	}
 
-		return t.reasoning === "enabled" && supportsReasoning
-			? `${t.model}:thinking`
-			: t.model;
-	});
+	function getNextReasoningForModel(
+		model: ModelInfo | null,
+		preferredReasoning: string | undefined,
+		fallbackReasoning: string | undefined,
+	): string | undefined {
+		if (!model?.reasoning) {
+			return undefined;
+		}
+		return (
+			getReasoningForModel(model, preferredReasoning, fallbackReasoning) ??
+			"default"
+		);
+	}
 
-	const effectiveMode = $derived.by(() => modeOverride ?? sessionMode);
-	const effectiveModelId = $derived.by(() =>
-		modelIdOverride !== undefined ? modelIdOverride : sessionModelId,
+	function isSameReasoningSelection(
+		left: string | undefined,
+		right: string | undefined,
+	): boolean {
+		return (left ?? "default") === (right ?? "default");
+	}
+
+	const effectiveMode = $derived.by(() => thread.nextMode ?? thread.mode);
+	const effectiveModelId = $derived.by(
+		() => thread.nextModelId ?? thread.modelId,
 	);
+	const selectedModelId = $derived.by(() =>
+		thread.nextModelId !== undefined
+			? (thread.nextModelId ?? preferences.defaultModel) || null
+			: effectiveModelId,
+	);
+	const selectedModel = $derived.by(() => findModelById(selectedModelId));
 	const effectiveReasoning = $derived.by(() =>
-		composerModelUsesReasoning(effectiveModelId),
+		getReasoningForModel(selectedModel, thread.nextReasoning, thread.reasoning),
+	);
+	const reasoningLevels = $derived.by(
+		() => selectedModel?.reasoningLevels ?? [],
 	);
 	const latestPlan = $derived.by(() => getLatestPlanState(thread.messages));
 	const sessionSetupDisabled = $derived.by(
@@ -115,11 +143,56 @@
 	);
 
 	function handleModeSelect(nextMode: ComposerMode) {
-		modeOverride = nextMode === sessionMode ? undefined : nextMode;
+		thread.setNextMode(nextMode === thread.mode ? undefined : nextMode);
 	}
 
-	function handleModelSelect(nextModelId: string | null) {
-		modelIdOverride = nextModelId === sessionModelId ? undefined : nextModelId;
+	function handleModelSelect(nextSelection: string | null) {
+		const parsedSelection = parseComposerModelSelection(nextSelection);
+		const nextModel = findModelById(
+			(parsedSelection.modelId ?? preferences.defaultModel) || null,
+		);
+		const nextReasoning = getNextReasoningForModel(
+			nextModel,
+			thread.nextReasoning,
+			thread.reasoning,
+		);
+
+		if (parsedSelection.modelId === thread.modelId) {
+			thread.setNextModelId(undefined);
+			thread.setNextReasoning(
+				isSameReasoningSelection(nextReasoning, thread.reasoning)
+					? undefined
+					: nextReasoning,
+			);
+			return;
+		}
+
+		thread.setNextModelId(parsedSelection.modelId);
+		thread.setNextReasoning(nextReasoning);
+	}
+
+	function handleReasoningSelect(nextReasoning: string | undefined) {
+		if (nextReasoning === "default") {
+			const modelDefaultReasoning = selectedModel?.defaultReasoning;
+			if (effectiveReasoning === undefined) {
+				thread.setNextReasoning(
+					thread.nextModelId === undefined &&
+						(thread.reasoning === undefined || thread.reasoning === "default")
+						? undefined
+						: "default",
+				);
+				return;
+			}
+			thread.setNextReasoning(modelDefaultReasoning ?? "default");
+			return;
+		}
+
+		thread.setNextReasoning(
+			thread.nextModelId === undefined &&
+				isSameReasoningSelection(nextReasoning, thread.reasoning)
+				? undefined
+				: nextReasoning,
+		);
 	}
 
 	const submitStatus = $derived.by(() => {
@@ -237,7 +310,7 @@
 		if (mounted) {
 			sessions.openThread(sessionId, threadId);
 		}
-		clearComposerOverrides();
+		thread.clearNextComposerValues();
 		sessionView.resetPendingWorkspaceSetup();
 	}
 
@@ -330,9 +403,6 @@
 		try {
 			const result = await thread.submit({
 				parts: nextMessageParts,
-				mode: effectiveMode,
-				modelId: effectiveModelId,
-				reasoning: effectiveReasoning,
 				allowEmptyPendingMessage: shouldAllowEmptyPendingMessage,
 				...pendingSubmitOptions,
 			});
@@ -343,7 +413,7 @@
 				finalizePendingSessionStart(result.sessionId, result.threadId);
 			}
 			if (!preserveDraft) {
-				clearComposerOverrides();
+				thread.clearNextComposerValues();
 				composerTextareaRef?.closeMentionDropdown();
 				composerTextareaRef?.closePromptHistoryDropdown();
 				clearAttachments();
@@ -438,10 +508,20 @@
 								/>
 							{/if}
 							<ConversationComposerModelControl
-								value={effectiveModelId}
+								value={thread.nextModelId !== undefined
+									? thread.nextModelId
+									: thread.modelId}
 								onSelect={handleModelSelect}
 								models={models.list}
 							/>
+							{#if selectedModel?.reasoning}
+								<ConversationComposerReasoningControl
+									value={effectiveReasoning}
+									defaultValue={selectedModel.defaultReasoning}
+									levels={reasoningLevels}
+									onSelect={handleReasoningSelect}
+								/>
+							{/if}
 						</div>
 
 						<div class="tauri-no-drag flex items-center justify-end gap-2">

@@ -10,9 +10,9 @@ import {
 test("getNextSelectedThreadId picks the next thread after removal", () => {
 	const nextId = getNextSelectedThreadId(
 		[
-			{ id: "a", name: "A" },
-			{ id: "b", name: "B" },
-			{ id: "c", name: "C" },
+			{ id: "a", name: "A", mode: "build" },
+			{ id: "b", name: "B", mode: "build" },
+			{ id: "c", name: "C", mode: "build" },
 		],
 		"b",
 		"b",
@@ -24,8 +24,8 @@ test("getNextSelectedThreadId picks the next thread after removal", () => {
 test("getNextSelectedThreadId falls back to the previous thread", () => {
 	const nextId = getNextSelectedThreadId(
 		[
-			{ id: "a", name: "A" },
-			{ id: "b", name: "B" },
+			{ id: "a", name: "A", mode: "build" },
+			{ id: "b", name: "B", mode: "build" },
 		],
 		"b",
 		"b",

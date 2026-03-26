@@ -64,7 +64,7 @@ export function buildImplicitThread(session: Session | null): ThreadSummary[] {
 			name: session.displayName || session.name,
 			model: session.model,
 			reasoning: session.reasoning,
-			mode: session.mode,
+			mode: session.mode ?? "build",
 		},
 	];
 }

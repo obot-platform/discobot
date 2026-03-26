@@ -29,7 +29,9 @@ type ChatRequest struct {
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	// Model is optional for new sessions.
 	Model string `json:"model,omitempty"`
-	// Reasoning controls extended thinking: "enabled", "disabled", or "" for default
+	// Reasoning controls extended thinking. This is passed through as a string
+	// reasoning level such as "auto", "low", "medium", "high", "xhigh",
+	// "none", "default", or "" for model/provider default behavior.
 	Reasoning string `json:"reasoning,omitempty"`
 	// Mode is the permission mode: "plan" for planning mode, "" for default (build mode)
 	Mode string `json:"mode,omitempty"`

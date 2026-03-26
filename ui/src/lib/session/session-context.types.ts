@@ -161,6 +161,16 @@ export type ThreadSubmitResult = {
 export type ThreadContextValue = {
 	threadId: string;
 	thread: ThreadSummary | null;
+	mode: "build" | "plan";
+	modelId: string | null;
+	reasoning: string | undefined;
+	nextMode: "build" | "plan" | undefined;
+	nextModelId: string | null | undefined;
+	nextReasoning: string | undefined;
+	setNextMode: (mode: "build" | "plan" | undefined) => void;
+	setNextModelId: (modelId: string | null | undefined) => void;
+	setNextReasoning: (reasoning: string | undefined) => void;
+	clearNextComposerValues: () => void;
 	messages: ChatMessage[];
 	historyReplayVersion: number;
 	planEntries: PlanEntry[];
@@ -169,9 +179,6 @@ export type ThreadContextValue = {
 	clearComposerDraft: (storageKey?: string) => void;
 	submit: (payload: {
 		parts: ChatMessage["parts"];
-		mode: "build" | "plan";
-		modelId: string | null;
-		reasoning: boolean;
 		workspaceId?: string;
 		workspaceType?: "local" | "git" | null;
 		workspacePath?: string | null;
