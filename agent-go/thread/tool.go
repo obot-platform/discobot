@@ -48,6 +48,9 @@ type ToolContext struct {
 	PromptRequestPlanMode bool
 	ProviderID            string
 	ModelID               string
+	SubagentDepth         int
+	MaxSubagentDepth      int
+	CurrentTaskID         string
 	Agent                 agent.Agent
 	ModeChange            *string // set by a tool that changes the mode; consumed by the turn loop
 }

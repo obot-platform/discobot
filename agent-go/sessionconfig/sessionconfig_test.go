@@ -80,6 +80,9 @@ func TestLoad_EndToEnd(t *testing.T) {
 	} else if cfg.SubAgents[0].Name != "helper" {
 		t.Errorf("sub-agent name = %s, want helper", cfg.SubAgents[0].Name)
 	}
+	if cfg.MaxSubagentDepth != DefaultMaxSubagentDepth {
+		t.Errorf("max sub-agent depth = %d, want %d", cfg.MaxSubagentDepth, DefaultMaxSubagentDepth)
+	}
 
 	// Check skills — "deploy" must be present (user-level commands may also appear).
 	var deploySkill *SkillConfig
@@ -126,6 +129,9 @@ func TestLoad_EmptyDirectory(t *testing.T) {
 	}
 	if len(cfg.SubAgents) != 0 {
 		t.Errorf("expected 0 sub-agents, got %d", len(cfg.SubAgents))
+	}
+	if cfg.MaxSubagentDepth != DefaultMaxSubagentDepth {
+		t.Errorf("max sub-agent depth = %d, want %d", cfg.MaxSubagentDepth, DefaultMaxSubagentDepth)
 	}
 }
 

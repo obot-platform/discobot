@@ -134,6 +134,15 @@ type PromptRequest struct {
 	// override, and system prompt instead of the session defaults.
 	SubagentType string
 
+	// ParentTaskID identifies the Task/Agent tool call that created this thread.
+	// Empty for top-level threads.
+	ParentTaskID string
+
+	// SubagentDepth is the current nesting depth relative to the top-level
+	// thread. Top-level threads are depth 0, their direct children are depth 1,
+	// and so on.
+	SubagentDepth int
+
 	// MaxTurns caps the number of LLM calls in this turn; 0 means unlimited.
 	// The sub-agent config's MaxTurns is also applied; the stricter of the two wins.
 	MaxTurns int

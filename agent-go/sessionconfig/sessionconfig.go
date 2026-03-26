@@ -6,6 +6,8 @@ import (
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
+const DefaultMaxSubagentDepth = 4
+
 // InstructionEntry represents a discovered instruction file with metadata.
 type InstructionEntry struct {
 	// Path is the display path (e.g., "CLAUDE.md", "~/.claude/CLAUDE.md").
@@ -37,6 +39,10 @@ type SessionConfig struct {
 	// SubAgents are sub-agent configurations from .claude/agents/*.md.
 	SubAgents []SubAgentConfig
 
+	// MaxSubagentDepth limits how many nested Task/Agent hops may run beneath a
+	// top-level thread. Top-level threads are depth 0.
+	MaxSubagentDepth int
+
 	// Skills are discovered skill configurations from .claude/skills/ and
 	// .claude/commands/. They are listed in the system-reminder so the
 	// model knows which slash commands are available.
@@ -51,6 +57,7 @@ func Load(cwd string) (*SessionConfig, error) {
 
 	// 1. Set the default base system prompt.
 	cfg.SystemPrompt = defaultSystemPrompt()
+	cfg.MaxSubagentDepth = DefaultMaxSubagentDepth
 
 	// 2. Discover user instruction files (CLAUDE.md, AGENTS.md, rules).
 	entries, err := discoverInstructions(cwd)

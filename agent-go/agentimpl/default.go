@@ -134,10 +134,16 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 	threadCfg, threadCfgErr := a.store.LoadConfig(threadID)
 	planMode, modeChangedByPrompt := resolvePlanMode(req.Mode, threadCfg, threadCfgErr == nil)
 	promptRequestPlanMode := req.Mode == "plan"
+	currentDepth := req.SubagentDepth
+	if currentDepth < 0 {
+		currentDepth = 0
+	}
 	toolCtx := &thread.ToolContext{
 		ThreadID:              threadID,
 		PlanMode:              planMode,
 		PromptRequestPlanMode: promptRequestPlanMode,
+		SubagentDepth:         currentDepth,
+		CurrentTaskID:         req.ParentTaskID,
 		Agent:                 a,
 	}
 
@@ -145,8 +151,9 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 	sessionCfg, err := sessionconfig.Load(a.cwd)
 	if err != nil {
 		log.Printf("agent: warning: session config: %v", err)
-		sessionCfg = &sessionconfig.SessionConfig{}
+		sessionCfg = &sessionconfig.SessionConfig{MaxSubagentDepth: sessionconfig.DefaultMaxSubagentDepth}
 	}
+	toolCtx.MaxSubagentDepth = sessionCfg.MaxSubagentDepth
 
 	// Look up sub-agent config if a subagent type is specified.
 	var subAgentCfg *sessionconfig.SubAgentConfig
@@ -165,13 +172,11 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 	}
 
 	// Determine tool set: sub-agent restrictions take priority over request override.
-	// Sub-agents never receive the Task/Agent tool — this prevents recursive sub-agent
-	// spawning which can cause exponential thread explosion.
 	tools := req.Tools
 	if tools == nil {
 		tools = sessionCfg.Tools
 	}
-	if req.SubagentType != "" {
+	if toolCtx.MaxSubagentDepth > 0 && toolCtx.SubagentDepth >= toolCtx.MaxSubagentDepth {
 		tools = filterTools(tools, nil, []string{"Task", "Agent"})
 	}
 	if subAgentCfg != nil {

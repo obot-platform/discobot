@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"iter"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,6 +55,158 @@ func (m *mockSubAgent) FinalResponse(threadID string) (string, error) {
 		return m.finalResponseFn(threadID)
 	}
 	return "", nil
+}
+
+type recursiveTaskState struct {
+	taskID        string
+	pending       *agent.PendingQuestion
+	pendingAnswer *api.AnswerQuestionRequest
+	final         string
+}
+
+type recursiveTaskAgent struct {
+	child        agent.Agent
+	exec         *Executor
+	questionID   string
+	questionText string
+	finalText    string
+
+	mu     sync.Mutex
+	states map[string]*recursiveTaskState
+}
+
+func newRecursiveTaskAgent(exec *Executor, child agent.Agent) *recursiveTaskAgent {
+	return &recursiveTaskAgent{
+		child:  child,
+		exec:   exec,
+		states: make(map[string]*recursiveTaskState),
+	}
+}
+
+func (a *recursiveTaskAgent) state(threadID string) *recursiveTaskState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, ok := a.states[threadID]
+	if !ok {
+		state = &recursiveTaskState{}
+		a.states[threadID] = state
+	}
+	return state
+}
+
+func (a *recursiveTaskAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	return func(yield func(message.MessageChunk, error) bool) {
+		state := a.state(threadID)
+		if state.final != "" || state.pending != nil {
+			return
+		}
+
+		if a.child == nil {
+			if a.questionText != "" {
+				state.pending = &agent.PendingQuestion{
+					ApprovalID: a.questionID,
+					Questions: []api.AskUserQuestion{{
+						Question: a.questionText,
+						Header:   "Deep question",
+						Options: []api.AskUserQuestionOption{
+							{Label: "Yes", Description: "Continue"},
+							{Label: "No", Description: "Stop"},
+						},
+					}},
+				}
+				return
+			}
+			state.final = a.finalText
+			return
+		}
+
+		call := message.ToolCallPart{
+			ToolCallID: "nested-task-call",
+			ToolName:   "Task",
+			Input:      `{"prompt":"delegate deeper"}`,
+		}
+		toolCtx := &thread.ToolContext{
+			ThreadID:         threadID,
+			Agent:            a.child,
+			SubagentDepth:    req.SubagentDepth,
+			MaxSubagentDepth: 4,
+			CurrentTaskID:    req.ParentTaskID,
+		}
+
+		var execResult thread.ToolExecuteResult
+		var err error
+		if state.taskID == "" {
+			execResult, err = a.exec.Execute(ctx, toolCtx, call)
+			if err == nil && execResult.Async != nil {
+				state.taskID = execResult.Async.TaskID
+			}
+		} else if state.pendingAnswer != nil {
+			execResult, err = a.exec.ResumeAsync(ctx, toolCtx, call, state.taskID, state.pendingAnswer)
+			state.pendingAnswer = nil
+		} else {
+			execResult, err = a.exec.ResumeAsync(ctx, toolCtx, call, state.taskID, nil)
+		}
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if execResult.Async == nil {
+			if out, ok := execResult.Result.Output.(message.TextOutput); ok {
+				state.final = out.Value
+			}
+			return
+		}
+
+		waitResult, err := execResult.Async.Wait(ctx)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if waitResult.Approval != nil {
+			var questions []api.AskUserQuestion
+			if err := json.Unmarshal(waitResult.Approval.Questions, &questions); err != nil {
+				yield(nil, err)
+				return
+			}
+			state.pending = &agent.PendingQuestion{
+				ApprovalID: "nested-approval-" + threadID,
+				Questions:  questions,
+			}
+			return
+		}
+		if out, ok := waitResult.Result.Output.(message.TextOutput); ok {
+			state.final = out.Value
+		}
+	}
+}
+
+func (a *recursiveTaskAgent) Cancel(_ string) bool                              { return false }
+func (a *recursiveTaskAgent) Messages(_, _ string) ([]message.UIMessage, error) { return nil, nil }
+func (a *recursiveTaskAgent) ListModels(_ context.Context) ([]providers.ModelInfo, error) {
+	return nil, nil
+}
+func (a *recursiveTaskAgent) ListThreads() ([]string, error)        { return nil, nil }
+func (a *recursiveTaskAgent) InterruptedThreads() ([]string, error) { return nil, nil }
+func (a *recursiveTaskAgent) PendingQuestion(threadID string) (*agent.PendingQuestion, error) {
+	return a.state(threadID).pending, nil
+}
+func (a *recursiveTaskAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error {
+	state := a.state(threadID)
+	if state.pending == nil || state.pending.ApprovalID != approvalID {
+		return nil
+	}
+	state.pending = nil
+	if a.child == nil {
+		state.final = a.finalText
+		return nil
+	}
+	state.pendingAnswer = &req
+	return nil
+}
+func (a *recursiveTaskAgent) ListCommands() ([]agent.Command, error) { return nil, nil }
+func (a *recursiveTaskAgent) IsLeaf(_, _ string) (bool, error)       { return true, nil }
+func (a *recursiveTaskAgent) FinalResponse(threadID string) (string, error) {
+	return a.state(threadID).final, nil
 }
 
 // --- Helpers ---
@@ -165,13 +318,15 @@ func TestTask_NoSubAgent(t *testing.T) {
 	}
 }
 
-// TestTask_ForwardsPromptAndSubagentType verifies that the prompt text and
-// subagent_type from the tool input are forwarded to the sub-agent's Prompt call.
+// TestTask_ForwardsPromptAndSubagentType verifies that the prompt text,
+// subagent_type, and nesting metadata from the tool input/context are forwarded
+// to the sub-agent's Prompt call.
 func TestTask_ForwardsPromptAndSubagentType(t *testing.T) {
 	const wantPrompt = "summarise the logs"
 	const wantType = "log-analyst"
 
-	var gotPrompt, gotType string
+	var gotPrompt, gotType, gotParentTaskID string
+	var gotDepth int
 	subAgent := &mockSubAgent{
 		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 			if len(req.UserParts) > 0 {
@@ -180,13 +335,15 @@ func TestTask_ForwardsPromptAndSubagentType(t *testing.T) {
 				}
 			}
 			gotType = req.SubagentType
+			gotParentTaskID = req.ParentTaskID
+			gotDepth = req.SubagentDepth
 			return func(_ func(message.MessageChunk, error) bool) {}
 		},
 		finalResponseFn: func(_ string) (string, error) { return "ok", nil },
 	}
 
 	exec := New(t.TempDir(), t.TempDir(), "parent-thread")
-	toolCtx := &thread.ToolContext{ThreadID: "parent-thread", Agent: subAgent}
+	toolCtx := &thread.ToolContext{ThreadID: "parent-thread", Agent: subAgent, CurrentTaskID: "parent-task", SubagentDepth: 1, MaxSubagentDepth: 4}
 
 	raw, _ := json.Marshal(map[string]string{
 		"prompt":        wantPrompt,
@@ -214,6 +371,28 @@ func TestTask_ForwardsPromptAndSubagentType(t *testing.T) {
 	}
 	if gotType != wantType {
 		t.Errorf("subagent_type: got %q, want %q", gotType, wantType)
+	}
+	if gotParentTaskID == "" {
+		t.Errorf("parent_task_id: got %q, want non-empty task id", gotParentTaskID)
+	}
+	if gotDepth != 2 {
+		t.Errorf("subagent_depth: got %d, want 2", gotDepth)
+	}
+}
+
+func TestTask_RejectsCallsPastMaxDepth(t *testing.T) {
+	exec := New(t.TempDir(), t.TempDir(), "parent-thread")
+	toolCtx := &thread.ToolContext{ThreadID: "parent-thread", SubagentDepth: 4, MaxSubagentDepth: 4}
+
+	result, err := exec.Execute(context.Background(), toolCtx, makeTaskCall(t, "too deep"))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Async != nil {
+		t.Fatal("expected no Async handle at max depth")
+	}
+	if !isErrorOutput(result.Result) {
+		t.Fatalf("expected error output, got %T", result.Result.Output)
 	}
 }
 
@@ -618,6 +797,65 @@ func TestTask_ResumeAsync_CrashRecoveryAfterSubAgentQuestion(t *testing.T) {
 	}
 	if gotAnswers[question] != "Yes" {
 		t.Fatalf("answers: got %#v", gotAnswers)
+	}
+}
+
+func TestTask_ThreeLevelsDeepQuestionPropagatesAndResumes(t *testing.T) {
+	const question = "Should the third level continue?"
+	const finalText = "third level completed"
+
+	leafExec := New(t.TempDir(), t.TempDir(), "leaf-thread")
+	leaf := newRecursiveTaskAgent(leafExec, nil)
+	leaf.questionID = "leaf-question"
+	leaf.questionText = question
+	leaf.finalText = finalText
+
+	level2Exec := New(t.TempDir(), t.TempDir(), "level2-thread")
+	level2 := newRecursiveTaskAgent(level2Exec, leaf)
+
+	level1Exec := New(t.TempDir(), t.TempDir(), "level1-thread")
+	level1 := newRecursiveTaskAgent(level1Exec, level2)
+
+	rootExec := New(t.TempDir(), t.TempDir(), "root-thread")
+	toolCtx := &thread.ToolContext{ThreadID: "root-thread", Agent: level1, MaxSubagentDepth: 4}
+
+	call := makeTaskCall(t, "go three levels deep")
+	result, err := rootExec.Execute(context.Background(), toolCtx, call)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Async == nil {
+		t.Fatal("expected Async handle")
+	}
+	taskID := result.Async.TaskID
+	t.Cleanup(func() { cleanupTask(taskID) })
+
+	waitResult := waitAsyncResult(t, result.Async, 5*time.Second)
+	if waitResult.Approval == nil {
+		t.Fatal("expected approval from third-level sub-agent")
+	}
+
+	var questions []api.AskUserQuestion
+	if err := json.Unmarshal(waitResult.Approval.Questions, &questions); err != nil {
+		t.Fatalf("unmarshal approval questions: %v", err)
+	}
+	if len(questions) != 1 || questions[0].Question != question {
+		t.Fatalf("unexpected approval questions: %#v", questions)
+	}
+
+	resumed, err := rootExec.ResumeAsync(context.Background(), toolCtx, call, taskID, &api.AnswerQuestionRequest{
+		Answers: map[string]string{question: "Yes"},
+	})
+	if err != nil {
+		t.Fatalf("ResumeAsync: %v", err)
+	}
+	if resumed.Async == nil {
+		t.Fatal("expected Async handle after answering deep question")
+	}
+
+	res := waitHandle(t, resumed.Async, 5*time.Second)
+	if got := textOutput(res); got != finalText {
+		t.Fatalf("output: got %q, want %q", got, finalText)
 	}
 }
 

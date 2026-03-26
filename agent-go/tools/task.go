@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,10 +31,13 @@ type taskInput struct {
 // taskRecord tracks an in-progress or completed Task.
 type taskRecord struct {
 	id      string
-	status  string // "pending", "in_progress", "completed", "failed"
+	status  string // "pending", "in_progress", "waiting_for_answer", "completed", "failed"
 	output  string
 	created time.Time
 
+	parentThreadID    string
+	parentTaskID      string
+	depth             int
 	subThreadID       string
 	pendingApprovalID string
 	pendingQuestions  json.RawMessage
@@ -55,6 +59,10 @@ func newTaskID() string {
 	return fmt.Sprintf("task-%d", time.Now().UnixNano())
 }
 
+func subagentDepthFromThreadID(threadID string) int {
+	return strings.Count(threadID, ".sub.")
+}
+
 func (e *Executor) executeTask(_ context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart) (thread.ToolExecuteResult, error) {
 	var input taskInput
 	if err := unmarshalInput(call, &input); err != nil {
@@ -73,15 +81,23 @@ func (e *Executor) executeTask(_ context.Context, toolCtx *thread.ToolContext, c
 		return errResult(call, "Task tool is not available: no sub-agent configured"), nil
 	}
 	subAgent := toolCtx.Agent
+	currentThreadID := contextThreadID(toolCtx, e.defaultThreadID)
+	childDepth := toolCtx.SubagentDepth + 1
+	if toolCtx.MaxSubagentDepth > 0 && childDepth > toolCtx.MaxSubagentDepth {
+		return errResult(call, fmt.Sprintf("Task tool is not available: max sub-agent depth %d reached", toolCtx.MaxSubagentDepth)), nil
+	}
 
 	taskID := newTaskID()
-	subThreadID := fmt.Sprintf("%s.sub.%s", contextThreadID(toolCtx, e.defaultThreadID), taskID)
+	subThreadID := fmt.Sprintf("%s.sub.%s", currentThreadID, taskID)
 
 	rec := &taskRecord{
-		id:          taskID,
-		status:      "in_progress",
-		created:     time.Now(),
-		subThreadID: subThreadID,
+		id:             taskID,
+		status:         "in_progress",
+		created:        time.Now(),
+		parentThreadID: currentThreadID,
+		parentTaskID:   toolCtx.CurrentTaskID,
+		depth:          childDepth,
+		subThreadID:    subThreadID,
 	}
 
 	globalTasks.mu.Lock()
@@ -89,9 +105,11 @@ func (e *Executor) executeTask(_ context.Context, toolCtx *thread.ToolContext, c
 	globalTasks.mu.Unlock()
 
 	startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{
-		UserParts:    []message.UIPart{message.UITextPart{Text: prompt}},
-		SubagentType: input.SubagentType,
-		MaxTurns:     input.MaxTurns,
+		UserParts:     []message.UIPart{message.UITextPart{Text: prompt}},
+		SubagentType:  input.SubagentType,
+		ParentTaskID:  taskID,
+		SubagentDepth: rec.depth,
+		MaxTurns:      input.MaxTurns,
 	})
 
 	return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
@@ -138,7 +156,7 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 			if err := subAgent.SubmitAnswer(subThreadID, approvalID, *req); err != nil {
 				return thread.ToolExecuteResult{}, fmt.Errorf("submit sub-agent answer: %w", err)
 			}
-			startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{})
+			startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{ParentTaskID: taskID, SubagentDepth: rec.depth})
 		}
 		return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
 	}
@@ -168,10 +186,13 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 		}
 
 		rec = &taskRecord{
-			id:          taskID,
-			status:      "in_progress",
-			created:     time.Now(),
-			subThreadID: subThreadID,
+			id:             taskID,
+			status:         "in_progress",
+			created:        time.Now(),
+			parentThreadID: contextThreadID(toolCtx, e.defaultThreadID),
+			parentTaskID:   toolCtx.CurrentTaskID,
+			depth:          subagentDepthFromThreadID(subThreadID),
+			subThreadID:    subThreadID,
 		}
 		globalTasks.mu.Lock()
 		globalTasks.tasks[taskID] = rec
@@ -180,7 +201,7 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 		if err := subAgent.SubmitAnswer(subThreadID, pending.ApprovalID, *req); err != nil {
 			return thread.ToolExecuteResult{}, fmt.Errorf("submit sub-agent answer: %w", err)
 		}
-		startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{})
+		startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{ParentTaskID: taskID, SubagentDepth: rec.depth})
 		return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
 	}
 
@@ -209,9 +230,11 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 	globalTasks.mu.Unlock()
 
 	startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{
-		UserParts:    []message.UIPart{message.UITextPart{Text: prompt}},
-		SubagentType: input.SubagentType,
-		MaxTurns:     input.MaxTurns,
+		UserParts:     []message.UIPart{message.UITextPart{Text: prompt}},
+		SubagentType:  input.SubagentType,
+		ParentTaskID:  taskID,
+		SubagentDepth: rec.depth,
+		MaxTurns:      input.MaxTurns,
 	})
 
 	return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
