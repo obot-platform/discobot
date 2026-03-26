@@ -375,6 +375,67 @@ func TestPrompt_FallsBackToGeneratedThreadNameWhenAIReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestPrompt_DoesNotRegenerateThreadNameAfterInitialSet(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	registry := providers.NewProviderRegistry(nil)
+	mockProvider := &compactCommandMockProvider{
+		responseForReq: func(req providers.CompleteRequest) string {
+			if isThreadNameRequest(req) {
+				return "Initial generated thread name"
+			}
+			return "Assistant response."
+		},
+	}
+	registry.Add(mockProvider)
+
+	agentImpl := NewDefaultAgent(store, registry, nil, t.TempDir(), MCPConfig{})
+	threadID := "thread-name-once"
+
+	for _, err := range agentImpl.Prompt(context.Background(), threadID, agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "First user message", State: "done"}},
+	}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var secondChunks []message.MessageChunk
+	for chunk, err := range agentImpl.Prompt(context.Background(), threadID, agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "Second user message", State: "done"}},
+	}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if chunk != nil {
+			secondChunks = append(secondChunks, chunk)
+		}
+	}
+
+	for _, chunk := range secondChunks {
+		if _, ok := chunk.(message.ThreadNameChunk); ok {
+			t.Fatalf("did not expect thread rename on second turn, got %#v", chunk)
+		}
+	}
+
+	threadNameRequests := 0
+	for _, req := range mockProvider.requests {
+		if isThreadNameRequest(req) {
+			threadNameRequests++
+		}
+	}
+	if threadNameRequests != 1 {
+		t.Fatalf("expected exactly one thread name request across two turns, got %d", threadNameRequests)
+	}
+
+	cfg, err := store.LoadConfig(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "Initial generated thread name" {
+		t.Fatalf("expected initial generated name to persist, got %q", cfg.Name)
+	}
+}
+
 func isThreadNameRequest(req providers.CompleteRequest) bool {
 	if len(req.Messages) != 1 || len(req.Messages[0].Parts) != 1 {
 		return false

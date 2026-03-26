@@ -582,10 +582,7 @@ func formatModeChangeReminder(planMode bool) string {
 const generatedThreadNameMaxRunes = 72
 
 func shouldGenerateThreadName(cfg thread.Config) bool {
-	if strings.TrimSpace(cfg.Name) == "" {
-		return true
-	}
-	return cfg.NameSource == thread.ThreadNameSourceGenerated
+	return strings.TrimSpace(cfg.Name) == ""
 }
 
 func generatedThreadName(parts []message.UIPart) string {

@@ -128,12 +128,12 @@ func TestGeneratedThreadName_TruncatesLongText(t *testing.T) {
 	}
 }
 
-func TestShouldGenerateThreadName_UsesEmptyOrGeneratedNames(t *testing.T) {
+func TestShouldGenerateThreadName_OnlyUsesUnsetNames(t *testing.T) {
 	if !shouldGenerateThreadName(thread.Config{}) {
 		t.Fatal("expected empty config to be eligible")
 	}
-	if !shouldGenerateThreadName(thread.Config{Name: "Generated", NameSource: thread.ThreadNameSourceGenerated}) {
-		t.Fatal("expected generated name to remain eligible")
+	if shouldGenerateThreadName(thread.Config{Name: "Generated", NameSource: thread.ThreadNameSourceGenerated}) {
+		t.Fatal("did not expect existing generated name to remain eligible")
 	}
 	if shouldGenerateThreadName(thread.Config{Name: "Custom", NameSource: thread.ThreadNameSourceUser}) {
 		t.Fatal("did not expect non-empty name to be eligible")
