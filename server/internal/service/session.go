@@ -125,6 +125,7 @@ func (s *SessionService) ListSessionsByProject(ctx context.Context, projectID st
 
 	sessions := make([]*Session, len(dbSessions))
 	for i, sess := range dbSessions {
+		s.syncSessionNameFromPrimaryThread(ctx, sess)
 		sessions[i] = s.mapSession(sess)
 	}
 	return sessions, nil
@@ -140,6 +141,7 @@ func (s *SessionService) ListSessionsByWorkspace(ctx context.Context, workspaceI
 
 	sessions := make([]*Session, len(dbSessions))
 	for i, sess := range dbSessions {
+		s.syncSessionNameFromPrimaryThread(ctx, sess)
 		sessions[i] = s.mapSession(sess)
 	}
 	return sessions, nil
@@ -152,7 +154,37 @@ func (s *SessionService) GetSession(ctx context.Context, sessionID string) (*Ses
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
+	s.syncSessionNameFromPrimaryThread(ctx, sess)
+
 	return s.mapSession(sess), nil
+}
+
+func (s *SessionService) syncSessionNameFromPrimaryThread(ctx context.Context, sess *model.Session) {
+	if sess == nil || strings.TrimSpace(sess.Name) != "" || s.sandboxService == nil {
+		return
+	}
+
+	client, err := s.sandboxService.GetClient(ctx, sess.ID)
+	if err != nil {
+		return
+	}
+
+	thread, err := client.GetThread(ctx, sess.ID)
+	if err != nil {
+		return
+	}
+
+	name := strings.TrimSpace(thread.Name)
+	if name == "" {
+		return
+	}
+
+	if _, err := s.UpdateSession(ctx, sess.ID, name, nil, ""); err != nil {
+		log.Printf("Warning: failed to sync session name from thread for %s: %v", sess.ID, err)
+		return
+	}
+
+	sess.Name = name
 }
 
 // CreateSession creates a new session with initializing status and auto-generated ID.

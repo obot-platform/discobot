@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/obot-platform/discobot/server/internal/events"
 	"github.com/obot-platform/discobot/server/internal/jobs"
@@ -79,15 +78,8 @@ func (c *ChatService) NewSession(ctx context.Context, req NewSessionRequest) (st
 		return "", fmt.Errorf("workspace does not belong to this project")
 	}
 
-	// Try to derive session name from first user message text
-	rawMessages, err := json.Marshal(req.Messages)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal messages: %w", err)
-	}
-	name := deriveSessionName(rawMessages)
-
 	// Use SessionService to create the session with client-provided ID
-	sess, err := c.sessionService.CreateSessionWithID(ctx, req.SessionID, req.ProjectID, req.WorkspaceID, name)
+	sess, err := c.sessionService.CreateSessionWithID(ctx, req.SessionID, req.ProjectID, req.WorkspaceID, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
@@ -143,22 +135,10 @@ type preparedChatRequest struct {
 	opts    *RequestOptions
 }
 
-func (c *ChatService) prepareChatRequest(ctx context.Context, projectID, sessionID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (*preparedChatRequest, error) {
+func (c *ChatService) prepareChatRequest(ctx context.Context, projectID, sessionID string, requestModel string, reasoning string, mode string) (*preparedChatRequest, error) {
 	// Validate session belongs to project
-	session, err := c.GetSession(ctx, projectID, sessionID)
-	if err != nil {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
 		return nil, err
-	}
-
-	// If the session has no name yet, derive it from the first user message
-	if session.Name == "" {
-		if name := deriveSessionName(messages); name != "" {
-			if _, err := c.sessionService.UpdateSession(ctx, sessionID, name, nil, ""); err != nil {
-				log.Printf("Warning: failed to update session name for %s: %v", sessionID, err)
-			} else {
-				session.Name = name
-			}
-		}
 	}
 
 	if c.sandboxService == nil {
@@ -188,7 +168,7 @@ func (c *ChatService) StartChat(ctx context.Context, projectID, sessionID, threa
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to marshal messages: %w", err)
 	}
-	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, rawMessages, requestModel, reasoning, mode)
+	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, requestModel, reasoning, mode)
 	if err != nil {
 		return "", nil, err
 	}
@@ -211,7 +191,7 @@ func (c *ChatService) StartChat(ctx context.Context, projectID, sessionID, threa
 // reasoning can be "enabled", "disabled", or "" for default behavior.
 // mode can be "plan" for planning mode, or "" for default (build mode).
 func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID, threadID string, messages json.RawMessage, requestModel string, reasoning string, mode string) (<-chan SSELine, error) {
-	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, messages, requestModel, reasoning, mode)
+	prepared, err := c.prepareChatRequest(ctx, projectID, sessionID, requestModel, reasoning, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -701,48 +681,6 @@ func (c *ChatService) GetServiceOutput(ctx context.Context, projectID, sessionID
 		return nil, err
 	}
 	return client.GetServiceOutput(ctx, serviceID)
-}
-
-// deriveSessionName attempts to extract a session name from the messages.
-// It looks for the first user message with text content.
-// Returns "" if no suitable text is found.
-func deriveSessionName(messages json.RawMessage) string {
-	if len(messages) == 0 {
-		return ""
-	}
-
-	// Minimal struct to extract just what we need
-	type minimalPart struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	type minimalMessage struct {
-		Role  string        `json:"role"`
-		Parts []minimalPart `json:"parts"`
-	}
-
-	var msgs []minimalMessage
-	if err := json.Unmarshal(messages, &msgs); err != nil {
-		return ""
-	}
-
-	// Find first user message with text
-	for _, msg := range msgs {
-		if msg.Role == "user" {
-			for _, part := range msg.Parts {
-				if part.Type == "text" && part.Text != "" {
-					// Trim leading/trailing whitespace
-					trimmed := strings.TrimSpace(part.Text)
-					// Only return if there's actual content after trimming
-					if trimmed != "" {
-						return trimmed
-					}
-				}
-			}
-		}
-	}
-
-	return ""
 }
 
 // lastUserMessageID returns the ID of the last user message in the slice, or "".

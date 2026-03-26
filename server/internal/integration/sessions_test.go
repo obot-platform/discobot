@@ -88,9 +88,9 @@ func TestCreateSession_ViaChat(t *testing.T) {
 		return
 	}
 
-	// Session name is derived from the prompt
-	if result.Sessions[0]["name"] != "Create a new session" {
-		t.Errorf("Expected name derived from prompt, got '%v'", result.Sessions[0]["name"])
+	// Session name stays empty until it is populated elsewhere.
+	if result.Sessions[0]["name"] != "" {
+		t.Errorf("Expected empty session name, got '%v'", result.Sessions[0]["name"])
 	}
 }
 
@@ -344,7 +344,7 @@ func TestCreateSession_ViaChatWithWorkspace(t *testing.T) {
 	}
 }
 
-func TestCreateSession_NameFromLongPrompt(t *testing.T) {
+func TestCreateSession_NameRemainsEmptyAfterPrompt(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -352,7 +352,7 @@ func TestCreateSession_NameFromLongPrompt(t *testing.T) {
 	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
 	client := ts.AuthenticatedClient(user)
 
-	// Session name is derived from the full prompt text (no truncation)
+	// Session name stays empty until it is populated elsewhere.
 	longPrompt := "This is a very long prompt that should be truncated to fit within the 50 character limit for session names"
 	sessionID := "test-session-id-3"
 	resp := client.Post(threadChatPath(project.ID, sessionID, sessionID), map[string]interface{}{
@@ -371,7 +371,7 @@ func TestCreateSession_NameFromLongPrompt(t *testing.T) {
 
 	AssertStatus(t, resp, http.StatusOK)
 
-	// Verify session name matches the full prompt
+	// Verify session name remains empty.
 	listResp := client.Get("/api/projects/" + project.ID + "/sessions")
 	defer listResp.Body.Close()
 
@@ -386,8 +386,8 @@ func TestCreateSession_NameFromLongPrompt(t *testing.T) {
 	}
 
 	name := result.Sessions[0]["name"].(string)
-	if name != longPrompt {
-		t.Errorf("Expected name to match prompt, got %q", name)
+	if name != "" {
+		t.Errorf("Expected empty session name, got %q", name)
 	}
 }
 

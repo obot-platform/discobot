@@ -1,12 +1,17 @@
 package service
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobot/server/internal/config"
 	"github.com/obot-platform/discobot/server/internal/model"
+	"github.com/obot-platform/discobot/server/internal/sandbox"
+	mocksandbox "github.com/obot-platform/discobot/server/internal/sandbox/mock"
+	"github.com/obot-platform/discobot/server/internal/sandbox/sandboxapi"
 )
 
 func TestValidateSessionID(t *testing.T) {
@@ -120,6 +125,121 @@ func TestSessionIDMaxLength(t *testing.T) {
 	// Verify the constant is set to 65
 	if SessionIDMaxLength != 65 {
 		t.Errorf("SessionIDMaxLength = %d, want 65", SessionIDMaxLength)
+	}
+}
+
+func TestSessionServiceGetSessionSyncsNameFromPrimaryThread(t *testing.T) {
+	ctx := context.Background()
+	testStore := setupTestStore(t)
+	provider := mocksandbox.NewProvider()
+	sandboxSvc := NewSandboxService(testStore, provider, &config.Config{}, nil, nil, nil, nil)
+	sessionSvc := NewSessionService(testStore, nil, provider, sandboxSvc, nil, nil)
+
+	workspace := &model.Workspace{
+		ID:         "workspace-1",
+		ProjectID:  "project-1",
+		Path:       "/workspace",
+		SourceType: "local",
+		Status:     model.WorkspaceStatusReady,
+	}
+	if err := testStore.CreateWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	dbSession := &model.Session{
+		ID:          "session-1",
+		ProjectID:   workspace.ProjectID,
+		WorkspaceID: workspace.ID,
+		Status:      model.SessionStatusReady,
+	}
+	if err := testStore.CreateSession(ctx, dbSession); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	if _, err := provider.Create(ctx, dbSession.ID, sandbox.CreateOptions{SharedSecret: "test-secret", WorkspacePath: workspace.Path}); err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+	if err := provider.Start(ctx, dbSession.ID); err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+
+	client, err := sandboxSvc.GetClient(ctx, dbSession.ID)
+	if err != nil {
+		t.Fatalf("failed to get sandbox client: %v", err)
+	}
+	if _, err := client.CreateThread(ctx, &sandboxapi.CreateThreadRequest{ID: dbSession.ID, Name: "Primary thread name"}); err != nil {
+		t.Fatalf("failed to create thread: %v", err)
+	}
+
+	session, err := sessionSvc.GetSession(ctx, dbSession.ID)
+	if err != nil {
+		t.Fatalf("failed to get session: %v", err)
+	}
+	if session.Name != "Primary thread name" {
+		t.Fatalf("expected synced session name, got %q", session.Name)
+	}
+
+	stored, err := testStore.GetSessionByID(ctx, dbSession.ID)
+	if err != nil {
+		t.Fatalf("failed to reload session: %v", err)
+	}
+	if stored.Name != "Primary thread name" {
+		t.Fatalf("expected stored session name to be updated, got %q", stored.Name)
+	}
+}
+
+func TestSessionServiceListSessionsByProjectSyncsNameFromPrimaryThread(t *testing.T) {
+	ctx := context.Background()
+	testStore := setupTestStore(t)
+	provider := mocksandbox.NewProvider()
+	sandboxSvc := NewSandboxService(testStore, provider, &config.Config{}, nil, nil, nil, nil)
+	sessionSvc := NewSessionService(testStore, nil, provider, sandboxSvc, nil, nil)
+
+	workspace := &model.Workspace{
+		ID:         "workspace-2",
+		ProjectID:  "project-2",
+		Path:       "/workspace-2",
+		SourceType: "local",
+		Status:     model.WorkspaceStatusReady,
+	}
+	if err := testStore.CreateWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	dbSession := &model.Session{
+		ID:          "session-2",
+		ProjectID:   workspace.ProjectID,
+		WorkspaceID: workspace.ID,
+		Status:      model.SessionStatusReady,
+	}
+	if err := testStore.CreateSession(ctx, dbSession); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	if _, err := provider.Create(ctx, dbSession.ID, sandbox.CreateOptions{SharedSecret: "test-secret", WorkspacePath: workspace.Path}); err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+	if err := provider.Start(ctx, dbSession.ID); err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+
+	client, err := sandboxSvc.GetClient(ctx, dbSession.ID)
+	if err != nil {
+		t.Fatalf("failed to get sandbox client: %v", err)
+	}
+	if _, err := client.CreateThread(ctx, &sandboxapi.CreateThreadRequest{ID: dbSession.ID, Name: "Listed thread name"}); err != nil {
+		t.Fatalf("failed to create thread: %v", err)
+	}
+
+	sessions, err := sessionSvc.ListSessionsByProject(ctx, workspace.ProjectID)
+	if err != nil {
+		t.Fatalf("failed to list sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].Name != "Listed thread name" {
+		t.Fatalf("expected synced session name from list, got %q", sessions[0].Name)
 	}
 }
 
