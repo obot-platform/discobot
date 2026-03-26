@@ -31,9 +31,11 @@
 	import type { ResolvedTheme } from "$lib/theme";
 	import { cn } from "$lib/utils";
 	import { onMount, untrack } from "svelte";
+	import { SvelteMap } from "svelte/reactivity";
 
 	const APPROVAL_STORAGE_KEY = "discobot.ui.diff-review.approved";
 	const DIFF_STYLE_STORAGE_KEY = "discobot.ui.diff-review.style";
+	const APPROVAL_LOAD_CONCURRENCY = 6;
 
 	type Props = {
 		dockMaximized: boolean;
@@ -95,35 +97,31 @@
 		resolvedTheme,
 	}: Props = $props();
 
-	let diffStates = $state<Record<string, LoadedDiffState>>({});
+	const diffStates = new SvelteMap<string, LoadedDiffState>();
 	let approvedBySession = $state<Record<string, Record<string, string>>>({});
 	let storageLoaded = $state(false);
+	let listReady = $state(false);
 	let expandedPath = $state<string | null>(null);
 	let refreshing = $state(false);
 	let loadGeneration = 0;
 	let diffStyle = $state<DiffStyle>("unified");
+	let resolvedApprovalCount = $state(0);
+	let approvedCount = $state(0);
 
+	const diffCount = $derived.by(() => diff.length);
 	const sortedDiff = $derived.by(() =>
-		[...diff].toSorted((left, right) => left.path.localeCompare(right.path)),
+		listReady
+			? [...diff].toSorted((left, right) => left.path.localeCompare(right.path))
+			: diff,
 	);
 	const sessionApprovals = $derived.by(
 		() => approvedBySession[sessionId] ?? {},
 	);
-	const approvedCount = $derived.by(
-		() => sortedDiff.filter((file) => isApproved(file.path)).length,
+	const approvalsLoading = $derived.by(
+		() => diffCount > 0 && resolvedApprovalCount < diffCount,
 	);
-	const unresolvedApprovalCount = $derived.by(
-		() =>
-			sortedDiff.filter((file) => {
-				const state = diffStates[file.path];
-				return !state || state.status === "idle" || state.status === "loading";
-			}).length,
-	);
-	const approvalsLoading = $derived.by(() => unresolvedApprovalCount > 0);
 	const allApproved = $derived.by(
-		() =>
-			sortedDiff.length > 0 &&
-			sortedDiff.every((file) => isApproved(file.path)),
+		() => diffCount > 0 && approvedCount === diffCount,
 	);
 	const maximizeTitle = $derived.by(() =>
 		dockMaximized ? "Restore split view" : "Maximize diff review panel",
@@ -133,6 +131,14 @@
 		approvedBySession = readApprovalState();
 		diffStyle = readDiffStyle();
 		storageLoaded = true;
+
+		const frameId = requestAnimationFrame(() => {
+			listReady = true;
+		});
+
+		return () => {
+			cancelAnimationFrame(frameId);
+		};
 	});
 
 	$effect(() => {
@@ -151,16 +157,17 @@
 
 	$effect(() => {
 		const currentSessionId = sessionId;
-		const currentEntries = sortedDiff;
+		const currentEntries = diff;
 		void currentEntries;
 
+		loadGeneration += 1;
+		clearDiffStates();
+
 		if (!currentSessionId || currentEntries.length === 0) {
-			diffStates = {};
 			expandedPath = null;
 			return;
 		}
 
-		loadGeneration += 1;
 		const currentExpandedPath = untrack(() => expandedPath);
 		if (
 			currentExpandedPath &&
@@ -168,13 +175,6 @@
 		) {
 			expandedPath = null;
 		}
-
-		diffStates = Object.fromEntries(
-			currentEntries.map((file) => [
-				file.path,
-				{ status: "idle", snapshotStatus: "idle" } satisfies LoadedDiffState,
-			]),
-		);
 	});
 
 	$effect(() => {
@@ -192,18 +192,112 @@
 	});
 
 	$effect(() => {
+		const ready = listReady;
 		const currentEntries = sortedDiff;
 		const currentSessionId = sessionId;
 		const generation = loadGeneration;
-		if (!currentSessionId || currentEntries.length === 0) {
+		if (!ready || !currentSessionId || currentEntries.length === 0) {
 			return;
 		}
-		void Promise.all(
-			currentEntries.map((file) =>
-				loadDiffEntry(file.path, currentSessionId, generation),
-			),
-		);
+
+		let cancelled = false;
+		const queue = currentEntries.map((file) => file.path);
+		const workerCount = Math.min(APPROVAL_LOAD_CONCURRENCY, queue.length);
+
+		async function worker() {
+			while (!cancelled) {
+				const nextPath = queue.shift();
+				if (!nextPath) {
+					return;
+				}
+				await loadDiffEntry(nextPath, currentSessionId, generation);
+				if (
+					cancelled ||
+					generation !== loadGeneration ||
+					currentSessionId !== sessionId
+				) {
+					return;
+				}
+			}
+		}
+
+		void Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+		return () => {
+			cancelled = true;
+		};
 	});
+
+	function createIdleState(): LoadedDiffState {
+		return { status: "idle", snapshotStatus: "idle" };
+	}
+
+	function clearDiffStates() {
+		diffStates.clear();
+		resolvedApprovalCount = 0;
+		approvedCount = 0;
+	}
+
+	function getDiffState(path: string): LoadedDiffState | undefined {
+		return diffStates.get(path);
+	}
+
+	function isResolvedState(state: LoadedDiffState | undefined): boolean {
+		return (
+			state !== undefined &&
+			state.status !== "idle" &&
+			state.status !== "loading"
+		);
+	}
+
+	function isApprovedState(
+		path: string,
+		state: LoadedDiffState | undefined,
+		approvals = sessionApprovals,
+	): boolean {
+		const patchHash = state?.status === "ready" ? state.patchHash : null;
+		return Boolean(patchHash && approvals[path] === patchHash);
+	}
+
+	function setDiffState(path: string, nextState: LoadedDiffState) {
+		const previousState = diffStates.get(path);
+		const wasResolved = isResolvedState(previousState);
+		const nextResolved = isResolvedState(nextState);
+		const wasApproved = isApprovedState(path, previousState);
+		const nextApproved = isApprovedState(path, nextState);
+
+		diffStates.set(path, nextState);
+
+		if (!wasResolved && nextResolved) {
+			resolvedApprovalCount += 1;
+		} else if (wasResolved && !nextResolved) {
+			resolvedApprovalCount = Math.max(0, resolvedApprovalCount - 1);
+		}
+
+		if (!wasApproved && nextApproved) {
+			approvedCount += 1;
+		} else if (wasApproved && !nextApproved) {
+			approvedCount = Math.max(0, approvedCount - 1);
+		}
+	}
+
+	function updateDiffState(
+		path: string,
+		updater: (current: LoadedDiffState) => LoadedDiffState,
+	) {
+		const current = diffStates.get(path) ?? createIdleState();
+		setDiffState(path, updater(current));
+	}
+
+	function recalculateApprovedCount() {
+		let nextApprovedCount = 0;
+		for (const file of diff) {
+			if (isApprovedState(file.path, diffStates.get(file.path))) {
+				nextApprovedCount += 1;
+			}
+		}
+		approvedCount = nextApprovedCount;
+	}
 
 	function readApprovalState(): Record<string, Record<string, string>> {
 		if (typeof window === "undefined") {
@@ -236,34 +330,20 @@
 		return "Unable to load diff.";
 	}
 
-	function updateDiffState(
-		path: string,
-		updater: (current: LoadedDiffState) => LoadedDiffState,
-	) {
-		const current = diffStates[path];
-		if (!current) {
-			return;
-		}
-		diffStates = {
-			...diffStates,
-			[path]: updater(current),
-		};
-	}
-
 	async function loadDiffEntry(
 		path: string,
 		currentSessionId: string,
 		generation: number,
 	) {
-		const state = diffStates[path];
-		if (!state || state.status === "loading" || state.status === "ready") {
+		const state = getDiffState(path);
+		if (state?.status === "loading" || state?.status === "ready") {
 			return;
 		}
 
-		updateDiffState(path, () => ({
+		setDiffState(path, {
 			status: "loading",
 			snapshotStatus: "idle",
-		}));
+		});
 
 		try {
 			const response = (await api.getSessionDiff(currentSessionId, {
@@ -276,28 +356,22 @@
 				return;
 			}
 
-			diffStates = {
-				...diffStates,
-				[path]: {
-					status: "ready",
-					response,
-					patchHash,
-					lineCount: response.patch ? countDiffLinesFast(response.patch) : 0,
-					snapshotStatus: "idle",
-				},
-			};
+			setDiffState(path, {
+				status: "ready",
+				response,
+				patchHash,
+				lineCount: response.patch ? countDiffLinesFast(response.patch) : 0,
+				snapshotStatus: "idle",
+			});
 		} catch (error) {
 			if (generation !== loadGeneration || currentSessionId !== sessionId) {
 				return;
 			}
-			diffStates = {
-				...diffStates,
-				[path]: {
-					status: "error",
-					errorMessage: errorMessage(error),
-					snapshotStatus: "idle",
-				},
-			};
+			setDiffState(path, {
+				status: "error",
+				errorMessage: errorMessage(error),
+				snapshotStatus: "idle",
+			});
 		}
 	}
 
@@ -318,7 +392,7 @@
 		currentSessionId: string,
 		generation: number,
 	) {
-		const state = diffStates[path];
+		const state = getDiffState(path);
 		if (!state || state.status !== "ready") {
 			return;
 		}
@@ -425,18 +499,16 @@
 	}
 
 	function isApproved(path: string): boolean {
-		const patchHash =
-			diffStates[path]?.status === "ready" ? diffStates[path].patchHash : null;
-		return Boolean(patchHash && sessionApprovals[path] === patchHash);
+		return isApprovedState(path, getDiffState(path));
 	}
 
 	function isApprovalStateLoading(path: string): boolean {
-		const state = diffStates[path];
+		const state = getDiffState(path);
 		return !state || state.status === "idle" || state.status === "loading";
 	}
 
 	function toggleApproved(path: string) {
-		const state = diffStates[path];
+		const state = getDiffState(path);
 		if (!state || state.status !== "ready" || !state.patchHash) {
 			return;
 		}
@@ -453,11 +525,12 @@
 			...approvedBySession,
 			[sessionId]: nextSessionApprovals,
 		};
+		recalculateApprovedCount();
 
 		if (!wasApproved && expandedPath === path) {
 			const currentIndex = sortedDiff.findIndex((file) => file.path === path);
 			const nextUnapproved = sortedDiff.slice(currentIndex + 1).find((file) => {
-				const nextState = diffStates[file.path];
+				const nextState = getDiffState(file.path);
 				const nextHash =
 					nextState && nextState.status === "ready"
 						? nextState.patchHash
@@ -471,7 +544,7 @@
 	function markAllApproved() {
 		const nextSessionApprovals: Record<string, string> = {};
 		for (const file of sortedDiff) {
-			const state = diffStates[file.path];
+			const state = getDiffState(file.path);
 			if (state?.status === "ready" && state.patchHash) {
 				nextSessionApprovals[file.path] = state.patchHash;
 			}
@@ -480,6 +553,7 @@
 			...approvedBySession,
 			[sessionId]: nextSessionApprovals,
 		};
+		recalculateApprovedCount();
 	}
 
 	function statusBadgeClass(
@@ -572,7 +646,7 @@
 		<div class="flex min-w-0 items-center gap-2 text-xs">
 			<p class="truncate text-sm font-medium">Diff review</p>
 			<span class="truncate text-sidebar-foreground/70">
-				{sortedDiff.length} changed {sortedDiff.length === 1 ? "file" : "files"}
+				{diffCount} changed {diffCount === 1 ? "file" : "files"}
 			</span>
 			{#if approvalsLoading}
 				<span
@@ -631,7 +705,7 @@
 		</div>
 	{/snippet}
 
-	{#if sortedDiff.length === 0}
+	{#if diffCount === 0}
 		<div
 			class="rounded-md border border-sidebar-border bg-sidebar p-4 text-sm text-sidebar-foreground/60"
 		>
@@ -648,9 +722,7 @@
 					<p
 						class="text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/60"
 					>
-						{sortedDiff.length} changed {sortedDiff.length === 1
-							? "file"
-							: "files"}
+						{diffCount} changed {diffCount === 1 ? "file" : "files"}
 					</p>
 					{#if approvalsLoading}
 						<p
@@ -683,171 +755,141 @@
 			</div>
 
 			<div class="min-h-0 flex-1 overflow-y-auto">
-				<div class="divide-y divide-sidebar-border">
-					{#each sortedDiff as file (file.path)}
-						{@const state = diffStates[file.path]}
-						{@const expanded = expandedPath === file.path}
-						{@const approved = isApproved(file.path)}
-						<section class={cn("flex flex-col", approved && "opacity-80")}>
-							<button
-								type="button"
-								class="flex items-center justify-between gap-3 bg-sidebar/60 px-3 py-2 text-left transition hover:bg-sidebar-accent/70"
-								onclick={() => toggleExpanded(file.path)}
-							>
-								<div class="flex min-w-0 items-center gap-2">
-									{#if expanded}
-										<ChevronDownIcon class="size-4 shrink-0" />
-									{:else}
-										<ChevronRightIcon class="size-4 shrink-0" />
-									{/if}
-									<Badge
-										variant="outline"
-										class={cn(
-											"inline-grid grid-cols-1 place-items-center",
-											statusBadgeClass(
-												state?.status === "ready"
-													? state.response.status
-													: file.status,
-											),
-										)}
-									>
-										<span class="col-start-1 row-start-1"
-											>{statusLabel(
-												state?.status === "ready"
-													? state.response.status
-													: file.status,
-											)}</span
-										>
-										<span
-											class="invisible col-start-1 row-start-1"
-											aria-hidden="true">Modified</span
-										>
-									</Badge>
-									<div class="min-w-0">
-										<p class="truncate font-mono text-xs text-foreground">
-											{file.path}
-										</p>
-										{#if file.oldPath && file.oldPath !== file.path}
-											<p class="truncate text-[11px] text-muted-foreground">
-												{file.oldPath} → {file.path}
-											</p>
-										{/if}
-									</div>
-									{#if isApprovalStateLoading(file.path)}
-										<span
-											class="flex items-center gap-1 text-xs text-muted-foreground"
-										>
-											<RefreshCwIcon class="size-3.5 animate-spin" />
-											Loading approval…
-										</span>
-									{:else if approved}
-										<span
-											class="flex items-center gap-1 text-xs text-green-500"
-										>
-											<CheckIcon class="size-3.5" />
-											Approved
-										</span>
-									{/if}
-								</div>
-								<div
-									class="flex shrink-0 items-center gap-2 text-xs font-medium"
+				{#if !listReady}
+					<div class="px-3 py-4">
+						<div
+							class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
+						>
+							Preparing diff review…
+						</div>
+					</div>
+				{:else}
+					<div class="divide-y divide-sidebar-border">
+						{#each sortedDiff as file (file.path)}
+							{@const state = getDiffState(file.path)}
+							{@const expanded = expandedPath === file.path}
+							{@const approved = isApproved(file.path)}
+							<section class={cn("flex flex-col", approved && "opacity-80")}>
+								<button
+									type="button"
+									class="flex items-center justify-between gap-3 bg-sidebar/60 px-3 py-2 text-left transition hover:bg-sidebar-accent/70"
+									onclick={() => toggleExpanded(file.path)}
 								>
-									{#if state?.status === "loading"}
-										<span class="text-muted-foreground">Loading…</span>
-									{:else if state?.status === "ready"}
-										{#if state.response.additions > 0}
-											<span class="text-green-500"
-												>+{state.response.additions}</span
-											>
+									<div class="flex min-w-0 items-center gap-2">
+										{#if expanded}
+											<ChevronDownIcon class="size-4 shrink-0" />
+										{:else}
+											<ChevronRightIcon class="size-4 shrink-0" />
 										{/if}
-										{#if state.response.deletions > 0}
-											<span class="text-red-500"
-												>-{state.response.deletions}</span
-											>
-										{/if}
-									{/if}
-								</div>
-							</button>
-
-							{#if expanded}
-								<div class="space-y-3 px-3 py-3">
-									<div
-										class="flex flex-wrap items-center justify-between gap-2"
-									>
-										<div
-											class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+										<Badge
+											variant="outline"
+											class={cn(
+												"inline-grid grid-cols-1 place-items-center",
+												statusBadgeClass(
+													state?.status === "ready"
+														? state.response.status
+														: file.status,
+												),
+											)}
 										>
-											{#if state?.status === "ready"}
-												{#if state.response.binary}
-													<span>Binary diff</span>
-												{:else if state.lineCount > 0}
-													<span
-														>{state.lineCount.toLocaleString()} diff lines</span
-													>
-													{#if useVirtualizedDiff(state)}
-														<span>Virtualized rendering enabled</span>
-													{/if}
-												{/if}
-												{#if state.snapshotStatus === "ready" && state.snapshot?.source === "base-read"}
-													<span>Deleted snapshot loaded from base</span>
-												{:else if state.snapshotStatus === "ready" && state.snapshot?.source === "reverse-patch"}
-													<span>Original snapshot reconstructed from patch</span
-													>
-												{:else if state.snapshotStatus === "error"}
-													<span>{state.snapshotError}</span>
-												{/if}
+											<span class="col-start-1 row-start-1"
+												>{statusLabel(
+													state?.status === "ready"
+														? state.response.status
+														: file.status,
+												)}</span
+											>
+											<span
+												class="invisible col-start-1 row-start-1"
+												aria-hidden="true">Modified</span
+											>
+										</Badge>
+										<div class="min-w-0">
+											<p class="truncate font-mono text-xs text-foreground">
+												{file.path}
+											</p>
+											{#if file.oldPath && file.oldPath !== file.path}
+												<p class="truncate text-[11px] text-muted-foreground">
+													{file.oldPath} → {file.path}
+												</p>
 											{/if}
 										</div>
-										<div class="flex flex-wrap items-center gap-2">
-											<Button
-												variant={approved ? "secondary" : "outline"}
-												size="sm"
-												onclick={() => toggleApproved(file.path)}
-												disabled={!state || state.status !== "ready"}
+										{#if isApprovalStateLoading(file.path)}
+											<span
+												class="flex items-center gap-1 text-xs text-muted-foreground"
 											>
-												<CheckIcon class="size-4" />
-												{approved ? "Approved" : "Mark approved"}
-											</Button>
-											<Button
-												variant="outline"
-												size="sm"
-												onclick={() => void onOpenFile(file.path)}
+												<RefreshCwIcon class="size-3.5 animate-spin" />
+												Loading approval…
+											</span>
+										{:else if approved}
+											<span
+												class="flex items-center gap-1 text-xs text-green-500"
 											>
-												Open file
-											</Button>
-										</div>
+												<CheckIcon class="size-3.5" />
+												Approved
+											</span>
+										{/if}
 									</div>
+									<div
+										class="flex shrink-0 items-center gap-2 text-xs font-medium"
+									>
+										{#if state?.status === "loading"}
+											<span class="text-muted-foreground">Loading…</span>
+										{:else if state?.status === "ready"}
+											{#if state.response.additions > 0}
+												<span class="text-green-500"
+													>+{state.response.additions}</span
+												>
+											{/if}
+											{#if state.response.deletions > 0}
+												<span class="text-red-500"
+													>-{state.response.deletions}</span
+												>
+											{/if}
+										{/if}
+									</div>
+								</button>
 
-									{#if !state || state.status === "idle" || state.status === "loading"}
+								{#if expanded}
+									<div class="space-y-3 px-3 py-3">
 										<div
-											class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
+											class="flex flex-wrap items-center justify-between gap-2"
 										>
-											Loading diff…
-										</div>
-									{:else if state.status === "error"}
-										<div
-											class="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-4 text-sm text-destructive"
-										>
-											{state.errorMessage}
-										</div>
-									{:else if state.response.binary}
-										<div
-											class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
-										>
-											This is a binary file, so the text diff cannot be rendered
-											here.
-										</div>
-									{:else if showLargeDiffFallback(state)}
-										<div
-											class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
-										>
-											<p class="font-medium text-foreground">
-												Large diff ({state.lineCount.toLocaleString()} lines)
-											</p>
-											<p class="mt-1">
-												This file exceeds the inline rendering hard limit.
-											</p>
-											<div class="mt-3 flex flex-wrap items-center gap-2">
+											<div
+												class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+											>
+												{#if state?.status === "ready"}
+													{#if state.response.binary}
+														<span>Binary diff</span>
+													{:else if state.lineCount > 0}
+														<span
+															>{state.lineCount.toLocaleString()} diff lines</span
+														>
+														{#if useVirtualizedDiff(state)}
+															<span>Virtualized rendering enabled</span>
+														{/if}
+													{/if}
+													{#if state.snapshotStatus === "ready" && state.snapshot?.source === "base-read"}
+														<span>Deleted snapshot loaded from base</span>
+													{:else if state.snapshotStatus === "ready" && state.snapshot?.source === "reverse-patch"}
+														<span
+															>Original snapshot reconstructed from patch</span
+														>
+													{:else if state.snapshotStatus === "error"}
+														<span>{state.snapshotError}</span>
+													{/if}
+												{/if}
+											</div>
+											<div class="flex flex-wrap items-center gap-2">
+												<Button
+													variant={approved ? "secondary" : "outline"}
+													size="sm"
+													onclick={() => toggleApproved(file.path)}
+													disabled={!state || state.status !== "ready"}
+												>
+													<CheckIcon class="size-4" />
+													{approved ? "Approved" : "Mark approved"}
+												</Button>
 												<Button
 													variant="outline"
 													size="sm"
@@ -857,30 +899,71 @@
 												</Button>
 											</div>
 										</div>
-									{:else if state.snapshotStatus !== "ready" || !state.snapshot}
-										<div
-											class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
-										>
-											Preparing interactive diff…
-										</div>
-									{:else}
-										{@const rendererParams = getRendererParams(
-											file.path,
-											state,
-										)}
-										{#if rendererParams}
+
+										{#if !state || state.status === "idle" || state.status === "loading"}
 											<div
-												class="overflow-hidden rounded-md border border-border bg-background"
+												class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
 											>
-												<DiffReviewFileRenderer params={rendererParams} />
+												Loading diff…
 											</div>
+										{:else if state.status === "error"}
+											<div
+												class="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-4 text-sm text-destructive"
+											>
+												{state.errorMessage}
+											</div>
+										{:else if state.response.binary}
+											<div
+												class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
+											>
+												This is a binary file, so the text diff cannot be
+												rendered here.
+											</div>
+										{:else if showLargeDiffFallback(state)}
+											<div
+												class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
+											>
+												<p class="font-medium text-foreground">
+													Large diff ({state.lineCount.toLocaleString()} lines)
+												</p>
+												<p class="mt-1">
+													This file exceeds the inline rendering hard limit.
+												</p>
+												<div class="mt-3 flex flex-wrap items-center gap-2">
+													<Button
+														variant="outline"
+														size="sm"
+														onclick={() => void onOpenFile(file.path)}
+													>
+														Open file
+													</Button>
+												</div>
+											</div>
+										{:else if state.snapshotStatus !== "ready" || !state.snapshot}
+											<div
+												class="rounded-md border border-border bg-background px-3 py-4 text-sm text-muted-foreground"
+											>
+												Preparing interactive diff…
+											</div>
+										{:else}
+											{@const rendererParams = getRendererParams(
+												file.path,
+												state,
+											)}
+											{#if rendererParams}
+												<div
+													class="overflow-hidden rounded-md border border-border bg-background"
+												>
+													<DiffReviewFileRenderer params={rendererParams} />
+												</div>
+											{/if}
 										{/if}
-									{/if}
-								</div>
-							{/if}
-						</section>
-					{/each}
-				</div>
+									</div>
+								{/if}
+							</section>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/if}
