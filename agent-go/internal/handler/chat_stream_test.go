@@ -25,6 +25,7 @@ import (
 type streamTestAgent struct {
 	promptFn             func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
 	messagesFn           func(threadID, leafID string) ([]message.UIMessage, error)
+	pendingQuestionFn    func(threadID string) (*agent.PendingQuestion, error)
 	submitAnswerFn       func(threadID, approvalID string, req api.AnswerQuestionRequest) error
 	hasInterruptedTurnFn func(threadID string) (bool, error)
 	listThreadsFn        func() ([]string, error)
@@ -59,7 +60,12 @@ func (m *streamTestAgent) HasInterruptedTurn(threadID string) (bool, error) {
 	}
 	return false, nil
 }
-func (m *streamTestAgent) PendingQuestion(_ string) (*agent.PendingQuestion, error) { return nil, nil }
+func (m *streamTestAgent) PendingQuestion(threadID string) (*agent.PendingQuestion, error) {
+	if m.pendingQuestionFn != nil {
+		return m.pendingQuestionFn(threadID)
+	}
+	return nil, nil
+}
 func (m *streamTestAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error {
 	if m.submitAnswerFn != nil {
 		return m.submitAnswerFn(threadID, approvalID, req)
@@ -809,6 +815,163 @@ func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *tes
 	}
 	if frames[4].Event != "ping" {
 		t.Fatalf("expected ping after replay completes, got %+v", frames[4])
+	}
+}
+
+func TestChatStream_FreshRequest_SkipsCachedSnapshotForPendingQuestion(t *testing.T) {
+	historyMsg := message.UIMessage{
+		ID:   "hist-pending-1",
+		Role: "assistant",
+		Parts: []message.UIPart{
+			message.DynamicToolPart{
+				ToolName:   "AskUserQuestion",
+				ToolCallID: "tool-pending-1",
+				State:      "approval-requested",
+				Approval:   &message.ToolApproval{ID: "approval-pending-1"},
+			},
+			message.UITextPart{Text: "Waiting for your answer.", State: "done"},
+		},
+	}
+	historyMsgJSON, err := json.Marshal(historyMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{
+		promptFn: yieldChunksAndFinish(
+			message.TextDeltaChunk{ID: "delta-pending-1", Delta: "duplicate"},
+		),
+		messagesFn: func(_, _ string) ([]message.UIMessage, error) {
+			return []message.UIMessage{historyMsg}, nil
+		},
+		pendingQuestionFn: func(threadID string) (*agent.PendingQuestion, error) {
+			if threadID != "thread-pending" {
+				t.Fatalf("expected thread-pending, got %q", threadID)
+			}
+			return &agent.PendingQuestion{
+				ApprovalID: "approval-pending-1",
+				Questions: []api.AskUserQuestion{{
+					Header:   "Scope",
+					Question: "Proceed?",
+				}},
+			}, nil
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	if _, err := cm.Chat("thread-pending", agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 10 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-pending/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
+		t.Fatalf("unexpected history message frame: %+v", frames[1])
+	}
+	if frames[2].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[2])
+	}
+	if frames[3].Event != "ping" {
+		t.Fatalf("expected ping after replay completes, got %+v", frames[3])
+	}
+	for _, frame := range frames {
+		if frame.Event == "chunk" {
+			t.Fatalf("did not expect cached chunk replay for pending question: %+v", frame)
+		}
+	}
+}
+
+func TestChatStream_FreshRequest_WithPendingQuestionAndNoSnapshot_ReplaysHistoryOnly(t *testing.T) {
+	historyMsg := message.UIMessage{
+		ID:   "hist-pending-nosnapshot-1",
+		Role: "assistant",
+		Parts: []message.UIPart{
+			message.DynamicToolPart{
+				ToolName:   "AskUserQuestion",
+				ToolCallID: "tool-pending-nosnapshot-1",
+				State:      "approval-requested",
+				Approval:   &message.ToolApproval{ID: "approval-pending-nosnapshot-1"},
+			},
+			message.UITextPart{Text: "Waiting for your answer.", State: "done"},
+		},
+	}
+	historyMsgJSON, err := json.Marshal(historyMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{
+		messagesFn: func(_, _ string) ([]message.UIMessage, error) {
+			return []message.UIMessage{historyMsg}, nil
+		},
+		pendingQuestionFn: func(threadID string) (*agent.PendingQuestion, error) {
+			if threadID != "thread-pending-nosnapshot" {
+				t.Fatalf("expected thread-pending-nosnapshot, got %q", threadID)
+			}
+			return &agent.PendingQuestion{
+				ApprovalID: "approval-pending-nosnapshot-1",
+				Questions: []api.AskUserQuestion{{
+					Header:   "Scope",
+					Question: "Proceed?",
+				}},
+			}, nil
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 10 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-pending-nosnapshot/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
+		t.Fatalf("unexpected history message frame: %+v", frames[1])
+	}
+	if frames[2].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[2])
+	}
+	if frames[3].Event != "ping" {
+		t.Fatalf("expected ping after replay completes, got %+v", frames[3])
+	}
+	for _, frame := range frames {
+		if frame.Event == "chunk" {
+			t.Fatalf("did not expect chunk replay without an active snapshot: %+v", frame)
+		}
 	}
 }
 

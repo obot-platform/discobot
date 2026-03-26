@@ -234,6 +234,16 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	replayCachedSnapshotBeforeHistoryEnd := snapshot != nil
+	if freshRequest && snapshot != nil && snapshot.Done {
+		pendingQuestion, err := h.completions.PendingQuestion(threadID)
+		if err != nil {
+			log.Printf("chat stream: failed to load pending question for %s: %v", threadID, err)
+		} else if pendingQuestion != nil {
+			replayCachedSnapshotBeforeHistoryEnd = false
+		}
+	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		h.Error(w, http.StatusInternalServerError, "streaming not supported")
@@ -263,7 +273,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 
-		if snapshot != nil {
+		if replayCachedSnapshotBeforeHistoryEnd {
 			for index, chunk := range snapshot.Chunks {
 				data, err := message.MarshalChunk(chunk)
 				if err != nil {
