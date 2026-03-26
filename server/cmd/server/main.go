@@ -60,6 +60,11 @@ func main() {
 		}
 	}
 
+	apiAddr := fmt.Sprintf(":%d", cfg.Port)
+	if err := startup.WaitForTCPBind(context.Background(), apiAddr); err != nil {
+		log.Fatalf("Failed waiting for API port %s: %v", apiAddr, err)
+	}
+
 	// Log version
 	log.Printf("Discobot Server version %s", version.Get())
 
@@ -1594,7 +1599,7 @@ func main() {
 	// Create server
 	// Note: No timeouts set - SSE endpoints need long-lived connections
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Port),
+		Addr:    apiAddr,
 		Handler: r,
 	}
 

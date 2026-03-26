@@ -89,6 +89,8 @@ golangci-lint run
 | `CACHE_ENABLED` | `true` | Enable project-scoped cache volumes |
 | `ENCRYPTION_KEY` | (required) | Key for credential encryption |
 
+On startup, the server first waits until its API port can be bound. It probes the configured `PORT` every 10 seconds for up to 2 minutes, immediately releases the probe listener on success, and only then continues with the normal startup sequence. This avoids restart races with a previous process that is still shutting down.
+
 ### Building
 
 ```bash

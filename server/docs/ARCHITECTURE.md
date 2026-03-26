@@ -394,6 +394,8 @@ Key environment variables:
 | `AUTH_ENABLED` | Enable authentication |
 | `ENCRYPTION_KEY` | AES-256 key for credentials |
 
+During process startup, the server probes its configured API port before doing the rest of initialization. It retries the bind check every 10 seconds for up to 2 minutes, closes the temporary listener as soon as the port becomes available, and then proceeds with normal startup.
+
 ## Testing
 
 The server includes:
