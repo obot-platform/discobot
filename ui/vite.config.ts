@@ -33,23 +33,12 @@ export default defineConfig({
 		chunkSizeWarningLimit: 4000,
 		rollupOptions: {
 			onwarn(warning, defaultHandler) {
-				if (
-					warning.code === "MODULE_LEVEL_DIRECTIVE" &&
-					typeof warning.id === "string" &&
-					warning.id.includes("/streamdown/")
-				) {
-					return;
-				}
 				defaultHandler(warning);
 			},
 			output: {
 				manualChunks(id) {
 					if (!id.includes("node_modules")) {
 						return;
-					}
-
-					if (id.includes("/streamdown/") || id.includes("/@streamdown/")) {
-						return "streamdown";
 					}
 
 					if (

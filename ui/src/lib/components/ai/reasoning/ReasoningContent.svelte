@@ -1,11 +1,6 @@
 <script lang="ts">
-	import { cjk } from "@streamdown/cjk";
-	import { code } from "@streamdown/code";
-	import { math } from "@streamdown/math";
 	import { CollapsibleContent } from "$lib/components/ui/collapsible";
-	import { onMount } from "svelte";
-	import type { PluginConfig } from "streamdown";
-	import { ReactStreamdown } from "$lib/components/ai/streamdown";
+	import { SvelteStreamdown } from "$lib/components/ai/streamdown";
 	import { cn } from "$lib/utils";
 	import { useReasoningContext } from "./context";
 
@@ -66,34 +61,10 @@
 
 	let { text, class: className, children, ...restProps }: Props = $props();
 	const reasoning = useReasoningContext();
-	let mermaidPlugin = $state<PluginConfig["mermaid"] | null>(null);
-
-	onMount(() => {
-		let cancelled = false;
-		void import("@streamdown/mermaid")
-			.then((module) => {
-				if (!cancelled) {
-					mermaidPlugin = module.mermaid;
-				}
-			})
-			.catch(() => {
-				// noop
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	});
 
 	$effect(() => {
 		reasoning.setPreviewText(extractPreviewText(text));
 	});
-
-	const plugins = $derived.by(() =>
-		mermaidPlugin
-			? { code, math, cjk, mermaid: mermaidPlugin }
-			: { code, math, cjk },
-	);
 </script>
 
 <CollapsibleContent
@@ -105,7 +76,7 @@
 	{...restProps}
 >
 	{#if text !== undefined}
-		<ReactStreamdown {text} {plugins} isAnimating={reasoning.isStreaming} />
+		<SvelteStreamdown {text} isAnimating={reasoning.isStreaming} />
 	{:else}
 		<div class="whitespace-pre-wrap break-words">
 			{@render children?.()}

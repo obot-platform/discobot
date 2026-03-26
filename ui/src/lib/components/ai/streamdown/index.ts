@@ -1,3 +1,3 @@
-import ReactStreamdown from "./ReactStreamdown.svelte";
+import SvelteStreamdown from "./SvelteStreamdown.svelte";
 
-export { ReactStreamdown };
+export { SvelteStreamdown };
