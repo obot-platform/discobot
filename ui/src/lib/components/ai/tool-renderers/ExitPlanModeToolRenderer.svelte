@@ -263,23 +263,6 @@
 					</div>
 				{/if}
 			{:else if pendingQuestion}
-				{#if planMarkdown}
-					<div
-						class="relative max-h-64 overflow-y-auto rounded-md border bg-muted/20 p-3 text-sm"
-					>
-						<Button
-							class="absolute right-1 top-1 h-6 w-6"
-							size="icon"
-							variant="ghost"
-							onclick={() => {
-								planExpanded = true;
-							}}
-						>
-							<Maximize2Icon class="size-3" />
-						</Button>
-						<MessageResponse text={planMarkdown} />
-					</div>
-				{/if}
 				<div class="rounded-lg border bg-card p-4">
 					<AskUserQuestionWizard {pendingQuestion} onSubmit={submitAnswers} />
 				</div>
