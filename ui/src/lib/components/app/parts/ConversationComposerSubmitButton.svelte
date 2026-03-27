@@ -10,11 +10,18 @@
 	type Props = {
 		status: ComposerStatus;
 		inputEmpty: boolean;
+		isPending: boolean;
 		disabled?: boolean;
 		onPress: () => void | Promise<void>;
 	};
 
-	let { status, inputEmpty, disabled = false, onPress }: Props = $props();
+	let {
+		status,
+		inputEmpty,
+		isPending,
+		disabled = false,
+		onPress,
+	}: Props = $props();
 
 	let hovered = $state(false);
 
@@ -22,7 +29,7 @@
 		() => status === "submitted" || status === "streaming",
 	);
 	const showPlusIcon = $derived.by(
-		() => hovered && inputEmpty && !isGenerating,
+		() => hovered && isPending && inputEmpty && !isGenerating,
 	);
 </script>
 

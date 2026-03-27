@@ -547,6 +547,7 @@
 							<ConversationComposerSubmitButton
 								status={submitStatus}
 								inputEmpty={inputEmpty()}
+								isPending={session.isPending}
 								disabled={session.isPending ? sessionSetupDisabled : false}
 								onPress={handleComposerSubmit}
 							/>
