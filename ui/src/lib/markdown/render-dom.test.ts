@@ -35,3 +35,23 @@ test("renderMarkdownTree keeps loose ordered and unordered list markers outside 
 	const orderedListItem = orderedList.querySelector("li");
 	assert.ok(orderedListItem?.querySelector("p"));
 });
+
+test("renderMarkdownTree omits the default text label for unlabeled code fences", () => {
+	const container = renderMarkdown("```\nplain text\n```");
+	const header = container.querySelector(
+		'[data-streamdown="code-block-header"]',
+	);
+
+	assert.ok(header);
+	assert.equal(header?.textContent?.trim(), "");
+});
+
+test("renderMarkdownTree shows explicit code fence languages", () => {
+	const container = renderMarkdown("```yaml\nkey: value\n```");
+	const header = container.querySelector(
+		'[data-streamdown="code-block-header"]',
+	);
+
+	assert.ok(header);
+	assert.equal(header?.textContent?.trim(), "yaml");
+});

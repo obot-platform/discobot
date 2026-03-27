@@ -453,10 +453,12 @@ function renderCodeBlock(
 	const header = document.createElement("div");
 	header.className = cn("flex h-8 items-center text-muted-foreground text-xs");
 	header.dataset.streamdown = "code-block-header";
-	const title = document.createElement("span");
-	title.className = "ml-1 font-mono lowercase";
-	title.textContent = language || "text";
-	header.append(title);
+	if (language) {
+		const title = document.createElement("span");
+		title.className = "ml-1 font-mono lowercase";
+		title.textContent = language;
+		header.append(title);
+	}
 	container.append(header);
 
 	const actionsRow = document.createElement("div");
