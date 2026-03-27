@@ -23,7 +23,7 @@
 	let dropdownRef = $state<HTMLDivElement | null>(null);
 	let suggestions = $state<FileMentionItem[]>([]);
 	let isLoading = $state(false);
-	let latestRequestId = $state(0);
+	let requestSequence = 0;
 
 	const showEmpty = $derived.by(
 		() => !isLoading && suggestions.length === 0 && query.length > 0,
@@ -110,8 +110,8 @@
 			return;
 		}
 
-		const requestId = latestRequestId + 1;
-		latestRequestId = requestId;
+		const requestId = requestSequence + 1;
+		requestSequence = requestId;
 		const currentQuery = query;
 		const controller = new AbortController();
 		const timeout = window.setTimeout(
@@ -126,7 +126,7 @@
 							signal: controller.signal,
 						},
 					);
-					if (latestRequestId !== requestId) {
+					if (requestSequence !== requestId) {
 						return;
 					}
 					suggestions = response.results.map((result) => ({
@@ -134,12 +134,12 @@
 						type: result.type,
 					}));
 				} catch (error) {
-					if (controller.signal.aborted || latestRequestId !== requestId) {
+					if (controller.signal.aborted || requestSequence !== requestId) {
 						return;
 					}
 					suggestions = [];
 				} finally {
-					if (latestRequestId === requestId) {
+					if (requestSequence === requestId) {
 						isLoading = false;
 					}
 				}
