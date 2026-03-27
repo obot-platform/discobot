@@ -111,8 +111,5 @@ test("summarizeApplyPatchTitle uses the first changed file", () => {
 		"*** End Patch",
 	].join("\n");
 
-	assert.equal(
-		summarizeApplyPatchTitle({ raw: patch }),
-		"Apply patch: example.ts (+1)",
-	);
+	assert.equal(summarizeApplyPatchTitle({ raw: patch }), "example.ts (+1)");
 });

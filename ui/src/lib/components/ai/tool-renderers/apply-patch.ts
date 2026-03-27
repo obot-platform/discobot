@@ -252,9 +252,9 @@ export function summarizeApplyPatchTitle(input: unknown): string | undefined {
 
 	const fileName = firstPath.split("/").at(-1) ?? firstPath;
 	if (operationCount === 1) {
-		return `Apply patch: ${fileName}`;
+		return fileName;
 	}
-	return `Apply patch: ${fileName} (+${operationCount - 1})`;
+	return `${fileName} (+${operationCount - 1})`;
 }
 
 export function getApplyPatchDisplayPath(
