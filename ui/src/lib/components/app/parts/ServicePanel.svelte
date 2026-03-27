@@ -20,6 +20,10 @@
 	import DockWindowChrome from "$lib/components/app/parts/DockWindowChrome.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
+	import {
+		ToggleGroup,
+		ToggleGroupItem,
+	} from "$lib/components/ui/toggle-group";
 	import type { ServiceItem } from "$lib/shell-types";
 	import { openUrl } from "$lib/tauri";
 	import { cn } from "$lib/utils";
@@ -428,48 +432,6 @@
 		</div>
 	{/snippet}
 
-	{#snippet actions()}
-		{@const CurrentStatusIcon = getStatusIcon()}
-		{#if service && showViewTabs}
-			<div class="flex items-center gap-1">
-				<Button
-					variant={viewMode === "preview" ? "secondary" : "ghost"}
-					size="xs"
-					class="gap-1"
-					onclick={() => {
-						viewMode = "preview";
-					}}
-				>
-					<GlobeIcon class="size-3" />
-					Preview
-				</Button>
-				<Button
-					variant={viewMode === "logs" ? "secondary" : "ghost"}
-					size="xs"
-					class="gap-1"
-					onclick={() => {
-						viewMode = "logs";
-					}}
-				>
-					<TerminalIcon class="size-3" />
-					Logs
-				</Button>
-			</div>
-		{/if}
-		<div class="flex items-center gap-2">
-			<div class={cn("flex items-center gap-1 text-xs", statusClass())}>
-				<CurrentStatusIcon
-					class={cn(
-						"size-3.5",
-						(service.status === "starting" || service.status === "stopping") &&
-							"animate-spin",
-					)}
-				/>
-				<span>{statusLabel}</span>
-			</div>
-		</div>
-	{/snippet}
-
 	{#if services.length > 0}
 		<div
 			class="flex min-h-10 items-end gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar px-2 py-2"
@@ -494,46 +456,21 @@
 				>
 					<div class="flex min-w-0 items-center gap-2">
 						<span class="max-w-40 truncate">{item.label}</span>
-						<div
-							class={cn(
-								"size-2 shrink-0 rounded-full",
-								item.status === "running" && "bg-green-500",
-								item.status === "starting" && "bg-yellow-500",
-								item.status === "stopping" && "bg-yellow-500",
-								item.status === "stopped" &&
-									(item.exitCode !== undefined && item.exitCode !== 0
-										? "bg-red-500"
-										: "bg-sidebar-foreground/30"),
-							)}
-						></div>
+						{#if !item.passive}
+							<div
+								class={cn(
+									"size-2 shrink-0 rounded-full",
+									item.status === "running" && "bg-green-500",
+									item.status === "starting" && "bg-yellow-500",
+									item.status === "stopping" && "bg-yellow-500",
+									item.status === "stopped" &&
+										(item.exitCode !== undefined && item.exitCode !== 0
+											? "bg-red-500"
+											: "bg-sidebar-foreground/30"),
+								)}
+							></div>
+						{/if}
 					</div>
-					{#if activeServiceId === item.id && service?.id === item.id && isRunnable}
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							class="size-5 rounded-sm p-0 text-foreground/60 hover:text-foreground"
-							title={`${actionLabel} ${item.label}`}
-							aria-label={`${actionLabel} ${item.label}`}
-							disabled={isMutatingService ||
-								service.status === "starting" ||
-								service.status === "stopping"}
-							onclick={(event) => {
-								event.stopPropagation();
-								void handleServiceAction();
-							}}
-							onkeydown={(event) => {
-								event.stopPropagation();
-							}}
-						>
-							{#if service.status === "starting" || service.status === "stopping" || isMutatingService}
-								<Loader2Icon class="size-3 animate-spin" />
-							{:else if canStop}
-								<SquareIcon class="size-3 fill-current" />
-							{:else}
-								<PlayIcon class="size-3 fill-current" />
-							{/if}
-						</Button>
-					{/if}
 				</div>
 			{/each}
 		</div>
@@ -542,6 +479,85 @@
 			class="flex min-h-10 items-center border-b border-sidebar-border bg-sidebar px-3 py-2 text-sm text-sidebar-foreground/60"
 		>
 			No services available.
+		</div>
+	{/if}
+
+	{#if service}
+		{@const CurrentStatusIcon = getStatusIcon()}
+		<div
+			class="flex flex-wrap items-center justify-between gap-1 border-b bg-muted/20 px-2 py-0.5"
+		>
+			<div class="flex min-w-0 flex-wrap items-center gap-1">
+				{#if showViewTabs}
+					<ToggleGroup
+						type="single"
+						value={viewMode}
+						onValueChange={(value) => {
+							if (value === "preview" || value === "logs") {
+								viewMode = value;
+							}
+						}}
+						variant="outline"
+						size="sm"
+						spacing={0}
+						class="rounded-md border-border bg-background/80 text-[11px] shadow-xs"
+					>
+						<ToggleGroupItem
+							value="preview"
+							class="h-6 gap-1 rounded-none px-2 text-[11px] text-sidebar-foreground/70 hover:text-sidebar-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+							aria-label="Preview service"
+							title="Preview"
+						>
+							<GlobeIcon class="size-2.5" />
+							Preview
+						</ToggleGroupItem>
+						<ToggleGroupItem
+							value="logs"
+							class="h-6 gap-1 rounded-none px-2 text-[11px] text-sidebar-foreground/70 hover:text-sidebar-foreground data-[state=on]:bg-background data-[state=on]:text-foreground"
+							aria-label="Show service logs"
+							title="Logs"
+						>
+							<TerminalIcon class="size-2.5" />
+							Logs
+						</ToggleGroupItem>
+					</ToggleGroup>
+				{/if}
+				{#if !passive}
+					<div class={cn("flex items-center gap-1 text-[11px]", statusClass())}>
+						<CurrentStatusIcon
+							class={cn(
+								"size-2.5",
+								(service.status === "starting" ||
+									service.status === "stopping") &&
+									"animate-spin",
+							)}
+						/>
+						<span>{statusLabel}</span>
+					</div>
+				{/if}
+			</div>
+			{#if isRunnable}
+				<Button
+					size="xs"
+					variant={canStop ? "outline" : "default"}
+					class="gap-1.5"
+					title={`${actionLabel} ${service.label}`}
+					aria-label={`${actionLabel} ${service.label}`}
+					disabled={isMutatingService ||
+						service.status === "starting" ||
+						service.status === "stopping"}
+					onclick={handleServiceAction}
+				>
+					{#if service.status === "starting" || service.status === "stopping" || isMutatingService}
+						<Loader2Icon class="size-3.5 animate-spin" />
+					{:else if canStop}
+						<SquareIcon class="size-3.5 fill-current" />
+					{:else}
+						<PlayIcon class="size-3.5 fill-current" />
+					{/if}
+					{actionLabel}
+				</Button>
+			{/if}
 		</div>
 	{/if}
 
