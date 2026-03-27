@@ -32,13 +32,31 @@
 	let instance = $state<PierreFileDiffInstance | null>(null);
 	let virtualizer = $state<Virtualizer | null>(null);
 	let usingVirtualizedRenderer = $state<boolean | null>(null);
+	let rendererIdentity = $state<string | null>(null);
+	let renderRequestId = 0;
 
 	function cleanupRenderer() {
+		renderRequestId += 1;
 		instance?.cleanUp();
 		instance = null;
 		virtualizer?.cleanUp();
 		virtualizer = null;
 		usingVirtualizedRenderer = null;
+		rendererIdentity = null;
+	}
+
+	function getRendererIdentity(nextParams: DiffRendererParams): string {
+		return [
+			nextParams.virtualized ? "virtualized" : "standard",
+			nextParams.diffStyle,
+			nextParams.resolvedTheme,
+			nextParams.oldFile.name,
+			nextParams.oldFile.lang ?? "text",
+			nextParams.oldFile.cacheKey,
+			nextParams.newFile.name,
+			nextParams.newFile.lang ?? "text",
+			nextParams.newFile.cacheKey,
+		].join("|");
 	}
 
 	function createRenderer(nextParams: DiffRendererParams) {
@@ -66,6 +84,39 @@
 		);
 	}
 
+	function getContainerWrapper(nextParams: DiffRendererParams) {
+		return nextParams.virtualized
+			? (virtualScrollContent ?? undefined)
+			: (standardHost ?? undefined);
+	}
+
+	async function renderDiff(
+		currentInstance: PierreFileDiffInstance,
+		nextParams: DiffRendererParams,
+		requestId: number,
+	) {
+		try {
+			await Promise.resolve(
+				currentInstance.render({
+					oldFile: nextParams.oldFile,
+					newFile: nextParams.newFile,
+					containerWrapper: getContainerWrapper(nextParams),
+				}),
+			);
+		} catch (error) {
+			if (requestId !== renderRequestId) {
+				return;
+			}
+
+			console.error("[DiffReviewFileRenderer] Failed to render diff", {
+				error,
+				oldFile: nextParams.oldFile.name,
+				newFile: nextParams.newFile.name,
+				virtualized: nextParams.virtualized,
+			});
+		}
+	}
+
 	$effect(() => {
 		const nextParams = params;
 		const host = standardHost;
@@ -88,24 +139,30 @@
 			return;
 		}
 
-		if (!instance || usingVirtualizedRenderer !== nextParams.virtualized) {
+		const nextRendererIdentity = getRendererIdentity(nextParams);
+		if (
+			!instance ||
+			usingVirtualizedRenderer !== nextParams.virtualized ||
+			rendererIdentity !== nextRendererIdentity
+		) {
 			cleanupRenderer();
 			instance = createRenderer(nextParams);
 			if (!instance) {
 				return;
 			}
+			rendererIdentity = nextRendererIdentity;
 		}
 
-		instance.setOptions(
+		const currentInstance = instance;
+		if (!currentInstance) {
+			return;
+		}
+
+		currentInstance.setOptions(
 			getDiffRendererOptions(nextParams.diffStyle, nextParams.resolvedTheme),
 		);
-		instance.render({
-			oldFile: nextParams.oldFile,
-			newFile: nextParams.newFile,
-			containerWrapper: nextParams.virtualized
-				? (virtualScrollContent ?? undefined)
-				: (standardHost ?? undefined),
-		});
+		const requestId = ++renderRequestId;
+		void renderDiff(currentInstance, nextParams, requestId);
 	});
 
 	onMount(() => cleanupRenderer);
