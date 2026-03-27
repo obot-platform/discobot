@@ -13,7 +13,7 @@
 	} from "$lib/components/ai/tool-schemas/skill-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
-	import { renderToolValue } from "./utils";
+	import { getToolInputString, renderToolValue } from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -21,6 +21,9 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerSkill = $derived.by(() =>
+		getToolInputString(toolPart.input, "skill"),
 	);
 	const inputValidation = $derived.by(() => validateSkillInput(toolPart.input));
 	const validInput = $derived.by(() =>
@@ -46,7 +49,7 @@
 	>
 		<SparklesIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.skill || (isStreaming ? "Loading skill..." : "Skill")}
+			{headerSkill || (isStreaming ? "Loading skill..." : "Skill")}
 		</span>
 		<ToolHeaderStatus state={toolPart.state} />
 	</CollapsibleTrigger>

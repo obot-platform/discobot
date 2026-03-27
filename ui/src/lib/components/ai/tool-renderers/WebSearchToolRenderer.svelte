@@ -13,7 +13,7 @@
 	} from "$lib/components/ai/tool-schemas/websearch-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
-	import { renderToolValue } from "./utils";
+	import { getToolInputString, renderToolValue } from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -21,6 +21,9 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerQuery = $derived.by(() =>
+		getToolInputString(toolPart.input, "query"),
 	);
 	const inputValidation = $derived.by(() =>
 		validateWebSearchInput(toolPart.input),
@@ -46,8 +49,7 @@
 	>
 		<GlobeIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.query ||
-				(isStreaming ? "Loading web search..." : "Web search")}
+			{headerQuery || (isStreaming ? "Loading web search..." : "Web search")}
 		</span>
 		<ToolHeaderStatus state={toolPart.state} />
 	</CollapsibleTrigger>

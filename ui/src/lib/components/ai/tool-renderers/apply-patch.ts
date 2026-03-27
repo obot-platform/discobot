@@ -196,17 +196,65 @@ export function parseApplyPatchOutput(output: unknown): ApplyPatchOutputResult {
 }
 
 export function summarizeApplyPatchTitle(input: unknown): string | undefined {
-	const parsed = parseApplyPatchInput(input);
-	if (parsed.operations.length === 0) {
+	const rawPatch = normalizeNewlines(extractApplyPatchInput(input));
+	if (!rawPatch.trim()) {
 		return undefined;
 	}
 
-	const firstPath = getApplyPatchDisplayPath(parsed.operations[0]);
+	const lines = rawPatch.split("\n");
+	let firstPath: string | undefined;
+	let operationCount = 0;
+	let pendingUpdatePath: string | undefined;
+
+	for (const line of lines) {
+		if (line.startsWith(ADD_FILE_MARKER)) {
+			operationCount += 1;
+			const path = line.slice(ADD_FILE_MARKER.length).trim();
+			if (!firstPath && path) {
+				firstPath = path;
+			}
+			pendingUpdatePath = undefined;
+			continue;
+		}
+
+		if (line.startsWith(DELETE_FILE_MARKER)) {
+			operationCount += 1;
+			const path = line.slice(DELETE_FILE_MARKER.length).trim();
+			if (!firstPath && path) {
+				firstPath = path;
+			}
+			pendingUpdatePath = undefined;
+			continue;
+		}
+
+		if (line.startsWith(UPDATE_FILE_MARKER)) {
+			operationCount += 1;
+			const path = line.slice(UPDATE_FILE_MARKER.length).trim();
+			if (!firstPath && path) {
+				firstPath = path;
+			}
+			pendingUpdatePath = path || undefined;
+			continue;
+		}
+
+		if (line.startsWith(MOVE_TO_MARKER) && pendingUpdatePath) {
+			const movePath = line.slice(MOVE_TO_MARKER.length).trim();
+			if (movePath && firstPath === pendingUpdatePath) {
+				firstPath = movePath;
+			}
+			pendingUpdatePath = undefined;
+		}
+	}
+
+	if (!firstPath || operationCount === 0) {
+		return undefined;
+	}
+
 	const fileName = firstPath.split("/").at(-1) ?? firstPath;
-	if (parsed.operations.length === 1) {
+	if (operationCount === 1) {
 		return `Apply patch: ${fileName}`;
 	}
-	return `Apply patch: ${fileName} (+${parsed.operations.length - 1})`;
+	return `Apply patch: ${fileName} (+${operationCount - 1})`;
 }
 
 export function getApplyPatchDisplayPath(

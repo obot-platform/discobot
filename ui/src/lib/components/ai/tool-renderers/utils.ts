@@ -2,6 +2,32 @@ export function shortenPath(path: string): string {
 	return path.replace(/^\/home\/discobot/, "~");
 }
 
+export function getToolInputRecord(
+	value: unknown,
+): Record<string, unknown> | undefined {
+	return value && typeof value === "object"
+		? (value as Record<string, unknown>)
+		: undefined;
+}
+
+export function getToolInputString(
+	value: unknown,
+	key: string,
+): string | undefined {
+	const record = getToolInputRecord(value);
+	const field = record?.[key];
+	return typeof field === "string" ? field : undefined;
+}
+
+export function getToolInputArrayLength(
+	value: unknown,
+	key: string,
+): number | undefined {
+	const record = getToolInputRecord(value);
+	const field = record?.[key];
+	return Array.isArray(field) ? field.length : undefined;
+}
+
 export function renderToolValue(value: unknown): string {
 	if (typeof value === "string") {
 		return value;

@@ -10,9 +10,9 @@
 	import type { ToolRendererComponentProps } from "./types";
 	import {
 		extractApplyPatchInput,
-		getApplyPatchDisplayPath,
 		parseApplyPatchInput,
 		parseApplyPatchOutput,
+		summarizeApplyPatchTitle,
 		type ApplyPatchOperation,
 	} from "./apply-patch";
 	import { renderToolValue, shortenPath } from "./utils";
@@ -25,21 +25,18 @@
 			toolPart.state === "input-available",
 	);
 	const rawPatch = $derived.by(() => extractApplyPatchInput(toolPart.input));
+	const headerTitle = $derived.by(() =>
+		summarizeApplyPatchTitle(toolPart.input),
+	);
 	const parsedPatch = $derived.by(() => parseApplyPatchInput(toolPart.input));
 	const parsedOutput = $derived.by(() =>
 		parseApplyPatchOutput(toolPart.output),
 	);
 	const rawOutputText = $derived.by(() => renderToolValue(toolPart.output));
-	const headline = $derived.by(() => {
-		const firstOperation = parsedPatch.operations[0];
-		if (!firstOperation) {
-			return isStreaming ? "Loading patch details..." : "Apply patch";
-		}
-		const path = shortenPath(getApplyPatchDisplayPath(firstOperation));
-		return parsedPatch.operations.length > 1
-			? `${path} (+${parsedPatch.operations.length - 1})`
-			: path;
-	});
+	const headline = $derived.by(
+		() =>
+			headerTitle ?? (isStreaming ? "Loading patch details..." : "Apply patch"),
+	);
 
 	function getOperationLabel(operation: ApplyPatchOperation): string {
 		switch (operation.kind) {

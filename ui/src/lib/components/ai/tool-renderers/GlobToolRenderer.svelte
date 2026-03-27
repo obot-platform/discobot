@@ -12,7 +12,7 @@
 	} from "$lib/components/ai/tool-schemas/glob-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
-	import { renderToolValue, shortenPath } from "./utils";
+	import { getToolInputString, renderToolValue, shortenPath } from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -20,6 +20,9 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerPattern = $derived.by(() =>
+		getToolInputString(toolPart.input, "pattern"),
 	);
 	const inputValidation = $derived.by(() => validateGlobInput(toolPart.input));
 	const validInput = $derived.by(() =>
@@ -42,7 +45,7 @@
 	>
 		<FolderSearchIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.pattern || (isStreaming ? "Loading file search..." : "Glob")}
+			{headerPattern || (isStreaming ? "Loading file search..." : "Glob")}
 		</span>
 		<ToolHeaderStatus state={toolPart.state} />
 	</CollapsibleTrigger>

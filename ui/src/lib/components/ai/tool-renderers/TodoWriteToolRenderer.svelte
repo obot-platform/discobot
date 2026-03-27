@@ -13,7 +13,7 @@
 	} from "$lib/components/ai/tool-schemas/todowrite-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
-	import { renderToolValue } from "./utils";
+	import { getToolInputArrayLength, renderToolValue } from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -21,6 +21,9 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerTodoCount = $derived.by(() =>
+		getToolInputArrayLength(toolPart.input, "todos"),
 	);
 	const inputValidation = $derived.by(() =>
 		validateTodoWriteInput(toolPart.input),
@@ -61,8 +64,8 @@
 	>
 		<ListTodoIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.todos
-				? `${validInput.todos.length} todos`
+			{headerTodoCount !== undefined
+				? `${headerTodoCount} todos`
 				: isStreaming
 					? "Loading todos..."
 					: "Todo write"}

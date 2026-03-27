@@ -15,6 +15,7 @@
 	import type { ToolRendererComponentProps } from "./types";
 	import {
 		countLines,
+		getToolInputString,
 		parseNumberedToolOutput,
 		renderToolValue,
 		shortenPath,
@@ -26,6 +27,12 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerFilePath = $derived.by(() =>
+		getToolInputString(toolPart.input, "file_path"),
+	);
+	const headerFileName = $derived.by(
+		() => headerFilePath?.split("/").pop() || headerFilePath,
 	);
 	const inputValidation = $derived.by(() => validateReadInput(toolPart.input));
 	const validInput = $derived.by(() =>
@@ -65,7 +72,8 @@
 	>
 		<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{fileName || (isStreaming ? "Loading file details..." : "Reading file")}
+			{headerFileName ||
+				(isStreaming ? "Loading file details..." : "Reading file")}
 		</span>
 		<ToolHeaderStatus state={toolPart.state} />
 	</CollapsibleTrigger>

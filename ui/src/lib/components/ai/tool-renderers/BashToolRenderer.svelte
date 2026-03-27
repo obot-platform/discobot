@@ -17,6 +17,7 @@
 	import type { ToolRendererComponentProps } from "./types";
 	import {
 		countLines,
+		getToolInputString,
 		parseNumberedToolOutput,
 		renderToolValue,
 		shortenPath,
@@ -28,6 +29,12 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerDescription = $derived.by(() =>
+		getToolInputString(toolPart.input, "description"),
+	);
+	const headerCommand = $derived.by(() =>
+		getToolInputString(toolPart.input, "command"),
 	);
 	const inputValidation = $derived.by(() => validateBashInput(toolPart.input));
 	const validInput = $derived.by(() =>
@@ -61,8 +68,8 @@
 	>
 		<TerminalIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.description ||
-				validInput?.command ||
+			{headerDescription ||
+				headerCommand ||
 				(isStreaming ? "Loading command details..." : "Command")}
 		</span>
 		<ToolHeaderStatus state={toolPart.state} />

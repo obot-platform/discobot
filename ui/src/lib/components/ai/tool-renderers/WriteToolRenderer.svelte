@@ -12,7 +12,12 @@
 	} from "$lib/components/ai/tool-schemas/write-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
-	import { countLines, renderToolValue, shortenPath } from "./utils";
+	import {
+		countLines,
+		getToolInputString,
+		renderToolValue,
+		shortenPath,
+	} from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -20,6 +25,9 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerFilePath = $derived.by(() =>
+		getToolInputString(toolPart.input, "file_path"),
 	);
 	const inputValidation = $derived.by(() => validateWriteInput(toolPart.input));
 	const validInput = $derived.by(() =>
@@ -48,8 +56,8 @@
 	>
 		<FilePenLineIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.file_path
-				? shortenPath(validInput.file_path)
+			{headerFilePath
+				? shortenPath(headerFilePath)
 				: isStreaming
 					? "Loading write details..."
 					: "Write file"}

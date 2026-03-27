@@ -13,7 +13,7 @@
 	} from "$lib/components/ai/tool-schemas/webfetch-schema";
 	import { CollapsibleTrigger } from "$lib/components/ui/collapsible";
 	import type { ToolRendererComponentProps } from "./types";
-	import { renderToolValue } from "./utils";
+	import { getToolInputString, renderToolValue } from "./utils";
 
 	let { toolPart, isRaw, onToggleRaw }: ToolRendererComponentProps = $props();
 
@@ -21,6 +21,9 @@
 		() =>
 			toolPart.state === "input-streaming" ||
 			toolPart.state === "input-available",
+	);
+	const headerUrl = $derived.by(() =>
+		getToolInputString(toolPart.input, "url"),
 	);
 	const inputValidation = $derived.by(() =>
 		validateWebFetchInput(toolPart.input),
@@ -48,7 +51,7 @@
 	>
 		<GlobeIcon class="size-4 shrink-0 text-muted-foreground" />
 		<span class="truncate font-medium text-sm">
-			{validInput?.url || (isStreaming ? "Loading web fetch..." : "Web fetch")}
+			{headerUrl || (isStreaming ? "Loading web fetch..." : "Web fetch")}
 		</span>
 		<ToolHeaderStatus state={toolPart.state} />
 	</CollapsibleTrigger>
