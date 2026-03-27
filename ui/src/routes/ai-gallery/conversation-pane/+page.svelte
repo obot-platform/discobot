@@ -285,7 +285,8 @@
 					],
 				},
 				output: {
-					success: true,
+					content:
+						"Todo list updated.\n\nCurrent status is 1 completed, 1 in progress, and 1 pending.\n\n### Current tasks\n- [x] Wire mock conversation route\n- [ ] Review tool card spacing _(in progress: Reviewing tool card spacing)_\n- [ ] Polish hover and focus states",
 				},
 			}),
 		]),

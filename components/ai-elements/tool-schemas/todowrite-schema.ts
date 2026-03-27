@@ -5,19 +5,19 @@ import { createValidator, type ToolSchema } from "./index";
  * TodoWrite tool input schema (Zod)
  */
 export const TodoWriteToolInputSchema = z.object({
-	/** Array of todos with status and content */
-	todos: z
-		.array(
-			z.object({
-				/** Todo description (imperative form) */
-				content: z.string().optional(),
-				/** Todo status: pending, in_progress, or completed */
-				status: z.enum(["pending", "in_progress", "completed"]).optional(),
-				/** Active form of the content (present continuous) */
-				activeForm: z.string().optional(),
-			}),
-		)
-		.optional(),
+  /** Array of todos with status and content */
+  todos: z
+    .array(
+      z.object({
+        /** Todo description (imperative form) */
+        content: z.string().optional(),
+        /** Todo status: pending, in_progress, or completed */
+        status: z.enum(["pending", "in_progress", "completed"]).optional(),
+        /** Active form of the content (present continuous) */
+        activeForm: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -29,10 +29,12 @@ export type TodoWriteToolInput = z.infer<typeof TodoWriteToolInputSchema>;
  * TodoWrite tool output schema (Zod)
  */
 export const TodoWriteToolOutputSchema = z.object({
-	/** Success indicator */
-	success: z.boolean().optional(),
-	/** Error message if operation failed */
-	error: z.string().optional(),
+  /** Human-readable markdown summary of the current todo state */
+  content: z.string().optional(),
+  /** Success indicator */
+  success: z.boolean().optional(),
+  /** Error message if operation failed */
+  error: z.string().optional(),
 });
 
 /**
@@ -49,19 +51,23 @@ export const validateTodoWriteInput = createValidator(TodoWriteToolInputSchema);
  * Validates TodoWrite tool output using Zod
  */
 export const validateTodoWriteOutput = createValidator(
-	z.union([TodoWriteToolOutputSchema, z.object({}).transform(() => ({}))]),
+  z.union([
+    z.string().transform((str) => ({ content: str })),
+    TodoWriteToolOutputSchema,
+    z.object({}).transform(() => ({})),
+  ]),
 );
 
 /**
  * TodoWrite tool schema export
  */
 export const TodoWriteToolSchema: ToolSchema<
-	TodoWriteToolInput,
-	TodoWriteToolOutput
+  TodoWriteToolInput,
+  TodoWriteToolOutput
 > = {
-	toolName: "TodoWrite",
-	inputSchema: TodoWriteToolInputSchema,
-	outputSchema: TodoWriteToolOutputSchema,
-	validateInput: validateTodoWriteInput,
-	validateOutput: validateTodoWriteOutput,
+  toolName: "TodoWrite",
+  inputSchema: TodoWriteToolInputSchema,
+  outputSchema: TodoWriteToolOutputSchema,
+  validateInput: validateTodoWriteInput,
+  validateOutput: validateTodoWriteOutput,
 };

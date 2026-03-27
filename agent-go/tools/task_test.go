@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"iter"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -256,6 +259,70 @@ func textOutput(res message.ToolResultPart) string {
 func isErrorOutput(res message.ToolResultPart) bool {
 	_, ok := res.Output.(message.ErrorTextOutput)
 	return ok
+}
+
+func TestTodoWriteReturnsMarkdownSummaryAndPersistsTodos(t *testing.T) {
+	cwd := t.TempDir()
+	dataDir := t.TempDir()
+	e := New(cwd, dataDir, "default-thread")
+
+	raw, err := json.Marshal(map[string]any{
+		"todos": []map[string]string{
+			{
+				"content":    "Ship the first task",
+				"activeForm": "Shipping the first task",
+				"status":     "completed",
+			},
+			{
+				"content":    "Investigate the second task",
+				"activeForm": "Investigating the second task",
+				"status":     "in_progress",
+			},
+			{
+				"content":    "Queue the third task",
+				"activeForm": "Queueing the third task",
+				"status":     "pending",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+
+	result, err := e.Execute(context.Background(), &thread.ToolContext{ThreadID: "thread-123"}, message.ToolCallPart{
+		ToolCallID: t.Name(),
+		ToolName:   "TodoWrite",
+		Input:      string(raw),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned unexpected error: %v", err)
+	}
+
+	out, ok := result.Result.Output.(message.TextOutput)
+	if !ok {
+		t.Fatalf("expected TextOutput, got %T", result.Result.Output)
+	}
+
+	for _, want := range []string{
+		"Todo list updated.",
+		"Current status is 1 completed, 1 in progress, and 1 pending.",
+		"### Current tasks",
+		"- [x] Ship the first task",
+		"- [ ] Investigate the second task _(in progress: Investigating the second task)_",
+		"- [ ] Queue the third task",
+	} {
+		if !strings.Contains(out.Value, want) {
+			t.Errorf("output %q missing %q", out.Value, want)
+		}
+	}
+
+	persisted, err := os.ReadFile(filepath.Join(dataDir, "todos", "thread-123.json"))
+	if err != nil {
+		t.Fatalf("read persisted todos: %v", err)
+	}
+	if string(persisted) != `[{"content":"Ship the first task","status":"completed","activeForm":"Shipping the first task"},{"content":"Investigate the second task","status":"in_progress","activeForm":"Investigating the second task"},{"content":"Queue the third task","status":"pending","activeForm":"Queueing the third task"}]` {
+		t.Fatalf("unexpected persisted todos: %s", persisted)
+	}
 }
 
 // cleanupTask removes a task from globalTasks so tests don't interfere.

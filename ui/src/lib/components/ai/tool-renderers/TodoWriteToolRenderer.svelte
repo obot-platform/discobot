@@ -54,6 +54,9 @@
 		}
 		return counts;
 	});
+	const hasSuccessState = $derived.by(() =>
+		Boolean(validOutput?.success || validOutput?.content),
+	);
 	const todoError = $derived.by(() => toolPart.errorText || validOutput?.error);
 	const rawOutputText = $derived.by(() => renderToolValue(toolPart.output));
 </script>
@@ -134,7 +137,7 @@
 				{/each}
 			</ul>
 
-			{#if validOutput?.success}
+			{#if hasSuccessState}
 				<p class="text-green-700 text-xs">Todo list updated.</p>
 			{/if}
 

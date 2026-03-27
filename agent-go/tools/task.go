@@ -378,6 +378,67 @@ type todoWriteInput struct {
 	Todos []todoItem `json:"todos"`
 }
 
+func renderTodoWriteSummary(todos []todoItem) string {
+	completed := 0
+	inProgress := 0
+	pending := 0
+
+	for _, todo := range todos {
+		switch todo.Status {
+		case "completed":
+			completed++
+		case "in_progress":
+			inProgress++
+		default:
+			pending++
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("Todo list updated.\n\n")
+	if len(todos) == 0 {
+		b.WriteString("Current status is empty.")
+		return b.String()
+	}
+
+	b.WriteString(fmt.Sprintf(
+		"Current status is %d completed, %d in progress, and %d pending.\n\n",
+		completed,
+		inProgress,
+		pending,
+	))
+	b.WriteString("### Current tasks\n")
+	for _, todo := range todos {
+		content := strings.TrimSpace(todo.Content)
+		if content == "" {
+			content = "Untitled task"
+		}
+
+		switch todo.Status {
+		case "completed":
+			b.WriteString("- [x] ")
+			b.WriteString(content)
+		case "in_progress":
+			b.WriteString("- [ ] ")
+			b.WriteString(content)
+			activeForm := strings.TrimSpace(todo.ActiveForm)
+			if activeForm != "" && activeForm != content {
+				b.WriteString(" _(in progress: ")
+				b.WriteString(activeForm)
+				b.WriteString(")_")
+			} else {
+				b.WriteString(" _(in progress)_")
+			}
+		default:
+			b.WriteString("- [ ] ")
+			b.WriteString(content)
+		}
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
 func (e *Executor) executeTodoWrite(_ context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart) (thread.ToolExecuteResult, error) {
 	var input todoWriteInput
 	if err := unmarshalInput(call, &input); err != nil {
@@ -399,8 +460,7 @@ func (e *Executor) executeTodoWrite(_ context.Context, toolCtx *thread.ToolConte
 		return errResult(call, fmt.Sprintf("failed to write todos: %v", err)), nil
 	}
 
-	out, _ := json.Marshal(map[string]bool{"success": true})
-	return textResult(call, string(out)), nil
+	return textResult(call, renderTodoWriteSummary(input.Todos)), nil
 }
 
 // --- TaskOutput ---

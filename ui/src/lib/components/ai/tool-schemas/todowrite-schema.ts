@@ -29,6 +29,8 @@ export type TodoWriteToolInput = z.infer<typeof TodoWriteToolInputSchema>;
  * TodoWrite tool output schema (Zod)
  */
 export const TodoWriteToolOutputSchema = z.object({
+	/** Human-readable markdown summary of the current todo state */
+	content: z.string().optional(),
 	/** Success indicator */
 	success: z.boolean().optional(),
 	/** Error message if operation failed */
@@ -49,7 +51,11 @@ export const validateTodoWriteInput = createValidator(TodoWriteToolInputSchema);
  * Validates TodoWrite tool output using Zod
  */
 export const validateTodoWriteOutput = createValidator(
-	z.union([TodoWriteToolOutputSchema, z.object({}).transform(() => ({}))]),
+	z.union([
+		z.string().transform((str) => ({ content: str })),
+		TodoWriteToolOutputSchema,
+		z.object({}).transform(() => ({})),
+	]),
 );
 
 /**
