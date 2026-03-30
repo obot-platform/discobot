@@ -171,6 +171,10 @@ func ResumeTurn(
 						yield(nil, fmt.Errorf("save finished turn state: %w", err))
 						return
 					}
+					yield(message.ResponseFinishChunk{ //nolint:errcheck
+						FinishReason:    "stop",
+						MessageMetadata: buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt),
+					}, nil)
 					_ = store.DeleteTurnState(threadID)
 					return
 				}
@@ -196,6 +200,10 @@ func ResumeTurn(
 			yield(nil, fmt.Errorf("save finished turn state: %w", err))
 			return
 		}
+		yield(message.ResponseFinishChunk{ //nolint:errcheck
+			FinishReason:    "stop",
+			MessageMetadata: buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt),
+		}, nil)
 		_ = store.DeleteTurnState(threadID)
 	}
 }
