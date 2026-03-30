@@ -38,8 +38,9 @@ func TestProjectUIMessages_System(t *testing.T) {
 }
 
 func TestProjectUIMessages_User(t *testing.T) {
+	metadata := mustMarshal(t, map[string]string{"originalText": "/commit fix the bug"})
 	msgs := []Message{
-		{ID: "m1", Role: "user", Parts: []Part{
+		{ID: "m1", Role: "user", Metadata: metadata, Parts: []Part{
 			TextPart{Text: "hello"},
 			FilePart{Data: "data:text/plain;base64,aGk=", MediaType: "text/plain"},
 		}},
@@ -51,6 +52,9 @@ func TestProjectUIMessages_User(t *testing.T) {
 	}
 	if len(result) != 1 {
 		t.Fatalf("got %d messages", len(result))
+	}
+	if string(result[0].Metadata) != string(metadata) {
+		t.Fatalf("metadata: got %s want %s", result[0].Metadata, metadata)
 	}
 
 	var ui struct {

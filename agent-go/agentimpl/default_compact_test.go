@@ -2,6 +2,7 @@ package agentimpl
 
 import (
 	"context"
+	"encoding/json"
 	"iter"
 	"os"
 	"path/filepath"
@@ -183,6 +184,64 @@ func TestPromptCompactCommand_NoHistory(t *testing.T) {
 
 	if len(deltas) != 1 || deltas[0] != "Nothing to compact yet." {
 		t.Fatalf("unexpected /compact response deltas: %#v", deltas)
+	}
+}
+
+func TestPromptLegacyCommand_PreservesOriginalTextInUserMessageMetadata(t *testing.T) {
+	root := t.TempDir()
+	commandsDir := filepath.Join(root, ".claude", "commands")
+	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(commandsDir, "commit.md"),
+		[]byte("---\ndescription: Commit work.\n---\nExpanded command body."),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	store := thread.NewStore(t.TempDir())
+	registry := providers.NewProviderRegistry(nil)
+	registry.Add(&compactCommandMockProvider{responses: []string{"Done."}})
+	agentImpl := NewDefaultAgent(store, registry, nil, root, MCPConfig{})
+
+	var userChunk message.UserMessageChunk
+	foundUserChunk := false
+	for chunk, err := range agentImpl.Prompt(context.Background(), "thread-legacy-command", agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "/commit fix the bug", State: "done"}},
+	}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if typed, ok := chunk.(message.UserMessageChunk); ok {
+			userChunk = typed
+			foundUserChunk = true
+			break
+		}
+	}
+	if !foundUserChunk {
+		t.Fatal("expected user message chunk")
+	}
+
+	var metadata struct {
+		OriginalText string `json:"originalText"`
+	}
+	if err := json.Unmarshal(userChunk.Data.Message.Metadata, &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata.OriginalText != "/commit fix the bug" {
+		t.Fatalf("originalText = %q", metadata.OriginalText)
+	}
+	textPart, ok := userChunk.Data.Message.Parts[0].(message.TextPart)
+	if !ok {
+		t.Fatalf("expected first user part to be TextPart, got %T", userChunk.Data.Message.Parts[0])
+	}
+	if !strings.HasPrefix(textPart.Text, "Expanded command body.") {
+		t.Fatalf("expanded text = %q", textPart.Text)
+	}
+	if !strings.Contains(textPart.Text, "ARGUMENTS: fix the bug") {
+		t.Fatalf("expanded text missing arguments: %q", textPart.Text)
 	}
 }
 

@@ -32,6 +32,7 @@
 	import OptimizedToolRenderer from "$lib/components/ai/tool-renderers/OptimizedToolRenderer.svelte";
 	import type { DynamicToolPart } from "$lib/components/ai/types";
 	import ConversationComposer from "$lib/components/app/ConversationComposer.svelte";
+	import MessageResponseWithCommand from "$lib/components/app/parts/MessageResponseWithCommand.svelte";
 	import {
 		getReservedTurnMinHeight,
 		groupMessagesIntoTurns,
@@ -117,6 +118,7 @@
 	let hasInitialHistoryReplayBottomScroll = $state(false);
 	let isNearBottom = $state(true);
 	let expandedAssistantStepMessages = $state<Record<string, boolean>>({});
+	let expandedGeneratedUserMessages = $state<Record<string, boolean>>({});
 	let lastReservedSubmitMessageId = $state<string | null>(null);
 	let reservedTurnMinHeight = $state(0);
 
@@ -128,6 +130,17 @@
 
 	function isAssistantStepMessageExpanded(messageId: string): boolean {
 		return expandedAssistantStepMessages[messageId] ?? false;
+	}
+
+	function isGeneratedUserMessageExpanded(messageId: string): boolean {
+		return expandedGeneratedUserMessages[messageId] ?? false;
+	}
+
+	function setGeneratedUserMessageExpanded(messageId: string, open: boolean) {
+		expandedGeneratedUserMessages = {
+			...expandedGeneratedUserMessages,
+			[messageId]: open,
+		};
 	}
 
 	function setAssistantStepMessageExpanded(messageId: string, open: boolean) {
@@ -242,6 +255,7 @@
 
 		hasInitialBottomScroll = false;
 		hasInitialHistoryReplayBottomScroll = false;
+		expandedGeneratedUserMessages = {};
 		lastReservedSubmitMessageId = null;
 		reservedTurnMinHeight = 0;
 		updateIsNearBottom();
@@ -307,11 +321,14 @@
 	parts: UserConversationPaneRenderablePart[],
 )}
 	{@const fileParts = parts.filter((part) => part.type === "file")}
-	{#each parts as part, index (`${message.id}-${part.type}-${index}`)}
-		{#if part.type === "text"}
-			<MessageResponse text={part.text} />
-		{/if}
-	{/each}
+	{@const isGeneratedTextExpanded = isGeneratedUserMessageExpanded(message.id)}
+	<MessageResponseWithCommand
+		{message}
+		{parts}
+		{isGeneratedTextExpanded}
+		onGeneratedTextExpandedChange={(open) =>
+			setGeneratedUserMessageExpanded(message.id, open)}
+	/>
 	{#if fileParts.length > 0}
 		<Attachments variant="inline" class="max-w-full">
 			{#each fileParts as part, index (`${message.id}-file-${index}`)}

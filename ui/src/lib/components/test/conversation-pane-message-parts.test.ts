@@ -4,6 +4,8 @@ import test from "node:test";
 import type { ChatMessage } from "$lib/api-types";
 import {
 	getAssistantMessagePartGroups,
+	getUserMessageOriginalCommandDisplay,
+	getUserMessageOriginalText,
 	getUserMessageRenderableParts,
 } from "../app/conversation-pane-message-parts";
 
@@ -169,4 +171,79 @@ test("getUserMessageRenderableParts keeps text and file parts for user messages"
 		assert.equal(parts[1].filename, "preview.png");
 		assert.equal(parts[1].mediaType, "image/png");
 	}
+});
+
+test("getUserMessageOriginalText returns the metadata original text for user messages", () => {
+	const originalText = getUserMessageOriginalText({
+		id: "user-legacy-command",
+		role: "user",
+		metadata: { originalText: "/commit fix the bug" },
+		parts: [{ type: "text", text: "Expanded command body." }],
+	});
+
+	assert.equal(originalText, "/commit fix the bug");
+});
+
+test("getUserMessageOriginalCommandDisplay parses slash commands into command and args", () => {
+	assert.deepEqual(
+		getUserMessageOriginalCommandDisplay({
+			id: "user-command-1",
+			role: "user",
+			metadata: { originalText: "/foo bar baz" },
+			parts: [{ type: "text", text: "Expanded command body." }],
+		}),
+		{
+			command: "foo",
+			args: "bar baz",
+			rawText: "/foo bar baz",
+		},
+	);
+});
+
+test("getUserMessageOriginalCommandDisplay parses slash commands without args", () => {
+	assert.deepEqual(
+		getUserMessageOriginalCommandDisplay({
+			id: "user-command-2",
+			role: "user",
+			metadata: { originalText: "/foo" },
+			parts: [{ type: "text", text: "Expanded command body." }],
+		}),
+		{
+			command: "foo",
+			args: null,
+			rawText: "/foo",
+		},
+	);
+});
+
+test("getUserMessageOriginalCommandDisplay ignores non-command original text", () => {
+	assert.equal(
+		getUserMessageOriginalCommandDisplay({
+			id: "user-command-3",
+			role: "user",
+			metadata: { originalText: "plain text" },
+			parts: [{ type: "text", text: "Expanded command body." }],
+		}),
+		null,
+	);
+});
+
+test("getUserMessageOriginalText ignores assistant messages and missing metadata", () => {
+	assert.equal(
+		getUserMessageOriginalText({
+			id: "assistant-1",
+			role: "assistant",
+			metadata: { originalText: "/commit fix the bug" },
+			parts: [{ type: "text", text: "Expanded command body." }],
+		}),
+		null,
+	);
+	assert.equal(
+		getUserMessageOriginalText({
+			id: "user-2",
+			role: "user",
+			parts: [{ type: "text", text: "Expanded command body." }],
+		}),
+		null,
+	);
 });

@@ -19,6 +19,7 @@ export interface Thread {
 export type ChatMessageMetadata = {
 	model?: string;
 	reasoning?: string;
+	originalText?: string;
 } & Record<string, unknown>;
 
 export type ChatMessageDataTypes = {

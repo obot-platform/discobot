@@ -23,6 +23,7 @@ type TurnConfig struct {
 	SupportingModels      providers.SupportingModels `json:"supportingModels,omitempty"` // supporting model type -> full "providerId/modelId" ref
 	UserParts             []message.Part             `json:"-"`
 	UserMessage           message.Message            `json:"userMessage"` // serializable form of UserParts
+	OriginalUserText      string                     `json:"originalUserText,omitempty"`
 	Tools                 []providers.ToolDefinition `json:"tools,omitempty"`
 	MaxTokens             *int                       `json:"maxTokens,omitempty"`
 	Temperature           *float64                   `json:"temperature,omitempty"`
@@ -58,7 +59,12 @@ func RunTurn(
 	return func(yield func(message.MessageChunk, error) bool) {
 		// 1. Build user message and persist config.
 		startedAt := time.Now().UTC()
-		cfg.UserMessage = message.Message{Role: "user", Parts: cfg.UserParts, CreatedAt: &startedAt}
+		cfg.UserMessage = message.Message{
+			Role:      "user",
+			Parts:     cfg.UserParts,
+			Metadata:  buildUserMessageMetadata(cfg.OriginalUserText),
+			CreatedAt: &startedAt,
+		}
 
 		turnID := generateID()
 		turnState := TurnState{
@@ -1515,6 +1521,19 @@ func formatRetryMessage(event transport.RetryEvent) string {
 	default:
 		return fmt.Sprintf("provider request failed; retrying in %s (attempt %d/%d)", delayText, event.Attempt, event.MaxRetries)
 	}
+}
+
+// buildUserMessageMetadata returns a JSON-encoded metadata object for UI-only
+// user message fields that should not be sent back to providers.
+func buildUserMessageMetadata(originalText string) json.RawMessage {
+	if originalText == "" {
+		return nil
+	}
+	data, err := json.Marshal(map[string]string{"originalText": originalText})
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // buildMessageMetadata returns a JSON-encoded messageMetadata object containing

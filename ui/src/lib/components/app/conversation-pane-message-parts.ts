@@ -10,6 +10,12 @@ export type UserConversationPaneRenderablePart = Extract<
 	{ type: "text" | "file" }
 >;
 
+export type UserOriginalCommandDisplay = {
+	command: string;
+	args: string | null;
+	rawText: string;
+};
+
 export type AssistantMessagePartGroups = {
 	collapsedParts: AssistantConversationPaneRenderablePart[];
 	visibleParts: AssistantConversationPaneRenderablePart[];
@@ -58,6 +64,50 @@ export function getUserMessageRenderableParts(
 	message: ChatMessage,
 ): UserConversationPaneRenderablePart[] {
 	return message.parts.filter(isUserRenderablePart);
+}
+
+export function getUserMessageOriginalText(
+	message: ChatMessage,
+): string | null {
+	const originalText =
+		message.role === "user" ? message.metadata?.originalText : undefined;
+	return originalText ? originalText : null;
+}
+
+export function getUserMessageOriginalCommandDisplay(
+	message: ChatMessage,
+): UserOriginalCommandDisplay | null {
+	const originalText = getUserMessageOriginalText(message);
+	if (!originalText) {
+		return null;
+	}
+
+	const trimmed = originalText.trim();
+	if (!trimmed.startsWith("/")) {
+		return null;
+	}
+
+	const withoutSlash = trimmed.slice(1).trimStart();
+	if (withoutSlash.length === 0) {
+		return null;
+	}
+
+	const firstWhitespaceIndex = withoutSlash.search(/\s/);
+	if (firstWhitespaceIndex === -1) {
+		return {
+			command: withoutSlash,
+			args: null,
+			rawText: originalText,
+		};
+	}
+
+	const command = withoutSlash.slice(0, firstWhitespaceIndex);
+	const args = withoutSlash.slice(firstWhitespaceIndex).trim();
+	return {
+		command,
+		args: args.length > 0 ? args : null,
+		rawText: originalText,
+	};
 }
 
 export function getAssistantMessagePartGroups(

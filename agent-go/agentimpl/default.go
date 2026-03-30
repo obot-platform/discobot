@@ -166,6 +166,8 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		ModelID:               env.modelRef.ModelID,
 	}
 
+	expandedUserParts, originalText := expandLegacyCommand(a.cwd, req.UserParts)
+
 	cfg := thread.TurnConfig{
 		ProviderID:            env.modelRef.ProviderID,
 		Model:                 env.modelRef.ModelID,
@@ -173,7 +175,8 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		Reasoning:             providers.Reasoning(req.Reasoning),
 		PlanMode:              env.planMode,
 		PromptRequestPlanMode: env.promptRequestPlanMode,
-		UserParts:             message.UIPartsToParts(expandLegacyCommand(a.cwd, req.UserParts)),
+		UserParts:             message.UIPartsToParts(expandedUserParts),
+		OriginalUserText:      originalText,
 		Tools:                 env.tools,
 		MaxSteps:              env.maxSteps,
 	}
@@ -1243,20 +1246,22 @@ func (a *DefaultAgent) ListCommands() ([]agent.Command, error) {
 // If found, the text part is replaced with the expanded command body so that
 // the LLM receives the instructions directly — matching how the real Claude
 // CLI handles slash commands programmatically rather than via the Skill tool.
+// The returned original text preserves the raw slash command for message-level
+// UI metadata.
 //
 // Skills (.claude/skills/) are intentionally excluded: they are invoked by the
 // LLM through the Skill tool, not expanded here.
-func expandLegacyCommand(cwd string, parts []message.UIPart) []message.UIPart {
+func expandLegacyCommand(cwd string, parts []message.UIPart) ([]message.UIPart, string) {
 	if len(parts) == 0 {
-		return parts
+		return parts, ""
 	}
 	first, ok := parts[0].(message.UITextPart)
 	if !ok {
-		return parts
+		return parts, ""
 	}
 	text := strings.TrimLeft(first.Text, " \t")
 	if !strings.HasPrefix(text, "/") {
-		return parts
+		return parts, ""
 	}
 
 	// Parse "/command-name [args...]"
@@ -1269,13 +1274,13 @@ func expandLegacyCommand(cwd string, parts []message.UIPart) []message.UIPart {
 		cmdName = rest
 	}
 	if cmdName == "" {
-		return parts
+		return parts, ""
 	}
 
 	projectRoot := sessionconfig.FindProjectRoot(cwd)
 	cmd, found, err := sessionconfig.LookupCommand(projectRoot, cmdName)
 	if err != nil || !found {
-		return parts // not a known command — pass through unchanged
+		return parts, "" // not a known command — pass through unchanged
 	}
 
 	// Encode the original slash command into ProviderMetadata so the UI can
@@ -1287,7 +1292,7 @@ func expandLegacyCommand(cwd string, parts []message.UIPart) []message.UIPart {
 	expanded := make([]message.UIPart, len(parts))
 	copy(expanded, parts)
 	expanded[0] = message.UITextPart{Text: cmd.Expand(args), State: first.State, ProviderMetadata: meta}
-	return expanded
+	return expanded, text
 }
 
 // ListThreads returns all thread IDs.
