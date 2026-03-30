@@ -125,7 +125,6 @@ go build -o discobot-server ./cmd/server
 | GET | `/api/projects/{id}/sessions/{sid}` | Get session |
 | PUT | `/api/projects/{id}/sessions/{sid}` | Update session |
 | DELETE | `/api/projects/{id}/sessions/{sid}` | Delete session |
-| GET | `/api/projects/{id}/sessions/{sid}/messages` | Get messages |
 
 ### Chat
 

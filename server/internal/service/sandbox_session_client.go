@@ -127,20 +127,6 @@ func (c *SessionClient) GetStream(ctx context.Context, threadID string, opts *Re
 	return c.trackStream(ch), nil
 }
 
-// GetMessages retrieves message history from the sandbox.
-func (c *SessionClient) GetMessages(ctx context.Context, opts *RequestOptions) ([]sandboxapi.UIMessage, error) {
-	return withReconciliation(ctx, c, func() ([]sandboxapi.UIMessage, error) {
-		return c.inner.GetMessages(ctx, c.sessionID, c.sessionID, opts)
-	})
-}
-
-// GetThreadMessages retrieves message history for a specific thread from the sandbox.
-func (c *SessionClient) GetThreadMessages(ctx context.Context, threadID string, opts *RequestOptions) ([]sandboxapi.UIMessage, error) {
-	return withReconciliation(ctx, c, func() ([]sandboxapi.UIMessage, error) {
-		return c.inner.GetMessages(ctx, c.sessionID, threadID, opts)
-	})
-}
-
 // ListThreads retrieves all threads from the sandbox.
 func (c *SessionClient) ListThreads(ctx context.Context) (*sandboxapi.ListThreadsResponse, error) {
 	return withReconciliation(ctx, c, func() (*sandboxapi.ListThreadsResponse, error) {

@@ -380,14 +380,6 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	})
 }
 
-// --- Messages ---
-
-func (s *Store) ListMessagesBySession(ctx context.Context, sessionID string) ([]*model.Message, error) {
-	var messages []*model.Message
-	err := s.readDB.WithContext(ctx).Where("session_id = ?", sessionID).Order("turn ASC").Find(&messages).Error
-	return messages, err
-}
-
 func (s *Store) CreateMessage(ctx context.Context, message *model.Message) error {
 	return s.writeDB.WithContext(ctx).Create(message).Error
 }

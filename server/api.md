@@ -159,7 +159,6 @@ The database schema does NOT use cascading deletes (`ON DELETE CASCADE`). All re
 
 ### Stub/TODO Endpoints 🚧
 - `GET /api/projects/{projectId}/sessions/{sessionId}/files` - Returns `[]`
-- `GET /api/projects/{projectId}/sessions/{sessionId}/messages` - Returns `[]`
 - `GET /api/projects/{projectId}/files/{fileId}` - Returns 501
 - `GET /api/projects/{projectId}/suggestions` - Returns `[]`
 - `GET /api/projects/{projectId}/credentials` - Returns `[]`
@@ -265,7 +264,6 @@ All API routes require authentication via session cookie (`discobot_session`) un
 | PATCH | `/api/projects/{projectId}/sessions/{sessionId}` | Update session | ✅ |
 | DELETE | `/api/projects/{projectId}/sessions/{sessionId}` | Delete session | ✅ |
 | GET | `/api/projects/{projectId}/sessions/{sessionId}/files` | Get session files | 🚧 |
-| GET | `/api/projects/{projectId}/sessions/{sessionId}/messages` | List messages | 🚧 |
 
 #### Session Response
 

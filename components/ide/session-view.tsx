@@ -9,13 +9,11 @@ import { ServiceView } from "@/components/ide/service-view";
 import { SessionViewHeader } from "@/components/ide/session-view-header";
 import { TerminalView } from "@/components/ide/terminal-view";
 import { useSessionViewContext } from "@/lib/contexts/session-view-context";
-import { useMessagesOnce } from "@/lib/hooks/use-messages-once";
 import {
 	getSessionStorageKey,
 	STORAGE_KEYS,
 	usePersistedState,
 } from "@/lib/hooks/use-persisted-state";
-import { useRetryCountdown } from "@/lib/hooks/use-retry-countdown";
 import { cn } from "@/lib/utils";
 
 const RIGHT_SIDEBAR_DEFAULT_WIDTH = 224;
@@ -62,10 +60,6 @@ export function SessionView({
 		registerChatResumeStream,
 		handleFileSelect,
 	} = useSessionViewContext();
-
-	// Track if this session started as new - if so, we skip the loading screen
-	// to avoid unmounting ChatPanel during the new→existing transition
-	const startedAsNew = React.useRef(isNew);
 
 	// Manage right sidebar width state
 	const [rightSidebarWidth, setRightSidebarWidth] = usePersistedState(
@@ -116,19 +110,6 @@ export function SessionView({
 		[chatWidth, setChatWidth],
 	);
 
-	// For existing sessions, fetch messages once (no caching) to pass to ChatPanel
-	const {
-		messages: existingMessages,
-		isLoading: messagesLoading,
-		error: messagesError,
-		retry: retryMessages,
-	} = useMessagesOnce(!isNew ? selectedSessionId : null);
-
-	const messagesRetryCountdown = useRetryCountdown(
-		!isNew && !!messagesError,
-		retryMessages,
-	);
-
 	// Handle chat completion to refresh file data
 	const handleChatComplete = React.useCallback(() => {
 		refreshDiffData();
@@ -151,42 +132,16 @@ export function SessionView({
 							className="relative flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out"
 							style={{ width: isChatFullWidth ? "100%" : `${chatWidth}%` }}
 						>
-							{!isNew && messagesError ? (
-								<div className="flex flex-col h-full items-center justify-center gap-3">
-									<div className="text-destructive text-sm">
-										Failed to load messages: {messagesError.message}
-									</div>
-									<button
-										type="button"
-										onClick={retryMessages}
-										className="text-sm px-3 py-1.5 rounded border border-border hover:bg-tree-hover transition-colors"
-									>
-										Retry
-									</button>
-									{messagesRetryCountdown !== null && (
-										<div className="text-xs text-muted-foreground">
-											Retrying in {messagesRetryCountdown}s…
-										</div>
-									)}
-								</div>
-							) : !startedAsNew.current && !isNew && messagesLoading ? (
-								<div className="flex flex-col h-full items-center justify-center">
-									<div className="text-sm text-muted-foreground">
-										Loading messages...
-									</div>
-								</div>
-							) : (
-								<ChatPanel
-									key={selectedSessionId}
-									sessionId={selectedSessionId}
-									initialMessages={!isNew ? existingMessages : undefined}
-									initialWorkspaceId={initialWorkspaceId}
-									onSessionCreated={onSessionCreated}
-									onChatComplete={handleChatComplete}
-									onRegisterResumeStream={registerChatResumeStream}
-									className="h-full"
-								/>
-							)}
+							<ChatPanel
+								key={selectedSessionId}
+								sessionId={selectedSessionId}
+								initialMessages={!isNew ? [] : undefined}
+								initialWorkspaceId={initialWorkspaceId}
+								onSessionCreated={onSessionCreated}
+								onChatComplete={handleChatComplete}
+								onRegisterResumeStream={registerChatResumeStream}
+								className="h-full"
+							/>
 
 							{/* Resize handle between chat and content - only show when not full-width */}
 							{!isChatFullWidth && (

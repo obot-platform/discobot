@@ -294,16 +294,16 @@ When a user sends a message without an active session:
 
 ## Message History
 
-The `useMessages` hook fetches message history for existing sessions:
+The active Svelte UI does not fetch thread messages through a separate REST
+endpoint. Instead it relies on the long-lived thread SSE stream:
 
-```typescript
-const { messages, isLoading, error } = useMessages(sessionId)
-```
+- the client opens `GET /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/stream?replay=true`
+- the server replays persisted history with `history-start` / `history-message` / `history-end`
+- live deltas continue on the same connection after replay completes
 
-Implementation:
-- Calls `GET /api/projects/{projectId}/sessions/{sessionId}/messages`
-- Returns cached messages from SWR
-- Container returns stored messages
+This keeps the initial history load and in-progress turn state on the same
+transport, which avoids replacing locally streamed partial messages with a stale
+snapshot.
 
 ## Stream Resumption
 

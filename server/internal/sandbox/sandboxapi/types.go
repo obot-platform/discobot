@@ -73,11 +73,6 @@ type ModelsResponse struct {
 	Models []ModelInfo `json:"models"`
 }
 
-// GetMessagesResponse is the GET /chat response.
-type GetMessagesResponse struct {
-	Messages []UIMessage `json:"messages"`
-}
-
 // ChatStatusResponse is the GET /chat/status response.
 type ChatStatusResponse struct {
 	IsRunning    bool    `json:"isRunning"`

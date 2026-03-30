@@ -29,7 +29,6 @@ import type {
 	AnswerQuestionResponse,
 	AuthProvider,
 	CancelChatResponse,
-	ChatMessage,
 	CreateThreadRequest,
 	CodexAuthorizeResponse,
 	CodexExchangeRequest,
@@ -406,15 +405,6 @@ class ApiClient {
 		if (options?.format) params.set("format", options.format);
 		const query = params.toString();
 		return this.fetch(`/sessions/${sessionId}/diff${query ? `?${query}` : ""}`);
-	}
-
-	async getThreadMessages(
-		sessionId: string,
-		threadId: string,
-	): Promise<{ messages: ChatMessage[] }> {
-		return this.fetch<{ messages: ChatMessage[] }>(
-			`/sessions/${sessionId}/threads/${threadId}/messages`,
-		);
 	}
 
 	async startChat(data: StartChatRequest): Promise<StartChatResponse> {

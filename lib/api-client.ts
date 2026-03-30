@@ -18,7 +18,6 @@ import type {
 	AnswerQuestionResponse,
 	AuthProvider,
 	CancelChatResponse,
-	ChatMessage,
 	CodexAuthorizeResponse,
 	CodexExchangeRequest,
 	CodexExchangeResponse,
@@ -378,13 +377,6 @@ class ApiClient {
 		if (options?.format) params.set("format", options.format);
 		const query = params.toString();
 		return this.fetch(`/sessions/${sessionId}/diff${query ? `?${query}` : ""}`);
-	}
-
-	// Messages
-	async getMessages(sessionId: string): Promise<{ messages: ChatMessage[] }> {
-		return this.fetch<{ messages: ChatMessage[] }>(
-			`/sessions/${sessionId}/messages`,
-		);
 	}
 
 	/**

@@ -175,7 +175,6 @@ export function MainContentProvider({ children }: MainContentProviderProps) {
 			// This is crucial because hooks may have gotten 404 errors before
 			// the session was created and stopped retrying
 			invalidateSession(sessionId);
-			// Note: messages are not cached (useMessagesOnce loads once per component mount)
 			invalidateSessionFiles(sessionId);
 
 			// Only update view if we're currently in new-session view and the session ID matches

@@ -142,11 +142,6 @@ type NoActiveCompletionResponse struct {
 	Error string `json:"error"` // "no_active_completion"
 }
 
-// GetMessagesResponse is the GET /threads/{id}/messages response.
-type GetMessagesResponse struct {
-	Messages []message.UIMessage `json:"messages"`
-}
-
 // ModelInfo represents a model from the AI provider's API.
 type ModelInfo struct {
 	ID               string   `json:"id"`

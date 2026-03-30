@@ -1096,16 +1096,6 @@ func main() {
 					})
 
 					sidReg.Register(r, routes.Route{
-						Method: "GET", Pattern: "/messages",
-						Handler: h.ListMessages,
-						Meta: routes.Meta{
-							Group:       "Sessions",
-							Description: "List messages",
-							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}},
-						},
-					})
-
-					sidReg.Register(r, routes.Route{
 						Method: "GET", Pattern: "/threads",
 						Handler: h.ListThreads,
 						Meta: routes.Meta{
@@ -1132,16 +1122,6 @@ func main() {
 						Meta: routes.Meta{
 							Group:       "Threads",
 							Description: "Get session thread",
-							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
-						},
-					})
-
-					sidReg.Register(r, routes.Route{
-						Method: "GET", Pattern: "/threads/{threadId}/messages",
-						Handler: h.ListThreadMessages,
-						Meta: routes.Meta{
-							Group:       "Threads",
-							Description: "List messages for a specific session thread",
 							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}},
 						},
 					})

@@ -228,42 +228,6 @@ func (c *ChatService) GetStream(ctx context.Context, projectID, sessionID, threa
 	return client.GetStream(ctx, threadID, &RequestOptions{LastEventID: lastEventID})
 }
 
-// GetMessages returns all messages for a session by querying the sandbox.
-// The sandbox is automatically reconciled if not running.
-// Returns an error if the sandbox cannot be reached after reconciliation.
-func (c *ChatService) GetMessages(ctx context.Context, projectID, sessionID string) ([]sandboxapi.UIMessage, error) {
-	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
-		return nil, err
-	}
-	if c.sandboxService == nil {
-		return nil, fmt.Errorf("sandbox provider not available")
-	}
-	client, err := c.sandboxService.GetClient(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	return client.GetMessages(ctx, nil)
-}
-
-// GetThreadMessages returns all messages for a specific thread by querying the sandbox.
-// The sandbox is automatically reconciled if not running.
-// Returns an error if the sandbox cannot be reached after reconciliation.
-func (c *ChatService) GetThreadMessages(ctx context.Context, projectID, sessionID, threadID string) ([]sandboxapi.UIMessage, error) {
-	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
-		return nil, err
-	}
-	if c.sandboxService == nil {
-		return nil, fmt.Errorf("sandbox provider not available")
-	}
-	client, err := c.sandboxService.GetClient(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	return client.GetThreadMessages(ctx, threadID, nil)
-}
-
 // ListThreads retrieves all threads for a session from the sandbox agent.
 func (c *ChatService) ListThreads(ctx context.Context, projectID, sessionID string) (*sandboxapi.ListThreadsResponse, error) {
 	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {

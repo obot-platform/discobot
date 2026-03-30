@@ -540,53 +540,6 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 	return lineCh, nil
 }
 
-// GetMessages retrieves message history for a thread from the sandbox.
-// The sandbox is expected to respond with an array of UIMessages.
-// Retries with exponential backoff on connection errors and 5xx responses.
-func (c *SandboxChatClient) GetMessages(ctx context.Context, sessionID, threadID string, opts *RequestOptions) ([]sandboxapi.UIMessage, error) {
-	// Use retry logic to handle transient connection errors during container startup
-	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
-		client, err := c.getHTTPClient(ctx, sessionID)
-		if err != nil {
-			// Don't retry on sandbox not running - let caller handle reconciliation
-			return nil, 0, err
-		}
-
-		// URL host is ignored - the client's transport handles routing to the sandbox
-		req, err := http.NewRequestWithContext(ctx, "GET", c.threadURL(threadID, "/messages"), nil)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		if err := c.applyRequestAuth(ctx, req, sessionID, opts); err != nil {
-			return nil, 0, err
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		return resp, resp.StatusCode, nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var response sandboxapi.GetMessagesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return response.Messages, nil
-}
-
 // ListThreads retrieves all threads from the sandbox agent.
 func (c *SandboxChatClient) ListThreads(ctx context.Context, sessionID string) (*sandboxapi.ListThreadsResponse, error) {
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {

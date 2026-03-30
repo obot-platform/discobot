@@ -765,7 +765,6 @@ func (w *pipeResponseWriter) ensureHeaderReady() {
 // POST /threads/{id}/chat returns 202 Accepted.
 // GET /threads/{id}/chat/status returns {"isRunning":false}.
 // GET /threads/{id}/chat/stream returns 200 with an explicit SSE done event.
-// GET /threads/{id}/messages returns empty message list.
 // Also supports thread CRUD, file, and diff endpoints for testing.
 func defaultMockHandler() http.Handler {
 	var (
@@ -791,17 +790,6 @@ func defaultMockHandler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, "event: done\n")
 			_, _ = fmt.Fprintf(w, "data: {}\n\n")
-			return
-
-		case strings.HasSuffix(r.URL.Path, "/messages") && r.Method == "GET":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"messages":[]}`))
-			return
-
-		case strings.HasSuffix(r.URL.Path, "/chat") && r.Method == "GET":
-			// Legacy: return empty messages
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"messages":[]}`))
 			return
 
 		case r.URL.Path == "/threads" && r.Method == "GET":

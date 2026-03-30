@@ -31,25 +31,6 @@ func completionIDFromInProgressError(err error) string {
 	return ""
 }
 
-// ListMessages handles GET /threads/{id}/messages — returns all messages for the session.
-func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
-	threadID := chi.URLParam(r, "id")
-	leafID := r.URL.Query().Get("leafId")
-
-	msgs, err := h.completions.Messages(threadID, leafID)
-	if err != nil {
-		h.Error(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if msgs == nil {
-		msgs = []message.UIMessage{}
-	}
-
-	h.JSON(w, http.StatusOK, api.GetMessagesResponse{
-		Messages: msgs,
-	})
-}
-
 // PostChat handles POST /threads/{id}/chat — starts a completion and streams the response via SSE.
 func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	threadID := chi.URLParam(r, "id")

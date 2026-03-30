@@ -210,21 +210,6 @@ func (h *Handler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 
-// ListMessages returns messages for a session by querying the container.
-func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	projectID := middleware.GetProjectID(ctx)
-	sessionID := chi.URLParam(r, "sessionId")
-
-	messages, err := h.chatService.GetMessages(ctx, projectID, sessionID)
-	if err != nil {
-		h.Error(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	h.JSON(w, http.StatusOK, map[string]any{"messages": messages})
-}
-
 // ListSessions returns all sessions for a project.
 func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	projectID := middleware.GetProjectID(r.Context())

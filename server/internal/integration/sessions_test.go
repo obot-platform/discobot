@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -544,46 +543,6 @@ func TestListSessionFiles(t *testing.T) {
 	}
 	if result.Path != "." {
 		t.Errorf("Expected path '.', got %s", result.Path)
-	}
-}
-
-func TestListMessages(t *testing.T) {
-	t.Parallel()
-	ts := NewTestServer(t)
-	user := ts.CreateTestUser("test@example.com")
-	project := ts.CreateTestProject(user, "Test Project")
-	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-
-	// Set up mock sandbox HTTP server that responds to /chat
-	mockSandboxServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/chat") && r.Method == "GET" && r.Header.Get("Accept") != "text/event-stream" {
-			// Return empty messages array
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"messages":[]}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer mockSandboxServer.Close()
-
-	// Create session with sandbox using mock server
-	session := ts.CreateTestSessionWithMockSandbox(workspace, "Test Session", mockSandboxServer.URL)
-	client := ts.AuthenticatedClient(user)
-
-	// Get messages from sandbox - returns empty since no messages have been sent
-	resp := client.Get("/api/projects/" + project.ID + "/sessions/" + session.ID + "/messages")
-	defer resp.Body.Close()
-
-	AssertStatus(t, resp, http.StatusOK)
-
-	var result struct {
-		Messages []interface{} `json:"messages"`
-	}
-	ParseJSON(t, resp, &result)
-
-	if len(result.Messages) != 0 {
-		t.Errorf("Expected 0 messages, got %d", len(result.Messages))
 	}
 }
 

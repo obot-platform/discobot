@@ -113,6 +113,11 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	let activeSource: EventSource | null = null;
 	let unbindStream: (() => void) | null = null;
 	let activeStreamKey: string | null = null;
+	let pendingHistoryReplay: {
+		promise: Promise<void>;
+		resolve: () => void;
+		reject: (error?: unknown) => void;
+	} | null = null;
 
 	const status = $derived.by(() => {
 		if (
@@ -156,11 +161,17 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			return args.afterTurn?.();
 		},
 		onHistoryReplayEnd: () => {
+			loadStatus = "ready";
+			pendingHistoryReplay?.resolve();
+			pendingHistoryReplay = null;
 			historyReplayVersion += 1;
 		},
 		onChunkError: (errorText) => {
 			streamStatus = null;
+			loadStatus = "error";
 			streamError = errorText;
+			pendingHistoryReplay?.reject(new Error(errorText));
+			pendingHistoryReplay = null;
 		},
 		onThreadUpdate: (thread) => {
 			args.applyThreadUpdate?.(thread);
@@ -173,6 +184,25 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		activeSource?.close();
 		activeSource = null;
 		activeStreamKey = null;
+	}
+
+	function beginHistoryReplayWait() {
+		if (pendingHistoryReplay) {
+			return pendingHistoryReplay.promise;
+		}
+		let resolve!: () => void;
+		let reject!: (error?: unknown) => void;
+		const promise = new Promise<void>((nextResolve, nextReject) => {
+			resolve = nextResolve;
+			reject = nextReject;
+		});
+		pendingHistoryReplay = { promise, resolve, reject };
+		return promise;
+	}
+
+	function settleHistoryReplayWait() {
+		pendingHistoryReplay?.resolve();
+		pendingHistoryReplay = null;
 	}
 
 	function streamKey(sessionId: string) {
@@ -194,6 +224,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 
 	function ensureStream() {
 		if (typeof window === "undefined") {
+			loadStatus = "ready";
+			settleHistoryReplayWait();
 			return;
 		}
 		if (activeStreamKey === streamKey(args.sessionId)) {
@@ -224,10 +256,13 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		};
 		unbindStream = bindChatStreamEventSource(source, streamState, {
 			onError: (error) => {
+				loadStatus = "error";
 				streamError =
 					error instanceof Error
 						? error.message
 						: "Failed to process chat stream";
+				pendingHistoryReplay?.reject(error);
+				pendingHistoryReplay = null;
 			},
 		});
 		source.onerror = () => {
@@ -236,7 +271,10 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			}
 
 			if (source.readyState === EventSource.CLOSED) {
+				loadStatus = "error";
 				streamError = "Lost chat stream connection";
+				pendingHistoryReplay?.reject(new Error(streamError));
+				pendingHistoryReplay = null;
 				disconnectStream();
 				if (args.hasSession() && args.getSessionStatus() === "ready") {
 					ensureStream();
@@ -245,38 +283,27 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		};
 	}
 
-	async function refreshMessages() {
-		const { messages: nextMessages } = await api.getThreadMessages(
-			args.sessionId,
-			args.threadId,
-		);
-		messages = nextMessages;
-		pendingQuestionId = getPendingQuestionApprovalId(nextMessages);
-	}
-
 	async function load() {
 		if (!args.hasSession()) {
 			loadStatus = "idle";
 			streamError = null;
 			streamStatus = null;
 			pendingQuestionId = null;
+			settleHistoryReplayWait();
 			disconnectStream();
 			return;
 		}
-		if (loadStatus !== "ready") {
-			loadStatus = "loading";
-			streamError = null;
-			try {
-				await refreshMessages();
-				loadStatus = "ready";
-			} catch (error) {
-				loadStatus = "error";
-				streamError =
-					error instanceof Error ? error.message : "Failed to load messages";
-				throw error;
-			}
+		if (
+			loadStatus === "ready" &&
+			activeStreamKey === streamKey(args.sessionId)
+		) {
+			return;
 		}
+		loadStatus = "loading";
+		streamError = null;
+		const replay = beginHistoryReplayWait();
 		syncStream();
+		await replay;
 	}
 
 	async function refresh() {
@@ -285,21 +312,16 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamError = null;
 			streamStatus = null;
 			pendingQuestionId = null;
+			settleHistoryReplayWait();
 			disconnectStream();
 			return;
 		}
 		loadStatus = "loading";
 		streamError = null;
-		try {
-			await refreshMessages();
-			loadStatus = "ready";
-			syncStream();
-		} catch (error) {
-			loadStatus = "error";
-			streamError =
-				error instanceof Error ? error.message : "Failed to load messages";
-			throw error;
-		}
+		disconnectStream();
+		const replay = beginHistoryReplayWait();
+		ensureStream();
+		await replay;
 	}
 
 	return {
@@ -421,8 +443,6 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				return;
 			}
 			await api.cancelThreadChat(args.sessionId, args.threadId);
-			streamStatus = null;
-			await refresh();
 		},
 		refresh,
 		addToolApprovalResponse: ({

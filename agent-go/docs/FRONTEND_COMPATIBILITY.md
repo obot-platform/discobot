@@ -8,7 +8,7 @@ The agent-go API uses different route naming than the original TypeScript agent-
 
 | Original (agent-api) | New (agent-go) | Notes |
 |---|---|---|
-| `GET /session/{id}/{agent}/chat` | `GET /threads/{id}/messages` | Renamed; JSON-only (no SSE via Accept header) |
+| `GET /session/{id}/{agent}/chat` | `GET /threads/{id}/chat/stream` | History replay and live deltas now share the SSE endpoint |
 | `GET /session/{id}/{agent}/chat` (SSE) | `GET /threads/{id}/chat/stream` | Separate SSE endpoint |
 | `POST /session/{id}/{agent}/chat` | `POST /threads/{id}/chat` | Removed `{agent}` path param |
 | `POST /session/{id}/{agent}/cancel` | `POST /threads/{id}/cancel` | Removed `{agent}` path param |
@@ -21,7 +21,7 @@ The agent-go API uses different route naming than the original TypeScript agent-
 
 1. **No `{agent}` path parameter** — routes are `/threads/{id}/...` not `/session/{id}/{agent}/...`
 2. **`sessions` → `threads`** — a session can have multiple threads
-3. **JSON and SSE are separate endpoints** — `GET /messages` for JSON history, `GET /chat/stream` for SSE
+3. **History replay happens on the SSE endpoint** — `GET /chat/stream` replays persisted messages and then continues with live deltas
 4. **Chat SSE is long-lived** — `GET /chat/stream` no longer closes after a single completion; it stays connected and emits `ping` events while idle, without a terminal `done` event
 5. **Sessions stay `ready` while chat streams** — completion activity is no longer reflected as a session-level `running` state
 
