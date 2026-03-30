@@ -51,11 +51,62 @@ export type ChatStreamChunk = UIMessageChunk<
 	ChatMessageDataTypes
 >;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function normalizeLegacyToolCallPart(part: unknown): {
+	part: unknown;
+	changed: boolean;
+} {
+	if (!isRecord(part) || part.type !== "tool-call") {
+		return { part, changed: false };
+	}
+	if (
+		typeof part.toolCallId !== "string" ||
+		typeof part.toolName !== "string"
+	) {
+		return { part, changed: false };
+	}
+
+	return {
+		part: {
+			...part,
+			type: "dynamic-tool",
+			state: "input-available",
+			input: Object.hasOwn(part, "input") ? part.input : undefined,
+		},
+		changed: true,
+	};
+}
+
+function normalizeLegacyChatStreamMessageValue(message: unknown): unknown {
+	if (!isRecord(message) || !Array.isArray(message.parts)) {
+		return message;
+	}
+
+	let changed = false;
+	const parts = message.parts.map((part) => {
+		const normalized = normalizeLegacyToolCallPart(part);
+		changed ||= normalized.changed;
+		return normalized.part;
+	});
+
+	if (!changed) {
+		return message;
+	}
+
+	return {
+		...message,
+		parts,
+	};
+}
+
 export async function parseChatStreamMessageValue(
 	message: unknown,
 ): Promise<ChatMessage> {
 	const validation = await safeValidateUIMessages<ChatMessage>({
-		messages: [message],
+		messages: [normalizeLegacyChatStreamMessageValue(message)],
 	});
 	if (!validation.success) {
 		throw validation.error;
