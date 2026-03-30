@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobot/server/internal/config"
+	"github.com/obot-platform/discobot/server/internal/jobs"
 	"github.com/obot-platform/discobot/server/internal/model"
 	"github.com/obot-platform/discobot/server/internal/sandbox"
 	mocksandbox "github.com/obot-platform/discobot/server/internal/sandbox/mock"
 	"github.com/obot-platform/discobot/server/internal/sandbox/sandboxapi"
+	"github.com/obot-platform/discobot/server/internal/store"
 )
 
 func TestValidateSessionID(t *testing.T) {
@@ -378,4 +380,146 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 	if result.Files == nil {
 		t.Error("Files should be initialized to empty array, got nil")
 	}
+}
+
+func TestSessionServicePerformDeletion_EnqueuesDeferredSandboxCleanup(t *testing.T) {
+	ctx := context.Background()
+	testStore := setupTestStore(t)
+	provider := &deferredCleanupProvider{Provider: mocksandbox.NewProvider()}
+
+	workspace := &model.Workspace{
+		ID:         "workspace-delete-1",
+		ProjectID:  "project-delete-1",
+		Path:       "/workspace-delete-1",
+		SourceType: "local",
+		Status:     model.WorkspaceStatusReady,
+	}
+	if err := testStore.CreateWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	session := &model.Session{
+		ID:          "session-delete-1",
+		ProjectID:   workspace.ProjectID,
+		WorkspaceID: workspace.ID,
+		Status:      model.SessionStatusReady,
+	}
+	if err := testStore.CreateSession(ctx, session); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	var stoppedSessionID string
+	var stopTimeout time.Duration
+	provider.StopFunc = func(_ context.Context, sessionID string, timeout time.Duration) error {
+		stoppedSessionID = sessionID
+		stopTimeout = timeout
+		return nil
+	}
+
+	var queuedPayload jobs.SessionSandboxDeletePayload
+	enqueuer := &mockJobEnqueuer{enqueueFunc: func(_ context.Context, payload jobs.JobPayload) error {
+		var ok bool
+		queuedPayload, ok = payload.(jobs.SessionSandboxDeletePayload)
+		if !ok {
+			t.Fatalf("unexpected payload type %T", payload)
+		}
+		return nil
+	}}
+
+	sessionSvc := NewSessionService(testStore, nil, provider, nil, nil, enqueuer)
+
+	before := time.Now()
+	if err := sessionSvc.PerformDeletion(ctx, workspace.ProjectID, session.ID); err != nil {
+		t.Fatalf("PerformDeletion failed: %v", err)
+	}
+	after := time.Now()
+
+	if stoppedSessionID != session.ID {
+		t.Fatalf("stopped session ID = %q, want %q", stoppedSessionID, session.ID)
+	}
+	if stopTimeout != 10*time.Second {
+		t.Fatalf("stop timeout = %s, want %s", stopTimeout, 10*time.Second)
+	}
+	if queuedPayload.SessionID != session.ID {
+		t.Fatalf("queued session ID = %q, want %q", queuedPayload.SessionID, session.ID)
+	}
+	if queuedPayload.DeleteAt.Before(before.Add(sessionDeletionRetentionDelay)) || queuedPayload.DeleteAt.After(after.Add(sessionDeletionRetentionDelay)) {
+		t.Fatalf("queued delete time %s outside expected retention window", queuedPayload.DeleteAt)
+	}
+	if _, err := testStore.GetSessionByID(ctx, session.ID); err != store.ErrNotFound {
+		t.Fatalf("expected session to be deleted, got err=%v", err)
+	}
+}
+
+func TestSessionServicePerformDeferredSandboxDeletion_SkipsWhenSessionExists(t *testing.T) {
+	ctx := context.Background()
+	testStore := setupTestStore(t)
+	provider := &deferredCleanupProvider{Provider: mocksandbox.NewProvider()}
+	sessionSvc := NewSessionService(testStore, nil, provider, nil, nil, nil)
+
+	workspace := &model.Workspace{
+		ID:         "workspace-delete-2",
+		ProjectID:  "project-delete-2",
+		Path:       "/workspace-delete-2",
+		SourceType: "local",
+		Status:     model.WorkspaceStatusReady,
+	}
+	if err := testStore.CreateWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	session := &model.Session{
+		ID:          "session-delete-2",
+		ProjectID:   workspace.ProjectID,
+		WorkspaceID: workspace.ID,
+		Status:      model.SessionStatusReady,
+	}
+	if err := testStore.CreateSession(ctx, session); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	if err := sessionSvc.PerformDeferredSandboxDeletion(ctx, session.ID); err != nil {
+		t.Fatalf("PerformDeferredSandboxDeletion failed: %v", err)
+	}
+	if len(provider.removeCalls) != 0 {
+		t.Fatalf("expected no sandbox removals, got %v", provider.removeCalls)
+	}
+}
+
+func TestSessionServicePerformDeferredSandboxDeletion_RemovesWhenSessionStaysDeleted(t *testing.T) {
+	ctx := context.Background()
+	testStore := setupTestStore(t)
+	provider := &deferredCleanupProvider{Provider: mocksandbox.NewProvider()}
+	sessionSvc := NewSessionService(testStore, nil, provider, nil, nil, nil)
+
+	if err := sessionSvc.PerformDeferredSandboxDeletion(ctx, "session-delete-3"); err != nil {
+		t.Fatalf("PerformDeferredSandboxDeletion failed: %v", err)
+	}
+	if len(provider.removeCalls) != 1 {
+		t.Fatalf("expected one sandbox removal, got %v", provider.removeCalls)
+	}
+	if provider.removeCalls[0].sessionID != "session-delete-3" {
+		t.Fatalf("removed session ID = %q", provider.removeCalls[0].sessionID)
+	}
+	if !provider.removeCalls[0].cfg.RemoveVolumes {
+		t.Fatal("expected deferred sandbox removal to delete volumes")
+	}
+}
+
+type deferredCleanupProvider struct {
+	*mocksandbox.Provider
+	removeCalls []removeCall
+}
+
+type removeCall struct {
+	sessionID string
+	cfg       sandbox.RemoveConfig
+}
+
+func (p *deferredCleanupProvider) Remove(ctx context.Context, sessionID string, opts ...sandbox.RemoveOption) error {
+	if p.RemoveFunc != nil {
+		return p.RemoveFunc(ctx, sessionID, opts...)
+	}
+	p.removeCalls = append(p.removeCalls, removeCall{sessionID: sessionID, cfg: sandbox.ParseRemoveOptions(opts)})
+	return nil
 }

@@ -489,9 +489,19 @@ func (s *SandboxService) ReconcileSandboxes(ctx context.Context) error {
 		log.Printf("Sandbox for session %s uses outdated image %s (expected %s), recreating...",
 			sb.SessionID, sb.Image, expectedImage)
 
-		// Check if the session exists; if not, remove orphaned sandbox
+		// Check if the session exists; if not, remove orphaned sandbox unless it is
+		// still within the deferred deletion retention window.
 		_, err := s.store.GetSessionByID(ctx, sb.SessionID)
 		if err != nil {
+			retained, retainedErr := s.store.HasActiveJobForResource(ctx, jobs.ResourceTypeRetainedSandbox, sb.SessionID)
+			if retainedErr != nil {
+				log.Printf("Failed to check deferred sandbox delete job for session %s: %v", sb.SessionID, retainedErr)
+			}
+			if retained {
+				log.Printf("Preserving retained sandbox for deleted session %s until deferred delete job runs", sb.SessionID)
+				continue
+			}
+
 			log.Printf("Failed to get session %s, removing orphaned sandbox: %v", sb.SessionID, err)
 			// Preserve volumes for orphaned sandboxes in case of recovery
 			if err := s.provider.Remove(ctx, sb.SessionID); err != nil {

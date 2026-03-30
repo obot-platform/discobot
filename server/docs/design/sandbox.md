@@ -679,9 +679,9 @@ if err := provider.Remove(ctx, sessionID); err != nil {
 ```
 
 ### With sandbox.RemoveVolumes() option
-- **Purpose**: Complete cleanup when deleting a session
+- **Purpose**: Complete cleanup when deleting a session or explicitly purging retained data
 - **Behavior**: Deletes both container and all associated data volumes
-- **Use case**: Session deletion, permanent cleanup
+- **Use case**: Immediate permanent cleanup, explicit cleanup jobs
 - **Docker**: Removes container AND explicitly deletes the `discobot-data-{sessionID}` volume
 - **VZ**: Removes VM and all associated storage (same as default)
 
@@ -692,6 +692,15 @@ if err := provider.Remove(ctx, sessionID, sandbox.RemoveVolumes()); err != nil {
     return err
 }
 ```
+
+### Session Deletion Retention Window
+
+When a session is deleted, Discobot now stops the sandbox immediately but keeps the sandbox and its data for **24 hours** before final cleanup.
+
+- The session record is removed right away, but the stopped sandbox is retained during the recovery window.
+- A delayed background job later removes the sandbox with `sandbox.RemoveVolumes()`, which performs the provider's normal full cleanup.
+- If a session with the same ID exists again before the delayed job runs, the job skips deletion.
+- Startup reconciliation preserves retained orphaned sandboxes while their delayed delete job is still pending.
 
 ### Docker Volume Management
 

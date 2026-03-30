@@ -32,7 +32,10 @@ const (
 // ErrSessionOperationInProgress indicates a commit/rebase operation is already running.
 var ErrSessionOperationInProgress = errors.New("session operation already in progress")
 
-const legacySessionStatusRunning = "running"
+const (
+	legacySessionStatusRunning    = "running"
+	sessionDeletionRetentionDelay = 24 * time.Hour
+)
 
 // sessionIDRegex matches valid session IDs (alphanumeric and hyphens only).
 var sessionIDRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
@@ -499,13 +502,13 @@ func (s *SessionService) ReconcileCommitStates(ctx context.Context) error {
 // PerformDeletion performs the actual session deletion work.
 // This is called by the SessionDeleteExecutor job handler.
 func (s *SessionService) PerformDeletion(ctx context.Context, projectID, sessionID string) error {
-	// Step 1: Destroy sandbox and associated volumes (idempotent - handles not found)
+	// Step 1: Stop the sandbox immediately so the session is inactive during the
+	// recovery window, but keep the sandbox itself for deferred deletion.
 	if s.sandboxProvider != nil {
-		if err := s.sandboxProvider.Remove(ctx, sessionID, sandbox.RemoveVolumes()); err != nil {
-			if !errors.Is(err, sandbox.ErrNotFound) {
-				return fmt.Errorf("failed to remove sandbox with volumes: %w", err)
+		if err := s.sandboxProvider.Stop(ctx, sessionID, 10*time.Second); err != nil {
+			if !errors.Is(err, sandbox.ErrNotFound) && !errors.Is(err, sandbox.ErrNotRunning) {
+				return fmt.Errorf("failed to stop sandbox: %w", err)
 			}
-			// Sandbox not found is fine - continue with deletion
 		}
 	}
 
@@ -514,7 +517,17 @@ func (s *SessionService) PerformDeletion(ctx context.Context, projectID, session
 		return fmt.Errorf("failed to delete session from database: %w", err)
 	}
 
-	// Step 3: Emit "removed" event to notify clients
+	// Step 3: Schedule deferred sandbox cleanup.
+	if s.jobEnqueuer != nil && s.sandboxProvider != nil {
+		if err := s.jobEnqueuer.Enqueue(ctx, jobs.SessionSandboxDeletePayload{
+			SessionID: sessionID,
+			DeleteAt:  time.Now().Add(sessionDeletionRetentionDelay),
+		}); err != nil {
+			log.Printf("Failed to enqueue deferred session sandbox delete job for %s: %v", sessionID, err)
+		}
+	}
+
+	// Step 4: Emit "removed" event to notify clients
 	if s.eventBroker != nil {
 		if err := s.eventBroker.PublishSessionUpdated(ctx, projectID, sessionID, model.SessionStatusRemoved, ""); err != nil {
 			log.Printf("Failed to publish session removed event: %v", err)
@@ -522,6 +535,28 @@ func (s *SessionService) PerformDeletion(ctx context.Context, projectID, session
 	}
 
 	log.Printf("Session %s deleted successfully", sessionID)
+	return nil
+}
+
+// PerformDeferredSandboxDeletion removes a retained sandbox after the
+// session has been deleted long enough to age out of the recovery window.
+func (s *SessionService) PerformDeferredSandboxDeletion(ctx context.Context, sessionID string) error {
+	if s.sandboxProvider == nil {
+		return nil
+	}
+
+	if _, err := s.store.GetSessionByID(ctx, sessionID); err == nil {
+		log.Printf("Skipping deferred sandbox cleanup for session %s because the session exists again", sessionID)
+		return nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("failed to check session before deferred sandbox cleanup: %w", err)
+	}
+
+	if err := s.sandboxProvider.Remove(ctx, sessionID, sandbox.RemoveVolumes()); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		return fmt.Errorf("failed to remove deferred sandbox: %w", err)
+	}
+
+	log.Printf("Deferred sandbox cleanup completed for session %s", sessionID)
 	return nil
 }
 

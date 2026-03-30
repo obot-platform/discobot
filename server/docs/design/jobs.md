@@ -10,6 +10,7 @@ This module provides background job processing for async operations like workspa
 | `internal/jobs/queue.go` | Job queue operations |
 | `internal/jobs/workspace_init.go` | Workspace init executor |
 | `internal/jobs/session_init.go` | Session init executor |
+| `internal/dispatcher/session_delete.go` | Session delete + delayed sandbox cleanup executors |
 | `internal/jobs/session_commit.go` | Session commit executor |
 | `internal/dispatcher/dispatcher.go` | Job dispatcher |
 | `internal/dispatcher/executor.go` | Executor interface |
@@ -31,6 +32,8 @@ This module provides background job processing for async operations like workspa
 │                                     │    Executors     │        │
 │                                     │  - WorkspaceInit │        │
 │                                     │  - SessionInit   │        │
+│                                     │  - SessionDelete │        │
+│                                     │  - SessionSandboxDelete │ │
 │                                     │  - SessionCommit │        │
 │                                     └──────────────────┘        │
 └─────────────────────────────────────────────────────────────────┘
@@ -40,9 +43,11 @@ This module provides background job processing for async operations like workspa
 
 ```go
 const (
-    JobTypeWorkspaceInit = "workspace_init"
-    JobTypeSessionInit   = "session_init"
-    JobTypeSessionCommit = "session_commit"
+    JobTypeWorkspaceInit        = "workspace_init"
+    JobTypeSessionInit          = "session_init"
+    JobTypeSessionDelete        = "session_delete"
+    JobTypeSessionSandboxDelete = "session_sandbox_delete"
+    JobTypeSessionCommit        = "session_commit"
 )
 
 type WorkspaceInitPayload struct {
@@ -51,6 +56,16 @@ type WorkspaceInitPayload struct {
 
 type SessionInitPayload struct {
     SessionID string `json:"sessionId"`
+}
+
+type SessionDeletePayload struct {
+    SessionID string `json:"sessionId"`
+    ProjectID string `json:"projectId"`
+}
+
+type SessionSandboxDeletePayload struct {
+    SessionID string    `json:"sessionId"`
+    DeleteAt  time.Time `json:"deleteAt"`
 }
 
 type SessionCommitPayload struct {
@@ -84,33 +99,15 @@ func (q *Queue) SetNotifyFunc(fn func()) {
 
 ### Enqueue
 
+Jobs may optionally provide a scheduled execution time. If they do, the queue stores it in `model.Job.ScheduledAt` and the dispatcher will not claim the job until that time arrives.
+
 ```go
-func (q *Queue) Enqueue(ctx context.Context, jobType string, payload any) (*model.Job, error) {
-    job, err := q.store.EnqueueJob(ctx, jobType, payload)
-    if err != nil {
-        return nil, err
-    }
-
-    // Notify dispatcher
-    if q.notifyFunc != nil {
-        go q.notifyFunc()
-    }
-
-    return job, nil
-}
-
-func (q *Queue) EnqueueWorkspaceInit(ctx context.Context, workspaceID string) (*model.Job, error) {
-    return q.Enqueue(ctx, JobTypeWorkspaceInit, WorkspaceInitPayload{
-        WorkspaceID: workspaceID,
-    })
-}
-
-func (q *Queue) EnqueueSessionInit(ctx context.Context, sessionID string) (*model.Job, error) {
-    return q.Enqueue(ctx, JobTypeSessionInit, SessionInitPayload{
-        SessionID: sessionID,
-    })
+func (q *Queue) Enqueue(ctx context.Context, payload JobPayload) error {
+    // ... build job payload, dedupe by resource key, and persist it ...
 }
 ```
+
+`session_sandbox_delete` uses this to defer final sandbox cleanup for 24 hours after a session is deleted.
 
 ## Dispatcher
 

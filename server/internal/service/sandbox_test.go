@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/obot-platform/discobot/server/internal/config"
+	"github.com/obot-platform/discobot/server/internal/jobs"
 	"github.com/obot-platform/discobot/server/internal/model"
 	"github.com/obot-platform/discobot/server/internal/sandbox"
 	"github.com/obot-platform/discobot/server/internal/sandbox/mock"
@@ -319,6 +320,48 @@ func TestReconcileSandboxes_UsesImageIDAndRunsCleanup(t *testing.T) {
 
 	if provider.cleanupCalls != 1 {
 		t.Fatalf("expected cleanup to run once, got %d", provider.cleanupCalls)
+	}
+}
+
+func TestReconcileSandboxes_PreservesRetainedDeletedSessionSandboxes(t *testing.T) {
+	provider := newImageIDAwareReconcileProvider("ghcr.io/obot-platform/discobot:latest", "sha256:new")
+	testStore := setupTestStore(t)
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
+	svc := NewSandboxService(testStore, provider, cfg, nil, nil, nil, nil)
+
+	ctx := context.Background()
+	sessionID := "retained-session-1"
+	provider.sandboxes[sessionID] = &sandbox.Sandbox{
+		ID:        "retained-sandbox",
+		SessionID: sessionID,
+		Status:    sandbox.StatusStopped,
+		Image:     provider.configuredImage,
+		CreatedAt: time.Now(),
+		Metadata: map[string]string{
+			sandbox.MetadataImageID: "sha256:old",
+		},
+	}
+
+	resourceType := jobs.ResourceTypeRetainedSandbox
+	resourceID := sessionID
+	if err := testStore.CreateJob(ctx, &model.Job{
+		Type:         string(jobs.JobTypeSessionSandboxDelete),
+		Status:       string(model.JobStatusPending),
+		Priority:     1,
+		Payload:      []byte(`{"sessionId":"retained-session-1"}`),
+		ResourceType: &resourceType,
+		ResourceID:   &resourceID,
+		ScheduledAt:  time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("failed to create retained sandbox delete job: %v", err)
+	}
+
+	if err := svc.ReconcileSandboxes(ctx); err != nil {
+		t.Fatalf("ReconcileSandboxes failed: %v", err)
+	}
+
+	if _, err := provider.Get(ctx, sessionID); err != nil {
+		t.Fatalf("expected retained sandbox to be preserved, got error: %v", err)
 	}
 }
 

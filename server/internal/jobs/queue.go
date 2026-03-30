@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/obot-platform/discobot/server/internal/config"
 	"github.com/obot-platform/discobot/server/internal/model"
@@ -37,9 +38,16 @@ func (q *Queue) notify() {
 
 // Resource type constants for job deduplication.
 const (
-	ResourceTypeSession   = "session"
-	ResourceTypeWorkspace = "workspace"
+	ResourceTypeSession         = "session"
+	ResourceTypeRetainedSandbox = "retained_sandbox"
+	ResourceTypeWorkspace       = "workspace"
 )
+
+// Schedulable is an optional interface payloads can implement to request
+// execution at a specific time in the future.
+type Schedulable interface {
+	ScheduledAt() time.Time
+}
 
 // ErrJobAlreadyExists is returned when a job for the resource already exists.
 var ErrJobAlreadyExists = errors.New("job already exists for resource")
@@ -82,12 +90,20 @@ func (q *Queue) Enqueue(ctx context.Context, payload JobPayload) error {
 		maxAttempts = m.MaxAttempts()
 	}
 
+	scheduledAt := time.Now()
+	if s, ok := payload.(Schedulable); ok {
+		if requested := s.ScheduledAt(); !requested.IsZero() {
+			scheduledAt = requested
+		}
+	}
+
 	job := &model.Job{
 		Type:         string(payload.JobType()),
 		Payload:      data,
 		Status:       string(model.JobStatusPending),
 		MaxAttempts:  maxAttempts,
 		Priority:     priority,
+		ScheduledAt:  scheduledAt,
 		ResourceType: &resType,
 		ResourceID:   &resID,
 	}

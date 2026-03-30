@@ -258,6 +258,7 @@ func main() {
 			dispSandboxSvc.SetSessionInitializer(sessionSvc)
 			disp.RegisterExecutor(dispatcher.NewSessionInitExecutor(sessionSvc))
 			disp.RegisterExecutor(dispatcher.NewSessionDeleteExecutor(sessionSvc))
+			disp.RegisterExecutor(dispatcher.NewSessionSandboxDeleteExecutor(sessionSvc))
 			disp.RegisterExecutor(dispatcher.NewSessionCommitExecutor(sessionSvc))
 			disp.RegisterExecutor(dispatcher.NewSessionRebaseExecutor(sessionSvc))
 		}

@@ -46,3 +46,36 @@ func (e *SessionDeleteExecutor) Execute(ctx context.Context, job *model.Job) err
 
 	return e.sessionService.PerformDeletion(ctx, payload.ProjectID, payload.SessionID)
 }
+
+// SessionSandboxDeleteExecutor handles session_sandbox_delete jobs.
+type SessionSandboxDeleteExecutor struct {
+	sessionService *service.SessionService
+}
+
+// NewSessionSandboxDeleteExecutor creates a new session sandbox delete executor.
+func NewSessionSandboxDeleteExecutor(sessionSvc *service.SessionService) *SessionSandboxDeleteExecutor {
+	return &SessionSandboxDeleteExecutor{sessionService: sessionSvc}
+}
+
+// Type returns the job type this executor handles.
+func (e *SessionSandboxDeleteExecutor) Type() jobs.JobType {
+	return jobs.JobTypeSessionSandboxDelete
+}
+
+// Execute processes the job.
+func (e *SessionSandboxDeleteExecutor) Execute(ctx context.Context, job *model.Job) error {
+	if e.sessionService == nil {
+		return fmt.Errorf("session service not available")
+	}
+
+	var payload jobs.SessionSandboxDeletePayload
+	if err := json.Unmarshal(job.Payload, &payload); err != nil {
+		return fmt.Errorf("invalid payload: %w", err)
+	}
+
+	if payload.SessionID == "" {
+		return fmt.Errorf("sessionId is required")
+	}
+
+	return e.sessionService.PerformDeferredSandboxDeletion(ctx, payload.SessionID)
+}

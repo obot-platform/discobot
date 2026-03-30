@@ -1,15 +1,18 @@
 // Package jobs defines job types and payloads for background job processing.
 package jobs
 
+import "time"
+
 // JobType represents the type of job.
 type JobType string
 
 const (
-	JobTypeSessionInit   JobType = "session_init"
-	JobTypeSessionDelete JobType = "session_delete"
-	JobTypeSessionCommit JobType = "session_commit"
-	JobTypeSessionRebase JobType = "session_rebase"
-	JobTypeWorkspaceInit JobType = "workspace_init"
+	JobTypeSessionInit          JobType = "session_init"
+	JobTypeSessionDelete        JobType = "session_delete"
+	JobTypeSessionSandboxDelete JobType = "session_sandbox_delete"
+	JobTypeSessionCommit        JobType = "session_commit"
+	JobTypeSessionRebase        JobType = "session_rebase"
+	JobTypeWorkspaceInit        JobType = "workspace_init"
 )
 
 // JobPayload is implemented by all job payloads. The payload struct itself
@@ -66,6 +69,19 @@ type SessionDeletePayload struct {
 func (p SessionDeletePayload) JobType() JobType              { return JobTypeSessionDelete }
 func (p SessionDeletePayload) ResourceKey() (string, string) { return ResourceTypeSession, p.SessionID }
 func (p SessionDeletePayload) Priority() int                 { return 5 }
+
+// SessionSandboxDeletePayload is the payload for session_sandbox_delete jobs.
+type SessionSandboxDeletePayload struct {
+	SessionID string    `json:"sessionId"`
+	DeleteAt  time.Time `json:"deleteAt"`
+}
+
+func (p SessionSandboxDeletePayload) JobType() JobType { return JobTypeSessionSandboxDelete }
+func (p SessionSandboxDeletePayload) ResourceKey() (string, string) {
+	return ResourceTypeRetainedSandbox, p.SessionID
+}
+func (p SessionSandboxDeletePayload) ScheduledAt() time.Time { return p.DeleteAt }
+func (p SessionSandboxDeletePayload) Priority() int          { return 1 }
 
 // SessionCommitPayload is the payload for session_commit jobs.
 type SessionCommitPayload struct {
