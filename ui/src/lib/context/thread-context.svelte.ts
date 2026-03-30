@@ -133,6 +133,9 @@ function createThreadContext(
 		refreshThread: async () => {
 			await session.threads.refreshThread(threadId);
 		},
+		applyThreadUpdate: (thread) => {
+			session.stores.threads.upsert(thread);
+		},
 		refreshSessionState,
 		afterTurn: async () => {
 			await session.threads.refreshThread(threadId);

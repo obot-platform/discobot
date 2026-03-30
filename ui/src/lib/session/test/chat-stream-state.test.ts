@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatMessage } from "$lib/api-types";
+import type { ChatMessage, Thread } from "$lib/api-types";
 
 import {
 	bindChatStreamEventSource,
@@ -97,23 +97,15 @@ function createHarness(
 	overrides: Partial<ChatStreamStateOptions> = {},
 ): {
 	messages: ChatMessage[];
-	modeChanges: string[];
-	modelChanges: string[];
-	reasoningChanges: string[];
-	threadNameChanges: string[];
-	actionableQuestionCount: number;
-	meaningfulToolOutputCount: number;
+	threadUpdates: Thread[];
+	startEvents: Array<{ resume?: boolean } | undefined>;
 	setCount: number;
 	state: ReturnType<typeof createChatStreamState>;
 } {
 	let currentMessages: ChatMessage[] = initialMessages;
 	let setCount = 0;
-	let actionableQuestionCount = 0;
-	let meaningfulToolOutputCount = 0;
-	const modeChanges: string[] = [];
-	const modelChanges: string[] = [];
-	const reasoningChanges: string[] = [];
-	const threadNameChanges: string[] = [];
+	const threadUpdates: Thread[] = [];
+	const startEvents: Array<{ resume?: boolean } | undefined> = [];
 
 	const state = createChatStreamState({
 		getMessages: () => currentMessages,
@@ -122,31 +114,14 @@ function createHarness(
 			setCount += 1;
 			overrides.setMessages?.(nextMessages);
 		},
-		onActionableQuestion: () => {
-			actionableQuestionCount += 1;
-			return overrides.onActionableQuestion?.();
+		onThreadUpdate: (thread) => {
+			threadUpdates.push(thread);
+			return overrides.onThreadUpdate?.(thread);
 		},
-		onMeaningfulToolOutput: () => {
-			meaningfulToolOutputCount += 1;
-			return overrides.onMeaningfulToolOutput?.();
+		onStart: (info) => {
+			startEvents.push(info);
+			return overrides.onStart?.(info);
 		},
-		setMode: (mode) => {
-			modeChanges.push(mode);
-			return overrides.setMode?.(mode);
-		},
-		setModel: (model) => {
-			modelChanges.push(model);
-			return overrides.setModel?.(model);
-		},
-		setReasoning: (reasoning) => {
-			reasoningChanges.push(reasoning);
-			return overrides.setReasoning?.(reasoning);
-		},
-		setThreadName: (name) => {
-			threadNameChanges.push(name);
-			return overrides.setThreadName?.(name);
-		},
-		onStart: overrides.onStart,
 		onFinish: overrides.onFinish,
 		onHistoryReplayEnd: overrides.onHistoryReplayEnd,
 		onChunkError: overrides.onChunkError,
@@ -156,23 +131,11 @@ function createHarness(
 		get messages() {
 			return currentMessages;
 		},
-		get modeChanges() {
-			return modeChanges;
+		get threadUpdates() {
+			return threadUpdates;
 		},
-		get modelChanges() {
-			return modelChanges;
-		},
-		get reasoningChanges() {
-			return reasoningChanges;
-		},
-		get threadNameChanges() {
-			return threadNameChanges;
-		},
-		get actionableQuestionCount() {
-			return actionableQuestionCount;
-		},
-		get meaningfulToolOutputCount() {
-			return meaningfulToolOutputCount;
+		get startEvents() {
+			return startEvents;
 		},
 		get setCount() {
 			return setCount;
@@ -248,7 +211,6 @@ test("history replay buffers messages until history-end", async () => {
 
 	assert.equal(harness.setCount, 0);
 	assert.deepEqual(harness.messages, []);
-	assert.equal(harness.state.isBufferingHistory, true);
 
 	await harness.state.handleStreamEvent({
 		event: "history-end",
@@ -258,7 +220,6 @@ test("history replay buffers messages until history-end", async () => {
 	const messages: ChatMessage[] = harness.messages;
 
 	assert.equal(harness.setCount, 1);
-	assert.equal(harness.state.isBufferingHistory, false);
 	assert.deepEqual(
 		messages.map((message) => message.id),
 		["history-user", "assistant-1"],
@@ -271,6 +232,167 @@ test("history replay buffers messages until history-end", async () => {
 		event: "chunk",
 		data: JSON.stringify({ type: "finish", finishReason: "stop" }),
 	});
+
+	assert.deepEqual(harness.startEvents, [{ resume: false }]);
+});
+
+test("history replay resumes an existing assistant message when instructed", async () => {
+	const harness = createHarness([
+		makeTextMessage("assistant-existing", "assistant", "partial reply"),
+	]);
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-thread-resume",
+			data: { threadId: "thread-1", messageId: "assistant-existing" },
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "text-start", id: "part-2" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "text-delta",
+			id: "part-2",
+			delta: "continued reply",
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "text-end", id: "part-2" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "finish", finishReason: "stop" }),
+	});
+
+	const resumedMessages: ChatMessage[] = harness.messages;
+	assert.equal(resumedMessages.length, 1);
+	assert.equal(resumedMessages[0]?.id, "assistant-existing");
+	assert.deepEqual(
+		resumedMessages[0]?.parts.map((part) => part.type),
+		["text", "text"],
+	);
+	const firstPart = resumedMessages[0]?.parts[0];
+	const secondPart = resumedMessages[0]?.parts[1];
+	assert.equal(firstPart?.type, "text");
+	assert.equal(secondPart?.type, "text");
+	assert.equal(
+		firstPart?.type === "text" ? firstPart.text : undefined,
+		"partial reply",
+	);
+	assert.equal(
+		secondPart?.type === "text" ? secondPart.text : undefined,
+		"continued reply",
+	);
+	assert.equal(
+		secondPart?.type === "text" ? secondPart.state : undefined,
+		"done",
+	);
+	assert.deepEqual(harness.startEvents, [{ resume: true }]);
+});
+
+test("resumed tool input deltas create and update tool parts without a start chunk", async () => {
+	const harness = createHarness([
+		makeTextMessage("assistant-resume-tool", "assistant", "working"),
+	]);
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-thread-resume",
+			data: {
+				threadId: "thread-1",
+				messageId: "assistant-resume-tool",
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-delta",
+			toolCallId: "tool-resume-1",
+			inputTextDelta: '{"questions":',
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-delta",
+			toolCallId: "tool-resume-1",
+			inputTextDelta:
+				'[{"header":"Scope","question":"Proceed?","multiSelect":false,"options":[{"label":"Yes","description":"Continue"}]}]}',
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-input-available",
+			toolCallId: "tool-resume-1",
+			toolName: "AskUserQuestion",
+			input: {
+				questions: [
+					{
+						header: "Scope",
+						question: "Proceed?",
+						multiSelect: false,
+						options: [{ label: "Yes", description: "Continue" }],
+					},
+				],
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-approval-request",
+			toolCallId: "tool-resume-1",
+			approvalId: "approval-resume-1",
+		}),
+	});
+
+	assert.deepEqual(harness.startEvents, [{ resume: true }]);
+	assert.equal(harness.messages.length, 1);
+	assert.equal(harness.messages[0]?.id, "assistant-resume-tool");
+	assert.equal(harness.messages[0]?.parts[0]?.type, "text");
+	assert.equal(harness.messages[0]?.parts[1]?.type === "dynamic-tool", true);
+	const resumedToolPart = harness.messages[0]?.parts[1];
+	assert.equal(
+		resumedToolPart?.type === "dynamic-tool"
+			? resumedToolPart.toolName
+			: undefined,
+		"AskUserQuestion",
+	);
+	assert.equal(
+		resumedToolPart?.type === "dynamic-tool"
+			? resumedToolPart.state
+			: undefined,
+		"approval-requested",
+	);
+	assert.deepEqual(
+		resumedToolPart?.type === "dynamic-tool"
+			? resumedToolPart.input
+			: undefined,
+		{
+			questions: [
+				{
+					header: "Scope",
+					question: "Proceed?",
+					multiSelect: false,
+					options: [{ label: "Yes", description: "Continue" }],
+				},
+			],
+		},
+	);
+	assert.equal(
+		resumedToolPart?.type === "dynamic-tool"
+			? resumedToolPart.approval?.id
+			: undefined,
+		"approval-resume-1",
+	);
 });
 
 test("data-user-message inserts a preserved user message before the assistant reply", async () => {
@@ -332,18 +454,25 @@ test("data-user-message inserts a preserved user message before the assistant re
 	assert.equal(messages[1].parts[0]?.state, "done");
 });
 
-test("data-thread-name notifies the caller", async () => {
+test("data-thread-update notifies the caller", async () => {
 	const harness = createHarness();
+	const thread: Thread = {
+		id: "thread-1",
+		name: "Fix thread naming",
+		mode: "plan",
+		model: "anthropic/claude-sonnet-4-6",
+		reasoning: "enabled",
+	};
 
 	await harness.state.handleStreamEvent({
 		event: "chunk",
 		data: JSON.stringify({
-			type: "data-thread-name",
-			data: { name: "Fix thread naming" },
+			type: "data-thread-update",
+			data: { thread },
 		}),
 	});
 
-	assert.deepEqual(harness.threadNameChanges, ["Fix thread naming"]);
+	assert.deepEqual(harness.threadUpdates, [thread]);
 });
 
 test("appending a new message removes all provisional messages first", async () => {
@@ -367,6 +496,7 @@ test("appending a new message removes all provisional messages first", async () 
 		}),
 	});
 
+	assert.equal(harness.setCount, 0);
 	assert.deepEqual(
 		harness.messages.map((message) => ({
 			id: message.id,
@@ -376,7 +506,7 @@ test("appending a new message removes all provisional messages first", async () 
 	);
 });
 
-test("assistant chunk updates keep the same message object and avoid array reassignment", async () => {
+test("assistant chunk updates keep the same message object without list reassignment", async () => {
 	const harness = createHarness();
 
 	await harness.state.handleStreamEvent({
@@ -388,7 +518,7 @@ test("assistant chunk updates keep the same message object and avoid array reass
 		data: JSON.stringify({ type: "text-start", id: "part-1" }),
 	});
 
-	assert.equal(harness.setCount, 1);
+	assert.equal(harness.setCount, 0);
 	const assistantMessage = harness.messages[0];
 
 	await harness.state.handleStreamEvent({
@@ -400,7 +530,7 @@ test("assistant chunk updates keep the same message object and avoid array reass
 		data: JSON.stringify({ type: "text-end", id: "part-1" }),
 	});
 
-	assert.equal(harness.setCount, 1);
+	assert.equal(harness.setCount, 0);
 	assert.equal(harness.messages[0], assistantMessage);
 	assert.equal(harness.messages[0].parts[0]?.type, "text");
 	assert.equal(harness.messages[0].parts[0]?.text, "stream");
@@ -412,153 +542,80 @@ test("assistant chunk updates keep the same message object and avoid array reass
 	});
 });
 
-test("chunk events surface mode, model, and reasoning updates", async () => {
+test("reasoning chunks mark the active assistant message as streaming until finish", async () => {
 	const harness = createHarness();
 
 	await harness.state.handleStreamEvent({
 		event: "chunk",
-		data: JSON.stringify({ type: "data-mode-change", data: { mode: "plan" } }),
+		data: JSON.stringify({ type: "start", messageId: "assistant-1" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "reasoning-start", id: "reason-1" }),
 	});
 	await harness.state.handleStreamEvent({
 		event: "chunk",
 		data: JSON.stringify({
-			type: "start",
-			messageId: "assistant-1",
-			messageMetadata: {
-				model: "anthropic/claude-sonnet-4-6",
-				reasoning: "enabled",
-			},
-		}),
-	});
-	await harness.state.handleStreamEvent({
-		event: "chunk",
-		data: JSON.stringify({
-			type: "message-metadata",
-			messageMetadata: {
-				model: "openai/gpt-5",
-				reasoning: "disabled",
-			},
+			type: "reasoning-delta",
+			id: "reason-1",
+			delta: "Thinking through the renderer",
 		}),
 	});
 
-	assert.deepEqual(harness.modeChanges, ["plan"]);
-	assert.deepEqual(harness.modelChanges, [
-		"anthropic/claude-sonnet-4-6",
-		"openai/gpt-5",
-	]);
-	assert.deepEqual(harness.reasoningChanges, ["enabled", "disabled"]);
-	assert.equal(harness.messages[0]?.id, "assistant-1");
-});
-
-test("pending async stream callbacks do not block meaningful tool output handling", async () => {
-	let releaseRefresh!: () => void;
-	const refreshStarted = new Promise<void>((resolve) => {
-		releaseRefresh = resolve;
-	});
-	const harness = createHarness([], {
-		onMeaningfulToolOutput: async () => {
-			await refreshStarted;
+	assert.equal(
+		(harness.messages[0] as (ChatMessage & { status?: string }) | undefined)
+			?.status,
+		"streaming",
+	);
+	assert.deepEqual(harness.messages[0]?.parts, [
+		{
+			type: "reasoning",
+			text: "Thinking through the renderer",
+			state: "streaming",
 		},
-	});
+	]);
 
-	await harness.state.handleStreamEvent({
-		event: "chunk",
-		data: JSON.stringify({ type: "start", messageId: "assistant-tool" }),
-	});
-	await harness.state.handleStreamEvent({
-		event: "chunk",
-		data: JSON.stringify({
-			type: "tool-input-start",
-			toolCallId: "tool-1",
-			toolName: "Read",
-		}),
-	});
-	await harness.state.handleStreamEvent({
-		event: "chunk",
-		data: JSON.stringify({
-			type: "tool-output-available",
-			toolCallId: "tool-1",
-			output: { file: "/tmp/demo.txt", contents: "hello" },
-		}),
-	});
 	await harness.state.handleStreamEvent({
 		event: "chunk",
 		data: JSON.stringify({ type: "finish", finishReason: "stop" }),
 	});
 
-	assert.equal(harness.meaningfulToolOutputCount, 1);
 	assert.equal(
-		harness.messages[0]?.parts[0]?.type === "tool-Read" ||
-			harness.messages[0]?.parts[0]?.type === "dynamic-tool",
-		true,
+		(harness.messages[0] as (ChatMessage & { status?: string }) | undefined)
+			?.status,
+		undefined,
 	);
-
-	releaseRefresh();
-	await flushStreamEvents();
+	assert.deepEqual(harness.messages[0]?.parts, [
+		{
+			type: "reasoning",
+			text: "Thinking through the renderer",
+			state: "done",
+		},
+	]);
 });
 
-test("rejected async stream callbacks are logged without failing the stream", async () => {
-	const loggedErrors: unknown[][] = [];
-	const originalConsoleError = console.error;
-	console.error = (...args: unknown[]) => {
-		loggedErrors.push(args);
-	};
-
-	try {
-		const harness = createHarness([], {
-			onMeaningfulToolOutput: async () => {
-				throw new Error("refresh failed");
-			},
-		});
-
-		await harness.state.handleStreamEvent({
-			event: "chunk",
-			data: JSON.stringify({ type: "start", messageId: "assistant-tool" }),
-		});
-		await harness.state.handleStreamEvent({
-			event: "chunk",
-			data: JSON.stringify({
-				type: "tool-input-start",
-				toolCallId: "tool-1",
-				toolName: "Read",
-			}),
-		});
-		await harness.state.handleStreamEvent({
-			event: "chunk",
-			data: JSON.stringify({
-				type: "tool-output-available",
-				toolCallId: "tool-1",
-				output: { file: "/tmp/demo.txt", contents: "hello" },
-			}),
-		});
-		await flushStreamEvents();
-
-		assert.equal(harness.meaningfulToolOutputCount, 1);
-		assert.equal(loggedErrors.length, 1);
-		assert.equal(
-			loggedErrors[0]?.[0],
-			"Failed to run onMeaningfulToolOutput chat stream callback",
-		);
-		assert.equal(loggedErrors[0]?.[1] instanceof Error, true);
-		assert.equal((loggedErrors[0]?.[1] as Error).message, "refresh failed");
-	} finally {
-		console.error = originalConsoleError;
-	}
-});
-
-test("AskUserQuestion becoming answerable triggers a single actionable callback", async () => {
-	const harness = createHarness();
+test("tool approval requests finalize the active assistant message", async () => {
+	let finishCount = 0;
+	const harness = createHarness([], {
+		onFinish: () => {
+			finishCount += 1;
+		},
+	});
 
 	await harness.state.handleStreamEvent({
 		event: "chunk",
-		data: JSON.stringify({ type: "start", messageId: "assistant-ask" }),
+		data: JSON.stringify({ type: "start", messageId: "assistant-approval" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "reasoning-start", id: "reason-1" }),
 	});
 	await harness.state.handleStreamEvent({
 		event: "chunk",
 		data: JSON.stringify({
-			type: "tool-input-start",
-			toolCallId: "ask-tool-1",
-			toolName: "AskUserQuestion",
+			type: "reasoning-delta",
+			id: "reason-1",
+			delta: "Thinking about approval",
 		}),
 	});
 	await harness.state.handleStreamEvent({
@@ -593,22 +650,156 @@ test("AskUserQuestion becoming answerable triggers a single actionable callback"
 		}),
 	});
 
-	assert.equal(harness.actionableQuestionCount, 1);
-	assert.equal(
-		harness.messages[0]?.parts[0]?.type === "tool-AskUserQuestion" ||
-			harness.messages[0]?.parts[0]?.type === "dynamic-tool",
-		true,
-	);
-	assert.equal(
-		typeof (harness.messages[0]?.parts[0] as { state?: unknown } | undefined)
-			?.state === "string"
-			? (harness.messages[0]?.parts[0] as { state: string }).state
-			: undefined,
-		"approval-requested",
+	assert.equal(harness.messages[0]?.status, undefined);
+	assert.equal(finishCount, 1);
+	assert.deepEqual(
+		harness.messages[0]?.parts.map((part) =>
+			part.type === "reasoning"
+				? { type: part.type, state: part.state }
+				: part.type === "dynamic-tool"
+					? { type: part.type, state: part.state }
+					: { type: part.type },
+		),
+		[
+			{ type: "reasoning", state: "done" },
+			{ type: "dynamic-tool", state: "approval-requested" },
+		],
 	);
 });
 
-test("only the first non-preliminary tool output triggers a meaningful output callback", async () => {
+test("finish finalizes any still-streaming text and reasoning parts", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "start", messageId: "assistant-1" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "text-start", id: "text-1" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "text-delta",
+			id: "text-1",
+			delta: "unfinished text",
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "reasoning-start", id: "reason-1" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "reasoning-delta",
+			id: "reason-1",
+			delta: "unfinished reasoning",
+		}),
+	});
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "finish", finishReason: "stop" }),
+	});
+
+	assert.deepEqual(
+		harness.messages[0]?.parts.map((part) =>
+			part.type === "text" || part.type === "reasoning"
+				? { type: part.type, state: part.state }
+				: { type: part.type },
+		),
+		[
+			{ type: "text", state: "done" },
+			{ type: "reasoning", state: "done" },
+		],
+	);
+});
+
+test("thread update chunks surface thread metadata updates", async () => {
+	const harness = createHarness();
+	const firstThread: Thread = {
+		id: "thread-1",
+		name: "Initial name",
+		mode: "plan",
+		model: "anthropic/claude-sonnet-4-6",
+		reasoning: "enabled",
+	};
+	const secondThread: Thread = {
+		...firstThread,
+		name: "Updated name",
+		model: "openai/gpt-5",
+		reasoning: "disabled",
+	};
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-thread-update",
+			data: { thread: firstThread },
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "start",
+			messageId: "assistant-1",
+			messageMetadata: {
+				model: "anthropic/claude-sonnet-4-6",
+				reasoning: "enabled",
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-thread-update",
+			data: { thread: secondThread },
+		}),
+	});
+
+	assert.deepEqual(harness.threadUpdates, [firstThread, secondThread]);
+	assert.equal(harness.messages[0]?.id, "assistant-1");
+});
+
+test("tool approval responses are accepted during resumed streams", async () => {
+	const harness = createHarness([
+		makeCustomAssistantMessage("assistant-custom"),
+	]);
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-thread-resume",
+			data: { threadId: "thread-1", messageId: "assistant-custom" },
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-tool-approval-response",
+			data: {
+				approvalId: "approval-123",
+				approved: true,
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "finish", finishReason: "stop" }),
+	});
+
+	assert.deepEqual(harness.startEvents, [{ resume: true }]);
+	assert.equal(
+		harness.messages[0]?.parts[1]?.type === "dynamic-tool"
+			? harness.messages[0]?.parts[1]?.approval?.approved
+			: undefined,
+		true,
+	);
+});
+
+test("tool outputs update the tool part without extra callbacks", async () => {
 	const harness = createHarness();
 
 	await harness.state.handleStreamEvent({
@@ -626,39 +817,12 @@ test("only the first non-preliminary tool output triggers a meaningful output ca
 	await harness.state.handleStreamEvent({
 		event: "chunk",
 		data: JSON.stringify({
-			type: "tool-input-available",
-			toolCallId: "tool-1",
-			toolName: "Read",
-			input: { file_path: "/tmp/demo.txt" },
-		}),
-	});
-	await harness.state.handleStreamEvent({
-		event: "chunk",
-		data: JSON.stringify({
-			type: "tool-output-available",
-			toolCallId: "tool-1",
-			output: { file: "/tmp/demo.txt" },
-			preliminary: true,
-		}),
-	});
-	await harness.state.handleStreamEvent({
-		event: "chunk",
-		data: JSON.stringify({
 			type: "tool-output-available",
 			toolCallId: "tool-1",
 			output: { file: "/tmp/demo.txt", contents: "hello" },
 		}),
 	});
-	await harness.state.handleStreamEvent({
-		event: "chunk",
-		data: JSON.stringify({
-			type: "tool-output-available",
-			toolCallId: "tool-1",
-			output: { file: "/tmp/demo.txt", contents: "hello again" },
-		}),
-	});
 
-	assert.equal(harness.meaningfulToolOutputCount, 1);
 	assert.equal(
 		harness.messages[0]?.parts[0]?.type === "tool-Read" ||
 			harness.messages[0]?.parts[0]?.type === "dynamic-tool",
@@ -682,6 +846,21 @@ test("bindChatStreamEventSource wires EventSource events into the reducer", asyn
 	eventSource.dispatch(
 		"history-message",
 		JSON.stringify(makeTextMessage("user-1", "user", "hello")),
+	);
+	eventSource.dispatch(
+		"chunk",
+		JSON.stringify({
+			type: "data-thread-update",
+			data: {
+				thread: {
+					id: "assistant-1",
+					name: "Event source thread",
+					mode: "plan",
+					model: "anthropic/claude-sonnet-4-6",
+					reasoning: "enabled",
+				},
+			},
+		}),
 	);
 	eventSource.dispatch(
 		"chunk",
@@ -726,8 +905,15 @@ test("bindChatStreamEventSource wires EventSource events into the reducer", asyn
 			: undefined,
 		"response",
 	);
-	assert.deepEqual(harness.modelChanges, ["anthropic/claude-sonnet-4-6"]);
-	assert.deepEqual(harness.reasoningChanges, ["enabled"]);
+	assert.deepEqual(harness.threadUpdates, [
+		{
+			id: "assistant-1",
+			name: "Event source thread",
+			mode: "plan",
+			model: "anthropic/claude-sonnet-4-6",
+			reasoning: "enabled",
+		},
+	]);
 
 	cleanup();
 	eventSource.dispatch(
@@ -742,7 +928,7 @@ test("bindChatStreamEventSource wires EventSource events into the reducer", asyn
 	);
 });
 
-test("message events replace an existing message in place", async () => {
+test("message events replace an existing message without list reassignment", async () => {
 	const existingMessage = makeTextMessage("assistant-1", "assistant", "before");
 	const harness = createHarness([existingMessage]);
 
@@ -752,7 +938,7 @@ test("message events replace an existing message in place", async () => {
 	});
 
 	assert.equal(harness.setCount, 0);
-	assert.equal(harness.messages[0], existingMessage);
+	assert.notEqual(harness.messages[0], existingMessage);
 	assert.deepEqual(harness.messages[0].parts, [
 		{ type: "text", text: "after", state: "done" },
 	]);

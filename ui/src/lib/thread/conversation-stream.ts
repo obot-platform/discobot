@@ -1,142 +1,112 @@
-import type { UIMessageChunk } from "ai";
+import { addToolApprovalResponse } from "$lib/session/domains/session-domain.helpers";
+import type { ChatMessage, Thread } from "$lib/api-types";
 import {
-	readUIMessageStream,
-	safeValidateUIMessages,
-	uiMessageChunkSchema,
-} from "ai";
+	parseChatStreamChunk,
+	parseChatStreamMessage,
+	parseChatStreamMessageValue,
+	type ChatStreamChunk,
+	type ChatStreamEvent,
+} from "$lib/thread/conversation-stream.events";
 
-import type { ChatMessage } from "$lib/api-types";
-
-export type ChatStreamEvent =
-	| {
-			event: "history-start";
-			data: string;
-	  }
-	| {
-			event: "history-message";
-			data: string;
-	  }
-	| {
-			event: "history-end";
-			data: string;
-	  }
-	| {
-			event: "chunk";
-			data: string;
-	  }
-	| {
-			event: "ping";
-			data: string;
-	  };
-
-export type ChatStreamEventName = ChatStreamEvent["event"];
-
-export type ChatStreamEventSource = {
-	addEventListener: (
-		type: ChatStreamEventName,
-		listener: (event: MessageEvent<string>) => void,
-	) => void;
-	removeEventListener: (
-		type: ChatStreamEventName,
-		listener: (event: MessageEvent<string>) => void,
-	) => void;
-};
-
-export type ChatStreamEventSourceOptions = {
-	onError?: (error: unknown) => void;
-};
+export {
+	bindChatStreamEventSource,
+	type ChatStreamEventName,
+	type ChatStreamEventSource,
+	type ChatStreamEventSourceOptions,
+} from "$lib/thread/conversation-stream.events";
 
 export type ChatStreamStateOptions = {
 	getMessages: () => ChatMessage[];
 	setMessages: (messages: ChatMessage[]) => void;
-	onStart?: () => void | Promise<void>;
+	onStart?: (info?: { resume?: boolean }) => void | Promise<void>;
 	onFinish?: () => void | Promise<void>;
-	// Fires once per streamed assistant response for the first non-preliminary
-	// tool result. This is the earliest stable point where session-derived state
-	// like files, hooks, env sets, or services may need a refresh without waiting
-	// for the whole turn to finish.
-	onMeaningfulToolOutput?: () => void | Promise<void>;
-	onActionableQuestion?: () => void | Promise<void>;
 	onHistoryReplayEnd?: () => void | Promise<void>;
 	onChunkError?: (errorText: string) => void | Promise<void>;
-	setMode?: (mode: string) => void | Promise<void>;
-	setModel?: (model: string) => void | Promise<void>;
-	setReasoning?: (reasoning: string) => void | Promise<void>;
-	setThreadName?: (name: string) => void | Promise<void>;
+	onThreadUpdate?: (thread: Thread) => void | Promise<void>;
 };
 
-type StreamMessageMetadata = {
-	model?: string;
-	reasoning?: string;
-};
-
-type ActiveAssistantStream = {
-	error: unknown;
-	messageId: string;
-	readerTask: Promise<void>;
-	writer: WritableStreamDefaultWriter<UIMessageChunk>;
-};
+type MessagePart = ChatMessage["parts"][number];
+type TextPart = Extract<MessagePart, { type: "text" }>;
+type ReasoningPart = Extract<MessagePart, { type: "reasoning" }>;
+type DynamicToolPart = Extract<MessagePart, { type: "dynamic-tool" }>;
 
 type StreamStateCallback<TResult = void, TArgs extends unknown[] = []> = (
 	...args: TArgs
 ) => TResult | Promise<TResult>;
 
-type UserMessageChunk = {
-	type: "data-user-message";
-	data: {
-		insertBeforeMessageId?: string;
-		message: ChatMessage;
-	};
-};
-
-type ToolOutputAvailableChunk = UIMessageChunk & {
-	type: "tool-output-available";
-	preliminary?: boolean;
-};
-type ToolInputAvailableChunk = UIMessageChunk & {
-	type: "tool-input-available";
-	toolCallId: string;
-	toolName: string;
-};
-type ToolApprovalRequestChunk = UIMessageChunk & {
-	type: "tool-approval-request";
-	toolCallId: string;
-};
-
-const terminalChunkTypes = new Set<UIMessageChunk["type"]>(["abort", "finish"]);
-
 export function createChatStreamState(options: ChatStreamStateOptions) {
-	let activeAssistantStream: ActiveAssistantStream | null = null;
+	let activeAssistantMessage: ChatMessage | null = null;
 	let historyMessages: ChatMessage[] | null = null;
 	let updateQueue = Promise.resolve();
-	let hasNotifiedMeaningfulToolOutput = false;
-	let actionableQuestionToolCallIds = new Set<string>();
 
 	const getTargetMessages = () => historyMessages ?? options.getMessages();
 
-	const setTargetMessages = (messages: ChatMessage[]) => {
-		if (historyMessages !== null) {
-			historyMessages = messages;
+	const beginHistoryReplay = () => {
+		historyMessages = [];
+	};
+
+	const commitHistoryReplay = () => {
+		if (historyMessages === null) {
 			return;
 		}
 
-		options.setMessages(messages);
-	};
-
-	const replaceMessageInPlace = (target: ChatMessage, source: ChatMessage) => {
-		const mutableTarget = target as unknown as Record<string, unknown>;
-		const sourceRecord = source as unknown as Record<string, unknown>;
-
-		for (const key of Object.keys(mutableTarget)) {
-			if (!(key in sourceRecord)) {
-				delete mutableTarget[key];
-			}
+		if (historyMessages.length === 0) {
+			historyMessages = null;
+			return;
 		}
 
-		Object.assign(mutableTarget, sourceRecord);
+		options.setMessages(historyMessages);
+		historyMessages = null;
+		runCallbackInBackground("onHistoryReplayEnd", options.onHistoryReplayEnd);
 	};
 
-	const invokeNonBlockingCallback = <TArgs extends unknown[]>(
+	const removeProvisionalMessages = (messages: ChatMessage[]) => {
+		for (let index = messages.length - 1; index >= 0; index -= 1) {
+			if (messages[index]?.provisional) {
+				messages.splice(index, 1);
+			}
+		}
+	};
+
+	const insertMessage = (
+		messages: ChatMessage[],
+		message: ChatMessage,
+		insertBeforeMessageId?: string,
+	) => {
+		const insertBeforeIndex = insertBeforeMessageId
+			? messages.findIndex(
+					(candidate) => candidate.id === insertBeforeMessageId,
+				)
+			: -1;
+
+		if (insertBeforeIndex === -1) {
+			messages.push(message);
+			// Return the object from the array to get the reactive proxy
+			return messages[messages.length - 1];
+		}
+
+		messages.splice(insertBeforeIndex, 0, message);
+		// Return the object from the array to get the reactive proxy
+		return messages[insertBeforeIndex];
+	};
+
+	const setAssistantMessageStreamingStatus = (
+		message: ChatMessage,
+		status?: "streaming",
+	) => {
+		if (status) {
+			message.status = status;
+			return;
+		}
+
+		delete message.status;
+	};
+
+	const isObjectRecord = (value: unknown): value is Record<string, unknown> => {
+		return typeof value === "object" && value !== null;
+	};
+
+	const runCallbackInBackground = <TArgs extends unknown[]>(
 		label: string,
 		callback: StreamStateCallback<void, TArgs> | undefined,
 		...args: TArgs
@@ -153,433 +123,461 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 	const upsertMessage = (
 		message: ChatMessage,
 		insertBeforeMessageId?: string,
-	) => {
+	): ChatMessage => {
 		const targetMessages = getTargetMessages();
 		const existingIndex = targetMessages.findIndex(
 			(candidate) => candidate.id === message.id,
 		);
 
 		if (existingIndex !== -1) {
-			replaceMessageInPlace(targetMessages[existingIndex], message);
+			targetMessages[existingIndex] = message;
+			return message;
+		}
+
+		removeProvisionalMessages(targetMessages);
+		return insertMessage(targetMessages, message, insertBeforeMessageId);
+	};
+
+	const mergeMessageMetadata = (message: ChatMessage, metadata: unknown) => {
+		if (!isObjectRecord(metadata)) {
 			return;
 		}
-
-		const nextMessages = targetMessages.filter(
-			(candidate) => !candidate.provisional,
-		);
-		const insertBeforeIndex = insertBeforeMessageId
-			? nextMessages.findIndex(
-					(candidate) => candidate.id === insertBeforeMessageId,
-				)
-			: -1;
-
-		if (insertBeforeIndex === -1) {
-			nextMessages.push(message);
-		} else {
-			nextMessages.splice(insertBeforeIndex, 0, message);
-		}
-
-		setTargetMessages(nextMessages);
+		const current = isObjectRecord(message.metadata)
+			? message.metadata
+			: undefined;
+		message.metadata = current ? { ...current, ...metadata } : { ...metadata };
 	};
 
-	const validateMessage = async (message: unknown): Promise<ChatMessage> => {
-		const validation = await safeValidateUIMessages({ messages: [message] });
-		if (!validation.success) {
-			throw validation.error;
-		}
-
-		return validation.data[0];
-	};
-
-	const validateHistoryMessage = (message: unknown): ChatMessage => {
-		if (!message || typeof message !== "object") {
-			throw new Error("History message must be an object");
-		}
-
-		const candidate = message as {
-			id?: unknown;
-			role?: unknown;
-			parts?: unknown;
-		};
-		if (typeof candidate.id !== "string" || candidate.id.length === 0) {
-			throw new Error("History message is missing an id");
-		}
-		if (
-			typeof candidate.role !== "string" ||
-			!["system", "user", "assistant", "tool"].includes(candidate.role)
-		) {
-			throw new Error("History message has an invalid role");
-		}
-		if (!Array.isArray(candidate.parts)) {
-			throw new Error("History message parts must be an array");
-		}
-
-		for (const part of candidate.parts) {
-			if (!part || typeof part !== "object") {
-				throw new Error("History message part must be an object");
-			}
-
-			const partType = (part as { type?: unknown }).type;
-			if (typeof partType !== "string") {
-				throw new Error("History message part is missing a type");
-			}
+	const finalizeAssistantMessageParts = (message: ChatMessage) => {
+		for (const part of message.parts) {
 			if (
-				partType !== "text" &&
-				partType !== "reasoning" &&
-				partType !== "file" &&
-				partType !== "step-start" &&
-				partType !== "source-url" &&
-				partType !== "source-document" &&
-				partType !== "dynamic-tool" &&
-				!partType.startsWith("data-")
+				(part.type === "text" || part.type === "reasoning") &&
+				part.state === "streaming"
 			) {
-				throw new Error(`Unsupported history message part type: ${partType}`);
+				part.state = "done";
+			}
+		}
+	};
+
+	const closeActiveAssistantStream = (
+		expectedMessage: ChatMessage | null = activeAssistantMessage,
+	) => {
+		if (!expectedMessage) {
+			return;
+		}
+
+		finalizeAssistantMessageParts(expectedMessage);
+		setAssistantMessageStreamingStatus(expectedMessage);
+		if (activeAssistantMessage === expectedMessage) {
+			activeAssistantMessage = null;
+		}
+	};
+
+	const ensureAssistantMessage = (messageId: string): ChatMessage => {
+		const existingMessage = getTargetMessages().find(
+			(message) => message.id === messageId,
+		);
+		if (existingMessage?.role === "assistant") {
+			return existingMessage;
+		}
+		return upsertMessage({
+			id: messageId,
+			role: "assistant",
+			parts: [],
+		});
+	};
+
+	const createStreamingPart = (type: "text" | "reasoning") => {
+		return type === "text"
+			? ({ type, text: "", state: "streaming" } satisfies TextPart)
+			: ({ type, text: "", state: "streaming" } satisfies ReasoningPart);
+	};
+
+	const getLastStreamingPart = (
+		message: ChatMessage,
+		type: "text" | "reasoning",
+	) => {
+		for (let index = message.parts.length - 1; index >= 0; index -= 1) {
+			const part = message.parts[index];
+			if (part?.type === type && part.state === "streaming") {
+				return part;
 			}
 		}
 
-		return message as ChatMessage;
+		return undefined;
 	};
 
-	const parseMessageEvent = async (data: string) => {
-		return validateHistoryMessage(JSON.parse(data));
-	};
-
-	const parseChunkEvent = async (data: string): Promise<UIMessageChunk> => {
-		const schema = uiMessageChunkSchema();
-		if (!schema.validate) {
-			throw new Error(
-				"UIMessageChunk schema does not expose a validate function",
-			);
-		}
-
-		const validation = await schema.validate(JSON.parse(data));
-		if (!validation.success) {
-			throw validation.error;
-		}
-
-		return validation.value as unknown as UIMessageChunk;
-	};
-
-	const applyStreamMetadata = (metadata: StreamMessageMetadata | undefined) => {
-		if (!metadata) {
-			return;
-		}
-
-		if (metadata.model) {
-			invokeNonBlockingCallback("setModel", options.setModel, metadata.model);
-		}
-		if (metadata.reasoning) {
-			invokeNonBlockingCallback(
-				"setReasoning",
-				options.setReasoning,
-				metadata.reasoning,
-			);
-		}
-	};
-
-	const parseMessageMetadata = (
-		value: unknown,
-	): StreamMessageMetadata | undefined => {
-		if (!value || typeof value !== "object") {
-			return undefined;
-		}
-
-		const candidate = value as { model?: unknown; reasoning?: unknown };
-		return {
-			model: typeof candidate.model === "string" ? candidate.model : undefined,
-			reasoning:
-				typeof candidate.reasoning === "string"
-					? candidate.reasoning
-					: undefined,
-		};
-	};
-
-	const isModeChangeChunk = (
-		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & {
-		type: "data-mode-change";
-		data: { mode?: string };
-	} => {
-		return chunk.type === "data-mode-change";
-	};
-
-	const isThreadNameChunk = (
-		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & {
-		type: "data-thread-name";
-		data: { name?: string };
-	} => {
-		return chunk.type === "data-thread-name";
-	};
-
-	const isMessageMetadataChunk = (
-		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & {
-		type: "message-metadata";
-		messageMetadata?: unknown;
-	} => {
-		return chunk.type === "message-metadata";
-	};
-
-	const isStartChunk = (
-		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & {
-		type: "start";
-		messageId?: string;
-		messageMetadata?: unknown;
-	} => {
-		return chunk.type === "start";
-	};
-
-	const isErrorChunk = (
-		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & { type: "error"; errorText?: string } => {
-		return chunk.type === "error";
-	};
-
-	const throwIfStreamErrored = (stream: ActiveAssistantStream) => {
-		if (!stream.error) {
-			return;
-		}
-
-		if (stream.error instanceof Error) {
-			throw stream.error;
-		}
-
-		throw new Error(String(stream.error));
-	};
-
-	const waitForStreamingUpdate = async (stream: ActiveAssistantStream) => {
-		await Promise.resolve();
-		await Promise.resolve();
-		throwIfStreamErrored(stream);
-	};
-
-	const closeActiveAssistantStream = async (
-		expectedStream: ActiveAssistantStream | null = activeAssistantStream,
+	const getOrCreateStreamingPart = (
+		message: ChatMessage,
+		type: "text" | "reasoning",
 	) => {
-		if (!expectedStream) {
+		let part = getLastStreamingPart(message, type);
+		if (!part) {
+			part = createStreamingPart(type);
+			message.parts.push(part);
+		}
+		return part;
+	};
+
+	const finishStreamingPart = (
+		message: ChatMessage,
+		type: "text" | "reasoning",
+	) => {
+		const part = getLastStreamingPart(message, type);
+		if (!part) {
 			return;
 		}
 
-		if (activeAssistantStream === expectedStream) {
-			activeAssistantStream = null;
-		}
-
-		try {
-			await expectedStream.writer.close();
-		} catch {
-			// The stream may already be closed when replay or reset finishes.
-		}
-
-		await expectedStream.readerTask;
-		throwIfStreamErrored(expectedStream);
+		part.state = "done";
 	};
 
-	const startAssistantStream = async (messageId: string | undefined) => {
+	const getToolPart = (
+		message: ChatMessage,
+		toolCallId: string,
+	): DynamicToolPart | undefined => {
+		const part = message.parts.find(
+			(candidate) =>
+				candidate.type === "dynamic-tool" &&
+				candidate.toolCallId === toolCallId,
+		);
+		return part?.type === "dynamic-tool" ? part : undefined;
+	};
+
+	const getOrCreateToolPart = (
+		message: ChatMessage,
+		toolCallId: string,
+		toolName?: string,
+		title?: string,
+	): DynamicToolPart => {
+		const existingPart = getToolPart(message, toolCallId);
+		if (existingPart) {
+			if (toolName) {
+				existingPart.toolName = toolName;
+			}
+			if (title !== undefined) {
+				existingPart.title = title;
+			}
+			return existingPart;
+		}
+		const nextPart: DynamicToolPart = {
+			type: "dynamic-tool",
+			toolCallId,
+			toolName: toolName ?? "Unknown",
+			state: "input-streaming",
+			input: undefined,
+			...(title !== undefined ? { title } : {}),
+		};
+		message.parts.push(nextPart);
+		return nextPart;
+	};
+
+	const parsePartialToolInput = (text: string): unknown => {
+		try {
+			return JSON.parse(text);
+		} catch {
+			return text;
+		}
+	};
+
+	const getToolInputText = (toolPart: DynamicToolPart | undefined) => {
+		if (toolPart?.input === undefined) {
+			return "";
+		}
+
+		if (typeof toolPart.input === "string") {
+			return toolPart.input;
+		}
+
+		return JSON.stringify(toolPart.input);
+	};
+
+	const updateToolPart = (
+		message: ChatMessage,
+		toolCallId: string,
+		updates: Partial<
+			Pick<
+				DynamicToolPart,
+				"state" | "input" | "output" | "errorText" | "approval"
+			>
+		>,
+		toolName?: string,
+		title?: string,
+	) => {
+		const toolPart = getOrCreateToolPart(message, toolCallId, toolName, title);
+		Object.assign(toolPart, updates);
+		return toolPart;
+	};
+
+	const startAssistantStream = (messageId: string | undefined) => {
 		if (!messageId) {
 			throw new Error("Received start chunk without a messageId");
 		}
 
-		if (activeAssistantStream) {
-			await closeActiveAssistantStream();
+		if (activeAssistantMessage) {
+			closeActiveAssistantStream();
 		}
 
-		const seedMessage = getTargetMessages().find(
-			(message) => message.id === messageId,
-		);
-		const transform = new TransformStream<UIMessageChunk, UIMessageChunk>();
-		const stream: ActiveAssistantStream = {
-			error: null,
-			messageId,
-			readerTask: Promise.resolve(),
-			writer: transform.writable.getWriter(),
-		};
-
-		stream.readerTask = (async () => {
-			try {
-				for await (const nextMessage of readUIMessageStream({
-					message: seedMessage ? structuredClone(seedMessage) : undefined,
-					stream: transform.readable,
-				})) {
-					upsertMessage(nextMessage);
-				}
-			} catch (error) {
-				stream.error = error;
-			} finally {
-				if (activeAssistantStream === stream) {
-					activeAssistantStream = null;
-				}
-			}
-		})();
-
-		activeAssistantStream = stream;
+		const message = ensureAssistantMessage(messageId);
+		setAssistantMessageStreamingStatus(message, "streaming");
+		activeAssistantMessage = message;
 	};
 
-	const isUserMessageChunk = (
-		chunk: UIMessageChunk,
-	): chunk is UIMessageChunk & UserMessageChunk => {
-		return chunk.type === "data-user-message";
-	};
-
-	const isToolOutputAvailableChunk = (
-		chunk: UIMessageChunk,
-	): chunk is ToolOutputAvailableChunk => {
-		return chunk.type === "tool-output-available";
-	};
-
-	const isToolInputAvailableChunk = (
-		chunk: UIMessageChunk,
-	): chunk is ToolInputAvailableChunk => {
-		return (
-			chunk.type === "tool-input-available" &&
-			typeof (chunk as { toolCallId?: unknown }).toolCallId === "string" &&
-			typeof (chunk as { toolName?: unknown }).toolName === "string"
-		);
-	};
-
-	const isToolApprovalRequestChunk = (
-		chunk: UIMessageChunk,
-	): chunk is ToolApprovalRequestChunk => {
-		return (
-			chunk.type === "tool-approval-request" &&
-			typeof (chunk as { toolCallId?: unknown }).toolCallId === "string"
-		);
-	};
-
-	const getToolLikePart = (part: ChatMessage["parts"][number]) => {
-		if (
-			typeof part !== "object" ||
-			part === null ||
-			typeof (part as { toolCallId?: unknown }).toolCallId !== "string" ||
-			typeof (part as { toolName?: unknown }).toolName !== "string" ||
-			typeof (part as { state?: unknown }).state !== "string"
-		) {
-			return null;
-		}
-		return part as {
-			toolCallId: string;
-			toolName: string;
-			state: string;
-		};
-	};
-
-	const getAssistantMessage = (messageId: string): ChatMessage | undefined => {
-		return getTargetMessages().find((message) => message.id === messageId);
-	};
-
-	const notifyMeaningfulMilestones = (
-		chunk: UIMessageChunk,
-		stream: ActiveAssistantStream,
-	) => {
-		if (isToolOutputAvailableChunk(chunk) && chunk.preliminary !== true) {
-			if (!hasNotifiedMeaningfulToolOutput) {
-				hasNotifiedMeaningfulToolOutput = true;
-				invokeNonBlockingCallback(
-					"onMeaningfulToolOutput",
-					options.onMeaningfulToolOutput,
+	const applyChunkEvent = async (chunk: ChatStreamChunk) => {
+		switch (chunk.type) {
+			case "data-thread-update": {
+				runCallbackInBackground(
+					"onThreadUpdate",
+					options.onThreadUpdate,
+					chunk.data.thread,
 				);
+				return;
 			}
-		}
 
-		const actionableQuestionToolCallId = isToolInputAvailableChunk(chunk)
-			? chunk.toolName === "AskUserQuestion"
-				? chunk.toolCallId
-				: null
-			: isToolApprovalRequestChunk(chunk)
-				? chunk.toolCallId
-				: null;
-		if (
-			actionableQuestionToolCallId &&
-			!actionableQuestionToolCallIds.has(actionableQuestionToolCallId)
-		) {
-			actionableQuestionToolCallIds.add(actionableQuestionToolCallId);
-			invokeNonBlockingCallback(
-				"onActionableQuestion",
-				options.onActionableQuestion,
-			);
-		}
+			case "data-thread-resume": {
+				if (typeof chunk.data?.messageId !== "string") {
+					return;
+				}
+				runCallbackInBackground("onStart", options.onStart, { resume: true });
+				startAssistantStream(chunk.data.messageId);
+				return;
+			}
 
-		const assistantMessage = getAssistantMessage(stream.messageId);
-		if (!assistantMessage) {
-			return;
-		}
-		for (const part of assistantMessage.parts) {
-			const toolPart = getToolLikePart(part);
-			if (
-				toolPart &&
-				toolPart.toolName === "AskUserQuestion" &&
-				(toolPart.state === "input-available" ||
-					toolPart.state === "approval-requested") &&
-				!actionableQuestionToolCallIds.has(toolPart.toolCallId)
-			) {
-				actionableQuestionToolCallIds.add(toolPart.toolCallId);
-				invokeNonBlockingCallback(
-					"onActionableQuestion",
-					options.onActionableQuestion,
+			case "message-metadata": {
+				if (activeAssistantMessage) {
+					mergeMessageMetadata(activeAssistantMessage, chunk.messageMetadata);
+				}
+				return;
+			}
+
+			case "data-user-message": {
+				const message = await parseChatStreamMessageValue(chunk.data.message);
+				upsertMessage(message, chunk.data.insertBeforeMessageId);
+				return;
+			}
+
+			case "error": {
+				runCallbackInBackground(
+					"onChunkError",
+					options.onChunkError,
+					chunk.errorText ?? "Unknown chat error",
 				);
+				return;
+			}
+
+			case "data-tool-approval-response": {
+				const approvalId = chunk.data.approvalId;
+				const approved = chunk.data.approved;
+				if (typeof approvalId !== "string" || typeof approved !== "boolean") {
+					throw new Error("Approval response chunk is missing approval data");
+				}
+				addToolApprovalResponse(getTargetMessages(), {
+					id: approvalId,
+					approved,
+					reason: chunk.data.reason,
+				});
+				return;
+			}
+
+			case "start": {
+				runCallbackInBackground("onStart", options.onStart, {
+					resume: false,
+				});
+				startAssistantStream(chunk.messageId);
+				if (activeAssistantMessage) {
+					mergeMessageMetadata(activeAssistantMessage, chunk.messageMetadata);
+				}
+				return;
 			}
 		}
-	};
 
-	const applyChunkEvent = async (chunk: UIMessageChunk) => {
-		if (isModeChangeChunk(chunk) && typeof chunk.data?.mode === "string") {
-			invokeNonBlockingCallback("setMode", options.setMode, chunk.data.mode);
-			return;
-		}
-
-		if (isThreadNameChunk(chunk) && typeof chunk.data?.name === "string") {
-			invokeNonBlockingCallback(
-				"setThreadName",
-				options.setThreadName,
-				chunk.data.name,
-			);
-			return;
-		}
-
-		if (isMessageMetadataChunk(chunk)) {
-			applyStreamMetadata(parseMessageMetadata(chunk.messageMetadata));
-			return;
-		}
-
-		if (isUserMessageChunk(chunk)) {
-			const message = await validateMessage(chunk.data.message);
-			upsertMessage(message, chunk.data.insertBeforeMessageId);
-			return;
-		}
-
-		if (isErrorChunk(chunk)) {
-			invokeNonBlockingCallback(
-				"onChunkError",
-				options.onChunkError,
-				chunk.errorText ?? "Unknown chat error",
-			);
-			return;
-		}
-
-		if (isStartChunk(chunk)) {
-			applyStreamMetadata(parseMessageMetadata(chunk.messageMetadata));
-			hasNotifiedMeaningfulToolOutput = false;
-			actionableQuestionToolCallIds = new Set();
-			invokeNonBlockingCallback("onStart", options.onStart);
-			await startAssistantStream(chunk.messageId);
-		}
-
-		const activeStream = activeAssistantStream;
-		if (!activeStream) {
+		const activeMessage = activeAssistantMessage;
+		if (!activeMessage) {
 			throw new Error(`Received ${chunk.type} chunk before a start chunk`);
 		}
 
-		await activeStream.writer.write(chunk);
+		switch (chunk.type) {
+			case "text-start": {
+				getOrCreateStreamingPart(activeMessage, "text");
+				return;
+			}
 
-		if (terminalChunkTypes.has(chunk.type)) {
-			await closeActiveAssistantStream(activeStream);
-			invokeNonBlockingCallback("onFinish", options.onFinish);
-			return;
+			case "text-delta": {
+				const textPart = getOrCreateStreamingPart(activeMessage, "text");
+				textPart.text += chunk.delta;
+				return;
+			}
+
+			case "text-end": {
+				finishStreamingPart(activeMessage, "text");
+				return;
+			}
+
+			case "reasoning-start": {
+				getOrCreateStreamingPart(activeMessage, "reasoning");
+				return;
+			}
+
+			case "reasoning-delta": {
+				const reasoningPart = getOrCreateStreamingPart(
+					activeMessage,
+					"reasoning",
+				);
+				reasoningPart.text += chunk.delta;
+				return;
+			}
+
+			case "reasoning-end": {
+				finishStreamingPart(activeMessage, "reasoning");
+				return;
+			}
+
+			case "tool-input-start": {
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{ state: "input-streaming", input: undefined },
+					chunk.toolName,
+					chunk.title,
+				);
+				return;
+			}
+
+			case "tool-input-delta": {
+				const existingToolPart = getToolPart(activeMessage, chunk.toolCallId);
+				const nextInputText =
+					getToolInputText(existingToolPart) + chunk.inputTextDelta;
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{
+						state: "input-streaming",
+						input: parsePartialToolInput(nextInputText),
+					},
+					existingToolPart?.toolName,
+					existingToolPart?.title,
+				);
+				return;
+			}
+
+			case "tool-input-available": {
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{ state: "input-available", input: chunk.input },
+					chunk.toolName,
+					chunk.title,
+				);
+				return;
+			}
+
+			case "tool-input-error": {
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{
+						state: "output-error",
+						input: chunk.input,
+						errorText: chunk.errorText,
+					},
+					chunk.toolName,
+					chunk.title,
+				);
+				return;
+			}
+
+			case "tool-approval-request": {
+				const toolPart = getToolPart(activeMessage, chunk.toolCallId);
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{
+						state: "approval-requested",
+						approval: { id: chunk.approvalId },
+					},
+					toolPart?.toolName,
+					toolPart?.title,
+				);
+				closeActiveAssistantStream(activeMessage);
+				runCallbackInBackground("onFinish", options.onFinish);
+				return;
+			}
+
+			case "tool-output-available": {
+				const toolPart = getToolPart(activeMessage, chunk.toolCallId);
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{ state: "output-available", output: chunk.output },
+					toolPart?.toolName,
+					toolPart?.title,
+				);
+				return;
+			}
+
+			case "tool-output-error": {
+				const toolPart = getToolPart(activeMessage, chunk.toolCallId);
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{ state: "output-error", errorText: chunk.errorText },
+					toolPart?.toolName,
+					toolPart?.title,
+				);
+				return;
+			}
+
+			case "tool-output-denied": {
+				const toolPart = getToolPart(activeMessage, chunk.toolCallId);
+				updateToolPart(
+					activeMessage,
+					chunk.toolCallId,
+					{ state: "output-denied" },
+					toolPart?.toolName,
+					toolPart?.title,
+				);
+				return;
+			}
+
+			case "source-url":
+				activeMessage.parts.push({
+					type: "source-url",
+					sourceId: chunk.sourceId,
+					url: chunk.url,
+					...(chunk.title ? { title: chunk.title } : {}),
+				});
+				return;
+
+			case "source-document":
+				activeMessage.parts.push({
+					type: "source-document",
+					sourceId: chunk.sourceId,
+					mediaType: chunk.mediaType,
+					title: chunk.title,
+					...(chunk.filename ? { filename: chunk.filename } : {}),
+				});
+				return;
+
+			case "file":
+				activeMessage.parts.push({
+					type: "file",
+					url: chunk.url,
+					mediaType: chunk.mediaType,
+				});
+				return;
+
+			case "start-step":
+				activeMessage.parts.push({ type: "step-start" });
+				return;
+
+			case "finish-step":
+				return;
+
+			case "abort":
+			case "finish":
+				closeActiveAssistantStream(activeMessage);
+				runCallbackInBackground("onFinish", options.onFinish);
+				return;
 		}
-
-		await waitForStreamingUpdate(activeStream);
-		notifyMeaningfulMilestones(chunk, activeStream);
 	};
 
 	const applyEvent = async (event: ChatStreamEvent) => {
@@ -588,28 +586,21 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		}
 
 		if (event.event === "history-start") {
-			historyMessages = [];
+			beginHistoryReplay();
 			return;
 		}
 
 		if (event.event === "history-message") {
-			upsertMessage(await parseMessageEvent(event.data));
+			upsertMessage(await parseChatStreamMessage(event.data));
 			return;
 		}
 
 		if (event.event === "history-end") {
-			if (historyMessages !== null) {
-				options.setMessages(historyMessages);
-				historyMessages = null;
-				invokeNonBlockingCallback(
-					"onHistoryReplayEnd",
-					options.onHistoryReplayEnd,
-				);
-			}
+			commitHistoryReplay();
 			return;
 		}
 
-		await applyChunkEvent(await parseChunkEvent(event.data));
+		await applyChunkEvent(await parseChatStreamChunk(event.data));
 	};
 
 	const handleStreamEvent = (event: ChatStreamEvent) => {
@@ -620,74 +611,14 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		return task;
 	};
 
-	const reset = async () => {
+	const reset = () => {
 		historyMessages = null;
-		await closeActiveAssistantStream();
+		closeActiveAssistantStream();
 		options.setMessages([]);
 	};
 
 	return {
-		get isBufferingHistory() {
-			return historyMessages !== null;
-		},
 		handleStreamEvent,
 		reset,
-	};
-}
-
-export function bindChatStreamEventSource(
-	eventSource: ChatStreamEventSource,
-	streamState: Pick<
-		ReturnType<typeof createChatStreamState>,
-		"handleStreamEvent"
-	>,
-	options: ChatStreamEventSourceOptions = {},
-) {
-	const handleError = (error: unknown) => {
-		if (options.onError) {
-			options.onError(error);
-			return;
-		}
-
-		console.error("Failed to process chat stream event", error);
-	};
-
-	const dispatchEvent = (event: ChatStreamEvent) => {
-		void streamState.handleStreamEvent(event).catch(handleError);
-	};
-
-	const listeners = {
-		"history-start": (event: MessageEvent<string>) => {
-			dispatchEvent({ event: "history-start", data: event.data });
-		},
-		"history-message": (event: MessageEvent<string>) => {
-			dispatchEvent({ event: "history-message", data: event.data });
-		},
-		"history-end": (event: MessageEvent<string>) => {
-			dispatchEvent({ event: "history-end", data: event.data });
-		},
-		chunk: (event: MessageEvent<string>) => {
-			dispatchEvent({ event: "chunk", data: event.data });
-		},
-		ping: (event: MessageEvent<string>) => {
-			dispatchEvent({ event: "ping", data: event.data });
-		},
-	} satisfies Record<
-		ChatStreamEventName,
-		(event: MessageEvent<string>) => void
-	>;
-
-	for (const [eventName, listener] of Object.entries(listeners) as Array<
-		[ChatStreamEventName, (event: MessageEvent<string>) => void]
-	>) {
-		eventSource.addEventListener(eventName, listener);
-	}
-
-	return () => {
-		for (const [eventName, listener] of Object.entries(listeners) as Array<
-			[ChatStreamEventName, (event: MessageEvent<string>) => void]
-		>) {
-			eventSource.removeEventListener(eventName, listener);
-		}
 	};
 }

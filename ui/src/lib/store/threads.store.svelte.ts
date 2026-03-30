@@ -50,19 +50,23 @@ export class ThreadStore {
 		return this.#fetchOneRequests.run(`${sessionId}:${threadId}`, async () => {
 			try {
 				const thread = await api.getThread(sessionId, threadId);
-				const idx = this.#items.findIndex((t) => t.id === threadId);
-				if (idx === -1) {
-					this.#items = [...this.#items, thread];
-				} else {
-					this.#items = this.#items.map((t, i) => (i === idx ? thread : t));
-				}
-				if (this.#status !== "ready") {
-					this.#status = "ready";
-				}
+				this.upsert(thread);
 			} catch (error) {
 				console.error("[ThreadStore] Failed to fetch thread:", threadId, error);
 			}
 		});
+	}
+
+	upsert(thread: Thread): void {
+		const idx = this.#items.findIndex((t) => t.id === thread.id);
+		if (idx === -1) {
+			this.#items = [...this.#items, thread];
+		} else {
+			this.#items = this.#items.map((t, i) => (i === idx ? thread : t));
+		}
+		if (this.#status !== "ready") {
+			this.#status = "ready";
+		}
 	}
 
 	async create(sessionId: string, data: CreateThreadRequest): Promise<Thread> {

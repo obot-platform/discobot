@@ -6,6 +6,40 @@ import type {
 } from "./api-constants";
 import type { UIMessage } from "ai";
 
+export interface Thread {
+	id: string;
+	name: string;
+	lastMessage?: string;
+	model?: string;
+	reasoning?: string;
+	mode: string;
+	pending?: boolean;
+}
+
+export type ChatMessageMetadata = {
+	model?: string;
+	reasoning?: string;
+} & Record<string, unknown>;
+
+export type ChatMessageDataTypes = {
+	"thread-update": {
+		thread: Thread;
+	};
+	"thread-resume": {
+		threadId?: string;
+		messageId?: string;
+	};
+	"user-message": {
+		insertBeforeMessageId?: string;
+		message: ChatMessage;
+	};
+	"tool-approval-response": {
+		approvalId?: string;
+		approved?: boolean;
+		reason?: string;
+	};
+};
+
 /** User preference key-value pair */
 export interface UserPreference {
 	key: string;
@@ -183,8 +217,12 @@ export interface ModelsResponse {
 }
 
 // ChatMessage extends the AI SDK UIMessage with local-only UI state.
-export type ChatMessage = UIMessage & {
+export type ChatMessage = UIMessage<
+	ChatMessageMetadata,
+	ChatMessageDataTypes
+> & {
 	provisional?: boolean;
+	status?: "streaming";
 };
 
 export interface Suggestion {
@@ -550,16 +588,6 @@ export interface CancelChatResponse {
 	success: boolean;
 	completionId: string;
 	status: "cancelled";
-}
-
-export interface Thread {
-	id: string;
-	name: string;
-	lastMessage?: string;
-	model?: string;
-	reasoning?: string;
-	mode: string;
-	pending?: boolean;
 }
 
 export interface ListThreadsResponse {

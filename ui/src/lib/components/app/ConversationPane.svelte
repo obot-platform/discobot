@@ -338,10 +338,7 @@
 )}
 	{#each parts as part, index (`${message.id}-${part.type}-${index}`)}
 		{#if part.type === "reasoning"}
-			<Reasoning
-				defaultOpen={false}
-				isStreaming={isConversationPaneMessageStreaming(message)}
-			>
+			<Reasoning defaultOpen={false} isStreaming={part.state === "streaming"}>
 				<ReasoningTrigger />
 				<ReasoningContent text={part.text} />
 			</Reasoning>

@@ -1,6 +1,6 @@
 import { api } from "$lib/api-client";
 import { useAppContext } from "$lib/context/app-context.svelte";
-import type { ChatMessage, Session } from "$lib/api-types";
+import type { ChatMessage, Session, Thread } from "$lib/api-types";
 import {
 	bindChatStreamEventSource,
 	createChatStreamState,
@@ -17,6 +17,7 @@ type CreateConversationDomainArgs = {
 	getSessionStatus: () => Session["status"] | null;
 	threadId: string;
 	refreshThread: () => Promise<void>;
+	applyThreadUpdate?: (thread: Thread) => void;
 	refreshSessionState?: () => Promise<void>;
 	afterTurn?: () => Promise<void>;
 };
@@ -75,20 +76,17 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		setMessages: (nextMessages) => {
 			messages = nextMessages;
 		},
-		onStart: () => {
+		onStart: ({ resume } = {}) => {
 			streamError = null;
 			streamStatus = "streaming";
+			if (resume) {
+				return;
+			}
 			return args.refreshThread();
 		},
 		onFinish: () => {
 			streamStatus = null;
 			return args.afterTurn?.();
-		},
-		onMeaningfulToolOutput: () => {
-			return args.refreshSessionState?.();
-		},
-		onActionableQuestion: () => {
-			return args.refreshThread();
 		},
 		onHistoryReplayEnd: () => {
 			historyReplayVersion += 1;
@@ -97,17 +95,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamStatus = null;
 			streamError = errorText;
 		},
-		setMode: () => {
-			return args.refreshThread();
-		},
-		setModel: () => {
-			return args.refreshThread();
-		},
-		setReasoning: () => {
-			return args.refreshThread();
-		},
-		setThreadName: () => {
-			return args.refreshThread();
+		onThreadUpdate: (thread) => {
+			args.applyThreadUpdate?.(thread);
 		},
 	});
 
