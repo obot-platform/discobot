@@ -66,6 +66,36 @@ test("parseChatStreamMessageValue normalizes legacy tool-call parts", async () =
 	});
 });
 
+test("parseChatStreamMessageValue normalizes legacy dynamic-tool approvals", async () => {
+	const parsed = await parseChatStreamMessageValue({
+		id: "assistant-legacy-approval",
+		role: "assistant",
+		parts: [
+			{
+				type: "dynamic-tool",
+				toolCallId: "tool-legacy-approval-1",
+				toolName: "ExitPlanMode",
+				state: "output-available",
+				input: {},
+				output: "Plan feedback from user: Continue with your work.",
+				approval: { id: "approval-legacy-1" },
+			},
+			{ type: "step-start" },
+		],
+	});
+
+	assert.deepEqual(parsed.parts[0], {
+		type: "dynamic-tool",
+		toolCallId: "tool-legacy-approval-1",
+		toolName: "ExitPlanMode",
+		state: "output-available",
+		input: {},
+		output: "Plan feedback from user: Continue with your work.",
+		approval: { id: "approval-legacy-1", approved: true },
+	});
+	assert.equal(parsed.parts[1]?.type, "step-start");
+});
+
 test("parseChatStreamMessageValue accepts data-* parts", async () => {
 	const parsed = await parseChatStreamMessageValue({
 		id: "assistant-2",

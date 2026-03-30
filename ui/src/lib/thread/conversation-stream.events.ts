@@ -80,6 +80,63 @@ function normalizeLegacyToolCallPart(part: unknown): {
 	};
 }
 
+function normalizeLegacyDynamicToolApproval(part: unknown): {
+	part: unknown;
+	changed: boolean;
+} {
+	if (
+		!isRecord(part) ||
+		part.type !== "dynamic-tool" ||
+		!isRecord(part.approval)
+	) {
+		return { part, changed: false };
+	}
+	if (
+		typeof part.approval.id !== "string" ||
+		Object.hasOwn(part.approval, "approved")
+	) {
+		return { part, changed: false };
+	}
+
+	if (part.state === "output-available" || part.state === "output-error") {
+		return {
+			part: {
+				...part,
+				approval: {
+					...part.approval,
+					approved: true,
+				},
+			},
+			changed: true,
+		};
+	}
+	if (part.state === "output-denied") {
+		return {
+			part: {
+				...part,
+				approval: {
+					...part.approval,
+					approved: false,
+				},
+			},
+			changed: true,
+		};
+	}
+
+	return { part, changed: false };
+}
+
+function normalizeLegacyMessagePart(part: unknown): {
+	part: unknown;
+	changed: boolean;
+} {
+	const normalizedToolCall = normalizeLegacyToolCallPart(part);
+	if (normalizedToolCall.changed) {
+		return normalizedToolCall;
+	}
+	return normalizeLegacyDynamicToolApproval(part);
+}
+
 function normalizeLegacyChatStreamMessageValue(message: unknown): unknown {
 	if (!isRecord(message) || !Array.isArray(message.parts)) {
 		return message;
@@ -87,7 +144,7 @@ function normalizeLegacyChatStreamMessageValue(message: unknown): unknown {
 
 	let changed = false;
 	const parts = message.parts.map((part) => {
-		const normalized = normalizeLegacyToolCallPart(part);
+		const normalized = normalizeLegacyMessagePart(part);
 		changed ||= normalized.changed;
 		return normalized.part;
 	});
