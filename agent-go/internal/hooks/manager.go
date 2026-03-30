@@ -20,12 +20,33 @@ const (
 	InlineOutputMaxBytes = 5 * 1024
 )
 
+// HookFailureMessageMetadata carries structured hook-failure details for UI rendering.
+type HookFailureMessageMetadata struct {
+	Kind            string   `json:"kind"`
+	HookName        string   `json:"hookName"`
+	ExitCode        int      `json:"exitCode"`
+	Pattern         string   `json:"pattern,omitempty"`
+	HookPath        string   `json:"hookPath,omitempty"`
+	Files           []string `json:"files,omitempty"`
+	ExtraFileCount  int      `json:"extraFileCount,omitempty"`
+	Output          string   `json:"output,omitempty"`
+	OutputPath      string   `json:"outputPath,omitempty"`
+	OutputTruncated bool     `json:"outputTruncated,omitempty"`
+}
+
 // FileHookEvalResult is the result of evaluating file hooks after a completion.
 type FileHookEvalResult struct {
 	Evaluated      bool
 	ShouldReprompt bool
 	LLMMessage     string
 	FailedResult   *HookResult
+	HookFailure    *HookFailureMessageMetadata
+}
+
+// HookRunResult is the result of a manual hook run.
+type HookRunResult struct {
+	Result HookResult
+	Eval   FileHookEvalResult
 }
 
 // Manager orchestrates hook discovery, execution, and status tracking.
@@ -211,7 +232,7 @@ func (m *Manager) GetHookOutput(hookID string) (string, error) {
 }
 
 // RerunHook manually reruns a file hook against current dirty files.
-func (m *Manager) RerunHook(hookID string) (*HookResult, error) {
+func (m *Manager) RerunHook(hookID string) (*HookRunResult, error) {
 	m.mu.Lock()
 	m.reloadHooks()
 	var hook *Hook
@@ -243,6 +264,11 @@ func (m *Manager) RerunHook(hookID string) (*HookResult, error) {
 		OutputPath:   outputPath,
 	})
 
+	eval := FileHookEvalResult{}
+	if !result.Success {
+		eval = buildHookFailureEvalResult(result, matching, outputPath)
+	}
+
 	_ = UpdateHookStatus(m.hooksDataDir, result, outputPath)
 
 	if result.Success {
@@ -251,7 +277,7 @@ func (m *Manager) RerunHook(hookID string) (*HookResult, error) {
 
 	_ = UpdateLastEvaluatedAt(m.hooksDataDir)
 
-	return &result, nil
+	return &HookRunResult{Result: result, Eval: eval}, nil
 }
 
 // EvaluateFileHooks evaluates file hooks after a completion.
@@ -341,22 +367,7 @@ func (m *Manager) EvaluateFileHooks() FileHookEvalResult {
 		}
 
 		// Hook failed
-		if hook.NotifyLLM {
-			msg := formatHookFailureMessage(result, matching, outputPath)
-			return FileHookEvalResult{
-				Evaluated:      true,
-				ShouldReprompt: true,
-				LLMMessage:     msg,
-				FailedResult:   &result,
-			}
-		}
-
-		// notifyLlm=false: stop processing more hooks for this turn
-		return FileHookEvalResult{
-			Evaluated:      true,
-			ShouldReprompt: false,
-			FailedResult:   &result,
-		}
+		return buildHookFailureEvalResult(result, matching, outputPath)
 	}
 
 	// All pending hooks cleared
@@ -469,41 +480,93 @@ func matchFiles(files []string, pattern string) []string {
 	return matched
 }
 
-// formatHookFailureMessage builds the XML-tagged message for LLM re-prompt.
-func formatHookFailureMessage(result HookResult, matchingFiles []string, outputPath string) string {
-	var b strings.Builder
-	b.WriteString("<hook-failure>\n")
-	b.WriteString(fmt.Sprintf("<hook-name>%s</hook-name>\n", result.Hook.Name))
-	if result.Hook.Pattern != "" {
-		b.WriteString(fmt.Sprintf("<pattern>%s</pattern>\n", result.Hook.Pattern))
+// buildHookFailureEvalResult builds the evaluation response for a failed hook.
+func buildHookFailureEvalResult(result HookResult, matchingFiles []string, outputPath string) FileHookEvalResult {
+	if result.Success {
+		return FileHookEvalResult{}
 	}
-	b.WriteString(fmt.Sprintf("<exit-code>%d</exit-code>\n", result.ExitCode))
+	if !result.Hook.NotifyLLM {
+		return FileHookEvalResult{
+			Evaluated:      true,
+			ShouldReprompt: false,
+			FailedResult:   &result,
+		}
+	}
 
-	// Files list (max 20)
+	meta := buildHookFailureMessageMetadata(result, matchingFiles, outputPath)
+	msg := formatHookFailureMessage(meta)
+	return FileHookEvalResult{
+		Evaluated:      true,
+		ShouldReprompt: true,
+		LLMMessage:     msg,
+		FailedResult:   &result,
+		HookFailure:    &meta,
+	}
+}
+
+// buildHookFailureMessageMetadata builds structured hook-failure metadata for UI rendering.
+func buildHookFailureMessageMetadata(result HookResult, matchingFiles []string, outputPath string) HookFailureMessageMetadata {
+	meta := HookFailureMessageMetadata{
+		Kind:     "hook-failure",
+		HookName: result.Hook.Name,
+		ExitCode: result.ExitCode,
+		Pattern:  result.Hook.Pattern,
+		HookPath: result.Hook.Path,
+	}
+
 	if len(matchingFiles) > 0 {
 		displayFiles := matchingFiles
-		extra := 0
 		if len(displayFiles) > 20 {
-			extra = len(displayFiles) - 20
+			meta.ExtraFileCount = len(displayFiles) - 20
 			displayFiles = displayFiles[:20]
 		}
-		filesStr := strings.Join(displayFiles, ", ")
-		if extra > 0 {
-			filesStr += fmt.Sprintf(", and %d more", extra)
-		}
-		b.WriteString(fmt.Sprintf("<files>%s</files>\n", filesStr))
+		meta.Files = append([]string(nil), displayFiles...)
 	}
 
-	// Inline output or reference path
-	output := result.Output
+	output := strings.TrimSpace(result.Output)
+	if output == "" {
+		return meta
+	}
+
 	lines := strings.Split(output, "\n")
 	if len(lines) > InlineOutputMaxLines || len(output) > InlineOutputMaxBytes {
-		b.WriteString(fmt.Sprintf("<output-path>%s</output-path>\n", outputPath))
-	} else {
-		b.WriteString(fmt.Sprintf("<output>\n%s\n</output>\n", strings.TrimSpace(output)))
+		meta.OutputPath = outputPath
+		meta.OutputTruncated = true
+		return meta
 	}
 
-	b.WriteString("</hook-failure>\n\n")
+	meta.Output = output
+	return meta
+}
+
+// formatHookFailureMessage builds the markdown message for LLM re-prompt.
+func formatHookFailureMessage(meta HookFailureMessageMetadata) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("### Hook failed: %s\n\n", meta.HookName))
+	b.WriteString(fmt.Sprintf("- Exit code: `%d`\n", meta.ExitCode))
+	if meta.Pattern != "" {
+		b.WriteString(fmt.Sprintf("- Pattern: `%s`\n", meta.Pattern))
+	}
+
+	if len(meta.Files) > 0 {
+		filesStr := strings.Join(meta.Files, ", ")
+		if meta.ExtraFileCount > 0 {
+			filesStr += fmt.Sprintf(", and %d more", meta.ExtraFileCount)
+		}
+		b.WriteString(fmt.Sprintf("- Files: %s\n", filesStr))
+	}
+	b.WriteString("\n")
+
+	if meta.OutputTruncated && meta.OutputPath != "" {
+		b.WriteString("#### Output\n\n")
+		b.WriteString(fmt.Sprintf("Output was too long to inline. Full output was written to `%s`.\n\n", meta.OutputPath))
+	} else if meta.Output != "" {
+		b.WriteString("#### Output\n\n")
+		b.WriteString("```text\n")
+		b.WriteString(meta.Output)
+		b.WriteString("\n```\n\n")
+	}
+
 	b.WriteString("Please fix the issues above and ensure the hook passes.")
 
 	return b.String()

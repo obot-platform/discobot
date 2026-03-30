@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"iter"
 
@@ -115,6 +116,9 @@ type PromptRequest struct {
 
 	// UserParts is the user message content in UI message format.
 	UserParts []message.UIPart
+
+	// Metadata is attached to the persisted user message for UI rendering.
+	Metadata json.RawMessage
 
 	// Model overrides the default model for this request.
 	Model string

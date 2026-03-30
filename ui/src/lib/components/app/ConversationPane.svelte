@@ -1,14 +1,17 @@
 <script lang="ts">
 	import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
 	import { tick } from "svelte";
+	import { api } from "$lib/api-client";
 	import type { ChatMessage } from "$lib/api-types";
 	import type { ChatWidthMode } from "$lib/app/app-context.types";
 	import type {
 		AssistantConversationPaneRenderablePart,
+		HookFailureMessageMetadata,
 		UserConversationPaneRenderablePart,
 	} from "$lib/components/app/conversation-pane-message-parts";
 	import {
 		getAssistantMessagePartGroups,
+		getHookFailureMessageMetadata,
 		getUserMessageRenderableParts,
 		isConversationPaneMessageStreaming,
 	} from "$lib/components/app/conversation-pane-message-parts";
@@ -19,6 +22,7 @@
 		Attachments,
 		Loader,
 	} from "$lib/components/ai";
+	import CodeBlock from "$lib/components/ai/code-block/CodeBlock.svelte";
 	import {
 		Message,
 		MessageContent,
@@ -39,6 +43,7 @@
 	} from "$lib/components/app/conversation-pane-layout";
 	import { Alert, AlertDescription } from "$lib/components/ui/alert";
 	import { Button } from "$lib/components/ui/button";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import {
 		Collapsible,
 		CollapsibleContent,
@@ -121,6 +126,70 @@
 	let expandedGeneratedUserMessages = $state<Record<string, boolean>>({});
 	let lastReservedSubmitMessageId = $state<string | null>(null);
 	let reservedTurnMinHeight = $state(0);
+	let hookPreviewOpen = $state(false);
+	let hookPreviewMetadata = $state<HookFailureMessageMetadata | null>(null);
+	let hookPreviewContent = $state("");
+	let hookPreviewLoading = $state(false);
+	let hookPreviewError = $state<string | null>(null);
+
+	function getHookFileLanguage(path: string | undefined): string {
+		const extension = path?.split(".").at(-1)?.toLowerCase() ?? "";
+		switch (extension) {
+			case "sh":
+			case "bash":
+			case "zsh":
+				return "shell";
+			case "py":
+				return "python";
+			case "js":
+				return "javascript";
+			case "ts":
+				return "typescript";
+			case "rb":
+				return "ruby";
+			case "go":
+				return "go";
+			case "yaml":
+			case "yml":
+				return "yaml";
+			default:
+				return "plaintext";
+		}
+	}
+
+	async function openHookPreview(metadata: HookFailureMessageMetadata) {
+		hookPreviewMetadata = metadata;
+		hookPreviewContent = "";
+		hookPreviewError = null;
+		hookPreviewOpen = true;
+
+		if (!activeSessionId || !metadata.hookPath) {
+			return;
+		}
+
+		hookPreviewLoading = true;
+		try {
+			const response = await api.readSessionFile(
+				activeSessionId,
+				metadata.hookPath,
+			);
+			hookPreviewContent = response.content;
+		} catch (error) {
+			hookPreviewError =
+				error instanceof Error ? error.message : "Failed to load hook file.";
+		} finally {
+			hookPreviewLoading = false;
+		}
+	}
+
+	async function editHookFile() {
+		const hookPath = hookPreviewMetadata?.hookPath;
+		if (!hookPath) {
+			return;
+		}
+		await session?.files.open(hookPath);
+		hookPreviewOpen = false;
+	}
 
 	function isProvisionalUserMessage(
 		message: ChatMessage | undefined,
@@ -349,6 +418,116 @@
 	{/if}
 {/snippet}
 
+{#snippet renderHookFailureMessage(metadata: HookFailureMessageMetadata)}
+	<div
+		class="w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+	>
+		<div
+			class="flex items-center justify-between gap-3 border-border border-b bg-muted/20 px-4 py-3"
+		>
+			<div class="min-w-0 space-y-1">
+				<div class="font-medium text-foreground text-sm">Hook failed</div>
+				<div class="truncate text-muted-foreground text-sm">
+					{metadata.hookName}
+				</div>
+			</div>
+			<div
+				class="rounded-md border border-border bg-background px-2 py-1 font-mono text-foreground text-xs"
+			>
+				exit {metadata.exitCode}
+			</div>
+		</div>
+
+		<div class="space-y-4 p-4">
+			<div class="grid gap-3 text-sm sm:grid-cols-2">
+				{#if metadata.pattern}
+					<div class="space-y-1">
+						<div
+							class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+						>
+							Pattern
+						</div>
+						<div class="font-mono text-foreground text-xs">
+							{metadata.pattern}
+						</div>
+					</div>
+				{/if}
+
+				{#if metadata.hookPath}
+					<div class="space-y-1 sm:col-span-2">
+						<div
+							class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+						>
+							Hook file
+						</div>
+						<Button
+							class="h-auto justify-start px-0 font-mono text-xs"
+							onclick={() => {
+								void openHookPreview(metadata);
+							}}
+							size="sm"
+							variant="link"
+						>
+							{metadata.hookPath}
+						</Button>
+					</div>
+				{/if}
+
+				{#if metadata.files && metadata.files.length > 0}
+					<div class="space-y-1 sm:col-span-2">
+						<div
+							class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+						>
+							Files
+						</div>
+						<div class="space-y-1 font-mono text-foreground text-xs">
+							{#each metadata.files as file}
+								<div class="break-all">{file}</div>
+							{/each}
+							{#if metadata.extraFileCount}
+								<div class="text-muted-foreground">
+									and {metadata.extraFileCount} more
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			{#if metadata.output}
+				<div class="space-y-2">
+					<div
+						class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+					>
+						Output
+					</div>
+					<div
+						class="overflow-x-auto rounded-md border border-border bg-background"
+					>
+						<pre
+							class="min-w-max whitespace-pre p-3 font-mono text-foreground text-xs leading-5"><code
+								>{metadata.output}</code
+							></pre>
+					</div>
+				</div>
+			{:else if metadata.outputPath}
+				<div class="space-y-2">
+					<div
+						class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+					>
+						Output path
+					</div>
+					<div
+						class="rounded-md border border-border bg-background px-3 py-2 font-mono text-foreground text-xs break-all"
+					>
+						{metadata.outputPath}
+					</div>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 {#snippet renderAssistantMessageParts(
 	message: ChatMessage,
 	parts: AssistantConversationPaneRenderablePart[],
@@ -409,12 +588,17 @@
 							>
 								{#each turn.userMessages as message (message.id)}
 									{@const userParts = getUserMessageRenderableParts(message)}
+									{@const hookFailure = getHookFailureMessageMetadata(message)}
 									<Message
 										data-conversation-message-id={message.id}
-										from="user"
+										from={hookFailure ? "assistant" : "user"}
 									>
 										<MessageContent>
-											{@render renderUserMessageParts(message, userParts)}
+											{#if hookFailure}
+												{@render renderHookFailureMessage(hookFailure)}
+											{:else}
+												{@render renderUserMessageParts(message, userParts)}
+											{/if}
 										</MessageContent>
 									</Message>
 								{/each}
@@ -513,6 +697,69 @@
 				Loading conversation...
 			</div>
 		{/if}
+
+		<Dialog.Root bind:open={hookPreviewOpen}>
+			<Dialog.Content class="sm:max-w-4xl">
+				<Dialog.Header>
+					<Dialog.Title
+						>{hookPreviewMetadata?.hookName ?? "Hook file"}</Dialog.Title
+					>
+				</Dialog.Header>
+				{#if hookPreviewMetadata?.hookPath}
+					<div class="space-y-3">
+						<div class="font-mono text-muted-foreground text-xs break-all">
+							{hookPreviewMetadata.hookPath}
+						</div>
+						{#if hookPreviewLoading}
+							<div
+								class="rounded-md border border-border bg-background px-3 py-4 text-muted-foreground text-sm"
+							>
+								Loading hook file...
+							</div>
+						{:else if hookPreviewError}
+							<div
+								class="rounded-md border border-border bg-background px-3 py-4 text-destructive text-sm"
+							>
+								{hookPreviewError}
+							</div>
+						{:else if hookPreviewContent}
+							<CodeBlock
+								class="max-h-[60vh] overflow-auto"
+								code={hookPreviewContent}
+								language={getHookFileLanguage(hookPreviewMetadata.hookPath)}
+								showLineNumbers={true}
+							/>
+						{:else}
+							<div
+								class="rounded-md border border-border bg-background px-3 py-4 text-muted-foreground text-sm"
+							>
+								Hook file is empty.
+							</div>
+						{/if}
+					</div>
+				{/if}
+				<Dialog.Footer>
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={() => {
+							hookPreviewOpen = false;
+						}}
+					>
+						Close
+					</Button>
+					<Button
+						disabled={!hookPreviewMetadata?.hookPath}
+						size="sm"
+						onclick={() => {
+							void editHookFile();
+						}}
+					>
+						Edit
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
 
 		{#if canShowComposer}
 			<ConversationComposer />

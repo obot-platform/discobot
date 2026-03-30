@@ -27,6 +27,19 @@ type AssistantMessagePartGroupOptions = {
 	isMessageComplete?: boolean;
 };
 
+export type HookFailureMessageMetadata = {
+	kind: "hook-failure";
+	hookName: string;
+	exitCode: number;
+	pattern?: string;
+	hookPath?: string;
+	files?: string[];
+	extraFileCount?: number;
+	output?: string;
+	outputPath?: string;
+	outputTruncated?: boolean;
+};
+
 export function isConversationPaneMessageStreaming(
 	message: ChatMessage,
 ): boolean {
@@ -108,6 +121,65 @@ export function getUserMessageOriginalCommandDisplay(
 		args: args.length > 0 ? args : null,
 		rawText: originalText,
 	};
+}
+
+export function getHookFailureMessageMetadata(
+	message: ChatMessage,
+): HookFailureMessageMetadata | null {
+	if (message.role !== "user") {
+		return null;
+	}
+
+	const metadata = (message as { metadata?: unknown }).metadata;
+	if (!metadata || typeof metadata !== "object") {
+		return null;
+	}
+
+	const discobot = (metadata as { discobot?: unknown }).discobot;
+	if (!discobot || typeof discobot !== "object") {
+		return null;
+	}
+
+	const candidate = discobot as Record<string, unknown>;
+	if (
+		candidate.kind !== "hook-failure" ||
+		typeof candidate.hookName !== "string" ||
+		typeof candidate.exitCode !== "number"
+	) {
+		return null;
+	}
+
+	const files = Array.isArray(candidate.files)
+		? candidate.files.filter((file): file is string => typeof file === "string")
+		: undefined;
+
+	return {
+		kind: "hook-failure",
+		hookName: candidate.hookName,
+		exitCode: candidate.exitCode,
+		pattern:
+			typeof candidate.pattern === "string" ? candidate.pattern : undefined,
+		hookPath:
+			typeof candidate.hookPath === "string" ? candidate.hookPath : undefined,
+		files,
+		extraFileCount:
+			typeof candidate.extraFileCount === "number"
+				? candidate.extraFileCount
+				: undefined,
+		output: typeof candidate.output === "string" ? candidate.output : undefined,
+		outputPath:
+			typeof candidate.outputPath === "string"
+				? candidate.outputPath
+				: undefined,
+		outputTruncated:
+			typeof candidate.outputTruncated === "boolean"
+				? candidate.outputTruncated
+				: undefined,
+	};
+}
+
+export function isHookFailureMessage(message: ChatMessage): boolean {
+	return getHookFailureMessageMetadata(message) !== null;
 }
 
 export function getAssistantMessagePartGroups(

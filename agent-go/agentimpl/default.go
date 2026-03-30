@@ -171,6 +171,7 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		SupportingModels: compactSupportingModels(env.modelRef, map[providers.SupportingModelType]providers.ModelRef{providers.SupportingModelThreadSummarization: env.threadSummaryRef}),
 		Reasoning:        providers.Reasoning(req.Reasoning),
 		PlanMode:         env.planMode,
+		Metadata:         req.Metadata,
 		UserParts:        message.UIPartsToParts(expandedUserParts),
 		OriginalUserText: originalText,
 		Tools:            env.tools,

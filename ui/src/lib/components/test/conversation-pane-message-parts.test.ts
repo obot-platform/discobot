@@ -4,9 +4,11 @@ import test from "node:test";
 import type { ChatMessage } from "$lib/api-types";
 import {
 	getAssistantMessagePartGroups,
+	getHookFailureMessageMetadata,
 	getUserMessageOriginalCommandDisplay,
 	getUserMessageOriginalText,
 	getUserMessageRenderableParts,
+	isHookFailureMessage,
 } from "../app/conversation-pane-message-parts";
 
 function createAssistantMessage(
@@ -246,4 +248,41 @@ test("getUserMessageOriginalText ignores assistant messages and missing metadata
 		}),
 		null,
 	);
+});
+
+test("isHookFailureMessage returns true for hook-failure metadata", () => {
+	const message = createUserMessage([
+		{ type: "text", text: "### Hook failed: lint" },
+	]);
+	(message as ChatMessage & { metadata?: unknown }).metadata = {
+		discobot: {
+			kind: "hook-failure",
+			hookName: "lint",
+			exitCode: 1,
+			pattern: "**/*.go",
+			files: ["agent-go/main.go"],
+			hookPath: ".claude/hooks/backend-check.sh",
+			output: "lint failed",
+		},
+	};
+
+	assert.equal(isHookFailureMessage(message), true);
+	assert.deepEqual(getHookFailureMessageMetadata(message), {
+		kind: "hook-failure",
+		hookName: "lint",
+		exitCode: 1,
+		pattern: "**/*.go",
+		files: ["agent-go/main.go"],
+		extraFileCount: undefined,
+		hookPath: ".claude/hooks/backend-check.sh",
+		output: "lint failed",
+		outputPath: undefined,
+		outputTruncated: undefined,
+	});
+});
+
+test("isHookFailureMessage returns false for ordinary user messages", () => {
+	const message = createUserMessage([{ type: "text", text: "hello" }]);
+
+	assert.equal(isHookFailureMessage(message), false);
 });

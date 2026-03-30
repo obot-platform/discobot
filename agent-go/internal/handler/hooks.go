@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -86,8 +87,15 @@ func (h *Handler) RerunHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if result.Eval.ShouldReprompt {
+		threadID := chi.URLParam(r, "id")
+		if err := h.startHookFailureReprompt(threadID, result.Eval); err != nil {
+			log.Printf("hooks: failed to start re-prompt for manual rerun: %v", err)
+		}
+	}
+
 	h.JSON(w, http.StatusOK, api.HookRerunResponse{
-		Success:  result.Success,
-		ExitCode: result.ExitCode,
+		Success:  result.Result.Success,
+		ExitCode: result.Result.ExitCode,
 	})
 }

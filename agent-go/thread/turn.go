@@ -23,6 +23,7 @@ type TurnConfig struct {
 	SupportingModels providers.SupportingModels `json:"supportingModels,omitempty"` // supporting model type -> full "providerId/modelId" ref
 	UserParts        []message.Part             `json:"-"`
 	UserMessage      message.Message            `json:"userMessage"` // serializable form of UserParts
+	Metadata         json.RawMessage            `json:"metadata,omitempty"`
 	OriginalUserText string                     `json:"originalUserText,omitempty"`
 	Tools            []providers.ToolDefinition `json:"tools,omitempty"`
 	MaxTokens        *int                       `json:"maxTokens,omitempty"`
@@ -61,7 +62,7 @@ func RunTurn(
 		cfg.UserMessage = message.Message{
 			Role:      "user",
 			Parts:     cfg.UserParts,
-			Metadata:  buildUserMessageMetadata(cfg.OriginalUserText),
+			Metadata:  buildUserMessageMetadata(cfg.Metadata, cfg.OriginalUserText),
 			CreatedAt: &startedAt,
 		}
 
@@ -1523,11 +1524,20 @@ func formatRetryMessage(event transport.RetryEvent) string {
 
 // buildUserMessageMetadata returns a JSON-encoded metadata object for UI-only
 // user message fields that should not be sent back to providers.
-func buildUserMessageMetadata(originalText string) json.RawMessage {
-	if originalText == "" {
+func buildUserMessageMetadata(metadata json.RawMessage, originalText string) json.RawMessage {
+	payload := map[string]any{}
+	if len(metadata) > 0 {
+		if err := json.Unmarshal(metadata, &payload); err != nil {
+			return metadata
+		}
+	}
+	if originalText != "" {
+		payload["originalText"] = originalText
+	}
+	if len(payload) == 0 {
 		return nil
 	}
-	data, err := json.Marshal(map[string]string{"originalText": originalText})
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil
 	}

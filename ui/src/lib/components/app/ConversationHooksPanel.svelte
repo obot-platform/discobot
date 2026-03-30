@@ -68,10 +68,7 @@
 	}
 
 	function canRerunHook(hook: HooksStatus["hooks"][number]) {
-		return (
-			(hook.lastResult === "failure" || isHookPending(hook.hookId)) &&
-			hook.lastResult !== "running"
-		);
+		return hook.lastResult !== "running";
 	}
 
 	function openHookDialog(hookId: string) {
