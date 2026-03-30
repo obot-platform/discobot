@@ -120,6 +120,15 @@ type ChatConflictResponse struct {
 	CompletionID string `json:"completionId"`
 }
 
+// ChatTurnStateConflictResponse is the POST /threads/{id}/chat response
+// when the thread already has persisted turn state that must be resolved first.
+type ChatTurnStateConflictResponse struct {
+	Error        string `json:"error"`                  // "interrupted_turn_requires_resume" or "pending_question_requires_answer"
+	Message      string `json:"message,omitempty"`      // user-facing summary
+	QuestionID   string `json:"questionId,omitempty"`   // pending AskUserQuestion approval ID when applicable
+	CompletionID string `json:"completionId,omitempty"` // recovery completion ID when resume was started automatically
+}
+
 // CancelCompletionResponse is the POST /threads/{id}/chat/cancel response.
 type CancelCompletionResponse struct {
 	Success      bool   `json:"success"`

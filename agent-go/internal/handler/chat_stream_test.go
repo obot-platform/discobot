@@ -335,6 +335,112 @@ func TestPostChat_StartsCompletion(t *testing.T) {
 	}
 }
 
+func TestPostChat_ReturnsPendingQuestionConflict(t *testing.T) {
+	ma := &streamTestAgent{
+		pendingQuestionFn: func(threadID string) (*agent.PendingQuestion, error) {
+			if threadID != "thread-1" {
+				t.Fatalf("expected thread-1, got %s", threadID)
+			}
+			return &agent.PendingQuestion{ApprovalID: "approval-123"}, nil
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	ts := newChatTestServer(t, h)
+	defer ts.Close()
+
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "hi", State: "done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d", resp.StatusCode)
+	}
+
+	var got api.ChatTurnStateConflictResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error != "pending_question_requires_answer" {
+		t.Fatalf("expected pending question error, got %#v", got)
+	}
+	if got.QuestionID != "approval-123" {
+		t.Fatalf("expected questionId approval-123, got %#v", got)
+	}
+}
+
+func TestPostChat_ReturnsInterruptedTurnConflict(t *testing.T) {
+	resumeCh := make(chan string, 1)
+	ma := &streamTestAgent{
+		hasInterruptedTurnFn: func(threadID string) (bool, error) {
+			if threadID != "thread-1" {
+				t.Fatalf("expected thread-1, got %s", threadID)
+			}
+			return true, nil
+		},
+		resumeFn: func(_ context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+			resumeCh <- threadID
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	ts := newChatTestServer(t, h)
+	defer ts.Close()
+
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "hi", State: "done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d", resp.StatusCode)
+	}
+
+	var got api.ChatTurnStateConflictResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Error != "interrupted_turn_requires_resume" {
+		t.Fatalf("expected interrupted turn error, got %#v", got)
+	}
+	if got.QuestionID != "" {
+		t.Fatalf("expected empty questionId, got %#v", got)
+	}
+	if got.CompletionID == "" {
+		t.Fatalf("expected completionId, got %#v", got)
+	}
+	select {
+	case threadID := <-resumeCh:
+		if threadID != "thread-1" {
+			t.Fatalf("expected resume for thread-1, got %q", threadID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for resume call")
+	}
+}
+
 func TestRegisterRoutes_GetThreadMatchesListThreads(t *testing.T) {
 	store := thread.NewStore(t.TempDir())
 	ma := &streamTestAgent{listThreadsFn: store.ListThreads}

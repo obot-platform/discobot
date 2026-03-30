@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { StartChatError } from "$lib/api-client";
 import type { ChatMessage } from "$lib/api-types";
 import {
+	getPendingQuestionState,
+	getStartChatErrorDetails,
 	getSubmitMessages,
 	removeProvisionalSubmitMessage,
 } from "./conversation.svelte";
@@ -89,4 +92,57 @@ test("removeProvisionalSubmitMessage removes the failed optimistic message", () 
 		),
 		[keptMessage],
 	);
+});
+
+test("getPendingQuestionState prefers the pending approval from messages", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "tool-1",
+					toolName: "AskUserQuestion",
+					state: "approval-requested",
+					approval: { id: "approval-from-messages" },
+					input: { questions: [] },
+				},
+			],
+		},
+	];
+
+	assert.deepEqual(getPendingQuestionState(messages, "approval-from-error"), {
+		hasPendingQuestion: true,
+		pendingQuestionId: "approval-from-messages",
+	});
+});
+
+test("getStartChatErrorDetails extracts pending-question metadata", () => {
+	const error = new StartChatError(
+		"Answer the earlier question first.",
+		"pending_question_requires_answer",
+		"approval-123",
+	);
+
+	assert.deepEqual(getStartChatErrorDetails(error), {
+		message: "Answer the earlier question first.",
+		pendingQuestionId: "approval-123",
+		completionId: null,
+	});
+});
+
+test("getStartChatErrorDetails suppresses the auto-resume conflict message", () => {
+	const error = new StartChatError(
+		"This thread has an interrupted turn that must resume before sending a new message.",
+		"interrupted_turn_requires_resume",
+		undefined,
+		"resume-123",
+	);
+
+	assert.deepEqual(getStartChatErrorDetails(error), {
+		message: null,
+		pendingQuestionId: null,
+		completionId: "resume-123",
+	});
 });

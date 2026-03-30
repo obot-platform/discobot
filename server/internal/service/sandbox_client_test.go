@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -278,6 +279,45 @@ func TestSandboxChatClient_SendMessages_409Conflict(t *testing.T) {
 	// Error message should include status code and conflict info
 	if !contains(err.Error(), "409") {
 		t.Errorf("Expected error to contain '409', got: %s", err.Error())
+	}
+}
+
+func TestSandboxChatClient_StartChat_InterruptedTurnConflictIncludesCompletionID(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/chat") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":        "interrupted_turn_requires_resume",
+				"message":      "This thread has an interrupted turn that must resume before sending a new message.",
+				"completionId": "resume-123",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
+	_, err := client.StartChat(ctx, "test-session", "test-thread", messages, "", nil)
+	if err == nil {
+		t.Fatal("Expected error for interrupted turn conflict")
+	}
+
+	var startErr *SandboxChatStartError
+	if !errors.As(err, &startErr) {
+		t.Fatalf("expected SandboxChatStartError, got %T", err)
+	}
+	if startErr.ErrorCode != "interrupted_turn_requires_resume" {
+		t.Fatalf("expected interrupted turn error code, got %#v", startErr)
+	}
+	if startErr.CompletionID != "resume-123" {
+		t.Fatalf("expected completionId resume-123, got %#v", startErr)
 	}
 }
 

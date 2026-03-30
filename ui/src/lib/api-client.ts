@@ -12,6 +12,18 @@ export class FileConflictError extends Error {
 	}
 }
 
+export class StartChatError extends Error {
+	constructor(
+		message: string,
+		public code: string,
+		public questionId?: string,
+		public completionId?: string,
+	) {
+		super(message);
+		this.name = "StartChatError";
+	}
+}
+
 import type {
 	AnswerQuestionRequest,
 	AnswerQuestionResponse,
@@ -62,6 +74,7 @@ import type {
 	SessionDiffFilesResponse,
 	SessionDiffResponse,
 	SessionSingleFileDiffResponse,
+	StartChatErrorResponse,
 	StartChatRequest,
 	StartChatResponse,
 	StartServiceResponse,
@@ -405,13 +418,39 @@ class ApiClient {
 	}
 
 	async startChat(data: StartChatRequest): Promise<StartChatResponse> {
-		return this.fetch<StartChatResponse>(
-			`/sessions/${data.sessionId}/threads/${data.threadId}/chat`,
+		const response = await fetch(
+			appendAuthToken(
+				`${this.base}/sessions/${data.sessionId}/threads/${data.threadId}/chat`,
+			),
 			{
 				method: "POST",
+				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(data),
 			},
 		);
+
+		const result = await response
+			.json()
+			.catch(() => ({ error: "Request failed" }));
+
+		if (!response.ok) {
+			const error = result as Partial<StartChatErrorResponse> & {
+				error?: string;
+				message?: string;
+			};
+			throw new StartChatError(
+				error.message || error.error || "Failed to start chat",
+				error.error || "request_failed",
+				"questionId" in error && typeof error.questionId === "string"
+					? error.questionId
+					: undefined,
+				"completionId" in error && typeof error.completionId === "string"
+					? error.completionId
+					: undefined,
+			);
+		}
+
+		return result as StartChatResponse;
 	}
 
 	getThreadChatStreamUrl(

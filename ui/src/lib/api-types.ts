@@ -629,6 +629,24 @@ export interface StartChatResponse {
 	completionId?: string;
 }
 
+export interface StartChatConflictResponse {
+	error: "completion_in_progress";
+	completionId: string;
+}
+
+export interface StartChatTurnStateConflictResponse {
+	error:
+		| "interrupted_turn_requires_resume"
+		| "pending_question_requires_answer";
+	message?: string;
+	questionId?: string;
+	completionId?: string;
+}
+
+export type StartChatErrorResponse =
+	| StartChatConflictResponse
+	| StartChatTurnStateConflictResponse;
+
 // ============================================================================
 // Session File System Types
 // ============================================================================

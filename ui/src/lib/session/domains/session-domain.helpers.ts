@@ -243,6 +243,33 @@ export function addToolApprovalResponse(
 	return false;
 }
 
+export function getPendingQuestionApprovalId(
+	messages: ChatMessage[],
+): string | null {
+	for (
+		let messageIndex = messages.length - 1;
+		messageIndex >= 0;
+		messageIndex -= 1
+	) {
+		const message = messages[messageIndex];
+		if (message.role !== "assistant") {
+			continue;
+		}
+
+		for (const part of [...getDynamicToolParts(message)].reverse()) {
+			if (part.state !== "approval-requested") {
+				continue;
+			}
+			if (typeof part.approval?.id === "string") {
+				return part.approval.id;
+			}
+			return part.toolCallId || null;
+		}
+	}
+
+	return null;
+}
+
 function getToolOutputText(value: unknown): string | null {
 	if (typeof value === "string") {
 		return value;

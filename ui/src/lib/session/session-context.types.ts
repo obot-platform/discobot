@@ -148,6 +148,8 @@ export type SessionConversationDomain = {
 	historyReplayVersion: number;
 	status: AsyncStatus | "streaming";
 	error: string | null;
+	hasPendingQuestion: boolean;
+	pendingQuestionId: string | null;
 	cancel: () => Promise<void>;
 	refresh: () => Promise<void>;
 };
@@ -176,6 +178,8 @@ export type ThreadContextValue = {
 	planEntries: PlanEntry[];
 	status: AsyncStatus | "streaming";
 	error: string | null;
+	hasPendingQuestion: boolean;
+	pendingQuestionId: string | null;
 	clearComposerDraft: (storageKey?: string) => void;
 	submit: (payload: {
 		parts: ChatMessage["parts"];

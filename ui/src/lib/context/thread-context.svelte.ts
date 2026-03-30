@@ -331,6 +331,12 @@ function createThreadContext(
 		get error() {
 			return conversation.error;
 		},
+		get hasPendingQuestion() {
+			return conversation.hasPendingQuestion;
+		},
+		get pendingQuestionId() {
+			return conversation.pendingQuestionId;
+		},
 		clearComposerDraft: clearStoredComposerDraft,
 		submit,
 		cancel: conversation.cancel,

@@ -92,6 +92,21 @@ type ChatStartedResponse struct {
 	Status       string `json:"status,omitempty"`
 }
 
+// ChatConflictResponse is the POST /chat response when another completion is already active.
+type ChatConflictResponse struct {
+	Error        string `json:"error"`
+	CompletionID string `json:"completionId"`
+}
+
+// ChatTurnStateConflictResponse is the POST /chat response when the thread must
+// resolve existing persisted turn state before starting a new prompt.
+type ChatTurnStateConflictResponse struct {
+	Error        string `json:"error"`
+	Message      string `json:"message,omitempty"`
+	QuestionID   string `json:"questionId,omitempty"`
+	CompletionID string `json:"completionId,omitempty"`
+}
+
 // ErrorResponse is returned for 4xx/5xx errors.
 type ErrorResponse struct {
 	Error string `json:"error"`

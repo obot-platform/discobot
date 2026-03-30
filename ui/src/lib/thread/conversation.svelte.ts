@@ -1,4 +1,5 @@
 import { api } from "$lib/api-client";
+import { StartChatError } from "$lib/api-client";
 import { useAppContext } from "$lib/context/app-context.svelte";
 import type { ChatMessage, Session, Thread } from "$lib/api-types";
 import {
@@ -8,6 +9,7 @@ import {
 import {
 	addToolApprovalResponse,
 	createUserMessageFromParts,
+	getPendingQuestionApprovalId,
 	hasUserMessageContent,
 } from "$lib/session/domains/session-domain.helpers";
 
@@ -43,12 +45,52 @@ export function removeProvisionalSubmitMessage(
 	return messages.filter((message) => message.id !== messageId);
 }
 
+export function getPendingQuestionState(
+	messages: ChatMessage[],
+	pendingQuestionId: string | null,
+): { hasPendingQuestion: boolean; pendingQuestionId: string | null } {
+	const messagePendingQuestionId = getPendingQuestionApprovalId(messages);
+	const resolvedPendingQuestionId =
+		messagePendingQuestionId ?? pendingQuestionId;
+	return {
+		hasPendingQuestion: resolvedPendingQuestionId !== null,
+		pendingQuestionId: resolvedPendingQuestionId,
+	};
+}
+
+export function getStartChatErrorDetails(error: unknown): {
+	message: string | null;
+	pendingQuestionId: string | null;
+	completionId: string | null;
+} {
+	if (error instanceof StartChatError) {
+		const autoResuming =
+			error.code === "interrupted_turn_requires_resume" &&
+			typeof error.completionId === "string" &&
+			error.completionId.length > 0;
+		return {
+			message: autoResuming ? null : error.message,
+			pendingQuestionId:
+				error.code === "pending_question_requires_answer"
+					? (error.questionId ?? null)
+					: null,
+			completionId: error.completionId ?? null,
+		};
+	}
+	return {
+		message: error instanceof Error ? error.message : "Failed to start chat",
+		pendingQuestionId: null,
+		completionId: null,
+	};
+}
+
 export function createConversationDomain(args: CreateConversationDomainArgs) {
 	const app = useAppContext();
 	let messages = $state<ChatMessage[]>([]);
 	let historyReplayVersion = $state(0);
 	let streamError = $state<string | null>(null);
 	let streamStatus = $state<"idle" | "streaming" | null>(null);
+	let pendingQuestionId = $state<string | null>(null);
 	let loadStatus = $state<"idle" | "loading" | "ready" | "error">("idle");
 	let activeSource: EventSource | null = null;
 	let unbindStream: (() => void) | null = null;
@@ -70,6 +112,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		return "ready" as const;
 	});
 	const error = $derived.by(() => streamError);
+	const pendingQuestionState = $derived.by(() =>
+		getPendingQuestionState(messages, pendingQuestionId),
+	);
 
 	const streamState = createChatStreamState({
 		getMessages: () => messages,
@@ -79,6 +124,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		onStart: ({ resume } = {}) => {
 			streamError = null;
 			streamStatus = "streaming";
+			pendingQuestionId = null;
 			if (resume) {
 				return;
 			}
@@ -184,6 +230,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			args.threadId,
 		);
 		messages = nextMessages;
+		pendingQuestionId = getPendingQuestionApprovalId(nextMessages);
 	}
 
 	async function load() {
@@ -191,6 +238,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			loadStatus = "idle";
 			streamError = null;
 			streamStatus = null;
+			pendingQuestionId = null;
 			disconnectStream();
 			return;
 		}
@@ -215,6 +263,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			loadStatus = "idle";
 			streamError = null;
 			streamStatus = null;
+			pendingQuestionId = null;
 			disconnectStream();
 			return;
 		}
@@ -244,6 +293,12 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		},
 		get error() {
 			return error;
+		},
+		get hasPendingQuestion() {
+			return pendingQuestionState.hasPendingQuestion;
+		},
+		get pendingQuestionId() {
+			return pendingQuestionState.pendingQuestionId;
 		},
 		load,
 		submit: async ({
@@ -327,14 +382,16 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				};
 			} catch (error) {
 				streamStatus = null;
-				const errorMessage =
-					error instanceof Error ? error.message : "Failed to start chat";
+				const errorDetails = getStartChatErrorDetails(error);
 				if (args.hasSession()) {
 					await refresh();
 				} else if (userMessage) {
 					messages = removeProvisionalSubmitMessage(messages, userMessage.id);
 				}
-				streamError = errorMessage;
+				pendingQuestionId =
+					getPendingQuestionApprovalId(messages) ??
+					errorDetails.pendingQuestionId;
+				streamError = errorDetails.message;
 				throw error;
 			}
 		},
@@ -361,6 +418,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		dispose: () => {
 			loadStatus = "idle";
 			streamStatus = null;
+			pendingQuestionId = null;
 			disconnectStream();
 		},
 	};

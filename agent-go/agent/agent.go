@@ -10,7 +10,10 @@ import (
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
-var ErrInterruptedTurnRequiresResume = errors.New("interrupted turn requires resume")
+var (
+	ErrInterruptedTurnRequiresResume = errors.New("interrupted turn requires resume")
+	ErrPendingQuestionRequiresAnswer = errors.New("pending question requires answer")
+)
 
 // CommandKind indicates the origin of a Command.
 type CommandKind string
@@ -58,6 +61,9 @@ type Agent interface {
 	//
 	// If the thread has an interrupted turn from a previous crash,
 	// Prompt returns ErrInterruptedTurnRequiresResume.
+	//
+	// If the thread is paused waiting for an AskUserQuestion answer,
+	// Prompt returns ErrPendingQuestionRequiresAnswer.
 	//
 	// Only one Prompt may be active per threadID. Calling Prompt while
 	// another is active for the same thread returns an error.

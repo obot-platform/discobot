@@ -202,6 +202,13 @@
 		if (thread.status === "error") return "error" as const;
 		return "ready" as const;
 	});
+	const composerDisabledMessage = $derived.by(() => {
+		if (thread.hasPendingQuestion) {
+			return "Answer the agent's pending question before sending a new message.";
+		}
+		return null;
+	});
+	const composerDisabled = $derived.by(() => composerDisabledMessage !== null);
 
 	function isGenerating() {
 		return (
@@ -360,6 +367,9 @@
 		forceEmptyPendingMessage?: boolean;
 		preserveDraft?: boolean;
 	} = {}) {
+		if (composerDisabled && !forceEmptyPendingMessage) {
+			return false;
+		}
 		if (isGenerating()) {
 			await thread.cancel();
 			composerTextareaRef?.closeMentionDropdown();
@@ -466,6 +476,11 @@
 		{#if pendingSubmitError}
 			<div class="mb-2 text-sm text-destructive">{pendingSubmitError}</div>
 		{/if}
+		{#if composerDisabledMessage}
+			<div class="mb-2 text-sm text-muted-foreground">
+				{composerDisabledMessage}
+			</div>
+		{/if}
 
 		<div class="relative">
 			<form
@@ -483,6 +498,7 @@
 					<ConversationComposerTextarea
 						bind:this={composerTextareaRef}
 						draft={sessionView.composerDraft}
+						disabled={composerDisabled}
 						onDraftChange={(v) => sessionView.setComposerDraft(v)}
 						sessionId={session.isPending ? null : session.sessionId}
 						attachmentCount={attachmentFiles.length}
@@ -496,7 +512,10 @@
 						<div
 							class="tauri-no-drag flex min-w-0 flex-1 flex-wrap items-center gap-1"
 						>
-							<ConversationComposerAttachmentButton onFilesAdd={addFiles} />
+							<ConversationComposerAttachmentButton
+								onFilesAdd={addFiles}
+								disabled={composerDisabled}
+							/>
 							<ConversationComposerModeControl
 								value={effectiveMode}
 								onSelect={handleModeSelect}
@@ -548,7 +567,8 @@
 								status={submitStatus}
 								inputEmpty={inputEmpty()}
 								isPending={session.isPending}
-								disabled={session.isPending ? sessionSetupDisabled : false}
+								disabled={composerDisabled ||
+									(session.isPending ? sessionSetupDisabled : false)}
 								onPress={handleComposerSubmit}
 							/>
 						</div>

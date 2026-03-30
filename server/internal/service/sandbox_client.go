@@ -83,6 +83,27 @@ type SandboxChatClient struct {
 	gitUserEmail string
 }
 
+// SandboxChatStartError preserves a structured non-2xx response from the
+// sandbox POST /chat endpoint so API handlers can forward it cleanly.
+type SandboxChatStartError struct {
+	StatusCode   int
+	ErrorCode    string
+	Message      string
+	CompletionID string
+	QuestionID   string
+}
+
+func (e *SandboxChatStartError) Error() string {
+	message := e.Message
+	if message == "" {
+		message = e.ErrorCode
+	}
+	if message == "" {
+		message = "sandbox chat start failed"
+	}
+	return fmt.Sprintf("sandbox returned status %d: %s", e.StatusCode, message)
+}
+
 // SandboxChatClientConfig contains optional configuration for a SandboxChatClient.
 // All fields are optional — pass nil for defaults.
 type SandboxChatClientConfig struct {
@@ -317,6 +338,31 @@ func (c *SandboxChatClient) StartChat(ctx context.Context, sessionID, threadID s
 
 	if resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
+		var conflict sandboxapi.ChatConflictResponse
+		if err := json.Unmarshal(body, &conflict); err == nil && conflict.Error != "" {
+			return nil, &SandboxChatStartError{
+				StatusCode:   resp.StatusCode,
+				ErrorCode:    conflict.Error,
+				CompletionID: conflict.CompletionID,
+			}
+		}
+		var turnConflict sandboxapi.ChatTurnStateConflictResponse
+		if err := json.Unmarshal(body, &turnConflict); err == nil && turnConflict.Error != "" {
+			return nil, &SandboxChatStartError{
+				StatusCode:   resp.StatusCode,
+				ErrorCode:    turnConflict.Error,
+				Message:      turnConflict.Message,
+				QuestionID:   turnConflict.QuestionID,
+				CompletionID: turnConflict.CompletionID,
+			}
+		}
+		var apiErr sandboxapi.ErrorResponse
+		if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Error != "" {
+			return nil, &SandboxChatStartError{
+				StatusCode: resp.StatusCode,
+				ErrorCode:  apiErr.Error,
+			}
+		}
 		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
 	}
 

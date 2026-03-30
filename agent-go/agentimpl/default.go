@@ -209,6 +209,10 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		}
 
 		if state != nil {
+			if state.Phase == thread.PhaseWaitingForAnswer {
+				yield(nil, agent.ErrPendingQuestionRequiresAnswer)
+				return
+			}
 			yield(nil, agent.ErrInterruptedTurnRequiresResume)
 			return
 		}

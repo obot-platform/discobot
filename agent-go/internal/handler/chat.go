@@ -20,6 +20,17 @@ import (
 
 const defaultChatStreamPingInterval = 15 * time.Second
 
+func completionIDFromInProgressError(err error) string {
+	if err == nil {
+		return ""
+	}
+	parts := strings.SplitN(err.Error(), ":", 2)
+	if len(parts) == 2 && parts[0] == "completion_in_progress" {
+		return parts[1]
+	}
+	return ""
+}
+
 // ListMessages handles GET /threads/{id}/messages — returns all messages for the session.
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	threadID := chi.URLParam(r, "id")
@@ -58,6 +69,46 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for persisted turn state that blocks new prompts.
+	pendingQuestion, err := h.completions.PendingQuestion(threadID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if pendingQuestion != nil {
+		h.JSON(w, http.StatusConflict, api.ChatTurnStateConflictResponse{
+			Error:      "pending_question_requires_answer",
+			Message:    "This thread is waiting for an answer to an earlier question before sending a new message.",
+			QuestionID: pendingQuestion.ApprovalID,
+		})
+		return
+	}
+	interrupted, err := h.completions.HasInterruptedTurn(threadID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if interrupted {
+		completionID, resumeErr := h.completions.Resume(threadID)
+		if resumeErr != nil {
+			if existingID := completionIDFromInProgressError(resumeErr); existingID != "" {
+				h.JSON(w, http.StatusConflict, api.ChatConflictResponse{
+					Error:        "completion_in_progress",
+					CompletionID: existingID,
+				})
+				return
+			}
+			h.Error(w, http.StatusInternalServerError, resumeErr.Error())
+			return
+		}
+		h.JSON(w, http.StatusConflict, api.ChatTurnStateConflictResponse{
+			Error:        "interrupted_turn_requires_resume",
+			Message:      "This thread has an interrupted turn that must resume before sending a new message.",
+			CompletionID: completionID,
+		})
+		return
+	}
+
 	// Derive leafID and userParts from the full message history the client sent.
 	// leafID is the last assistant message's ID (the branch point); userParts
 	// come from the user messages that follow it.
@@ -86,6 +137,43 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 			h.JSON(w, http.StatusConflict, api.ChatConflictResponse{
 				Error:        "completion_in_progress",
 				CompletionID: existingID,
+			})
+			return
+		}
+		if errors.Is(err, agent.ErrInterruptedTurnRequiresResume) {
+			completionID, resumeErr := h.completions.Resume(threadID)
+			if resumeErr != nil {
+				if existingID := completionIDFromInProgressError(resumeErr); existingID != "" {
+					h.JSON(w, http.StatusConflict, api.ChatConflictResponse{
+						Error:        "completion_in_progress",
+						CompletionID: existingID,
+					})
+					return
+				}
+				h.Error(w, http.StatusInternalServerError, resumeErr.Error())
+				return
+			}
+			h.JSON(w, http.StatusConflict, api.ChatTurnStateConflictResponse{
+				Error:        "interrupted_turn_requires_resume",
+				Message:      "This thread has an interrupted turn that must resume before sending a new message.",
+				CompletionID: completionID,
+			})
+			return
+		}
+		if errors.Is(err, agent.ErrPendingQuestionRequiresAnswer) {
+			questionID := ""
+			pending, pendingErr := h.completions.PendingQuestion(threadID)
+			if pendingErr != nil {
+				h.Error(w, http.StatusInternalServerError, pendingErr.Error())
+				return
+			}
+			if pending != nil {
+				questionID = pending.ApprovalID
+			}
+			h.JSON(w, http.StatusConflict, api.ChatTurnStateConflictResponse{
+				Error:      "pending_question_requires_answer",
+				Message:    "This thread is waiting for an answer to an earlier question before sending a new message.",
+				QuestionID: questionID,
 			})
 			return
 		}

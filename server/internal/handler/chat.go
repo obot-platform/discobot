@@ -140,6 +140,25 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	_, started, err := h.chatService.StartChat(sendCtx, projectID, sessionID, threadID, req.Messages, req.Model, req.Reasoning, req.Mode)
 	if err != nil {
 		log.Printf("[Chat] Failed to start chat for session %s: %v", sessionID, err)
+		var startErr *service.SandboxChatStartError
+		if errors.As(err, &startErr) {
+			switch startErr.ErrorCode {
+			case "completion_in_progress":
+				h.JSON(w, http.StatusConflict, sandboxapi.ChatConflictResponse{
+					Error:        startErr.ErrorCode,
+					CompletionID: startErr.CompletionID,
+				})
+				return
+			case "interrupted_turn_requires_resume", "pending_question_requires_answer":
+				h.JSON(w, http.StatusConflict, sandboxapi.ChatTurnStateConflictResponse{
+					Error:        startErr.ErrorCode,
+					Message:      startErr.Message,
+					QuestionID:   startErr.QuestionID,
+					CompletionID: startErr.CompletionID,
+				})
+				return
+			}
+		}
 		h.Error(w, http.StatusBadGateway, err.Error())
 		return
 	}

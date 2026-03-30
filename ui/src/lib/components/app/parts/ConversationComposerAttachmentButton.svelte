@@ -10,13 +10,17 @@
 
 	type Props = {
 		onFilesAdd: (files: File[] | FileList) => void;
+		disabled?: boolean;
 	};
 
-	let { onFilesAdd }: Props = $props();
+	let { onFilesAdd, disabled = false }: Props = $props();
 
 	let fileInputRef = $state<HTMLInputElement | null>(null);
 
 	function openFileDialog() {
+		if (disabled) {
+			return;
+		}
 		fileInputRef?.click();
 	}
 
@@ -34,15 +38,17 @@
 	type="file"
 	class="hidden"
 	multiple
+	{disabled}
 	onchange={handleFileInputChange}
 />
 
 <DropdownMenu>
-	<DropdownMenuTrigger class="tauri-no-drag">
+	<DropdownMenuTrigger class="tauri-no-drag" {disabled}>
 		<InputGroupButton
 			size="icon-sm"
 			variant="ghost"
 			aria-label="Attachment actions"
+			{disabled}
 		>
 			<PaperclipIcon class="size-4" />
 		</InputGroupButton>

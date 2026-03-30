@@ -16,6 +16,7 @@
 
 	type Props = {
 		draft: string;
+		disabled?: boolean;
 		onDraftChange: (value: string) => void;
 		sessionId: string | null;
 		attachmentCount: number;
@@ -27,6 +28,7 @@
 
 	let {
 		draft,
+		disabled = false,
 		onDraftChange,
 		sessionId,
 		attachmentCount,
@@ -164,6 +166,7 @@
 	rows={2}
 	class="field-sizing-content max-h-48 min-h-16 transition-all"
 	value={draft}
+	{disabled}
 	placeholder="Type a message..."
 	oncompositionstart={() => {
 		isComposing = true;

@@ -95,10 +95,6 @@ func Run(cfg *config.Config) {
 		}
 	}
 
-	if err := completions.ResumeInterruptedTurns(); err != nil {
-		log.Printf("warn: startup resume: %v", err)
-	}
-
 	// ── Service manager ──────────────────────────────────────────────────────
 	svcMgr := services.NewManager()
 

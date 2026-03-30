@@ -9,6 +9,7 @@ import {
 	createUserMessage,
 	createUserMessageAttachment,
 	getLatestPlanState,
+	getPendingQuestionApprovalId,
 	getPlanEntries,
 	hasUserMessageContent,
 } from "../domains/session-domain.helpers";
@@ -66,6 +67,41 @@ test("addToolApprovalResponse updates a pending dynamic tool in place", () => {
 			: undefined,
 		{ id: "call-1", approved: true },
 	);
+});
+
+test("getPendingQuestionApprovalId returns the latest pending approval id", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "call-old",
+					toolName: "AskUserQuestion",
+					state: "approval-responded",
+					approval: { id: "approval-old", approved: true },
+					input: { questions: [] },
+				},
+			],
+		},
+		{
+			id: "assistant-2",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "call-new",
+					toolName: "AskUserQuestion",
+					state: "approval-requested",
+					approval: { id: "approval-new" },
+					input: { questions: [] },
+				},
+			],
+		},
+	];
+
+	assert.equal(getPendingQuestionApprovalId(messages), "approval-new");
 });
 
 test("getLatestPlanState returns the latest EnterPlanMode plan file path", () => {
