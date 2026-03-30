@@ -313,7 +313,7 @@
 							Recent
 						</Collapsible.Trigger>
 						<Collapsible.Content class="space-y-0.5">
-							{#each sessions.recentThreads as threadObj}
+							{#each sessions.recentThreads as threadObj (`${threadObj.sessionId}:${threadObj.threadId}`)}
 								{@render recentThreadItem(
 									threadObj,
 									isRecentThreadSelected(
@@ -342,7 +342,7 @@
 							All sessions
 						</Collapsible.Trigger>
 						<Collapsible.Content class="space-y-0.5">
-							{#each sessions.list as sessionObj}
+							{#each sessions.list as sessionObj (sessionObj.id)}
 								{@render sessionItem(
 									sessionObj,
 									sessions.selectedId === sessionObj.id,

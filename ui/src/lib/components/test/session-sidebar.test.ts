@@ -29,3 +29,16 @@ test("session sidebar recent threads render a state badge when present", () => {
 	assert.match(source, /threadObj\.state === "cancelled"/);
 	assert.match(source, /\{recentThreadStateLabel\(threadObj\)\}/);
 });
+
+test("session sidebar keys session and recent thread rows", () => {
+	const source = readSessionSidebarSource();
+
+	assert.match(
+		source,
+		/\{#each sessions\.list as sessionObj \(sessionObj\.id\)\}/,
+	);
+	assert.match(
+		source,
+		/\{#each sessions\.recentThreads as threadObj \(`\$\{threadObj\.sessionId\}:\$\{threadObj\.threadId\}`\)\}/,
+	);
+});

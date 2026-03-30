@@ -60,9 +60,9 @@ export class ThreadStore {
 	upsert(thread: Thread): void {
 		const idx = this.#items.findIndex((t) => t.id === thread.id);
 		if (idx === -1) {
-			this.#items = [...this.#items, thread];
+			this.#items.push(thread);
 		} else {
-			this.#items = this.#items.map((t, i) => (i === idx ? thread : t));
+			this.#items[idx] = thread;
 		}
 		if (this.#status !== "ready") {
 			this.#status = "ready";

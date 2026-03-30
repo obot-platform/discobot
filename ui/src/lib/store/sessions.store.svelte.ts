@@ -63,9 +63,9 @@ export class SessionStore {
 				const session = await api.getSession(id);
 				const idx = this.#items.findIndex((s) => s.id === id);
 				if (idx === -1) {
-					this.#items = [...this.#items, session];
+					this.#items.push(session);
 				} else {
-					this.#items = this.#items.map((s, i) => (i === idx ? session : s));
+					this.#items[idx] = session;
 				}
 				if (this.#status !== "ready") {
 					this.#status = "ready";

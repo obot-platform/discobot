@@ -52,9 +52,9 @@ export class EnvSetStore {
 				const envSet = await api.getEnvSet(id);
 				const idx = this.#items.findIndex((e) => e.id === id);
 				if (idx === -1) {
-					this.#items = [...this.#items, envSet];
+					this.#items.push(envSet);
 				} else {
-					this.#items = this.#items.map((e, i) => (i === idx ? envSet : e));
+					this.#items[idx] = envSet;
 				}
 				if (this.#status !== "ready") {
 					this.#status = "ready";

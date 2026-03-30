@@ -54,9 +54,9 @@ export class WorkspaceStore {
 				const workspace = await api.getWorkspace(id);
 				const idx = this.#items.findIndex((w) => w.id === id);
 				if (idx === -1) {
-					this.#items = [...this.#items, workspace];
+					this.#items.push(workspace);
 				} else {
-					this.#items = this.#items.map((w, i) => (i === idx ? workspace : w));
+					this.#items[idx] = workspace;
 				}
 				if (this.#status !== "ready") {
 					this.#status = "ready";
