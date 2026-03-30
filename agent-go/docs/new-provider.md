@@ -62,6 +62,8 @@ Handle these part types per role:
 | `assistant` | `ReasoningPart`, `TextPart`, `ToolCallPart` |
 | `tool` | `ToolResultPart` |
 
+`tool` messages may also contain internal orchestration-only parts such as approval requests/responses. Provider conversion should ignore any non-`ToolResultPart` entries and serialize only concrete tool outputs back to the model.
+
 **`ReasoningPart`** fields: `ID`, `Text` (summary), `ProviderMetadata` (opaque JSON from the provider — pass back as-is in multi-turn to preserve reasoning context). See "Reasoning Multi-Turn" section below.
 
 **`ToolCallPart`** fields: `ToolCallID`, `ToolName`, `Input` (json.RawMessage).
