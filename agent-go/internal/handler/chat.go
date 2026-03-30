@@ -227,17 +227,15 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 			currentCompletionID = result.CompletionID
 			lastSeenCompletionID = result.CompletionID
-			offset = 0
-			for _, chunk := range result.Chunks {
+			for i, chunk := range result.Chunks {
 				data, err := message.MarshalChunk(chunk)
 				if err != nil {
-					offset++
 					continue
 				}
-				writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, offset), "chunk", data)
+				writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, result.ChunkOffsets[i]), "chunk", data)
 				flusher.Flush()
-				offset++
 			}
+			offset = result.NextOffset
 			if result.Done {
 				currentCompletionID = ""
 				offset = 0
@@ -263,16 +261,15 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		for _, chunk := range result.Chunks {
+		for i, chunk := range result.Chunks {
 			data, err := message.MarshalChunk(chunk)
 			if err != nil {
-				offset++
 				continue
 			}
-			writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, offset), "chunk", data)
+			writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, result.ChunkOffsets[i]), "chunk", data)
 			flusher.Flush()
-			offset++
 		}
+		offset = result.NextOffset
 
 		if result.Done {
 			lastSeenCompletionID = result.CompletionID

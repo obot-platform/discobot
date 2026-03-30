@@ -142,6 +142,8 @@ func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeComp
 type PollResult struct {
 	CompletionID string
 	Chunks       []message.MessageChunk
+	ChunkOffsets []int
+	NextOffset   int
 	Done         bool
 	Err          error
 }
@@ -162,12 +164,24 @@ func (cm *CompletionManager) PollChunks(threadID string, offset int) *PollResult
 	defer comp.mu.Unlock()
 
 	if offset >= len(comp.events) {
-		return &PollResult{CompletionID: comp.id, Done: comp.done, Err: comp.err}
+		return &PollResult{
+			CompletionID: comp.id,
+			ChunkOffsets: []int{},
+			NextOffset:   len(comp.events),
+			Done:         comp.done,
+			Err:          comp.err,
+		}
 	}
 
-	chunks := make([]message.MessageChunk, len(comp.events)-offset)
-	copy(chunks, comp.events[offset:])
-	return &PollResult{CompletionID: comp.id, Chunks: chunks, Done: comp.done, Err: comp.err}
+	chunks, chunkOffsets := coalesceChunkBatch(comp.events[offset:], offset)
+	return &PollResult{
+		CompletionID: comp.id,
+		Chunks:       chunks,
+		ChunkOffsets: chunkOffsets,
+		NextOffset:   len(comp.events),
+		Done:         comp.done,
+		Err:          comp.err,
+	}
 }
 
 // WaitChunks blocks until new chunks are available at or after offset (or the
@@ -192,9 +206,15 @@ func (cm *CompletionManager) WaitChunks(ctx context.Context, threadID string, of
 		comp.cond.Wait()
 	}
 
-	chunks := make([]message.MessageChunk, len(comp.events)-offset)
-	copy(chunks, comp.events[offset:])
-	return &PollResult{CompletionID: comp.id, Chunks: chunks, Done: comp.done, Err: comp.err}
+	chunks, chunkOffsets := coalesceChunkBatch(comp.events[offset:], offset)
+	return &PollResult{
+		CompletionID: comp.id,
+		Chunks:       chunks,
+		ChunkOffsets: chunkOffsets,
+		NextOffset:   len(comp.events),
+		Done:         comp.done,
+		Err:          comp.err,
+	}
 }
 
 // WaitNextCompletion blocks until threadID has a completion whose ID differs
@@ -218,11 +238,12 @@ func (cm *CompletionManager) WaitNextCompletion(ctx context.Context, threadID, a
 		if ok {
 			comp.mu.Lock()
 			if comp.id != afterCompletionID {
-				chunks := make([]message.MessageChunk, len(comp.events))
-				copy(chunks, comp.events)
+				chunks, chunkOffsets := coalesceChunkBatch(comp.events, 0)
 				result := &PollResult{
 					CompletionID: comp.id,
 					Chunks:       chunks,
+					ChunkOffsets: chunkOffsets,
+					NextOffset:   len(comp.events),
 					Done:         comp.done,
 					Err:          comp.err,
 				}
@@ -368,4 +389,42 @@ func (cm *CompletionManager) notifyTurnComplete(threadID string, err error) {
 	for _, listener := range listeners {
 		listener.OnTurnComplete(threadID, err)
 	}
+}
+
+func coalesceChunkBatch(chunks []message.MessageChunk, baseOffset int) ([]message.MessageChunk, []int) {
+	coalesced := make([]message.MessageChunk, 0, len(chunks))
+	offsets := make([]int, 0, len(chunks))
+
+	for i, chunk := range chunks {
+		rawOffset := baseOffset + i
+		if len(coalesced) > 0 {
+			switch current := chunk.(type) {
+			case message.TextDeltaChunk:
+				if previous, ok := coalesced[len(coalesced)-1].(message.TextDeltaChunk); ok && previous.ID == current.ID {
+					previous.Delta += current.Delta
+					if len(current.ProviderMetadata) > 0 {
+						previous.ProviderMetadata = current.ProviderMetadata
+					}
+					coalesced[len(coalesced)-1] = previous
+					offsets[len(offsets)-1] = rawOffset
+					continue
+				}
+			case message.ReasoningDeltaChunk:
+				if previous, ok := coalesced[len(coalesced)-1].(message.ReasoningDeltaChunk); ok && previous.ID == current.ID {
+					previous.Delta += current.Delta
+					if len(current.ProviderMetadata) > 0 {
+						previous.ProviderMetadata = current.ProviderMetadata
+					}
+					coalesced[len(coalesced)-1] = previous
+					offsets[len(offsets)-1] = rawOffset
+					continue
+				}
+			}
+		}
+
+		coalesced = append(coalesced, chunk)
+		offsets = append(offsets, rawOffset)
+	}
+
+	return coalesced, offsets
 }

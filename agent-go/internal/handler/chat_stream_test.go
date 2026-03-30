@@ -1086,6 +1086,52 @@ func TestChatStream_ValidLastEventID_ResumesWithoutHistory(t *testing.T) {
 	}
 }
 
+func TestChatStream_FreshRequest_CoalescesCachedDeltaBatch(t *testing.T) {
+	chunk1 := message.TextDeltaChunk{ID: "delta-coalesce-1", Delta: "one"}
+	chunk2 := message.TextDeltaChunk{ID: "delta-coalesce-1", Delta: "two"}
+	coalescedJSON, err := message.MarshalChunk(message.TextDeltaChunk{ID: "delta-coalesce-1", Delta: "onetwo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{promptFn: yieldChunksAndBlock(chunk1, chunk2)}
+	cm := agent.NewCompletionManager(ma)
+	completionID, err := cm.Chat("thread-coalesce", agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	h := New("", cm, nil, nil, nil)
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-coalesce/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	frames := readFrames(t, resp.Body, 3, false)
+	if len(frames) != 3 {
+		t.Fatalf("expected 3 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[1])
+	}
+	if frames[2].Event != "chunk" || frames[2].ID != completionID+":1" || frames[2].Data != string(coalescedJSON) {
+		t.Fatalf("unexpected coalesced chunk frame: %+v", frames[2])
+	}
+}
+
 func TestChatStream_ForwardsThreadUpdateChunk(t *testing.T) {
 	threadUpdateChunk := message.ThreadUpdateChunk{
 		Data: message.ThreadUpdateData{Thread: message.ThreadUpdateInfo{

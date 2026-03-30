@@ -369,6 +369,110 @@ func TestCompletionManager_PollChunks_WithOffset(t *testing.T) {
 	}
 }
 
+func TestCompletionManager_PollChunks_CoalescesConsecutiveDeltaChunks(t *testing.T) {
+	chunks := []message.MessageChunk{
+		message.TextDeltaChunk{ID: "t1", Delta: "hel"},
+		message.TextDeltaChunk{ID: "t1", Delta: "lo"},
+		message.ThreadUpdateChunk{},
+		message.TextDeltaChunk{ID: "t1", Delta: " world"},
+		message.ReasoningDeltaChunk{ID: "r1", Delta: "why"},
+		message.ReasoningDeltaChunk{ID: "r1", Delta: " now"},
+	}
+
+	agent := &mockAgent{promptFn: simplePromptFn(chunks)}
+	cm := NewCompletionManager(agent)
+
+	if _, err := cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForDone(t, cm, "thread1")
+
+	result := cm.PollChunks("thread1", 0)
+	if result == nil {
+		t.Fatal("expected poll result")
+	}
+	if result.NextOffset != len(chunks) {
+		t.Fatalf("expected next offset %d, got %d", len(chunks), result.NextOffset)
+	}
+	if len(result.Chunks) != 4 {
+		t.Fatalf("expected 4 coalesced chunks, got %d", len(result.Chunks))
+	}
+	if len(result.ChunkOffsets) != 4 {
+		t.Fatalf("expected 4 chunk offsets, got %d", len(result.ChunkOffsets))
+	}
+
+	text1, ok := result.Chunks[0].(message.TextDeltaChunk)
+	if !ok || text1.Delta != "hello" {
+		t.Fatalf("unexpected first chunk: %#v", result.Chunks[0])
+	}
+	if result.ChunkOffsets[0] != 1 {
+		t.Fatalf("expected first chunk offset 1, got %d", result.ChunkOffsets[0])
+	}
+
+	if _, ok := result.Chunks[1].(message.ThreadUpdateChunk); !ok {
+		t.Fatalf("expected thread update barrier, got %#v", result.Chunks[1])
+	}
+	if result.ChunkOffsets[1] != 2 {
+		t.Fatalf("expected second chunk offset 2, got %d", result.ChunkOffsets[1])
+	}
+
+	text2, ok := result.Chunks[2].(message.TextDeltaChunk)
+	if !ok || text2.Delta != " world" {
+		t.Fatalf("unexpected third chunk: %#v", result.Chunks[2])
+	}
+	if result.ChunkOffsets[2] != 3 {
+		t.Fatalf("expected third chunk offset 3, got %d", result.ChunkOffsets[2])
+	}
+
+	reasoning, ok := result.Chunks[3].(message.ReasoningDeltaChunk)
+	if !ok || reasoning.Delta != "why now" {
+		t.Fatalf("unexpected fourth chunk: %#v", result.Chunks[3])
+	}
+	if result.ChunkOffsets[3] != 5 {
+		t.Fatalf("expected fourth chunk offset 5, got %d", result.ChunkOffsets[3])
+	}
+}
+
+func TestCompletionManager_PollChunks_CoalescesOnlyUnreadBatch(t *testing.T) {
+	chunks := []message.MessageChunk{
+		message.TextDeltaChunk{ID: "t1", Delta: "a"},
+		message.TextDeltaChunk{ID: "t1", Delta: "b"},
+		message.TextDeltaChunk{ID: "t1", Delta: "c"},
+	}
+
+	agent := &mockAgent{promptFn: simplePromptFn(chunks)}
+	cm := NewCompletionManager(agent)
+
+	if _, err := cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForDone(t, cm, "thread1")
+
+	result := cm.PollChunks("thread1", 1)
+	if result == nil {
+		t.Fatal("expected poll result")
+	}
+	if len(result.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk from unread suffix, got %d", len(result.Chunks))
+	}
+	text, ok := result.Chunks[0].(message.TextDeltaChunk)
+	if !ok || text.Delta != "bc" {
+		t.Fatalf("unexpected coalesced unread chunk: %#v", result.Chunks[0])
+	}
+	if len(result.ChunkOffsets) != 1 || result.ChunkOffsets[0] != 2 {
+		t.Fatalf("unexpected unread chunk offsets: %#v", result.ChunkOffsets)
+	}
+	if result.NextOffset != len(chunks) {
+		t.Fatalf("expected next offset %d, got %d", len(chunks), result.NextOffset)
+	}
+}
+
 func TestCompletionManager_ActiveCompletionID(t *testing.T) {
 	agent := &mockAgent{promptFn: blockingPromptFn()}
 	cm := NewCompletionManager(agent)
