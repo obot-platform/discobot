@@ -137,6 +137,7 @@ export type AppSessions = {
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		state?: import("$lib/api-types").ThreadState;
 		lastMessage: string;
 	}) => void;
 	refreshRecentThread: (payload: {
@@ -144,6 +145,7 @@ export type AppSessions = {
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		state?: import("$lib/api-types").ThreadState;
 		lastMessage: string;
 	}) => void;
 	removeRecentThread: (sessionId: string, threadId: string) => void;

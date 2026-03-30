@@ -68,6 +68,30 @@
 		return (threadObj.lastMessage ?? "").trim().length > 0;
 	}
 
+	function recentThreadStateLabel(
+		threadObj: (typeof sessions.recentThreads)[number],
+	) {
+		if (threadObj.state === "interrupted") {
+			return "Interrupted";
+		}
+		if (threadObj.state === "cancelled") {
+			return "Cancelled";
+		}
+		return null;
+	}
+
+	function recentThreadStateClass(
+		threadObj: (typeof sessions.recentThreads)[number],
+	) {
+		if (threadObj.state === "interrupted") {
+			return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+		}
+		if (threadObj.state === "cancelled") {
+			return "border-current/15 bg-current/10 text-current/75";
+		}
+		return "";
+	}
+
 	function openRenameDialog(sessionId: string) {
 		const sessionItem = sessionById(sessionId);
 		if (!sessionItem) {
@@ -208,9 +232,20 @@
 			class="mt-0.5 shrink-0"
 		/>
 		<span class="min-w-0 flex-1">
-			<span class="block truncate text-sm font-medium"
-				>{threadObj.threadName || "New Thread"}</span
-			>
+			<span class="flex min-w-0 items-center gap-2">
+				<span class="block truncate text-sm font-medium"
+					>{threadObj.threadName || "New Thread"}</span
+				>
+				{#if recentThreadStateLabel(threadObj)}
+					<span
+						class={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${recentThreadStateClass(
+							threadObj,
+						)}`}
+					>
+						{recentThreadStateLabel(threadObj)}
+					</span>
+				{/if}
+			</span>
 			{#if hasRecentThreadSubtitle(threadObj)}
 				<span class="block truncate text-xs text-current/60"
 					>{threadObj.lastMessage ?? ""}</span

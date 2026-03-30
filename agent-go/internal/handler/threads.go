@@ -19,7 +19,7 @@ func (h *Handler) requireThreadStore(w http.ResponseWriter) bool {
 	return true
 }
 
-func threadResponse(threadID string, cfg thread.Config, fallbackName string) api.Thread {
+func (h *Handler) threadResponse(threadID string, cfg thread.Config, fallbackName string) api.Thread {
 	name := strings.TrimSpace(cfg.Name)
 	if name == "" {
 		name = strings.TrimSpace(fallbackName)
@@ -30,6 +30,13 @@ func threadResponse(threadID string, cfg thread.Config, fallbackName string) api
 		mode = "plan"
 	}
 
+	state := string(cfg.LastTurnState)
+	if h.completions.ActiveCompletionID(threadID) == "" {
+		if interrupted, err := h.completions.HasInterruptedTurn(threadID); err == nil && interrupted {
+			state = string(thread.StateInterrupted)
+		}
+	}
+
 	return api.Thread{
 		ID:          threadID,
 		Name:        name,
@@ -37,6 +44,7 @@ func threadResponse(threadID string, cfg thread.Config, fallbackName string) api
 		Model:       cfg.Model,
 		Reasoning:   string(cfg.Reasoning),
 		Mode:        mode,
+		State:       state,
 	}
 }
 
@@ -60,7 +68,7 @@ func (h *Handler) ListThreads(w http.ResponseWriter, _ *http.Request) {
 	store := h.defaultAgent.Store()
 	for _, threadID := range threadIDs {
 		cfg, _ := store.LoadConfig(threadID)
-		threads = append(threads, threadResponse(threadID, cfg, ""))
+		threads = append(threads, h.threadResponse(threadID, cfg, ""))
 	}
 
 	h.JSON(w, http.StatusOK, api.ListThreadsResponse{Threads: threads})
@@ -112,7 +120,7 @@ func (h *Handler) CreateThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.JSON(w, http.StatusCreated, threadResponse(req.ID, cfg, req.ID))
+	h.JSON(w, http.StatusCreated, h.threadResponse(req.ID, cfg, req.ID))
 }
 
 // GetThread handles GET /threads/{id} — returns thread metadata.
@@ -144,7 +152,7 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.JSON(w, http.StatusOK, threadResponse(threadID, cfg, ""))
+	h.JSON(w, http.StatusOK, h.threadResponse(threadID, cfg, ""))
 }
 
 // UpdateThread handles PUT/PATCH /threads/{id} — updates thread metadata.
@@ -192,7 +200,7 @@ func (h *Handler) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.JSON(w, http.StatusOK, threadResponse(threadID, cfg, req.Name))
+	h.JSON(w, http.StatusOK, h.threadResponse(threadID, cfg, req.Name))
 }
 
 // DeleteThread handles DELETE /threads/{id} — removes a thread.

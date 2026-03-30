@@ -55,6 +55,7 @@
 						onToggleSidebar={props.onToggleSidebar ?? noop}
 						title={session.threads.selected?.name ??
 							(session.isPending ? "" : "No thread selected")}
+						state={session.threads.selected?.state}
 					/>
 					<div class="min-h-0 flex-1 overflow-hidden">
 						<ConversationPane />
@@ -74,6 +75,7 @@
 			onToggleSidebar={props.onToggleSidebar ?? noop}
 			title={session.threads.selected?.name ??
 				(session.isPending ? "" : "No thread selected")}
+			state={session.threads.selected?.state}
 		/>
 
 		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">

@@ -649,6 +649,9 @@ type Config struct {
 	CWD string `json:"cwd,omitempty"`
 	// Mode is the canonical durable mode state ("build" | "plan" with metadata).
 	Mode ModeState `json:"mode,omitempty"`
+	// LastTurnState stores the last user-visible terminal turn outcome that
+	// should surface in thread chrome. Empty means no special state.
+	LastTurnState State `json:"lastTurnState,omitempty"`
 	// ActiveLeafID tracks the currently selected branch head for this thread.
 	ActiveLeafID string `json:"activeLeafId,omitempty"`
 }
@@ -656,6 +659,13 @@ type Config struct {
 const (
 	ThreadNameSourceUser      = "user"
 	ThreadNameSourceGenerated = "generated"
+)
+
+type State string
+
+const (
+	StateInterrupted State = "interrupted"
+	StateCancelled   State = "cancelled"
 )
 
 // ModeState captures the current mode with provenance information.
@@ -704,15 +714,16 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	}
 	// Use a raw struct for migration: old format had separate providerId + bare model.
 	var raw struct {
-		Name         string              `json:"name"`
-		NameSource   string              `json:"nameSource"`
-		LastMessage  string              `json:"lastMessage"`
-		Model        string              `json:"model"`
-		ProviderID   string              `json:"providerId"`
-		Reasoning    providers.Reasoning `json:"reasoning"`
-		CWD          string              `json:"cwd"`
-		Mode         ModeState           `json:"mode"`
-		ActiveLeafID string              `json:"activeLeafId"`
+		Name          string              `json:"name"`
+		NameSource    string              `json:"nameSource"`
+		LastMessage   string              `json:"lastMessage"`
+		Model         string              `json:"model"`
+		ProviderID    string              `json:"providerId"`
+		Reasoning     providers.Reasoning `json:"reasoning"`
+		CWD           string              `json:"cwd"`
+		Mode          ModeState           `json:"mode"`
+		LastTurnState State               `json:"lastTurnState"`
+		ActiveLeafID  string              `json:"activeLeafId"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Config{}, fmt.Errorf("unmarshal thread config: %w", err)
@@ -728,14 +739,15 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		mode = ModeState{Value: "build"}
 	}
 	return Config{
-		Name:         raw.Name,
-		NameSource:   raw.NameSource,
-		LastMessage:  raw.LastMessage,
-		Model:        model,
-		Reasoning:    raw.Reasoning,
-		CWD:          raw.CWD,
-		Mode:         mode,
-		ActiveLeafID: raw.ActiveLeafID,
+		Name:          raw.Name,
+		NameSource:    raw.NameSource,
+		LastMessage:   raw.LastMessage,
+		Model:         model,
+		Reasoning:     raw.Reasoning,
+		CWD:           raw.CWD,
+		Mode:          mode,
+		LastTurnState: raw.LastTurnState,
+		ActiveLeafID:  raw.ActiveLeafID,
 	}, nil
 }
 

@@ -276,14 +276,15 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			changedAt = time.Now().UTC()
 		}
 		cfgToSave := thread.Config{
-			Name:         env.threadCfg.Name,
-			NameSource:   env.threadCfg.NameSource,
-			LastMessage:  lastUserPromptFromUIParts(req.UserParts),
-			Model:        cfg.ProviderID + "/" + cfg.Model,
-			Reasoning:    cfg.Reasoning,
-			CWD:          cwd,
-			Mode:         thread.ModeState{Value: modeValue, SetBy: setBy, ChangedAt: changedAt},
-			ActiveLeafID: effectiveLeafID,
+			Name:          env.threadCfg.Name,
+			NameSource:    env.threadCfg.NameSource,
+			LastMessage:   lastUserPromptFromUIParts(req.UserParts),
+			Model:         cfg.ProviderID + "/" + cfg.Model,
+			Reasoning:     cfg.Reasoning,
+			CWD:           cwd,
+			Mode:          thread.ModeState{Value: modeValue, SetBy: setBy, ChangedAt: changedAt},
+			LastTurnState: "",
+			ActiveLeafID:  effectiveLeafID,
 		}
 		if err := a.store.SaveConfig(threadID, cfgToSave); err != nil {
 			yield(nil, fmt.Errorf("save thread config: %w", err))
@@ -303,6 +304,9 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			if !yield(chunk, chunkErr) {
 				return
 			}
+		}
+		if promptCtx.Err() != nil {
+			a.persistLastTurnState(threadID, thread.StateCancelled)
 		}
 		a.persistActiveLeaf(threadID)
 		if !threadNameBg.flush(true, yield) {
@@ -384,6 +388,9 @@ func (a *DefaultAgent) Resume(ctx context.Context, threadID string) iter.Seq2[me
 			if !yield(chunk, chunkErr) {
 				return
 			}
+		}
+		if promptCtx.Err() != nil {
+			a.persistLastTurnState(threadID, thread.StateCancelled)
 		}
 		a.persistActiveLeaf(threadID)
 	}
@@ -1225,6 +1232,15 @@ func (a *DefaultAgent) persistActiveLeaf(threadID string) {
 		return
 	}
 	cfg.ActiveLeafID = leafID
+	_ = a.store.SaveConfig(threadID, cfg)
+}
+
+func (a *DefaultAgent) persistLastTurnState(threadID string, state thread.State) {
+	cfg, err := a.store.LoadConfig(threadID)
+	if err != nil || cfg.LastTurnState == state {
+		return
+	}
+	cfg.LastTurnState = state
 	_ = a.store.SaveConfig(threadID, cfg)
 }
 

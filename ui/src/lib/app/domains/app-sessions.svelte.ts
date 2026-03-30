@@ -49,6 +49,7 @@ export function createAppSessionsDomain(
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		state?: import("$lib/api-types").ThreadState;
 		lastMessage: string;
 	}) => {
 		persistRecentThreadEntries(touchRecentThread(recentThreadEntries, payload));
@@ -59,6 +60,7 @@ export function createAppSessionsDomain(
 		sessionName: string;
 		threadId: string;
 		threadName: string;
+		state?: import("$lib/api-types").ThreadState;
 		lastMessage: string;
 	}) => {
 		const nextEntries = refreshRecentThread(recentThreadEntries, payload);

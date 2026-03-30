@@ -6,6 +6,8 @@ import type {
 } from "./api-constants";
 import type { UIMessage } from "ai";
 
+export type ThreadState = "interrupted" | "cancelled";
+
 export interface Thread {
 	id: string;
 	name: string;
@@ -13,6 +15,7 @@ export interface Thread {
 	model?: string;
 	reasoning?: string;
 	mode: string;
+	state?: ThreadState;
 	pending?: boolean;
 }
 

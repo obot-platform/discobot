@@ -20,3 +20,12 @@ test("session sidebar recent threads render lastMessage as the subtitle", () => 
 	assert.match(source, /\{threadObj\.lastMessage \?\? ""\}/);
 	assert.doesNotMatch(source, /\{threadObj\.sessionName \|\| "New Session"\}/);
 });
+
+test("session sidebar recent threads render a state badge when present", () => {
+	const source = readSessionSidebarSource();
+
+	assert.match(source, /function recentThreadStateLabel/);
+	assert.match(source, /threadObj\.state === "interrupted"/);
+	assert.match(source, /threadObj\.state === "cancelled"/);
+	assert.match(source, /\{recentThreadStateLabel\(threadObj\)\}/);
+});

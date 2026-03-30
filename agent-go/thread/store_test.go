@@ -472,13 +472,14 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	store := NewStore(t.TempDir())
 
 	cfg := Config{
-		Name:         "Friendly thread name",
-		NameSource:   ThreadNameSourceGenerated,
-		LastMessage:  "latest prompt",
-		Model:        "anthropic/claude-sonnet-4-6",
-		CWD:          "/tmp/project",
-		Mode:         ModeState{Value: "plan"},
-		ActiveLeafID: "msg-active",
+		Name:          "Friendly thread name",
+		NameSource:    ThreadNameSourceGenerated,
+		LastMessage:   "latest prompt",
+		LastTurnState: StateCancelled,
+		Model:         "anthropic/claude-sonnet-4-6",
+		CWD:           "/tmp/project",
+		Mode:          ModeState{Value: "plan"},
+		ActiveLeafID:  "msg-active",
 	}
 
 	if err := store.SaveConfig("thread1", cfg); err != nil {
@@ -500,6 +501,9 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 	if loaded.LastMessage != cfg.LastMessage {
 		t.Errorf("expected lastMessage=%q, got %q", cfg.LastMessage, loaded.LastMessage)
+	}
+	if loaded.LastTurnState != cfg.LastTurnState {
+		t.Errorf("expected lastTurnState=%q, got %q", cfg.LastTurnState, loaded.LastTurnState)
 	}
 	if loaded.CWD != cfg.CWD {
 		t.Errorf("expected cwd=%q, got %q", cfg.CWD, loaded.CWD)

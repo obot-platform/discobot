@@ -1,4 +1,4 @@
-import type { Session } from "$lib/api-types";
+import type { Session, ThreadState } from "$lib/api-types";
 import { getApiBase, isTauriShell } from "$lib/environment";
 import type {
 	ChatWidthMode,
@@ -29,6 +29,7 @@ export type RecentThreadEntry = {
 	sessionName: string;
 	threadId: string;
 	threadName: string;
+	state?: ThreadState;
 	lastMessage?: string;
 	lastAccessedAt: string;
 };
@@ -163,6 +164,9 @@ function isRecentThreadEntry(value: unknown): value is RecentThreadEntry {
 		typeof candidate.threadId === "string" &&
 		candidate.threadId.length > 0 &&
 		typeof candidate.threadName === "string" &&
+		(candidate.state === undefined ||
+			candidate.state === "interrupted" ||
+			candidate.state === "cancelled") &&
 		(candidate.lastMessage === undefined ||
 			typeof candidate.lastMessage === "string") &&
 		typeof candidate.lastAccessedAt === "string"
@@ -181,6 +185,7 @@ function areRecentThreadEntriesEqual(
 				entry.sessionName === right[index]?.sessionName &&
 				entry.threadId === right[index]?.threadId &&
 				entry.threadName === right[index]?.threadName &&
+				(entry.state ?? "") === (right[index]?.state ?? "") &&
 				(entry.lastMessage ?? "") === (right[index]?.lastMessage ?? "") &&
 				entry.lastAccessedAt === right[index]?.lastAccessedAt,
 		)
@@ -227,9 +232,10 @@ export function readRecentThreadEntries(): RecentThreadEntry[] {
 		}
 
 		return normalizeRecentThreadEntries(
-			parsed
-				.filter(isRecentThreadEntry)
-				.map((entry) => ({ ...entry, lastMessage: entry.lastMessage ?? "" })),
+			parsed.filter(isRecentThreadEntry).map((entry) => ({
+				...entry,
+				lastMessage: entry.lastMessage ?? "",
+			})),
 		);
 	} catch {
 		return [];
@@ -374,6 +380,7 @@ export function toRecentThreadSummaries(
 						sessionStatus: summary.status,
 						threadId: entry.threadId,
 						threadName: entry.threadName,
+						...(entry.state ? { state: entry.state } : {}),
 						lastMessage: entry.lastMessage ?? "",
 						lastAccessedAt: entry.lastAccessedAt,
 					},

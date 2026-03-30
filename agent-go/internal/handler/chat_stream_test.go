@@ -603,6 +603,128 @@ func TestRegisterRoutes_ThreadIncludesLastUserPrompt(t *testing.T) {
 	}
 }
 
+func TestRegisterRoutes_ThreadIncludesCancelledState(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{
+		Name:          "Thread 1",
+		NameSource:    thread.ThreadNameSourceUser,
+		LastTurnState: thread.StateCancelled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected get status 200, got %d", resp.StatusCode)
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.State != "cancelled" {
+		t.Fatalf("expected cancelled state, got %+v", got)
+	}
+}
+
+func TestRegisterRoutes_ThreadIncludesInterruptedState(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{
+		listThreadsFn:        store.ListThreads,
+		hasInterruptedTurnFn: func(threadID string) (bool, error) { return threadID == "thread-1", nil },
+	}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{Name: "Thread 1", NameSource: thread.ThreadNameSourceUser}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected get status 200, got %d", resp.StatusCode)
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.State != "interrupted" {
+		t.Fatalf("expected interrupted state, got %+v", got)
+	}
+}
+
+func TestRegisterRoutes_ActiveCompletionDoesNotMarkThreadInterrupted(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{
+		listThreadsFn:        store.ListThreads,
+		hasInterruptedTurnFn: func(threadID string) (bool, error) { return threadID == "thread-1", nil },
+		promptFn:             yieldChunksAndBlock(message.StartChunk{MessageID: "assistant-1"}),
+	}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{Name: "Thread 1", NameSource: thread.ThreadNameSourceUser}); err != nil {
+		t.Fatal(err)
+	}
+
+	completionID, err := cm.Chat("thread-1", agent.PromptRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completionID == "" {
+		t.Fatal("expected active completion id")
+	}
+	defer cm.Cancel("thread-1")
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected get status 200, got %d", resp.StatusCode)
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.State != "" {
+		t.Fatalf("expected empty state while active completion is running, got %+v", got)
+	}
+}
+
 func TestPostChat_AcceptsMultipleUserMessages(t *testing.T) {
 	reqCh := make(chan agent.PromptRequest, 1)
 	ma := &streamTestAgent{

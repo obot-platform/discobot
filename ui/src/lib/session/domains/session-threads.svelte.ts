@@ -16,6 +16,7 @@ type CreateSessionThreadsDomainArgs = {
 	getSelectedId: () => string | null;
 	setSelectedId: (threadId: string | null) => void;
 	onThreadActivated?: (thread: Thread) => void;
+	onThreadUpdated?: (thread: Thread) => void;
 	onThreadRenamed?: (thread: Thread) => void;
 	onThreadRemoved?: (threadId: string) => void;
 	onThreadListChanged?: (threadIds: string[]) => void;
@@ -60,6 +61,12 @@ export function createSessionThreadsDomain(
 		args.onThreadListChanged?.(nextList.map((thread) => thread.id));
 	}
 
+	function notifyThreadsUpdated(nextList = currentList()) {
+		for (const thread of nextList) {
+			args.onThreadUpdated?.(thread);
+		}
+	}
+
 	const list = $derived.by(() => currentList());
 
 	return {
@@ -95,6 +102,7 @@ export function createSessionThreadsDomain(
 					: buildImplicitThread(args.getSession());
 			syncSelectedThread(nextList);
 			notifyThreadListChanged(nextList);
+			notifyThreadsUpdated(nextList);
 			notifySelectedThread(nextList);
 		},
 		select: (threadId: string) => {
@@ -178,6 +186,12 @@ export function createSessionThreadsDomain(
 				return;
 			}
 			await store.fetchOne(args.sessionId, threadId);
+			const updatedThread = currentList().find(
+				(thread) => thread.id === threadId,
+			);
+			if (updatedThread) {
+				args.onThreadUpdated?.(updatedThread);
+			}
 			syncSelectedThread();
 			notifyThreadListChanged();
 			notifySelectedThread();

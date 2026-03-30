@@ -23,6 +23,7 @@ func UpdateChunkFromConfig(threadID string, cfg Config) message.ThreadUpdateChun
 				Model:       cfg.Model,
 				Reasoning:   string(cfg.Reasoning),
 				Mode:        mode,
+				State:       string(cfg.LastTurnState),
 			},
 		},
 	}

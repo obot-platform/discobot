@@ -1,4 +1,9 @@
-import type { ServiceStatus, Session, SessionStatus } from "$lib/api-types";
+import type {
+	ServiceStatus,
+	Session,
+	SessionStatus,
+	ThreadState,
+} from "$lib/api-types";
 
 export type CenterPanel =
 	| "chat"
@@ -108,6 +113,7 @@ export type RecentThreadSummary = {
 	sessionStatus: SessionStatusValue;
 	threadId: string;
 	threadName: string;
+	state?: ThreadState;
 	lastMessage?: string;
 	lastAccessedAt: string;
 };
@@ -132,6 +138,7 @@ export type ThreadSummary = {
 	model?: string;
 	reasoning?: string;
 	mode: string;
+	state?: ThreadState;
 };
 
 export type PlanEntry = {

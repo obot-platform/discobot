@@ -462,6 +462,7 @@ test("data-thread-update notifies the caller", async () => {
 		mode: "plan",
 		model: "anthropic/claude-sonnet-4-6",
 		reasoning: "enabled",
+		state: "cancelled",
 	};
 
 	await harness.state.handleStreamEvent({

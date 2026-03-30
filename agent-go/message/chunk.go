@@ -337,6 +337,7 @@ type ThreadUpdateInfo struct {
 	Model       string `json:"model,omitempty"`
 	Reasoning   string `json:"reasoning,omitempty"`
 	Mode        string `json:"mode"`
+	State       string `json:"state,omitempty"`
 	Pending     *bool  `json:"pending,omitempty"`
 }
 

@@ -69,6 +69,7 @@ function createSessionContext(sessionId: string): SessionContextValue {
 				sessionName: getSessionName(),
 				threadId: thread.id,
 				threadName: thread.name,
+				state: thread.state,
 				lastMessage: thread.lastMessage || "",
 			});
 		},
@@ -78,6 +79,17 @@ function createSessionContext(sessionId: string): SessionContextValue {
 				sessionName: getSessionName(),
 				threadId: thread.id,
 				threadName: thread.name,
+				state: thread.state,
+				lastMessage: thread.lastMessage || "",
+			});
+		},
+		onThreadUpdated: (thread) => {
+			app.sessions.refreshRecentThread({
+				sessionId,
+				sessionName: getSessionName(),
+				threadId: thread.id,
+				threadName: thread.name,
+				state: thread.state,
 				lastMessage: thread.lastMessage || "",
 			});
 		},
