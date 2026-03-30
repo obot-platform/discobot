@@ -84,6 +84,24 @@ export function getStartChatErrorDetails(error: unknown): {
 	};
 }
 
+export function isStreamingAssistantMessage(message: ChatMessage): boolean {
+	if (message.role !== "assistant") {
+		return false;
+	}
+	if ((message as { status?: string }).status === "streaming") {
+		return true;
+	}
+	return message.parts.some(
+		(part) =>
+			(part.type === "text" || part.type === "reasoning") &&
+			part.state === "streaming",
+	);
+}
+
+export function hasStreamingAssistantMessage(messages: ChatMessage[]): boolean {
+	return messages.some(isStreamingAssistantMessage);
+}
+
 export function createConversationDomain(args: CreateConversationDomainArgs) {
 	const app = useAppContext();
 	let messages = $state<ChatMessage[]>([]);
@@ -97,7 +115,10 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	let activeStreamKey: string | null = null;
 
 	const status = $derived.by(() => {
-		if (streamStatus === "streaming") {
+		if (
+			streamStatus === "streaming" ||
+			hasStreamingAssistantMessage(messages)
+		) {
 			return "streaming" as const;
 		}
 		if (loadStatus === "loading") {

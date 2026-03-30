@@ -7,6 +7,8 @@ import {
 	getPendingQuestionState,
 	getStartChatErrorDetails,
 	getSubmitMessages,
+	hasStreamingAssistantMessage,
+	isStreamingAssistantMessage,
 	removeProvisionalSubmitMessage,
 } from "./conversation.svelte";
 
@@ -21,6 +23,69 @@ function makeUserMessage(
 		...(provisional ? { provisional: true } : {}),
 	};
 }
+
+test("isStreamingAssistantMessage detects top-level streaming status", () => {
+	const message: ChatMessage = {
+		id: "assistant-streaming",
+		role: "assistant",
+		parts: [{ type: "text", text: "Working", state: "done" }],
+		status: "streaming",
+	};
+
+	assert.equal(isStreamingAssistantMessage(message), true);
+});
+
+test("isStreamingAssistantMessage detects streaming assistant parts", () => {
+	const message: ChatMessage = {
+		id: "assistant-part-streaming",
+		role: "assistant",
+		parts: [
+			{
+				type: "reasoning",
+				text: "Thinking through resume state",
+				state: "streaming",
+			},
+		],
+	};
+
+	assert.equal(isStreamingAssistantMessage(message), true);
+});
+
+test("hasStreamingAssistantMessage ignores non-streaming user messages", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "user-1",
+			role: "user",
+			parts: [{ type: "text", text: "hello" }],
+		},
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [{ type: "text", text: "done", state: "done" }],
+		},
+	];
+
+	assert.equal(hasStreamingAssistantMessage(messages), false);
+});
+
+test("hasStreamingAssistantMessage detects resumed streaming assistant state", () => {
+	const messages: ChatMessage[] = [
+		{
+			id: "assistant-1",
+			role: "assistant",
+			parts: [
+				{ type: "text", text: "Partial reply", state: "done" },
+				{
+					type: "reasoning",
+					text: "Continuing after navigation",
+					state: "streaming",
+				},
+			],
+		},
+	];
+
+	assert.equal(hasStreamingAssistantMessage(messages), true);
+});
 
 test("getSubmitMessages only includes the latest user message", () => {
 	const userMessage = makeUserMessage();
