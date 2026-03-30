@@ -184,15 +184,35 @@ func (cm *CompletionManager) PollChunks(threadID string, offset int) *PollResult
 	}
 }
 
-// WaitChunks blocks until new chunks are available at or after offset (or the
-// completion finishes), then returns them. Returns nil if there is no active
-// completion for the thread. Unblocks immediately if ctx is cancelled.
-func (cm *CompletionManager) WaitChunks(ctx context.Context, threadID string, offset int) *PollResult {
+// WaitChunks blocks until new chunks are available at or after offset for the
+// expected completion ID (or that completion finishes), then returns them.
+// Returns nil if there is no active completion for the thread.
+//
+// If the thread has already rotated to a newer completion, this returns the
+// newer completion immediately from offset 0 so callers do not accidentally
+// apply a stale offset from the previous completion to the new one.
+//
+// Unblocks immediately if ctx is cancelled.
+func (cm *CompletionManager) WaitChunks(ctx context.Context, threadID, expectedCompletionID string, offset int) *PollResult {
 	cm.mu.Lock()
 	comp, ok := cm.active[threadID]
 	cm.mu.Unlock()
 	if !ok {
 		return nil
+	}
+
+	if expectedCompletionID != "" && comp.id != expectedCompletionID {
+		comp.mu.Lock()
+		defer comp.mu.Unlock()
+		chunks, chunkOffsets := coalesceChunkBatch(comp.events, 0)
+		return &PollResult{
+			CompletionID: comp.id,
+			Chunks:       chunks,
+			ChunkOffsets: chunkOffsets,
+			NextOffset:   len(comp.events),
+			Done:         comp.done,
+			Err:          comp.err,
+		}
 	}
 
 	// Wake the cond when ctx is cancelled so the Wait loop can exit.

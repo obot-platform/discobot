@@ -313,7 +313,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 
 		waitCtx, cancel := context.WithTimeout(r.Context(), h.chatPingEvery)
-		result := h.completions.WaitChunks(waitCtx, threadID, offset)
+		result := h.completions.WaitChunks(waitCtx, threadID, currentCompletionID, offset)
 		timedOut := errors.Is(waitCtx.Err(), context.DeadlineExceeded)
 		cancel()
 
@@ -328,6 +328,10 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 			}
 			continue
+		}
+		if result.CompletionID != currentCompletionID {
+			currentCompletionID = result.CompletionID
+			lastSeenCompletionID = result.CompletionID
 		}
 
 		for i, chunk := range result.Chunks {

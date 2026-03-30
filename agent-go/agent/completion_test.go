@@ -4,6 +4,7 @@ import (
 	"context"
 	"iter"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -612,6 +613,51 @@ func TestCompletionManager_WaitNextCompletion_ReturnsFinishedNewCompletion(t *te
 	}
 	if delta, ok := result.Chunks[0].(message.TextDeltaChunk); !ok || delta.Delta != "done" {
 		t.Fatalf("unexpected chunk: %#v", result.Chunks[0])
+	}
+}
+
+func TestCompletionManager_WaitChunks_SwitchesToNewCompletionWithoutReusingOffset(t *testing.T) {
+	cm := NewCompletionManager(&mockAgent{})
+
+	newCompletion := &activeCompletion{
+		id:       "completion-new",
+		threadID: "thread1",
+		events: []message.MessageChunk{
+			message.ThreadResumeChunk{
+				Data: message.ThreadResumeData{
+					ThreadID:  "thread1",
+					MessageID: "assistant-1",
+				},
+			},
+		},
+	}
+	newCompletion.cond = sync.NewCond(&newCompletion.mu)
+
+	cm.mu.Lock()
+	cm.active["thread1"] = newCompletion
+	cm.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	result := cm.WaitChunks(ctx, "thread1", "completion-old", 5)
+	if result == nil {
+		t.Fatal("expected result")
+	}
+	if result.CompletionID != "completion-new" {
+		t.Fatalf("expected completion-new, got %q", result.CompletionID)
+	}
+	if len(result.Chunks) != 1 {
+		t.Fatalf("expected 1 chunk from new completion, got %d", len(result.Chunks))
+	}
+	if _, ok := result.Chunks[0].(message.ThreadResumeChunk); !ok {
+		t.Fatalf("expected thread resume chunk, got %#v", result.Chunks[0])
+	}
+	if len(result.ChunkOffsets) != 1 || result.ChunkOffsets[0] != 0 {
+		t.Fatalf("expected chunk offset 0, got %#v", result.ChunkOffsets)
+	}
+	if result.NextOffset != 1 {
+		t.Fatalf("expected next offset 1, got %d", result.NextOffset)
 	}
 }
 

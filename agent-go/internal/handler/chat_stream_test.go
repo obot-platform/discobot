@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"iter"
 	"net/http"
@@ -913,6 +914,153 @@ func TestPostAnswer_UsesResumeWhenOnlyDoneCachedCompletionExists(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for Resume call")
+	}
+}
+
+func TestChatStream_PendingQuestionConnectionContinuesAfterAnswer(t *testing.T) {
+	historyMsg := message.UIMessage{
+		ID:   "hist-approval-1",
+		Role: "assistant",
+		Parts: []message.UIPart{
+			message.DynamicToolPart{
+				ToolName:   "AskUserQuestion",
+				ToolCallID: "tool-approval-1",
+				State:      "approval-requested",
+				Approval:   &message.ToolApproval{ID: "approval-1"},
+			},
+			message.UITextPart{Text: "Waiting for your answer.", State: "done"},
+		},
+	}
+	historyMsgJSON, err := json.Marshal(historyMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	answerSubmitted := make(chan struct{}, 1)
+	ma := &streamTestAgent{
+		messagesFn: func(threadID, leafID string) ([]message.UIMessage, error) {
+			if threadID != "thread-approval" {
+				t.Fatalf("expected thread-approval, got %q", threadID)
+			}
+			if leafID != "" {
+				t.Fatalf("expected empty leafID, got %q", leafID)
+			}
+			return []message.UIMessage{historyMsg}, nil
+		},
+		submitAnswerFn: func(threadID, approvalID string, req api.AnswerQuestionRequest) error {
+			if threadID != "thread-approval" {
+				t.Fatalf("expected thread-approval, got %q", threadID)
+			}
+			if approvalID != "approval-1" {
+				t.Fatalf("expected approval-1, got %q", approvalID)
+			}
+			if req.Answers["Scope"] != "Proceed" {
+				t.Fatalf("expected answer Proceed, got %#v", req.Answers)
+			}
+			answerSubmitted <- struct{}{}
+			return nil
+		},
+		resumeFn: func(_ context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+			if threadID != "thread-approval" {
+				t.Fatalf("expected thread-approval, got %q", threadID)
+			}
+			return func(yield func(message.MessageChunk, error) bool) {
+				select {
+				case <-answerSubmitted:
+				case <-time.After(2 * time.Second):
+					t.Fatal("timed out waiting for submitted answer")
+				}
+				if !yield(message.ThreadResumeChunk{
+					Data: message.ThreadResumeData{
+						ThreadID:  "thread-approval",
+						MessageID: "assistant-approval",
+					},
+				}, nil) {
+					return
+				}
+				if !yield(message.ToolApprovalResponseDataChunk{
+					Data: message.ToolApprovalResponseData{
+						ApprovalID: "approval-1",
+						ToolCallID: "tool-approval-1",
+						Approved:   true,
+					},
+				}, nil) {
+					return
+				}
+				yield(message.TextDeltaChunk{ID: "delta-approval", Delta: "resumed"}, nil) //nolint:errcheck
+			}
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = time.Second
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	answerErrCh := make(chan error, 1)
+	time.AfterFunc(20*time.Millisecond, func() {
+		body, err := json.Marshal(api.AnswerQuestionRequest{
+			Answers: map[string]string{"Scope": "Proceed"},
+		})
+		if err != nil {
+			answerErrCh <- err
+			return
+		}
+		resp, err := ts.Client().Post(
+			ts.URL+"/threads/thread-approval/chat/answer/approval-1",
+			"application/json",
+			strings.NewReader(string(body)),
+		)
+		if err != nil {
+			answerErrCh <- err
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			answerErrCh <- fmt.Errorf("expected answer status 200, got %d", resp.StatusCode)
+			return
+		}
+		answerErrCh <- nil
+	})
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-approval/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	frames := readFrames(t, resp.Body, 6, false)
+	if len(frames) != 6 {
+		t.Fatalf("expected 6 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
+		t.Fatalf("unexpected history message frame: %+v", frames[1])
+	}
+	if frames[2].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[2])
+	}
+	if frames[3].Event != "chunk" {
+		t.Fatalf("expected first resumed chunk, got %+v", frames[3])
+	}
+	if frames[4].Event != "chunk" {
+		t.Fatalf("expected approval response chunk, got %+v", frames[4])
+	}
+	if frames[5].Event != "chunk" {
+		t.Fatalf("expected resumed text chunk, got %+v", frames[5])
+	}
+
+	select {
+	case err := <-answerErrCh:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for answer request")
 	}
 }
 
