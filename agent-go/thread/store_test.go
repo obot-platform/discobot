@@ -3,6 +3,7 @@ package thread
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,6 +64,20 @@ func TestLoadMessage_NotFound(t *testing.T) {
 	_, err := store.LoadMessage("thread1", "nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent message")
+	}
+}
+
+func TestSaveMessage_DuplicateIDFails(t *testing.T) {
+	store := NewStore(t.TempDir())
+	msg := StoredMessage{
+		ID:      "msg1",
+		Message: message.Message{Role: "user"},
+	}
+	if err := store.SaveMessage("thread1", msg); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessage("thread1", msg); !errors.Is(err, ErrMessageExists) {
+		t.Fatalf("expected ErrMessageExists, got %v", err)
 	}
 }
 
@@ -623,6 +638,32 @@ func TestLoadToolResults_NotFound(t *testing.T) {
 	}
 	if len(results.Results) != 0 {
 		t.Errorf("expected empty results, got %d", len(results.Results))
+	}
+}
+
+func TestSaveAndLoadStepEventMessages(t *testing.T) {
+	store := NewStore(t.TempDir())
+	events := StepEventMessages{MessageIDs: []string{"m1", "m2"}}
+	if err := store.SaveStepEventMessages("thread1", "turn1", 0, events); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.LoadStepEventMessages("thread1", "turn1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.MessageIDs) != 2 || loaded.MessageIDs[0] != "m1" || loaded.MessageIDs[1] != "m2" {
+		t.Fatalf("unexpected step event messages: %+v", loaded.MessageIDs)
+	}
+}
+
+func TestLoadStepEventMessages_NotFound(t *testing.T) {
+	store := NewStore(t.TempDir())
+	events, err := store.LoadStepEventMessages("thread1", "turn1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events.MessageIDs) != 0 {
+		t.Fatalf("expected no step event messages, got %v", events.MessageIDs)
 	}
 }
 

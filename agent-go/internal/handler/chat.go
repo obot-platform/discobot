@@ -16,62 +16,9 @@ import (
 	"github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
-	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
 const defaultChatStreamPingInterval = 15 * time.Second
-
-func lastUserPromptFromParts(parts []message.UIPart) string {
-	textParts := make([]string, 0, len(parts))
-	for _, part := range parts {
-		textPart, ok := part.(message.UITextPart)
-		if !ok {
-			continue
-		}
-		text := strings.TrimSpace(textPart.Text)
-		if text == "" {
-			continue
-		}
-		textParts = append(textParts, text)
-	}
-	return strings.TrimSpace(strings.Join(textParts, "\n"))
-}
-
-func (h *Handler) ensureThreadMetadata(threadID string, req api.ChatRequest, userParts []message.UIPart) error {
-	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
-		return nil
-	}
-
-	store := h.defaultAgent.Store()
-	exists, err := store.ThreadExists(threadID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		if err := store.CreateThread(threadID); err != nil {
-			return err
-		}
-	}
-
-	cfg, err := store.LoadConfig(threadID)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(cfg.Model) == "" && strings.Contains(req.Model, "/") {
-		cfg.Model = req.Model
-	}
-	if req.Reasoning != "" {
-		cfg.Reasoning = providers.Reasoning(req.Reasoning)
-	}
-	if req.Mode != "" {
-		cfg.PlanMode = req.Mode == "plan"
-	}
-	if lastMessage := lastUserPromptFromParts(userParts); lastMessage != "" {
-		cfg.LastMessage = lastMessage
-	}
-
-	return store.SaveConfig(threadID, cfg)
-}
 
 // ListMessages handles GET /threads/{id}/messages — returns all messages for the session.
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
@@ -117,28 +64,6 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	leafID, userParts, err := resolveLeafAndParts(req.Messages)
 	if err != nil {
 		h.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	// When the client is continuing an existing thread, validate that the
-	// requested leaf ID actually exists and is a current leaf in the store.
-	if leafID != "" {
-		valid, err := h.completions.IsLeaf(threadID, leafID)
-		if err != nil {
-			h.Error(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if !valid {
-			h.Error(w, http.StatusBadRequest, fmt.Sprintf("message %q is not a valid leaf in this thread; the thread may have diverged", leafID))
-			return
-		}
-	}
-
-	// Reset hook state for user-initiated completions.
-	h.resetHookState()
-
-	if err := h.ensureThreadMetadata(threadID, req, userParts); err != nil {
-		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -199,7 +124,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if interrupted {
-			if _, err := h.completions.Chat(threadID, agent.PromptRequest{}); err != nil && !strings.Contains(err.Error(), "completion_in_progress") {
+			if _, err := h.completions.Resume(threadID); err != nil && !strings.Contains(err.Error(), "completion_in_progress") {
 				h.Error(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -234,16 +159,6 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	replayCachedSnapshotBeforeHistoryEnd := snapshot != nil
-	if freshRequest && snapshot != nil && snapshot.Done {
-		pendingQuestion, err := h.completions.PendingQuestion(threadID)
-		if err != nil {
-			log.Printf("chat stream: failed to load pending question for %s: %v", threadID, err)
-		} else if pendingQuestion != nil {
-			replayCachedSnapshotBeforeHistoryEnd = false
-		}
-	}
-
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		h.Error(w, http.StatusInternalServerError, "streaming not supported")
@@ -273,24 +188,14 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 
-		if replayCachedSnapshotBeforeHistoryEnd {
-			for index, chunk := range snapshot.Chunks {
-				data, err := message.MarshalChunk(chunk)
-				if err != nil {
-					continue
-				}
-				writeSSEEvent(w, fmt.Sprintf("%s:%d", snapshot.CompletionID, index), "chunk", data)
-				flusher.Flush()
-				offset = index + 1
-			}
-			currentCompletionID = snapshot.CompletionID
-			lastSeenCompletionID = snapshot.CompletionID
-		}
-
 		writeSSEEvent(w, "", "history-end", json.RawMessage(`{}`))
 		flusher.Flush()
 
-		if snapshot == nil || snapshot.Done {
+		if snapshot != nil && !snapshot.Done {
+			currentCompletionID = snapshot.CompletionID
+			lastSeenCompletionID = snapshot.CompletionID
+			offset = 0
+		} else {
 			if snapshot != nil {
 				lastSeenCompletionID = snapshot.CompletionID
 			}
@@ -541,13 +446,8 @@ func (h *Handler) PostAnswer(w http.ResponseWriter, r *http.Request) {
 	h.answeredQuestions[questionID] = true
 	h.answeredMu.Unlock()
 
-	// Resume the turn. If there is no cached completion, or the only cached
-	// completion is already finished, force the resumed turn to replay its
-	// prefix so the client gets the original start envelope and cached chunks
-	// before the approval continuation.
-	snapshot := h.completions.PollChunks(threadID, 0)
-	replayTurn := snapshot == nil || snapshot.Done
-	completionID, chatErr := h.completions.Chat(threadID, agent.PromptRequest{ReplayTurn: replayTurn})
+	// Resume the interrupted turn.
+	completionID, chatErr := h.completions.Resume(threadID)
 	if chatErr != nil {
 		// Answer was saved but resume failed — log but still return success.
 		log.Printf("question: answer saved but failed to resume turn: %v", chatErr)

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"iter"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
+	"github.com/obot-platform/discobot/agent-go/providers/transport"
 )
 
 // --- Mock provider ---
@@ -71,6 +73,16 @@ func (m *mockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message.
 	return ToolExecuteResult{}, fmt.Errorf("no async in mock executor")
 }
 
+func (m *mockExecutor) Continue(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	if req != nil {
+		return m.ResolveAnswer(toolCtx, call, *req)
+	}
+	if len(continuation) > 0 {
+		return m.ResumeAsync(ctx, toolCtx, call, "", nil)
+	}
+	return ToolExecuteResult{}, fmt.Errorf("no continuation in mock executor")
+}
+
 func (m *mockExecutor) SetPlanMode(_ bool)   {}
 func (m *mockExecutor) SetThreadID(_ string) {}
 
@@ -88,6 +100,37 @@ func collectChunks(t *testing.T, seq iter.Seq2[message.MessageChunk, error]) []m
 		}
 	}
 	return chunks
+}
+
+func toolResultParts(msgs []message.Message) []message.ToolResultPart {
+	var results []message.ToolResultPart
+	for _, msg := range msgs {
+		if msg.Role != "tool" {
+			continue
+		}
+		for _, part := range msg.Parts {
+			if result, ok := part.(message.ToolResultPart); ok {
+				results = append(results, result)
+			}
+		}
+	}
+	return results
+}
+
+func testContinuation(subThreadID string) json.RawMessage {
+	data, _ := json.Marshal(map[string]string{"subThreadId": subThreadID})
+	return data
+}
+
+func testContinuationID(t *testing.T, continuation json.RawMessage) string {
+	t.Helper()
+	var decoded struct {
+		SubThreadID string `json:"subThreadId"`
+	}
+	if err := json.Unmarshal(continuation, &decoded); err != nil {
+		t.Fatalf("decode continuation: %v", err)
+	}
+	return decoded.SubThreadID
 }
 
 // --- Tests ---
@@ -568,6 +611,16 @@ func (e *errorExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ message
 	return ToolExecuteResult{}, fmt.Errorf("no async in error executor")
 }
 
+func (e *errorExecutor) Continue(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	if req != nil {
+		return e.ResolveAnswer(toolCtx, call, *req)
+	}
+	if len(continuation) > 0 {
+		return e.ResumeAsync(ctx, toolCtx, call, "", nil)
+	}
+	return ToolExecuteResult{}, fmt.Errorf("no continuation in error executor")
+}
+
 func (e *errorExecutor) SetPlanMode(_ bool)   {}
 func (e *errorExecutor) SetThreadID(_ string) {}
 
@@ -805,26 +858,13 @@ func TestResumeTurn_CrashedMidToolExecution(t *testing.T) {
 		t.Fatal("expected 1 request")
 	}
 	msgs := prov.requests[0].Messages
-	// Find the tool message.
-	var toolMsg *message.Message
-	for i := range msgs {
-		if msgs[i].Role == "tool" {
-			toolMsg = &msgs[i]
-			break
-		}
-	}
-	if toolMsg == nil {
-		t.Fatal("expected tool message in history")
-	}
-	if len(toolMsg.Parts) != 2 {
-		t.Fatalf("expected 2 tool results, got %d", len(toolMsg.Parts))
+	results := toolResultParts(msgs)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 tool results, got %d", len(results))
 	}
 
 	// tc2 should have the "interrupted" error.
-	tc2Result, ok := toolMsg.Parts[1].(message.ToolResultPart)
-	if !ok {
-		t.Fatalf("expected ToolResultPart, got %T", toolMsg.Parts[1])
-	}
+	tc2Result := results[1]
 	errOut, ok := tc2Result.Output.(message.ErrorTextOutput)
 	if !ok {
 		t.Fatalf("expected ErrorTextOutput for interrupted tool, got %T", tc2Result.Output)
@@ -1153,26 +1193,13 @@ func TestResumeTurn_CrashedAfterAllToolsBeforeNextStep(t *testing.T) {
 		t.Fatal("expected 1 request")
 	}
 	msgs := prov.requests[0].Messages
-	var toolMsg *message.Message
-	for i := range msgs {
-		if msgs[i].Role == "tool" {
-			toolMsg = &msgs[i]
-			break
-		}
-	}
-	if toolMsg == nil {
-		t.Fatal("expected tool message in history")
-	}
-	if len(toolMsg.Parts) != 2 {
-		t.Fatalf("expected 2 tool results, got %d", len(toolMsg.Parts))
+	results := toolResultParts(msgs)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 tool results, got %d", len(results))
 	}
 
 	// Both should be successful results, not interrupted errors.
-	for i, part := range toolMsg.Parts {
-		result, ok := part.(message.ToolResultPart)
-		if !ok {
-			t.Fatalf("part[%d]: expected ToolResultPart, got %T", i, part)
-		}
+	for i, result := range results {
 		if _, isErr := result.Output.(message.ErrorTextOutput); isErr {
 			t.Errorf("part[%d]: expected successful result, got error", i)
 		}
@@ -1278,21 +1305,7 @@ func TestResumeTurn_CrashedAfterCompletionWithToolCalls_PhaseTools(t *testing.T)
 
 	// Both tools should have successful execution results (not interrupted).
 	msgs := prov.requests[0].Messages
-	var toolMsg *message.Message
-	for i := range msgs {
-		if msgs[i].Role == "tool" {
-			toolMsg = &msgs[i]
-			break
-		}
-	}
-	if toolMsg == nil {
-		t.Fatal("expected tool message in history")
-	}
-	for i, part := range toolMsg.Parts {
-		result, ok := part.(message.ToolResultPart)
-		if !ok {
-			t.Fatalf("part[%d]: expected ToolResultPart, got %T", i, part)
-		}
+	for i, result := range toolResultParts(msgs) {
 		if _, isErr := result.Output.(message.ErrorTextOutput); isErr {
 			t.Errorf("part[%d]: expected executed result, got interrupted error", i)
 		}
@@ -1506,25 +1519,13 @@ func TestResumeTurn_CrashedMidTools_MixedRecovery(t *testing.T) {
 		t.Fatal("expected 1 provider request")
 	}
 	msgs := prov.requests[0].Messages
-	var toolMsg *message.Message
-	for i := range msgs {
-		if msgs[i].Role == "tool" {
-			toolMsg = &msgs[i]
-			break
-		}
-	}
-	if toolMsg == nil {
-		t.Fatal("expected tool message in history")
-	}
-	if len(toolMsg.Parts) != 3 {
-		t.Fatalf("expected 3 tool results, got %d", len(toolMsg.Parts))
+	results := toolResultParts(msgs)
+	if len(results) != 3 {
+		t.Fatalf("expected 3 tool results, got %d", len(results))
 	}
 
 	// tc1: completed (saved result reused).
-	tc1, ok := toolMsg.Parts[0].(message.ToolResultPart)
-	if !ok {
-		t.Fatalf("tc1: expected ToolResultPart, got %T", toolMsg.Parts[0])
-	}
+	tc1 := results[0]
 	if _, isErr := tc1.Output.(message.ErrorTextOutput); isErr {
 		t.Error("tc1: should be completed result, not error")
 	}
@@ -1533,10 +1534,7 @@ func TestResumeTurn_CrashedMidTools_MixedRecovery(t *testing.T) {
 	}
 
 	// tc2: interrupted (was in-progress when crash happened).
-	tc2, ok := toolMsg.Parts[1].(message.ToolResultPart)
-	if !ok {
-		t.Fatalf("tc2: expected ToolResultPart, got %T", toolMsg.Parts[1])
-	}
+	tc2 := results[1]
 	errOut, ok := tc2.Output.(message.ErrorTextOutput)
 	if !ok {
 		t.Fatalf("tc2: expected ErrorTextOutput (interrupted), got %T", tc2.Output)
@@ -1546,10 +1544,7 @@ func TestResumeTurn_CrashedMidTools_MixedRecovery(t *testing.T) {
 	}
 
 	// tc3: executed (never started before crash).
-	tc3, ok := toolMsg.Parts[2].(message.ToolResultPart)
-	if !ok {
-		t.Fatalf("tc3: expected ToolResultPart, got %T", toolMsg.Parts[2])
-	}
+	tc3 := results[2]
 	if _, isErr := tc3.Output.(message.ErrorTextOutput); isErr {
 		t.Error("tc3: should be executed result, not error")
 	}
@@ -1582,12 +1577,22 @@ func (e *countingExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ mess
 	return ToolExecuteResult{}, fmt.Errorf("no async in counting executor")
 }
 
+func (e *countingExecutor) Continue(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	if req != nil {
+		return e.ResolveAnswer(toolCtx, call, *req)
+	}
+	if len(continuation) > 0 {
+		return e.ResumeAsync(ctx, toolCtx, call, "", nil)
+	}
+	return ToolExecuteResult{}, fmt.Errorf("no continuation in counting executor")
+}
+
 func (e *countingExecutor) SetPlanMode(_ bool)   {}
 func (e *countingExecutor) SetThreadID(_ string) {}
 
 // --- Async Executor Mock ---
 
-// asyncMockExecutor returns AsyncTaskHandle for tool calls in asyncToolIDs,
+// asyncMockExecutor returns AsyncContinuationHandle for tool calls in asyncToolIDs,
 // and sync results for everything else. ResumeAsync behaviour is configurable.
 type asyncMockExecutor struct {
 	// asyncToolIDs maps toolCallID → taskID for tools that should run async.
@@ -1611,16 +1616,17 @@ func (e *asyncMockExecutor) Execute(_ context.Context, _ *ToolContext, call mess
 		result := e.results[call.ToolCallID]
 		waitApproval := e.waitApprovals[call.ToolCallID]
 		waitErr := e.waitErrors[call.ToolCallID]
+		continuation := testContinuation(taskID)
 		return ToolExecuteResult{
-			Async: &AsyncTaskHandle{
-				TaskID: taskID,
+			Async: &AsyncContinuationHandle{
+				Continuation: continuation,
 				Wait: func(_ context.Context) (AsyncWaitResult, error) {
 					if waitErr != nil {
 						return AsyncWaitResult{}, waitErr
 					}
 					if len(waitApproval) > 0 {
 						return AsyncWaitResult{
-							Approval: &ApprovalRequest{Questions: waitApproval},
+							Approval: &ApprovalRequest{Questions: waitApproval, Continuation: continuation},
 						}, nil
 					}
 					return AsyncWaitResult{Result: result}, nil
@@ -1656,6 +1662,25 @@ func (e *asyncMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ mes
 		return result, nil
 	}
 	return ToolExecuteResult{}, fmt.Errorf("unknown task: %s", taskID)
+}
+
+func (e *asyncMockExecutor) Continue(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	if req != nil {
+		var decoded struct {
+			SubThreadID string `json:"subThreadId"`
+		}
+		if err := json.Unmarshal(continuation, &decoded); err != nil {
+			return ToolExecuteResult{}, err
+		}
+		return e.ResumeAsync(ctx, toolCtx, call, decoded.SubThreadID, req)
+	}
+	var decoded struct {
+		SubThreadID string `json:"subThreadId"`
+	}
+	if err := json.Unmarshal(continuation, &decoded); err != nil {
+		return ToolExecuteResult{}, err
+	}
+	return e.ResumeAsync(ctx, toolCtx, call, decoded.SubThreadID, nil)
 }
 
 func (e *asyncMockExecutor) SetPlanMode(_ bool)   {}
@@ -1789,21 +1814,17 @@ func TestRunTurn_AsyncTool_MultipleParallel(t *testing.T) {
 		t.Fatalf("expected at least 2 LLM calls, got %d", len(prov.requests))
 	}
 	msgs := prov.requests[1].Messages
-	toolMsg := msgs[len(msgs)-1]
-	if toolMsg.Role != "tool" {
-		t.Fatalf("expected tool message, got %s", toolMsg.Role)
+	results := toolResultParts(msgs)
+	if len(results) != 3 {
+		t.Fatalf("expected 3 tool results, got %d", len(results))
 	}
-	if len(toolMsg.Parts) != 3 {
-		t.Fatalf("expected 3 tool results, got %d", len(toolMsg.Parts))
+	gotIDs := map[string]bool{}
+	for _, tr := range results {
+		gotIDs[tr.ToolCallID] = true
 	}
-	// Results should be in original tool call order.
-	for i, expectedID := range []string{"tc1", "tc2", "tc3"} {
-		tr, ok := toolMsg.Parts[i].(message.ToolResultPart)
-		if !ok {
-			t.Fatalf("part %d is not ToolResultPart", i)
-		}
-		if tr.ToolCallID != expectedID {
-			t.Errorf("part %d: expected toolCallID=%s, got %s", i, expectedID, tr.ToolCallID)
+	for _, expectedID := range []string{"tc1", "tc2", "tc3"} {
+		if !gotIDs[expectedID] {
+			t.Errorf("missing toolCallID=%s", expectedID)
 		}
 	}
 }
@@ -1860,16 +1881,18 @@ func TestRunTurn_AsyncTool_MixedSyncAsync(t *testing.T) {
 		}
 	}
 
-	// Verify order in history: tool results should be tc1, tc2, tc3.
 	msgs := prov.requests[1].Messages
-	toolMsg := msgs[len(msgs)-1]
-	if len(toolMsg.Parts) != 3 {
-		t.Fatalf("expected 3 tool results, got %d", len(toolMsg.Parts))
+	results := toolResultParts(msgs)
+	if len(results) != 3 {
+		t.Fatalf("expected 3 tool results, got %d", len(results))
 	}
-	for i, expectedID := range []string{"tc1", "tc2", "tc3"} {
-		tr := toolMsg.Parts[i].(message.ToolResultPart)
-		if tr.ToolCallID != expectedID {
-			t.Errorf("part %d: expected %s, got %s", i, expectedID, tr.ToolCallID)
+	gotIDs := map[string]bool{}
+	for _, tr := range results {
+		gotIDs[tr.ToolCallID] = true
+	}
+	for _, expectedID := range []string{"tc1", "tc2", "tc3"} {
+		if !gotIDs[expectedID] {
+			t.Errorf("missing %s", expectedID)
 		}
 	}
 }
@@ -1967,10 +1990,10 @@ func TestResumeTurn_CrashedDuringAsyncWait(t *testing.T) {
 	}
 
 	// Both were async tasks — saved in async.json.
-	if err := store.SaveAsyncTasks(threadID, turnID, 0, StepAsyncTasks{
-		Tasks: []AsyncTaskInfo{
-			{ToolCallID: "tc1", ToolName: "launch_task", TaskID: "task-1", Input: "{}"},
-			{ToolCallID: "tc2", ToolName: "launch_task", TaskID: "task-2", Input: "{}"},
+	if err := store.SaveAsyncContinuations(threadID, turnID, 0, StepAsyncContinuations{
+		Continuations: []AsyncContinuationInfo{
+			{ToolCallID: "tc1", ToolName: "launch_task", Continuation: testContinuation("task-1"), Input: "{}"},
+			{ToolCallID: "tc2", ToolName: "launch_task", Continuation: testContinuation("task-2"), Input: "{}"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -2066,8 +2089,8 @@ func TestResumeTurn_CrashedDuringAsyncWait_TaskLost(t *testing.T) {
 	}
 
 	// Async tasks file.
-	if err := store.SaveAsyncTasks(threadID, turnID, 0, StepAsyncTasks{
-		Tasks: []AsyncTaskInfo{{ToolCallID: "tc1", ToolName: "launch_task", TaskID: "task-lost", Input: "{}"}},
+	if err := store.SaveAsyncContinuations(threadID, turnID, 0, StepAsyncContinuations{
+		Continuations: []AsyncContinuationInfo{{ToolCallID: "tc1", ToolName: "launch_task", Continuation: testContinuation("task-lost"), Input: "{}"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2171,9 +2194,9 @@ func TestResumeTurn_CrashedDuringToolPhase_WithAsyncTasks(t *testing.T) {
 	}
 
 	// tc2 was launched as async before crash.
-	if err := store.SaveAsyncTasks(threadID, turnID, 0, StepAsyncTasks{
-		Tasks: []AsyncTaskInfo{
-			{ToolCallID: "tc2", ToolName: "launch_task", TaskID: "task-bg", Input: "{}"},
+	if err := store.SaveAsyncContinuations(threadID, turnID, 0, StepAsyncContinuations{
+		Continuations: []AsyncContinuationInfo{
+			{ToolCallID: "tc2", ToolName: "launch_task", Continuation: testContinuation("task-bg"), Input: "{}"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -2204,8 +2227,8 @@ func TestResumeTurn_CrashedDuringToolPhase_WithAsyncTasks(t *testing.T) {
 	// ResumeAsync: tc2's task still running, returns Wait handle.
 	exec := &asyncMockExecutor{
 		resumeResults: map[string]ToolExecuteResult{
-			"task-bg": {Async: &AsyncTaskHandle{
-				TaskID: "task-bg",
+			"task-bg": {Async: &AsyncContinuationHandle{
+				Continuation: testContinuation("task-bg"),
 				Wait: func(_ context.Context) (AsyncWaitResult, error) {
 					return AsyncWaitResult{Result: message.ToolResultPart{
 						ToolCallID: "tc2", ToolName: "launch_task",
@@ -2233,13 +2256,13 @@ func TestResumeTurn_CrashedDuringToolPhase_WithAsyncTasks(t *testing.T) {
 		t.Fatal("expected at least 1 LLM call")
 	}
 	msgs := prov.requests[0].Messages
-	toolMsg := msgs[len(msgs)-1]
-	if len(toolMsg.Parts) != 2 {
-		t.Fatalf("expected 2 tool results, got %d", len(toolMsg.Parts))
+	results := toolResultParts(msgs)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 tool results, got %d", len(results))
 	}
 	// tc1 first, tc2 second (original order).
-	tr1 := toolMsg.Parts[0].(message.ToolResultPart)
-	tr2 := toolMsg.Parts[1].(message.ToolResultPart)
+	tr1 := results[0]
+	tr2 := results[1]
 	if tr1.ToolCallID != "tc1" || tr2.ToolCallID != "tc2" {
 		t.Errorf("expected tc1,tc2 order, got %s,%s", tr1.ToolCallID, tr2.ToolCallID)
 	}
@@ -2295,8 +2318,11 @@ func TestRunTurn_AsyncToolApprovalBubblesToParentAndResumes(t *testing.T) {
 	if question == nil {
 		t.Fatal("expected pending question to be saved")
 	}
-	if question.TaskID != "task-subagent" {
-		t.Fatalf("expected pending question taskID=task-subagent, got %q", question.TaskID)
+	if got := testContinuationID(t, question.Continuation); got != "task-subagent" {
+		t.Fatalf("expected pending question continuation taskID=task-subagent, got %q", got)
+	}
+	if question.ResumePhase != PhaseWaitingForAsync {
+		t.Fatalf("expected pending question resumePhase=%s, got %s", PhaseWaitingForAsync, question.ResumePhase)
 	}
 
 	if err := store.SaveAnswer(threadID, turnState.ID, QuestionAnswer{
@@ -2369,6 +2395,10 @@ type approvalMockExecutor struct {
 	approvalTools map[string]json.RawMessage
 	// resolvedResults maps toolCallID → resolved result (returned by ResolveApproval).
 	resolvedResults map[string]message.ToolResultPart
+	// resolveAsyncSubThreadID causes ResolveAnswer to continue asynchronously.
+	resolveAsyncSubThreadID string
+	// resolveAsyncResult is returned when the async answer continuation completes.
+	resolveAsyncResult message.ToolResultPart
 	// syncResults maps toolCallID → sync result for non-approval tools.
 	syncResults map[string]message.ToolResultPart
 	// asyncToolIDs maps toolCallID → taskID for tools that should run async.
@@ -2385,9 +2415,10 @@ func (e *approvalMockExecutor) Execute(_ context.Context, _ *ToolContext, call m
 	}
 	if taskID, ok := e.asyncToolIDs[call.ToolCallID]; ok {
 		result := e.asyncResults[call.ToolCallID]
+		continuation := testContinuation(taskID)
 		return ToolExecuteResult{
-			Async: &AsyncTaskHandle{
-				TaskID: taskID,
+			Async: &AsyncContinuationHandle{
+				Continuation: continuation,
 				Wait: func(_ context.Context) (AsyncWaitResult, error) {
 					return AsyncWaitResult{Result: result}, nil
 				},
@@ -2405,6 +2436,17 @@ func (e *approvalMockExecutor) Execute(_ context.Context, _ *ToolContext, call m
 }
 
 func (e *approvalMockExecutor) ResolveAnswer(_ *ToolContext, call message.ToolCallPart, _ api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	if e.resolveAsyncSubThreadID != "" {
+		continuation := testContinuation(e.resolveAsyncSubThreadID)
+		return ToolExecuteResult{
+			Async: &AsyncContinuationHandle{
+				Continuation: continuation,
+				Wait: func(_ context.Context) (AsyncWaitResult, error) {
+					return AsyncWaitResult{Result: e.resolveAsyncResult}, nil
+				},
+			},
+		}, nil
+	}
 	if result, ok := e.resolvedResults[call.ToolCallID]; ok {
 		return ToolExecuteResult{Result: result}, nil
 	}
@@ -2415,8 +2457,92 @@ func (e *approvalMockExecutor) ResumeAsync(_ context.Context, _ *ToolContext, _ 
 	return ToolExecuteResult{}, fmt.Errorf("no async resume in approval mock")
 }
 
+func (e *approvalMockExecutor) Continue(ctx context.Context, toolCtx *ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	if req != nil {
+		return e.ResolveAnswer(toolCtx, call, *req)
+	}
+	if len(continuation) > 0 {
+		var decoded struct {
+			SubThreadID string `json:"subThreadId"`
+		}
+		if err := json.Unmarshal(continuation, &decoded); err != nil {
+			return ToolExecuteResult{}, err
+		}
+		return e.ResumeAsync(ctx, toolCtx, call, decoded.SubThreadID, nil)
+	}
+	return ToolExecuteResult{}, fmt.Errorf("no continuation in approval mock")
+}
+
 func (e *approvalMockExecutor) SetPlanMode(_ bool)   {}
 func (e *approvalMockExecutor) SetThreadID(_ string) {}
+
+type nestedApprovalContinuation struct {
+	LocalApprovalID string `json:"localApprovalId"`
+	Stage           int    `json:"stage"`
+}
+
+type nestedApprovalExecutor struct {
+	resolvedLocalApprovalIDs []string
+}
+
+func encodeNestedApprovalContinuation(id string, stage int) json.RawMessage {
+	data, _ := json.Marshal(nestedApprovalContinuation{
+		LocalApprovalID: id,
+		Stage:           stage,
+	})
+	return data
+}
+
+func decodeNestedApprovalContinuation(t *testing.T, data json.RawMessage) nestedApprovalContinuation {
+	t.Helper()
+	var decoded nestedApprovalContinuation
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("decode nested approval continuation: %v", err)
+	}
+	return decoded
+}
+
+func (e *nestedApprovalExecutor) Execute(_ context.Context, _ *ToolContext, _ message.ToolCallPart) (ToolExecuteResult, error) {
+	return ToolExecuteResult{
+		Approval: &ApprovalRequest{
+			Questions:    json.RawMessage(`[{"question":"Parent approval?"}]`),
+			Continuation: encodeNestedApprovalContinuation("child-local-B", 1),
+		},
+	}, nil
+}
+
+func (e *nestedApprovalExecutor) Continue(_ context.Context, _ *ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (ToolExecuteResult, error) {
+	decoded := nestedApprovalContinuation{}
+	if err := json.Unmarshal(continuation, &decoded); err != nil {
+		return ToolExecuteResult{}, err
+	}
+	e.resolvedLocalApprovalIDs = append(e.resolvedLocalApprovalIDs, decoded.LocalApprovalID)
+	if req == nil {
+		return ToolExecuteResult{}, fmt.Errorf("missing answer for %s", decoded.LocalApprovalID)
+	}
+	switch decoded.Stage {
+	case 1:
+		return ToolExecuteResult{
+			Approval: &ApprovalRequest{
+				Questions:    json.RawMessage(`[{"question":"Leaf approval?"}]`),
+				Continuation: encodeNestedApprovalContinuation("leaf-local-A", 2),
+			},
+		}, nil
+	case 2:
+		return ToolExecuteResult{
+			Result: message.ToolResultPart{
+				ToolCallID: call.ToolCallID,
+				ToolName:   call.ToolName,
+				Output:     message.TextOutput{Value: "nested approvals resolved"},
+			},
+		}, nil
+	default:
+		return ToolExecuteResult{}, fmt.Errorf("unknown continuation stage %d", decoded.Stage)
+	}
+}
+
+func (e *nestedApprovalExecutor) SetPlanMode(_ bool)   {}
+func (e *nestedApprovalExecutor) SetThreadID(_ string) {}
 
 // --- Approval Flow Tests ---
 
@@ -2490,8 +2616,11 @@ func TestRunTurn_ApprovalPause(t *testing.T) {
 	if question.ToolCallID != "tc1" {
 		t.Errorf("expected question toolCallId=tc1, got %s", question.ToolCallID)
 	}
+	if question.ResumePhase != PhaseTools {
+		t.Errorf("expected question resumePhase=%s, got %s", PhaseTools, question.ResumePhase)
+	}
 
-	// Assistant message should be saved with approval part.
+	// Approval request should be persisted as a separate tool message.
 	leaf, err := store.FindLeaf(threadID)
 	if err != nil {
 		t.Fatal(err)
@@ -2503,10 +2632,10 @@ func TestRunTurn_ApprovalPause(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if leafMsg.Message.Role != "assistant" {
-		t.Errorf("expected leaf message role=assistant, got %s", leafMsg.Message.Role)
+	if leafMsg.Message.Role != "tool" {
+		t.Errorf("expected leaf message role=tool, got %s", leafMsg.Message.Role)
 	}
-	// Check for approval part in assistant message.
+	// Check for approval part in tool message.
 	hasApprovalPart := false
 	for _, p := range leafMsg.Message.Parts {
 		if _, ok := p.(message.ToolApprovalRequest); ok {
@@ -2515,6 +2644,125 @@ func TestRunTurn_ApprovalPause(t *testing.T) {
 	}
 	if !hasApprovalPart {
 		t.Error("expected assistant message to contain ToolApprovalRequest part")
+	}
+}
+
+func TestResumeTurn_NestedApprovalIDsAreRemappedPerBoundary(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-nested-approval"
+
+	prov := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{
+			{
+				message.StreamStartChunk{},
+				message.ToolCallChunk{ToolCallID: "tc1", ToolName: "Task", Input: `{"prompt":"delegate"}`},
+				message.FinishChunk{FinishReason: message.FinishReason{Unified: "tool-calls"}},
+			},
+			{
+				message.StreamStartChunk{},
+				message.TextStartChunk{ID: "t1"},
+				message.TextDeltaChunk{ID: "t1", Delta: "complete"},
+				message.TextEndChunk{ID: "t1"},
+				message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+			},
+		},
+	}
+
+	exec := &nestedApprovalExecutor{}
+	collectChunks(t, RunTurn(
+		context.Background(), prov, exec, store,
+		threadID, "", TurnConfig{
+			Model:     "test-model",
+			UserParts: []message.Part{message.TextPart{Text: "run nested approvals"}},
+		},
+	))
+
+	firstState, err := store.LoadTurnState(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstState == nil || firstState.Phase != PhaseWaitingForAnswer {
+		t.Fatalf("expected first waiting_for_answer state, got %#v", firstState)
+	}
+	firstApprovalID := firstState.PendingApprovalID
+	firstQuestion, err := store.LoadQuestion(threadID, firstState.ID, firstApprovalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstQuestion == nil {
+		t.Fatal("expected first pending question")
+	}
+	firstContinuation := decodeNestedApprovalContinuation(t, firstQuestion.Continuation)
+	if firstContinuation.LocalApprovalID != "child-local-B" {
+		t.Fatalf("expected first local approval ID child-local-B, got %q", firstContinuation.LocalApprovalID)
+	}
+	if firstApprovalID == firstContinuation.LocalApprovalID {
+		t.Fatalf("turn approval ID should differ from local approval ID, both were %q", firstApprovalID)
+	}
+
+	if err := store.SaveAnswer(threadID, firstState.ID, QuestionAnswer{
+		ApprovalID: firstApprovalID,
+		Answers:    map[string]string{"Parent approval?": "Yes"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	collectChunks(t, ResumeTurn(context.Background(), prov, exec, store, firstState))
+
+	secondState, err := store.LoadTurnState(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondState == nil || secondState.Phase != PhaseWaitingForAnswer {
+		t.Fatalf("expected second waiting_for_answer state, got %#v", secondState)
+	}
+	secondApprovalID := secondState.PendingApprovalID
+	if secondApprovalID == firstApprovalID {
+		t.Fatalf("expected remapped approval ID for nested boundary, both were %q", secondApprovalID)
+	}
+	secondQuestion, err := store.LoadQuestion(threadID, secondState.ID, secondApprovalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondQuestion == nil {
+		t.Fatal("expected second pending question")
+	}
+	secondContinuation := decodeNestedApprovalContinuation(t, secondQuestion.Continuation)
+	if secondContinuation.LocalApprovalID != "leaf-local-A" {
+		t.Fatalf("expected second local approval ID leaf-local-A, got %q", secondContinuation.LocalApprovalID)
+	}
+	if secondApprovalID == secondContinuation.LocalApprovalID {
+		t.Fatalf("turn approval ID should differ from nested local approval ID, both were %q", secondApprovalID)
+	}
+
+	if len(exec.resolvedLocalApprovalIDs) != 1 || exec.resolvedLocalApprovalIDs[0] != "child-local-B" {
+		t.Fatalf("expected first continuation to resolve child-local-B, got %#v", exec.resolvedLocalApprovalIDs)
+	}
+
+	if err := store.SaveAnswer(threadID, secondState.ID, QuestionAnswer{
+		ApprovalID: secondApprovalID,
+		Answers:    map[string]string{"Leaf approval?": "Yes"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	chunks := collectChunks(t, ResumeTurn(context.Background(), prov, exec, store, secondState))
+
+	if len(exec.resolvedLocalApprovalIDs) != 2 {
+		t.Fatalf("expected two resolved local approvals, got %#v", exec.resolvedLocalApprovalIDs)
+	}
+	if exec.resolvedLocalApprovalIDs[0] != "child-local-B" || exec.resolvedLocalApprovalIDs[1] != "leaf-local-A" {
+		t.Fatalf("unexpected local approval resolution order: %#v", exec.resolvedLocalApprovalIDs)
+	}
+
+	var hasFinalText bool
+	for _, c := range chunks {
+		if td, ok := c.(message.TextDeltaChunk); ok && td.Delta == "complete" {
+			hasFinalText = true
+		}
+	}
+	if !hasFinalText {
+		t.Fatal("expected final text after nested approval remapping")
 	}
 }
 
@@ -2570,10 +2818,11 @@ func TestResumeTurn_ApprovalAnswered(t *testing.T) {
 	approvalID := "approval-1"
 	// Save question.
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
-		ApprovalID: approvalID,
-		ToolCallID: "tc1",
-		StepIndex:  0,
-		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
+		ApprovalID:  approvalID,
+		ToolCallID:  "tc1",
+		StepIndex:   0,
+		ResumePhase: PhaseTools,
+		Questions:   json.RawMessage(`[{"question":"Are you sure?"}]`),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2661,20 +2910,11 @@ func TestResumeTurn_ApprovalAnswered(t *testing.T) {
 		t.Fatal("expected at least 1 LLM call")
 	}
 	msgs := prov.requests[0].Messages
-	var toolMsg *message.Message
-	for i := range msgs {
-		if msgs[i].Role == "tool" {
-			toolMsg = &msgs[i]
-			break
-		}
+	results := toolResultParts(msgs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 tool result, got %d", len(results))
 	}
-	if toolMsg == nil {
-		t.Fatal("expected tool message in history")
-	}
-	if len(toolMsg.Parts) != 1 {
-		t.Fatalf("expected 1 tool result, got %d", len(toolMsg.Parts))
-	}
-	tr := toolMsg.Parts[0].(message.ToolResultPart)
+	tr := results[0]
 	textOut, ok := tr.Output.(message.TextOutput)
 	if !ok {
 		t.Fatalf("expected TextOutput, got %T", tr.Output)
@@ -2730,10 +2970,11 @@ func TestResumeTurn_ApprovalAnswered_LiveContinuationSkipsReplayPreamble(t *test
 
 	approvalID := "approval-1"
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
-		ApprovalID: approvalID,
-		ToolCallID: "tc1",
-		StepIndex:  0,
-		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
+		ApprovalID:  approvalID,
+		ToolCallID:  "tc1",
+		StepIndex:   0,
+		ResumePhase: PhaseTools,
+		Questions:   json.RawMessage(`[{"question":"Are you sure?"}]`),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2817,7 +3058,7 @@ func TestResumeTurn_ApprovalAnswered_LiveContinuationSkipsReplayPreamble(t *test
 	}
 }
 
-func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) {
+func TestResumeTurn_ApprovalAnswered_DoesNotReplayPreambleDuringRecovery(t *testing.T) {
 	store := NewStore(t.TempDir())
 	threadID := "thread1"
 	turnID := "turn1"
@@ -2864,10 +3105,11 @@ func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) 
 
 	approvalID := "approval-1"
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
-		ApprovalID: approvalID,
-		ToolCallID: "tc1",
-		StepIndex:  0,
-		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
+		ApprovalID:  approvalID,
+		ToolCallID:  "tc1",
+		StepIndex:   0,
+		ResumePhase: PhaseTools,
+		Questions:   json.RawMessage(`[{"question":"Are you sure?"}]`),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2887,7 +3129,6 @@ func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) 
 		LeafMsgID:         assistantMsgID,
 		Config:            TurnConfig{Model: "test-model", UserMessage: userMsg},
 		PendingApprovalID: approvalID,
-		ReplayTurn:        true,
 	}
 	if err := store.SaveTurnState(threadID, *turnState); err != nil {
 		t.Fatal(err)
@@ -2926,29 +3167,23 @@ func TestResumeTurn_ApprovalAnswered_ReplaysPreambleWhenRequested(t *testing.T) 
 	var hasStart bool
 	var hasApprovalRequest bool
 	for _, c := range chunks {
-		switch v := c.(type) {
+		switch c.(type) {
 		case message.UserMessageChunk:
 			hasUserMessage = true
-			if v.Data.InsertBeforeMessageID != assistantMsgID {
-				t.Fatalf("expected replayed user message to target %q, got %q", assistantMsgID, v.Data.InsertBeforeMessageID)
-			}
 		case message.StartChunk:
 			hasStart = true
-			if v.MessageID != assistantMsgID {
-				t.Fatalf("expected replayed start chunk message ID %q, got %q", assistantMsgID, v.MessageID)
-			}
 		case message.ToolApprovalRequestChunk:
 			hasApprovalRequest = true
 		}
 	}
-	if !hasUserMessage {
-		t.Fatal("expected replayed user message before approval continuation")
+	if hasUserMessage {
+		t.Fatal("did not expect replayed user message during recovery")
 	}
-	if !hasStart {
-		t.Fatal("expected replayed start chunk before approval continuation")
+	if hasStart {
+		t.Fatal("did not expect replayed start chunk during recovery")
 	}
-	if !hasApprovalRequest {
-		t.Fatal("expected replayed approval request before approval continuation")
+	if hasApprovalRequest {
+		t.Fatal("did not expect replayed approval request during recovery")
 	}
 }
 
@@ -3001,10 +3236,11 @@ func TestResumeTurn_ApprovalNoAnswer(t *testing.T) {
 	// Save question but NO answer.
 	approvalID := "approval-1"
 	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
-		ApprovalID: approvalID,
-		ToolCallID: "tc1",
-		StepIndex:  0,
-		Questions:  json.RawMessage(`[{"question":"Are you sure?"}]`),
+		ApprovalID:  approvalID,
+		ToolCallID:  "tc1",
+		StepIndex:   0,
+		ResumePhase: PhaseTools,
+		Questions:   json.RawMessage(`[{"question":"Are you sure?"}]`),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -3260,9 +3496,9 @@ func TestResumeTurn_CrashedDuringToolPhase_AsyncResumeError(t *testing.T) {
 	}
 
 	// tc1 was an async task that was launched before crash.
-	if err := store.SaveAsyncTasks(threadID, turnID, 0, StepAsyncTasks{
-		Tasks: []AsyncTaskInfo{
-			{ToolCallID: "tc1", ToolName: "launch_task", TaskID: "task-gone", Input: "{}"},
+	if err := store.SaveAsyncContinuations(threadID, turnID, 0, StepAsyncContinuations{
+		Continuations: []AsyncContinuationInfo{
+			{ToolCallID: "tc1", ToolName: "launch_task", Continuation: testContinuation("task-gone"), Input: "{}"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -3323,8 +3559,8 @@ func TestResumeTurn_CrashedDuringToolPhase_AsyncResumeError(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected ErrorTextOutput, got %T", tr.Output)
 	}
-	if errOut.Value != "async task lost: container gone" {
-		t.Errorf("expected 'async task lost: container gone', got %q", errOut.Value)
+	if errOut.Value != "async continuation lost: container gone" {
+		t.Errorf("expected 'async continuation lost: container gone', got %q", errOut.Value)
 	}
 
 	state, _ := store.LoadTurnState(threadID)
@@ -3364,9 +3600,9 @@ func TestResumeTurn_CrashedDuringToolPhase_AsyncImmediateResult(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.SaveAsyncTasks(threadID, turnID, 0, StepAsyncTasks{
-		Tasks: []AsyncTaskInfo{
-			{ToolCallID: "tc1", ToolName: "launch_task", TaskID: "task-done", Input: "{}"},
+	if err := store.SaveAsyncContinuations(threadID, turnID, 0, StepAsyncContinuations{
+		Continuations: []AsyncContinuationInfo{
+			{ToolCallID: "tc1", ToolName: "launch_task", Continuation: testContinuation("task-done"), Input: "{}"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -3546,9 +3782,9 @@ func TestResumeTurn_AsyncPhase_MissingToolResult(t *testing.T) {
 	}
 
 	// Only tc1 has an async task. tc2 has no result or async task (was never started).
-	if err := store.SaveAsyncTasks(threadID, turnID, 0, StepAsyncTasks{
-		Tasks: []AsyncTaskInfo{
-			{ToolCallID: "tc1", ToolName: "launch_task", TaskID: "task-1", Input: "{}"},
+	if err := store.SaveAsyncContinuations(threadID, turnID, 0, StepAsyncContinuations{
+		Continuations: []AsyncContinuationInfo{
+			{ToolCallID: "tc1", ToolName: "launch_task", Continuation: testContinuation("task-1"), Input: "{}"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -3592,19 +3828,19 @@ func TestResumeTurn_AsyncPhase_MissingToolResult(t *testing.T) {
 		t.Fatal("expected at least 1 LLM call")
 	}
 	msgs := prov.requests[0].Messages
-	toolMsg := msgs[len(msgs)-1]
-	if len(toolMsg.Parts) != 2 {
-		t.Fatalf("expected 2 tool results, got %d", len(toolMsg.Parts))
+	results := toolResultParts(msgs)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 tool results, got %d", len(results))
 	}
 
 	// tc1: successful result.
-	tr1 := toolMsg.Parts[0].(message.ToolResultPart)
+	tr1 := results[0]
 	if _, isErr := tr1.Output.(message.ErrorTextOutput); isErr {
 		t.Error("tc1: expected successful result, got error")
 	}
 
 	// tc2: interrupted fallback.
-	tr2 := toolMsg.Parts[1].(message.ToolResultPart)
+	tr2 := results[1]
 	errOut, ok := tr2.Output.(message.ErrorTextOutput)
 	if !ok {
 		t.Fatalf("tc2: expected ErrorTextOutput, got %T", tr2.Output)
@@ -3665,5 +3901,432 @@ func TestFindLeaf(t *testing.T) {
 	}
 	if leaf != "msg3" {
 		t.Errorf("expected leaf=msg3, got %q", leaf)
+	}
+}
+
+func TestFormatRetryMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		event transport.RetryEvent
+		want  string
+	}{
+		{
+			name:  "rate limited",
+			event: transport.RetryEvent{StatusCode: 429, Delay: 1250 * time.Millisecond, Attempt: 2, MaxRetries: 5},
+			want:  "provider rate limited (HTTP 429); retrying in 1.3s (attempt 2/5)",
+		},
+		{
+			name:  "http error",
+			event: transport.RetryEvent{StatusCode: 503, Delay: 2 * time.Second, Attempt: 1, MaxRetries: 4},
+			want:  "provider request failed (HTTP 503); retrying in 2s (attempt 1/4)",
+		},
+		{
+			name:  "network error with negative delay",
+			event: transport.RetryEvent{Err: fmt.Errorf("dial tcp timeout"), Delay: -1 * time.Second, Attempt: 3, MaxRetries: 6},
+			want:  "provider request failed: dial tcp timeout; retrying in 0s (attempt 3/6)",
+		},
+		{
+			name:  "generic failure",
+			event: transport.RetryEvent{Delay: 450 * time.Millisecond, Attempt: 1, MaxRetries: 2},
+			want:  "provider request failed; retrying in 500ms (attempt 1/2)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatRetryMessage(tt.event); got != tt.want {
+				t.Fatalf("formatRetryMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveReasoning(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cfg  TurnConfig
+		want providers.Reasoning
+	}{
+		{
+			name: "disabled becomes none",
+			cfg:  TurnConfig{Reasoning: providers.ReasoningDisabled},
+			want: providers.ReasoningNone,
+		},
+		{
+			name: "explicit level wins",
+			cfg:  TurnConfig{Reasoning: providers.ReasoningHigh},
+			want: providers.ReasoningHigh,
+		},
+		{
+			name: "default unknown model falls back to none",
+			cfg:  TurnConfig{ProviderID: "missing", Model: "missing", Reasoning: providers.ReasoningDefault},
+			want: providers.ReasoningNone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveReasoning(tt.cfg); got != tt.want {
+				t.Fatalf("effectiveReasoning() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("metadata-backed default uses model capabilities", func(t *testing.T) {
+		got := effectiveReasoning(TurnConfig{
+			ProviderID: "openai",
+			Model:      "o3",
+			Reasoning:  providers.ReasoningDefault,
+		})
+		if got == providers.ReasoningNone {
+			t.Fatalf("expected metadata-backed reasoning level for openai/o3, got %q", got)
+		}
+	})
+}
+
+func TestFilterContentParts(t *testing.T) {
+	t.Parallel()
+
+	providerExecuted := true
+	parts := []message.Part{
+		message.TextPart{Text: "visible"},
+		message.ToolCallPart{ToolCallID: "tc1", ToolName: "dangerous", Input: `{}`},
+		message.ReasoningPart{Text: "thinking"},
+		message.ToolResultPart{ToolCallID: "tc1", ToolName: "dangerous", Output: message.TextOutput{Value: "done"}},
+		message.ToolCallPart{ToolCallID: "tc2", ToolName: "provider", Input: `{}`, ProviderExecuted: &providerExecuted},
+	}
+
+	filtered := filterContentParts(parts)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(filtered))
+	}
+	if text, ok := filtered[0].(message.TextPart); !ok || text.Text != "visible" {
+		t.Fatalf("expected first part to be text, got %#v", filtered[0])
+	}
+	if reasoning, ok := filtered[1].(message.ReasoningPart); !ok || reasoning.Text != "thinking" {
+		t.Fatalf("expected second part to be reasoning, got %#v", filtered[1])
+	}
+}
+
+func TestRecoverStreamingStep_IncompleteDropsToolCalls(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-incomplete"
+	turnID := "turn-incomplete"
+
+	stepFile, err := store.CreateStepFile(threadID, turnID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chunk := range []message.ProviderMessageChunk{
+		message.StreamStartChunk{},
+		message.TextStartChunk{ID: "text-1"},
+		message.TextDeltaChunk{ID: "text-1", Delta: "partial"},
+		message.TextEndChunk{ID: "text-1"},
+		message.ToolCallChunk{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"path":"secret.txt"}`},
+	} {
+		if err := store.AppendChunk(stepFile, chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := stepFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	turnState := &TurnState{ID: turnID, ThreadID: threadID, CurrentStep: 0, AssistantMsgID: "asst-1"}
+	streamComplete, recovered := recoverStreamingStep(store, threadID, turnID, turnState)
+	if streamComplete {
+		t.Fatal("expected incomplete stream to report streamComplete=false")
+	}
+	if !recovered {
+		t.Fatal("expected incomplete stream to be recovered")
+	}
+
+	stepResult, err := store.LoadStepResult(threadID, turnID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stepResult == nil {
+		t.Fatal("expected recovered step result")
+	}
+	if stepResult.AssistantMessage.ID != "asst-1" {
+		t.Fatalf("expected recovered assistant message ID to use AssistantMsgID, got %q", stepResult.AssistantMessage.ID)
+	}
+	if len(stepResult.AssistantMessage.Parts) != 1 {
+		t.Fatalf("expected incomplete recovery to keep only content parts, got %d parts", len(stepResult.AssistantMessage.Parts))
+	}
+	if text, ok := stepResult.AssistantMessage.Parts[0].(message.TextPart); !ok || text.Text != "partial" {
+		t.Fatalf("expected recovered partial text, got %#v", stepResult.AssistantMessage.Parts[0])
+	}
+}
+
+func TestRecoverStreamingStep_CompleteKeepsToolCalls(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-complete"
+	turnID := "turn-complete"
+
+	stepFile, err := store.CreateStepFile(threadID, turnID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chunk := range []message.ProviderMessageChunk{
+		message.StreamStartChunk{},
+		message.ToolCallChunk{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"path":"secret.txt"}`},
+		message.FinishChunk{FinishReason: message.FinishReason{Unified: "tool-calls"}},
+	} {
+		if err := store.AppendChunk(stepFile, chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := stepFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	turnState := &TurnState{ID: turnID, ThreadID: threadID, CurrentStep: 0, AssistantMsgID: "asst-2"}
+	streamComplete, recovered := recoverStreamingStep(store, threadID, turnID, turnState)
+	if !streamComplete {
+		t.Fatal("expected completed stream to report streamComplete=true")
+	}
+	if !recovered {
+		t.Fatal("expected completed stream to be recovered")
+	}
+
+	stepResult, err := store.LoadStepResult(threadID, turnID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stepResult == nil {
+		t.Fatal("expected recovered step result")
+	}
+	if len(stepResult.AssistantMessage.Parts) != 1 {
+		t.Fatalf("expected recovered completed message to keep tool call, got %d parts", len(stepResult.AssistantMessage.Parts))
+	}
+	if toolCall, ok := stepResult.AssistantMessage.Parts[0].(message.ToolCallPart); !ok || toolCall.ToolCallID != "tc1" {
+		t.Fatalf("expected recovered tool call, got %#v", stepResult.AssistantMessage.Parts[0])
+	}
+}
+
+func TestResumeTurn_CrashedDuringAsyncWait_PausesForApproval(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-async-approval-recovery"
+	turnID := "turn-async-approval-recovery"
+
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:      "msg-user",
+		Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "run"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stepFile, err := store.CreateStepFile(threadID, turnID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stepFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveStepResult(threadID, turnID, 0, StepResult{
+		AssistantMessage: message.Message{
+			Role: "assistant",
+			Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "tc1", ToolName: "launch_task", Input: `{}`},
+			},
+		},
+		ToolCalls: []ToolCallInfo{
+			{ToolCallID: "tc1", ToolName: "launch_task", Input: "{}"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveAsyncContinuations(threadID, turnID, 0, StepAsyncContinuations{
+		Continuations: []AsyncContinuationInfo{{ToolCallID: "tc1", ToolName: "launch_task", Continuation: testContinuation("task-approval"), Input: "{}"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	turnState := &TurnState{
+		ID:          turnID,
+		ThreadID:    threadID,
+		CurrentStep: 0,
+		Phase:       PhaseWaitingForAsync,
+		LeafMsgID:   "msg-user",
+		Config:      TurnConfig{Model: "test-model"},
+	}
+	if err := store.SaveTurnState(threadID, *turnState); err != nil {
+		t.Fatal(err)
+	}
+
+	exec := &asyncMockExecutor{
+		resumeResults: map[string]ToolExecuteResult{
+			"task-approval": {
+				Approval: &ApprovalRequest{Questions: json.RawMessage(`[{"question":"continue?"}]`)},
+			},
+		},
+	}
+
+	chunks := collectChunks(t, ResumeTurn(context.Background(), &mockProvider{}, exec, store, turnState))
+
+	var hasApprovalChunk bool
+	for _, c := range chunks {
+		if approval, ok := c.(message.ToolApprovalRequestChunk); ok && approval.ToolCallID == "tc1" {
+			hasApprovalChunk = true
+		}
+	}
+	if !hasApprovalChunk {
+		t.Fatal("expected approval chunk after async recovery")
+	}
+
+	state, err := store.LoadTurnState(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state == nil || state.Phase != PhaseWaitingForAnswer {
+		t.Fatalf("expected paused waiting_for_answer state, got %#v", state)
+	}
+	question, err := store.LoadQuestion(threadID, turnID, state.PendingApprovalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if question == nil {
+		t.Fatalf("expected pending question for task-approval, got %#v", question)
+	}
+	if got := testContinuationID(t, question.Continuation); got != "task-approval" {
+		t.Fatalf("expected pending question continuation taskID=task-approval, got %q", got)
+	}
+	if question.ResumePhase != PhaseWaitingForAsync {
+		t.Fatalf("expected pending question resumePhase=%s, got %s", PhaseWaitingForAsync, question.ResumePhase)
+	}
+}
+
+func TestResumeTurn_ApprovalAnswered_ResolveAnswerAsyncThenContinues(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread-answer-async"
+	turnID := "turn-answer-async"
+
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:      "msg-user",
+		Message: message.Message{Role: "user", Parts: []message.Part{message.TextPart{Text: "approve it"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assistantMsgID := "msg-asst"
+	if err := store.SaveMessage(threadID, StoredMessage{
+		ID:       assistantMsgID,
+		ParentID: "msg-user",
+		Message: message.Message{
+			Role: "assistant",
+			Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+				message.ToolApprovalRequest{ApprovalID: "approval-1", ToolCallID: "tc1"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stepFile, err := store.CreateStepFile(threadID, turnID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stepFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveStepResult(threadID, turnID, 0, StepResult{
+		AssistantMessage: message.Message{
+			Role: "assistant",
+			Parts: []message.Part{
+				message.ToolCallPart{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+			},
+		},
+		ToolCalls: []ToolCallInfo{
+			{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveQuestion(threadID, turnID, PendingQuestionState{
+		ApprovalID:  "approval-1",
+		ToolCallID:  "tc1",
+		StepIndex:   0,
+		ResumePhase: PhaseTools,
+		Questions:   json.RawMessage(`[{"question":"Are you sure?"}]`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveAnswer(threadID, turnID, QuestionAnswer{
+		ApprovalID: "approval-1",
+		Answers:    map[string]string{"q1": "yes"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	turnState := &TurnState{
+		ID:                turnID,
+		ThreadID:          threadID,
+		CurrentStep:       0,
+		Phase:             PhaseWaitingForAnswer,
+		LeafMsgID:         assistantMsgID,
+		Config:            TurnConfig{Model: "test-model"},
+		PendingApprovalID: "approval-1",
+	}
+	if err := store.SaveTurnState(threadID, *turnState); err != nil {
+		t.Fatal(err)
+	}
+
+	prov := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{{
+			message.StreamStartChunk{},
+			message.TextStartChunk{ID: "t1"},
+			message.TextDeltaChunk{ID: "t1", Delta: "Async approval resolved"},
+			message.TextEndChunk{ID: "t1"},
+			message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+		}},
+	}
+	exec := &approvalMockExecutor{
+		resolveAsyncSubThreadID: "task-after-approval",
+		resolveAsyncResult: message.ToolResultPart{
+			ToolCallID: "tc1",
+			ToolName:   "dangerous_tool",
+			Output:     message.TextOutput{Value: "deleted later"},
+		},
+	}
+
+	chunks := collectChunks(t, ResumeTurn(context.Background(), prov, exec, store, turnState))
+
+	var hasToolOutput bool
+	var hasFinalText bool
+	for _, c := range chunks {
+		switch chunk := c.(type) {
+		case message.ToolOutputAvailableChunk:
+			if chunk.ToolCallID == "tc1" {
+				hasToolOutput = true
+			}
+		case message.TextDeltaChunk:
+			if chunk.Delta == "Async approval resolved" {
+				hasFinalText = true
+			}
+		}
+	}
+	if !hasToolOutput {
+		t.Fatal("expected tool output after async approval continuation")
+	}
+	if !hasFinalText {
+		t.Fatal("expected final assistant text after async approval continuation")
+	}
+
+	state, err := store.LoadTurnState(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state != nil {
+		t.Fatalf("expected turn state to be cleaned up, got %#v", state)
 	}
 }

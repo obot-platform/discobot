@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -14,10 +13,7 @@ import (
 	"github.com/obot-platform/discobot/agent-go/internal/hooks"
 	"github.com/obot-platform/discobot/agent-go/internal/routes"
 	"github.com/obot-platform/discobot/agent-go/internal/services"
-	"github.com/obot-platform/discobot/agent-go/message"
 )
-
-const maxHookRetries = 3
 
 // Handler contains all HTTP handlers for the agent API.
 type Handler struct {
@@ -28,16 +24,13 @@ type Handler struct {
 	defaultAgent   *agentimpl.DefaultAgent // for MCP manager access; may be nil
 	chatPingEvery  time.Duration
 
-	hookMu         sync.Mutex
-	hookRetryCount int
-
 	answeredMu        sync.Mutex
 	answeredQuestions map[string]bool // toolCallID → true (tracks answered questions for status polling)
 }
 
 // New creates a new Handler.
 func New(agentCwd string, completions *agent.CompletionManager, hookManager *hooks.Manager, serviceManager *services.Manager, defaultAgent *agentimpl.DefaultAgent) *Handler {
-	h := &Handler{
+	return &Handler{
 		agentCwd:          agentCwd,
 		completions:       completions,
 		hookManager:       hookManager,
@@ -46,61 +39,6 @@ func New(agentCwd string, completions *agent.CompletionManager, hookManager *hoo
 		chatPingEvery:     defaultChatStreamPingInterval,
 		answeredQuestions: make(map[string]bool),
 	}
-
-	// Wire up post-completion hook evaluation.
-	if hookManager != nil && hookManager.HasFileHooks() {
-		completions.SetOnTurnComplete(h.onTurnComplete)
-	}
-
-	return h
-}
-
-// onTurnComplete is called when a completion finishes. It schedules hook evaluation.
-func (h *Handler) onTurnComplete(threadID string, _ error) {
-	if h.hookManager == nil || !h.hookManager.HasFileHooks() {
-		return
-	}
-	// Fire-and-forget goroutine matching the TS scheduleHookEvaluation pattern.
-	go h.scheduleHookEvaluation(threadID)
-}
-
-// scheduleHookEvaluation runs hook evaluation after a grace period, and
-// triggers a re-prompt if a hook fails with notifyLlm=true.
-func (h *Handler) scheduleHookEvaluation(threadID string) {
-	// 200ms grace period to let SSE flush
-	time.Sleep(200 * time.Millisecond)
-
-	result := h.hookManager.EvaluateFileHooks()
-	if !result.ShouldReprompt {
-		return
-	}
-
-	h.hookMu.Lock()
-	h.hookRetryCount++
-	count := h.hookRetryCount
-	h.hookMu.Unlock()
-
-	if count >= maxHookRetries {
-		log.Printf("hooks: max retries (%d) reached, not re-prompting", maxHookRetries)
-		return
-	}
-
-	req := agent.PromptRequest{
-		UserParts: []message.UIPart{
-			message.UITextPart{Text: result.LLMMessage},
-		},
-	}
-
-	if _, err := h.completions.Chat(threadID, req); err != nil {
-		log.Printf("hooks: failed to start re-prompt: %v", err)
-	}
-}
-
-// resetHookState aborts any pending hook evaluation and resets the retry counter.
-func (h *Handler) resetHookState() {
-	h.hookMu.Lock()
-	h.hookRetryCount = 0
-	h.hookMu.Unlock()
 }
 
 // RegisterRoutes registers all API routes on the given router and records

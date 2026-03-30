@@ -83,8 +83,8 @@ func (m *UIMessage) UnmarshalJSON(data []byte) error {
 }
 
 // ProjectUIMessages converts a slice of Messages (which may include "tool" role
-// messages) into the AI SDK v6 UIMessage format. Consecutive assistant+tool
-// pairs are merged into single assistant UIMessages with DynamicToolParts.
+// messages) into the AI SDK v6 UIMessage format. Consecutive assistant/tool
+// runs are merged into single assistant UIMessages with DynamicToolParts.
 func ProjectUIMessages(messages []Message) ([]UIMessage, error) {
 	var result []UIMessage
 	i := 0
@@ -102,28 +102,28 @@ func ProjectUIMessages(messages []Message) ([]UIMessage, error) {
 			result = append(result, buildUIUserMessage(msg))
 			i++
 		case "assistant":
-			// Consume consecutive (assistant, optional tool) pairs into one UIMessage.
 			ui := UIMessage{
 				ID:       msg.ID,
 				Role:     "assistant",
 				Metadata: msg.Metadata,
 			}
-			for i < len(messages) && messages[i].Role == "assistant" {
+			for i < len(messages) && (messages[i].Role == "assistant" || messages[i].Role == "tool") {
+				if messages[i].Role != "assistant" {
+					i++
+					continue
+				}
 				ass := messages[i]
 				i++
-				var toolMsg *Message
-				if i < len(messages) && messages[i].Role == "tool" {
-					t := messages[i]
-					toolMsg = &t
+				var toolMsgs []Message
+				for i < len(messages) && messages[i].Role == "tool" {
+					toolMsgs = append(toolMsgs, messages[i])
 					i++
 				}
-				// Add step-start marker between steps, but not before the first one.
 				if len(ui.Parts) > 0 {
 					ui.Parts = append(ui.Parts, UIStepStartPart{Type: "step-start"})
 				}
 
-				// Convert assistant+tool pair to UI parts.
-				parts, err := convertAssistantToolPairToUI(ass, toolMsg)
+				parts, err := convertAssistantToolStepToUI(ass, toolMsgs)
 				if err != nil {
 					return nil, err
 				}
@@ -172,32 +172,34 @@ func buildUIUserMessage(msg Message) UIMessage {
 	return ui
 }
 
-func convertAssistantToolPairToUI(ass Message, toolMsg *Message) ([]UIPart, error) {
-	// Index tool results and approval responses from the tool message.
+func convertAssistantToolStepToUI(ass Message, toolMsgs []Message) ([]UIPart, error) {
 	toolResults := make(map[string]ToolResultPart)
 	approvalResponses := make(map[string]ToolApprovalResponse)
+	approvalResponsesByToolCall := make(map[string]ToolApprovalResponse)
+	approvalRequests := make(map[string]ToolApprovalRequest)
 
-	if toolMsg != nil {
+	for _, p := range ass.Parts {
+		if ar, ok := p.(ToolApprovalRequest); ok {
+			approvalRequests[ar.ToolCallID] = ar
+		}
+	}
+	for _, toolMsg := range toolMsgs {
 		for _, p := range toolMsg.Parts {
 			switch v := p.(type) {
 			case ToolResultPart:
 				toolResults[v.ToolCallID] = v
 			case ToolApprovalResponse:
 				approvalResponses[v.ApprovalID] = v
+				if v.ToolCallID != "" {
+					approvalResponsesByToolCall[v.ToolCallID] = v
+				}
+			case ToolApprovalRequest:
+				approvalRequests[v.ToolCallID] = v
 			}
 		}
 	}
 
-	// Index approval requests from the assistant message.
-	approvalRequests := make(map[string]ToolApprovalRequest)
-	for _, p := range ass.Parts {
-		if ar, ok := p.(ToolApprovalRequest); ok {
-			approvalRequests[ar.ToolCallID] = ar
-		}
-	}
-
 	var parts []UIPart
-	// Track DynamicToolParts by index for back-patching provider-executed results.
 	type dynEntry struct {
 		idx int
 		dp  DynamicToolPart
@@ -232,12 +234,12 @@ func convertAssistantToolPairToUI(ass Message, toolMsg *Message) ([]UIPart, erro
 					dp.Approval.Approved = &resp.Approved
 					dp.Approval.Reason = resp.Reason
 				} else {
-					// Approval requested but no response yet.
 					dp.State = "approval-requested"
 				}
+			} else if resp, ok := approvalResponsesByToolCall[v.ToolCallID]; ok {
+				dp.Approval = &ToolApproval{ID: resp.ApprovalID, Approved: &resp.Approved, Reason: resp.Reason}
 			}
 
-			// Apply tool result from the tool message (non-provider-executed).
 			if result, ok := toolResults[v.ToolCallID]; ok {
 				applyToolResultToDynamicPart(&dp, result)
 			}
@@ -247,14 +249,13 @@ func convertAssistantToolPairToUI(ass Message, toolMsg *Message) ([]UIPart, erro
 			toolCallDyns[v.ToolCallID] = &dynEntry{idx: idx, dp: dp}
 
 		case ToolResultPart:
-			// Provider-executed tool results appear in the assistant message.
 			if entry, ok := toolCallDyns[v.ToolCallID]; ok {
 				applyToolResultToDynamicPart(&entry.dp, v)
 				parts[entry.idx] = entry.dp
 			}
 
 		case ToolApprovalRequest:
-			// Already handled when processing ToolCallPart.
+			// Already handled when processing ToolCallPart and tool event messages.
 
 		case SourceURLPart:
 			parts = append(parts, UISourceURLPart{Type: "source-url", SourceID: v.SourceID, URL: v.URL, Title: v.Title, ProviderMetadata: v.ProviderMetadata})

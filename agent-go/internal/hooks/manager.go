@@ -38,15 +38,25 @@ type Manager struct {
 	fileHooks      []Hook
 	preCommitHooks []Hook
 	initialized    bool
+	turnRetryCount map[string]int
+	reprompt       func(threadID, message string) error
 }
 
 // NewManager creates a new HookManager.
 func NewManager(workspaceRoot, sessionID string) *Manager {
 	return &Manager{
-		workspaceRoot: workspaceRoot,
-		sessionID:     sessionID,
-		hooksDataDir:  GetHooksDataDir(sessionID),
+		workspaceRoot:  workspaceRoot,
+		sessionID:      sessionID,
+		hooksDataDir:   GetHooksDataDir(sessionID),
+		turnRetryCount: make(map[string]int),
 	}
+}
+
+// SetReprompt configures how file hook failures re-prompt the LLM.
+func (m *Manager) SetReprompt(fn func(threadID, message string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reprompt = fn
 }
 
 // Init discovers hooks and installs pre-commit hooks if needed.
@@ -158,6 +168,25 @@ func (m *Manager) HasFileHooks() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.fileHooks) > 0
+}
+
+// OnTurnStart resets any per-turn hook retry state for the thread.
+func (m *Manager) OnTurnStart(threadID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.turnRetryCount, threadID)
+}
+
+// OnTurnComplete evaluates file hooks after a completion and may trigger a re-prompt.
+func (m *Manager) OnTurnComplete(threadID string, _ error) {
+	m.mu.Lock()
+	hasFileHooks := len(m.fileHooks) > 0
+	reprompt := m.reprompt
+	m.mu.Unlock()
+	if !hasFileHooks || reprompt == nil {
+		return
+	}
+	go m.scheduleHookEvaluation(threadID)
 }
 
 // GetStatus returns the current hook status.
@@ -332,6 +361,32 @@ func (m *Manager) EvaluateFileHooks() FileHookEvalResult {
 
 	// All pending hooks cleared
 	return FileHookEvalResult{Evaluated: true}
+}
+
+func (m *Manager) scheduleHookEvaluation(threadID string) {
+	time.Sleep(200 * time.Millisecond)
+
+	result := m.EvaluateFileHooks()
+	if !result.ShouldReprompt {
+		return
+	}
+
+	m.mu.Lock()
+	m.turnRetryCount[threadID]++
+	count := m.turnRetryCount[threadID]
+	reprompt := m.reprompt
+	m.mu.Unlock()
+
+	if count >= 3 {
+		log.Printf("hooks: max retries (%d) reached, not re-prompting", 3)
+		return
+	}
+	if reprompt == nil {
+		return
+	}
+	if err := reprompt(threadID, result.LLMMessage); err != nil {
+		log.Printf("hooks: failed to start re-prompt: %v", err)
+	}
 }
 
 // getAllDirtyFiles returns all dirty files in the workspace (staged, unstaged, untracked).

@@ -186,7 +186,7 @@ func TestPromptCompactCommand_NoHistory(t *testing.T) {
 	}
 }
 
-func TestListCommands_IncludesCompactBuiltin(t *testing.T) {
+func TestListCommands_IncludesOnlyCompactBuiltin(t *testing.T) {
 	agentImpl := NewDefaultAgent(thread.NewStore(t.TempDir()), nil, nil, t.TempDir(), MCPConfig{})
 
 	commands, err := agentImpl.ListCommands()
@@ -194,20 +194,13 @@ func TestListCommands_IncludesCompactBuiltin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	foundClear := false
 	foundCompact := false
 	for _, cmd := range commands {
-		if cmd.Name == "clear" {
-			foundClear = true
-		}
 		if cmd.Name == "compact" {
 			foundCompact = true
 		}
 	}
 
-	if !foundClear {
-		t.Fatal("expected clear built-in command")
-	}
 	if !foundCompact {
 		t.Fatal("expected compact built-in command")
 	}
@@ -259,17 +252,17 @@ func TestPrompt_GeneratesThreadNameInBackground(t *testing.T) {
 	startIndex := -1
 	finishIndex := -1
 	textIndex := -1
-	var nameChunk message.ThreadNameChunk
+	var threadUpdateChunk message.ThreadUpdateChunk
 	for i, chunk := range chunks {
 		switch chunk := chunk.(type) {
 		case message.StartChunk:
 			if startIndex < 0 {
 				startIndex = i
 			}
-		case message.ThreadNameChunk:
+		case message.ThreadUpdateChunk:
 			if nameIndex < 0 {
 				nameIndex = i
-				nameChunk = chunk
+				threadUpdateChunk = chunk
 			}
 		case message.TextDeltaChunk:
 			if chunk.Delta == "Assistant response." && textIndex < 0 {
@@ -288,19 +281,19 @@ func TestPrompt_GeneratesThreadNameInBackground(t *testing.T) {
 		t.Fatalf("expected assistant response chunk, got %#v", chunks)
 	}
 	if nameIndex < 0 {
-		t.Fatalf("expected thread name chunk, got %#v", chunks)
+		t.Fatalf("expected thread update chunk, got %#v", chunks)
 	}
 	if finishIndex < 0 {
 		t.Fatalf("expected assistant finish chunk, got %#v", chunks)
 	}
 	if nameIndex <= startIndex {
-		t.Fatalf("expected thread name chunk after assistant streaming started, got nameIndex=%d startIndex=%d", nameIndex, startIndex)
+		t.Fatalf("expected thread update chunk after assistant streaming started, got nameIndex=%d startIndex=%d", nameIndex, startIndex)
 	}
 	if nameIndex >= finishIndex {
-		t.Fatalf("expected thread name chunk before assistant finish, got nameIndex=%d finishIndex=%d", nameIndex, finishIndex)
+		t.Fatalf("expected thread update chunk before assistant finish, got nameIndex=%d finishIndex=%d", nameIndex, finishIndex)
 	}
-	if nameChunk.Data.Name != "Agent-go thread naming fix" {
-		t.Fatalf("unexpected generated thread name %q", nameChunk.Data.Name)
+	if threadUpdateChunk.Data.Thread.Name != "Agent-go thread naming fix" {
+		t.Fatalf("unexpected generated thread name %q", threadUpdateChunk.Data.Thread.Name)
 	}
 
 	cfg, err := store.LoadConfig(threadID)
@@ -312,6 +305,57 @@ func TestPrompt_GeneratesThreadNameInBackground(t *testing.T) {
 	}
 	if cfg.NameSource != thread.ThreadNameSourceGenerated {
 		t.Fatalf("expected generated name source, got %q", cfg.NameSource)
+	}
+}
+
+func TestPrompt_BootstrapsRuntimeReminderWithoutSystemPrompt(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	registry := providers.NewProviderRegistry(nil)
+	mockProvider := &compactCommandMockProvider{
+		responseForReq: func(_ providers.CompleteRequest) string {
+			return "Assistant response."
+		},
+	}
+	registry.Add(mockProvider)
+
+	cwd := t.TempDir()
+	agentImpl := NewDefaultAgent(store, registry, nil, cwd, MCPConfig{})
+	threadID := "thread-runtime-bootstrap"
+	if err := store.SaveConfig(threadID, thread.Config{
+		Name:  "existing-name",
+		Model: "mock/test-model",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, err := range agentImpl.Prompt(context.Background(), threadID, agent.PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hello", State: "done"}},
+	}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if len(mockProvider.requests) == 0 {
+		t.Fatal("expected provider request")
+	}
+	req := mockProvider.requests[0]
+	if len(req.Messages) < 2 {
+		t.Fatalf("expected at least 2 messages, got %d", len(req.Messages))
+	}
+	foundRuntimeReminder := false
+	for _, msg := range req.Messages {
+		if msg.Role != "user" || len(msg.Parts) == 0 {
+			continue
+		}
+		textPart, ok := msg.Parts[0].(message.TextPart)
+		if ok && strings.Contains(textPart.Text, "Runtime environment snapshot:") {
+			foundRuntimeReminder = true
+			break
+		}
+	}
+	if !foundRuntimeReminder {
+		t.Fatal("expected runtime reminder bootstrap message in provider history")
 	}
 }
 
@@ -346,21 +390,21 @@ func TestPrompt_FallsBackToGeneratedThreadNameWhenAIReturnsEmpty(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatal("expected streamed chunks")
 	}
-	var nameChunk message.ThreadNameChunk
-	foundNameChunk := false
+	var threadUpdateChunk message.ThreadUpdateChunk
+	foundThreadUpdateChunk := false
 	for _, chunk := range chunks {
 		var ok bool
-		nameChunk, ok = chunk.(message.ThreadNameChunk)
+		threadUpdateChunk, ok = chunk.(message.ThreadUpdateChunk)
 		if ok {
-			foundNameChunk = true
+			foundThreadUpdateChunk = true
 			break
 		}
 	}
-	if !foundNameChunk {
-		t.Fatalf("expected a ThreadNameChunk, got %#v", chunks)
+	if !foundThreadUpdateChunk {
+		t.Fatalf("expected a ThreadUpdateChunk, got %#v", chunks)
 	}
-	if nameChunk.Data.Name != "Fix thread naming in agent-go" {
-		t.Fatalf("unexpected fallback generated thread name %q", nameChunk.Data.Name)
+	if threadUpdateChunk.Data.Thread.Name != "Fix thread naming in agent-go" {
+		t.Fatalf("unexpected fallback generated thread name %q", threadUpdateChunk.Data.Thread.Name)
 	}
 
 	cfg, err := store.LoadConfig(threadID)
@@ -412,8 +456,8 @@ func TestPrompt_DoesNotRegenerateThreadNameAfterInitialSet(t *testing.T) {
 	}
 
 	for _, chunk := range secondChunks {
-		if _, ok := chunk.(message.ThreadNameChunk); ok {
-			t.Fatalf("did not expect thread rename on second turn, got %#v", chunk)
+		if _, ok := chunk.(message.ThreadUpdateChunk); ok {
+			t.Fatalf("did not expect thread update on second turn, got %#v", chunk)
 		}
 	}
 

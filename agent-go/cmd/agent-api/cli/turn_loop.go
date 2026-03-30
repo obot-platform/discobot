@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"strconv"
 	"strings"
@@ -66,13 +67,16 @@ func sectionNeedsGap(from, to sectionKind) bool {
 // runTurnLoop drives an agent turn to completion, looping to handle
 // intermediate AskUserQuestion / ExitPlanMode approval requests.
 //
-// req is the initial PromptRequest. On each approval loop iteration,
-// the agent is resumed with an empty PromptRequest (the DefaultAgent
-// detects the waiting_for_answer phase and continues from disk state).
-func runTurnLoop(ctx context.Context, cancel context.CancelFunc, a *agentimpl.DefaultAgent, threadID string, req agent.PromptRequest, onPlanModeChange func(bool)) {
+// req is the initial PromptRequest. When startWithResume is true, the loop
+// starts by resuming an interrupted turn instead of prompting a new one.
+// On each approval loop iteration, the agent is resumed explicitly so the
+// interrupted turn continues from persisted disk state after the user's answer
+// is saved.
+func runTurnLoop(ctx context.Context, cancel context.CancelFunc, a *agentimpl.DefaultAgent, threadID string, req agent.PromptRequest, startWithResume bool, onPlanModeChange func(bool)) {
 	toolState := newToolRenderState()
 	pendingPlanToolCalls := map[string]string{}
 	activePlanMode := req.Mode == "plan"
+	resumeOnly := startWithResume
 	setPlanMode := func(enabled bool) {
 		activePlanMode = enabled
 		if onPlanModeChange != nil {
@@ -90,7 +94,13 @@ func runTurnLoop(ctx context.Context, cancel context.CancelFunc, a *agentimpl.De
 		// Stream the turn, printing chunks as they arrive.
 		watchCtx, stopEscWatch := context.WithCancel(ctx)
 		watcher := startEscWatch(watchCtx, cancel)
-		for chunk, err := range a.Prompt(ctx, threadID, req) {
+		var seq iter.Seq2[message.MessageChunk, error]
+		if resumeOnly {
+			seq = a.Resume(ctx, threadID)
+		} else {
+			seq = a.Prompt(ctx, threadID, req)
+		}
+		for chunk, err := range seq {
 			if err != nil {
 				stopEscWatch()
 				watcher.Wait()
@@ -104,8 +114,8 @@ func runTurnLoop(ctx context.Context, cancel context.CancelFunc, a *agentimpl.De
 			}
 			if chunk != nil {
 				switch c := chunk.(type) {
-				case message.ModeChangeChunk:
-					setPlanMode(strings.EqualFold(c.Data.Mode, "planning") || strings.EqualFold(c.Data.Mode, "plan"))
+				case message.ThreadUpdateChunk:
+					setPlanMode(strings.EqualFold(c.Data.Thread.Mode, "planning") || strings.EqualFold(c.Data.Thread.Mode, "plan"))
 				case message.ToolInputAvailableChunk:
 					if isPlanToolName(c.ToolName) {
 						pendingPlanToolCalls[c.ToolCallID] = c.ToolName
@@ -203,7 +213,8 @@ func runTurnLoop(ctx context.Context, cancel context.CancelFunc, a *agentimpl.De
 		if !handlePendingQuestion(ctx, a, threadID, pending) {
 			return
 		}
-		req = agent.PromptRequest{Mode: planModeStr(activePlanMode)} // resume: DefaultAgent detects waiting_for_answer
+		resumeOnly = true
+		req = agent.PromptRequest{Mode: planModeStr(activePlanMode)}
 	}
 }
 

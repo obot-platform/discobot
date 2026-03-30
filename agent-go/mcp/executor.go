@@ -34,14 +34,8 @@ func (e *Executor) Execute(ctx context.Context, toolCtx *thread.ToolContext, cal
 	return thread.ToolExecuteResult{Result: result}, nil
 }
 
-// ResolveAnswer delegates to the inner executor.
-// MCP tools are synchronous and never require user approval.
-func (e *Executor) ResolveAnswer(toolCtx *thread.ToolContext, call message.ToolCallPart, req api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
-	return e.inner.ResolveAnswer(toolCtx, call, req)
-}
-
-// ResumeAsync delegates to the inner executor.
-// MCP tools are synchronous and never produce async tasks.
-func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
-	return e.inner.ResumeAsync(ctx, toolCtx, call, taskID, req)
+// Continue delegates to the inner executor.
+// MCP tools are synchronous and never own persisted continuation state.
+func (e *Executor) Continue(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	return e.inner.Continue(ctx, toolCtx, call, continuation, req)
 }

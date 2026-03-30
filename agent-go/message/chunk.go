@@ -165,6 +165,18 @@ type ToolApprovalRequestChunk struct {
 func (ToolApprovalRequestChunk) chunkType() string { return "tool-approval-request" }
 func (ToolApprovalRequestChunk) providerChunk()    {}
 
+// ToolApprovalResponseChunk records the user's response to a tool approval request.
+type ToolApprovalResponseChunk struct {
+	ApprovalID       string          `json:"approvalId"`
+	ToolCallID       string          `json:"toolCallId,omitempty"`
+	Approved         bool            `json:"approved"`
+	Reason           string          `json:"reason,omitempty"`
+	ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+}
+
+func (ToolApprovalResponseChunk) chunkType() string { return "tool-approval-response" }
+
 // --- File ---
 
 // FileChunk is a file produced by the model (e.g., generated image).
@@ -317,26 +329,63 @@ type DataChunk struct {
 
 func (c DataChunk) chunkType() string { return "data-" + c.DataType }
 
-// ModeChangeChunk is a transient data chunk that signals a mode change.
-type ModeChangeChunk struct {
-	Data      ModeChangeData `json:"data"`
-	Transient *bool          `json:"transient,omitempty"`
+// ThreadUpdateInfo mirrors the thread summary shape exposed by the agent API.
+type ThreadUpdateInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	LastMessage string `json:"lastMessage,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Reasoning   string `json:"reasoning,omitempty"`
+	Mode        string `json:"mode"`
+	Pending     *bool  `json:"pending,omitempty"`
 }
 
-func (ModeChangeChunk) chunkType() string { return "data-mode-change" }
-
-// ThreadNameData is the payload for a data-thread-name chunk.
-type ThreadNameData struct {
-	Name string `json:"name"`
+// ThreadUpdateData is the payload for a data-thread-update chunk.
+type ThreadUpdateData struct {
+	Thread ThreadUpdateInfo `json:"thread"`
 }
 
-// ThreadNameChunk is a transient data chunk that signals a thread rename.
-type ThreadNameChunk struct {
-	Data      ThreadNameData `json:"data"`
-	Transient *bool          `json:"transient,omitempty"`
+// ThreadUpdateChunk is a transient data chunk carrying the full updated thread.
+type ThreadUpdateChunk struct {
+	Data      ThreadUpdateData `json:"data"`
+	Transient *bool            `json:"transient,omitempty"`
 }
 
-func (ThreadNameChunk) chunkType() string { return "data-thread-name" }
+func (ThreadUpdateChunk) chunkType() string { return "data-thread-update" }
+
+// ThreadResumeData is the payload for a data-thread-resume chunk.
+type ThreadResumeData struct {
+	ThreadID  string `json:"threadId"`
+	MessageID string `json:"messageId"`
+}
+
+// ThreadResumeChunk is a transient data chunk that tells the client to resume
+// appending streamed assistant chunks onto an existing assistant message.
+type ThreadResumeChunk struct {
+	Data      ThreadResumeData `json:"data"`
+	Transient *bool            `json:"transient,omitempty"`
+}
+
+func (ThreadResumeChunk) chunkType() string { return "data-thread-resume" }
+
+// ToolApprovalResponseData is the payload for a data-tool-approval-response chunk.
+type ToolApprovalResponseData struct {
+	ApprovalID string `json:"approvalId"`
+	ToolCallID string `json:"toolCallId,omitempty"`
+	Approved   bool   `json:"approved"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+// ToolApprovalResponseDataChunk is a transient data chunk that records the
+// user's response to a tool approval request.
+type ToolApprovalResponseDataChunk struct {
+	Data      ToolApprovalResponseData `json:"data"`
+	Transient *bool                    `json:"transient,omitempty"`
+}
+
+func (ToolApprovalResponseDataChunk) chunkType() string {
+	return "data-tool-approval-response"
+}
 
 // UserMessageData is the payload for a user message stream chunk.
 type UserMessageData struct {

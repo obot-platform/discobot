@@ -3,6 +3,7 @@ package thread
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,6 +57,8 @@ type Store struct {
 	baseDir string
 }
 
+var ErrMessageExists = errors.New("message already exists")
+
 // NewStore creates a new Store rooted at baseDir.
 func NewStore(baseDir string) *Store {
 	return &Store{baseDir: baseDir}
@@ -77,6 +80,12 @@ func (s *Store) SaveMessage(threadID string, msg StoredMessage) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create messages dir: %w", err)
 	}
+	path := filepath.Join(dir, msg.ID+".json")
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%w: %s", ErrMessageExists, msg.ID)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat message %s: %w", msg.ID, err)
+	}
 	if msg.Message.CreatedAt == nil {
 		now := time.Now().UTC()
 		msg.Message.CreatedAt = &now
@@ -85,7 +94,6 @@ func (s *Store) SaveMessage(threadID string, msg StoredMessage) error {
 	if err != nil {
 		return fmt.Errorf("marshal message: %w", err)
 	}
-	path := filepath.Join(dir, msg.ID+".json")
 	return writeFileAtomic(path, data, 0o644)
 }
 
@@ -433,40 +441,77 @@ func (s *Store) LoadToolResults(threadID, turnID string, step int) (StepToolResu
 	return results, nil
 }
 
-// --- Async Task Persistence ---
+// --- Async Continuation Persistence ---
 
-// asyncTasksPath returns the path to the async tasks file for a step.
-func (s *Store) asyncTasksPath(threadID, turnID string, step int) string {
+// asyncContinuationsPath returns the path to the async continuation file for a
+// step.
+func (s *Store) asyncContinuationsPath(threadID, turnID string, step int) string {
 	return filepath.Join(s.turnsDir(threadID), turnID, fmt.Sprintf("step-%03d-async.json", step))
 }
 
-// SaveAsyncTasks persists async task metadata for a step.
-func (s *Store) SaveAsyncTasks(threadID, turnID string, step int, tasks StepAsyncTasks) error {
+// stepEventsPath returns the path to the immutable event message index for a step.
+func (s *Store) stepEventsPath(threadID, turnID string, step int) string {
+	return filepath.Join(s.turnsDir(threadID), turnID, fmt.Sprintf("step-%03d-events.json", step))
+}
+
+// SaveAsyncContinuations persists async continuation metadata for a step.
+func (s *Store) SaveAsyncContinuations(threadID, turnID string, step int, continuations StepAsyncContinuations) error {
 	dir := filepath.Join(s.turnsDir(threadID), turnID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create turn dir: %w", err)
 	}
-	data, err := json.Marshal(tasks)
+	data, err := json.Marshal(continuations)
 	if err != nil {
-		return fmt.Errorf("marshal async tasks: %w", err)
+		return fmt.Errorf("marshal async continuations: %w", err)
 	}
-	return writeFileAtomic(s.asyncTasksPath(threadID, turnID, step), data, 0o644)
+	return writeFileAtomic(s.asyncContinuationsPath(threadID, turnID, step), data, 0o644)
 }
 
-// LoadAsyncTasks loads async task metadata for a step. Returns empty if not found.
-func (s *Store) LoadAsyncTasks(threadID, turnID string, step int) (StepAsyncTasks, error) {
-	data, err := os.ReadFile(s.asyncTasksPath(threadID, turnID, step))
+// LoadAsyncContinuations loads async continuation metadata for a step. Returns
+// empty if not found.
+func (s *Store) LoadAsyncContinuations(threadID, turnID string, step int) (StepAsyncContinuations, error) {
+	data, err := os.ReadFile(s.asyncContinuationsPath(threadID, turnID, step))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return StepAsyncTasks{}, nil
+			return StepAsyncContinuations{}, nil
 		}
-		return StepAsyncTasks{}, fmt.Errorf("read async tasks: %w", err)
+		return StepAsyncContinuations{}, fmt.Errorf("read async continuations: %w", err)
 	}
-	var tasks StepAsyncTasks
-	if err := json.Unmarshal(data, &tasks); err != nil {
-		return StepAsyncTasks{}, fmt.Errorf("unmarshal async tasks: %w", err)
+	var continuations StepAsyncContinuations
+	if err := json.Unmarshal(data, &continuations); err != nil {
+		return StepAsyncContinuations{}, fmt.Errorf("unmarshal async continuations: %w", err)
 	}
-	return tasks, nil
+	return continuations, nil
+}
+
+// SaveStepEventMessages persists ordered immutable event message IDs for a step.
+func (s *Store) SaveStepEventMessages(threadID, turnID string, step int, events StepEventMessages) error {
+	dir := filepath.Join(s.turnsDir(threadID), turnID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create turn dir: %w", err)
+	}
+	data, err := json.Marshal(events)
+	if err != nil {
+		return fmt.Errorf("marshal step event messages: %w", err)
+	}
+	return writeFileAtomic(s.stepEventsPath(threadID, turnID, step), data, 0o644)
+}
+
+// LoadStepEventMessages loads ordered immutable event message IDs for a step.
+// Returns empty if not found.
+func (s *Store) LoadStepEventMessages(threadID, turnID string, step int) (StepEventMessages, error) {
+	data, err := os.ReadFile(s.stepEventsPath(threadID, turnID, step))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return StepEventMessages{}, nil
+		}
+		return StepEventMessages{}, fmt.Errorf("read step event messages: %w", err)
+	}
+	var events StepEventMessages
+	if err := json.Unmarshal(data, &events); err != nil {
+		return StepEventMessages{}, fmt.Errorf("unmarshal step event messages: %w", err)
+	}
+	return events, nil
 }
 
 // --- Question/Answer Persistence ---

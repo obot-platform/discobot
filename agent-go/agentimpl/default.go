@@ -43,9 +43,8 @@ type DefaultAgent struct {
 	cwd      string // working directory for session config discovery
 	mcpCfg   MCPConfig
 
-	mu        sync.Mutex
-	cancels   map[string]context.CancelFunc
-	clearNext sync.Map // threadID → struct{}: next Prompt should start fresh
+	mu      sync.Mutex
+	cancels map[string]context.CancelFunc
 
 	mcpMu      sync.Mutex
 	mcpMgr     *mcp.Manager                    // nil until first Prompt with MCP servers
@@ -60,6 +59,25 @@ type backgroundThreadName struct {
 	agent    *DefaultAgent
 	threadID string
 	resultCh <-chan threadNameResult
+}
+
+type promptEnvironment struct {
+	threadCfg             thread.Config
+	useThreadConfig       bool
+	sessionCfg            *sessionconfig.SessionConfig
+	subAgentCfg           *sessionconfig.SubAgentConfig
+	tools                 []providers.ToolDefinition
+	modelRef              providers.ModelRef
+	threadSummaryRef      providers.ModelRef
+	displayName           string
+	systemPrompt          string
+	mcpMgr                *mcp.Manager
+	executor              thread.ToolExecutor
+	planMode              bool
+	modeChangedByPrompt   bool
+	promptRequestPlanMode bool
+	currentDepth          int
+	maxSteps              int
 }
 
 // Store returns the underlying thread store.
@@ -115,7 +133,6 @@ func (a *DefaultAgent) Close() {
 }
 
 // Prompt sends a user message and streams the response as an iterator.
-// If the thread has an interrupted turn, it resumes that instead.
 //
 // If req.SubagentType is set, the named SubAgentConfig from session config is
 // used to restrict tools, override the model, and set the system prompt.
@@ -124,290 +141,48 @@ func (a *DefaultAgent) Close() {
 // type relative to the current provider, or a full "providerId/modelId" ref.
 // For resume (empty req), the provider is resolved from the persisted turn state.
 //
-// If the user message is exactly "/clear", the thread is marked to start a fresh
-// branch on the next Prompt call and a confirmation is streamed back without
-// contacting the LLM. If the user message is exactly "/compact", compaction is
-// forced immediately without running a normal LLM turn.
+// If the user message is exactly "/compact", compaction is forced immediately
+// without running a normal LLM turn.
 func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
-	// Handle /clear internally: mark the thread for a fresh start next turn
-	// and return a confirmation without making any LLM call.
-	if isClearCommand(req.UserParts) {
-		a.clearNext.Store(threadID, struct{}{})
-		return func(yield func(message.MessageChunk, error) bool) {
-			yield(message.TextDeltaChunk{Delta: "Thread cleared. Next message starts a fresh conversation (history preserved on disk)."}, nil)
-		}
-	}
-
 	if isCompactCommand(req.UserParts) {
 		return a.handleCompactCommand(ctx, threadID, req)
 	}
 
-	threadCfg, threadCfgErr := a.store.LoadConfig(threadID)
-	planMode, modeChangedByPrompt := resolvePlanMode(req.Mode, threadCfg, threadCfgErr == nil)
-	promptRequestPlanMode := req.Mode == "plan"
-	currentDepth := req.SubagentDepth
-	if currentDepth < 0 {
-		currentDepth = 0
+	env, err := a.resolvePromptEnvironment(ctx, threadID, req)
+	if err != nil {
+		return errorIter(err)
 	}
+
 	toolCtx := &thread.ToolContext{
 		ThreadID:              threadID,
-		PlanMode:              planMode,
-		PromptRequestPlanMode: promptRequestPlanMode,
-		SubagentDepth:         currentDepth,
+		PlanMode:              env.planMode,
+		PromptRequestPlanMode: env.promptRequestPlanMode,
+		SubagentDepth:         env.currentDepth,
+		MaxSubagentDepth:      env.sessionCfg.MaxSubagentDepth,
 		CurrentTaskID:         req.ParentTaskID,
 		ProviderResolver:      a.registry,
 		Agent:                 a,
-	}
-
-	// Load session config from the working directory.
-	sessionCfg, err := sessionconfig.Load(a.cwd)
-	if err != nil {
-		log.Printf("agent: warning: session config: %v", err)
-		sessionCfg = &sessionconfig.SessionConfig{MaxSubagentDepth: sessionconfig.DefaultMaxSubagentDepth}
-	}
-	toolCtx.MaxSubagentDepth = sessionCfg.MaxSubagentDepth
-
-	// Look up sub-agent config if a subagent type is specified.
-	var subAgentCfg *sessionconfig.SubAgentConfig
-	if req.SubagentType != "" {
-		for i := range sessionCfg.SubAgents {
-			if sessionCfg.SubAgents[i].Name == req.SubagentType {
-				subAgentCfg = &sessionCfg.SubAgents[i]
-				break
-			}
-		}
-		if subAgentCfg == nil {
-			return func(yield func(message.MessageChunk, error) bool) {
-				yield(nil, fmt.Errorf("sub-agent type %q not found in session config", req.SubagentType))
-			}
-		}
-	}
-
-	// Determine tool set: sub-agent restrictions take priority over request override.
-	tools := req.Tools
-	if tools == nil {
-		tools = sessionCfg.Tools
-	}
-	if toolCtx.MaxSubagentDepth > 0 && toolCtx.SubagentDepth >= toolCtx.MaxSubagentDepth {
-		tools = filterTools(tools, nil, []string{"Task", "Agent"})
-	}
-	if subAgentCfg != nil {
-		tools = filterTools(tools, subAgentCfg.AllowedTools, subAgentCfg.DisallowedTools)
-	}
-
-	// Determine model: the request/thread selects the base current provider,
-	// then a sub-agent override can resolve relative to that provider.
-	model := req.Model
-	supportingModels := req.SupportingModels
-	if subAgentCfg != nil && len(subAgentCfg.SupportingModels) > 0 {
-		supportingModels = mergeSupportingModels(req.SupportingModels, subAgentCfg.SupportingModels)
-	}
-
-	// Determine system prompt: sub-agent prompt overrides session default.
-	systemPrompt := sessionCfg.SystemPrompt
-	if subAgentCfg != nil && subAgentCfg.Prompt != "" {
-		systemPrompt = subAgentCfg.Prompt
-	}
-
-	// Init or reload MCP manager whenever the server list changes.
-	var mcpMgr *mcp.Manager
-	a.mcpMu.Lock()
-	if !mcpServersEqual(a.mcpServers, sessionCfg.MCPServers) {
-		if a.mcpMgr != nil {
-			log.Printf("agent: .mcp.json changed, reloading MCP manager")
-			a.mcpMgr.Close()
-			a.mcpMgr = nil
-		}
-		if len(sessionCfg.MCPServers) > 0 {
-			callback := mcp.MakeTokenCallback(a.mcpCfg.discobotServerURL, a.mcpCfg.projectID)
-			a.mcpMgr = mcp.NewManager(callback)
-			a.mcpMgr.Connect(ctx, sessionCfg.MCPServers,
-				a.mcpCfg.redirectBase, a.mcpCfg.sessionID)
-		}
-		a.mcpServers = sessionCfg.MCPServers
-	}
-	mcpMgr = a.mcpMgr
-	a.mcpMu.Unlock()
-
-	if mcpMgr != nil {
-		// Augment tool list with all currently-connected MCP tools.
-		tools = append(tools, mcpMgr.Tools()...)
-	}
-
-	// If no model is explicitly requested, fall back to the model last used for
-	// this thread (persisted in its config.json). This lets new sessions continue
-	// with the same provider/model without the user needing to re-select.
-	if model == "" && threadCfgErr == nil && threadCfg.Model != "" {
-		model = threadCfg.Model
-	}
-
-	currentProviderID := ""
-	if threadCfgErr == nil {
-		currentProviderID = providers.CurrentProviderFromRef(threadCfg.Model)
-	}
-
-	// Resolve the base model first so later references can resolve relative to
-	// its provider when they use a bare model ID or supporting model type.
-	ref, err := a.registry.ResolveModelInProvider(currentProviderID, model, providers.ModelTaskChat)
-	if err != nil {
-		return errorIter(fmt.Errorf("invalid model: %w", err))
-	}
-	if subAgentCfg != nil && subAgentCfg.Model != "" {
-		ref, err = a.registry.ResolveModelInProvider(ref.ProviderID, subAgentCfg.Model, providers.ModelTaskChat)
-		if err != nil {
-			return errorIter(fmt.Errorf("invalid sub-agent model: %w", err))
-		}
-	}
-	threadSummaryRef, err := a.registry.ResolveSupportingModel(ref, supportingModels, providers.SupportingModelThreadSummarization)
-	if err != nil {
-		return errorIter(fmt.Errorf("invalid thread summarization model: %w", err))
-	}
-	providerID, modelID := ref.ProviderID, ref.ModelID
-	toolCtx.ProviderID = providerID
-	toolCtx.ModelID = modelID
-
-	// Resolve a human-readable model name for use in system reminders and
-	// commit co-author attribution. Falls back to the bare model ID.
-	displayName := resolveModelDisplayName(providerID, modelID)
-
-	// Rebuild default tools with the resolved model display name so the commit
-	// co-author line includes the actual model name. Only applies when tools
-	// come from session defaults (not custom req.Tools or sub-agent overrides).
-	if req.Tools == nil && req.SubagentType == "" {
-		tools = sessionconfig.BuiltinTools(displayName)
-		if mcpMgr != nil {
-			tools = append(tools, mcpMgr.Tools()...)
-		}
-	}
-
-	// MaxSteps: take the stricter of the request value and the sub-agent config value.
-	maxSteps := req.MaxTurns
-	if subAgentCfg != nil && subAgentCfg.MaxTurns > 0 {
-		if maxSteps == 0 || subAgentCfg.MaxTurns < maxSteps {
-			maxSteps = subAgentCfg.MaxTurns
-		}
+		ProviderID:            env.modelRef.ProviderID,
+		ModelID:               env.modelRef.ModelID,
 	}
 
 	cfg := thread.TurnConfig{
-		ProviderID:            providerID,
-		Model:                 modelID,
-		SupportingModels:      compactSupportingModels(ref, map[providers.SupportingModelType]providers.ModelRef{providers.SupportingModelThreadSummarization: threadSummaryRef}),
+		ProviderID:            env.modelRef.ProviderID,
+		Model:                 env.modelRef.ModelID,
+		SupportingModels:      compactSupportingModels(env.modelRef, map[providers.SupportingModelType]providers.ModelRef{providers.SupportingModelThreadSummarization: env.threadSummaryRef}),
 		Reasoning:             providers.Reasoning(req.Reasoning),
-		PlanMode:              planMode,
-		PromptRequestPlanMode: promptRequestPlanMode,
+		PlanMode:              env.planMode,
+		PromptRequestPlanMode: env.promptRequestPlanMode,
 		UserParts:             message.UIPartsToParts(expandLegacyCommand(a.cwd, req.UserParts)),
-		Tools:                 tools,
-		MaxSteps:              maxSteps,
+		Tools:                 env.tools,
+		MaxSteps:              env.maxSteps,
 	}
 
 	return func(yield func(message.MessageChunk, error) bool) {
-		// Consume the clear flag atomically: if set, this Prompt starts a fresh
-		// branch with no parent, ignoring any existing thread history.
-		_, startFresh := a.clearNext.LoadAndDelete(threadID)
-
-		// Inject system prompt and user instructions as root messages on new threads.
-		if req.LeafID == "" && systemPrompt != "" {
-			var leaf string
-			if !startFresh {
-				leaf, _ = a.resolveCurrentLeaf(threadID)
-			}
-			if leaf != "" {
-				// Thread already has messages — continue from the current leaf.
-				req.LeafID = leaf
-			} else {
-				// 1. System prompt as role: "system".
-				sysID := "system-" + agent.GenerateID()
-				if err := a.store.SaveMessage(threadID, thread.StoredMessage{
-					ID: sysID,
-					Message: message.Message{
-						Role:      "system",
-						Synthetic: true,
-						Parts:     []message.Part{message.TextPart{Text: systemPrompt}},
-					},
-				}); err != nil {
-					yield(nil, fmt.Errorf("save system prompt: %w", err))
-					return
-				}
-				req.LeafID = sysID
-
-				// 2. User instructions as role: "user" with <system-reminder> tags.
-				// Only inject when using the default session config (not a sub-agent prompt).
-				if subAgentCfg == nil {
-					userInstr := sessionconfig.FormatUserInstructions(sessionCfg.UserInstructions)
-					if userInstr != "" {
-						instrID := "instructions-" + agent.GenerateID()
-						if err := a.store.SaveMessage(threadID, thread.StoredMessage{
-							ID:       instrID,
-							ParentID: sysID,
-							Message: message.Message{
-								Role:      "user",
-								Synthetic: true,
-								Parts:     []message.Part{message.TextPart{Text: userInstr}},
-							},
-						}); err != nil {
-							yield(nil, fmt.Errorf("save user instructions: %w", err))
-							return
-						}
-						req.LeafID = instrID
-					}
-
-					// 3. Runtime environment reminder as role: "user".
-					runtimeReminder := formatRuntimeEnvironmentReminder(a.cwd, displayName)
-					if runtimeReminder != "" {
-						runtimeID := "runtime-" + agent.GenerateID()
-						parentID := req.LeafID
-						if parentID == "" {
-							parentID = sysID
-						}
-						if err := a.store.SaveMessage(threadID, thread.StoredMessage{
-							ID:       runtimeID,
-							ParentID: parentID,
-							Message: message.Message{
-								Role:      "user",
-								Synthetic: true,
-								Parts:     []message.Part{message.TextPart{Text: runtimeReminder}},
-							},
-						}); err != nil {
-							yield(nil, fmt.Errorf("save runtime reminder: %w", err))
-							return
-						}
-						req.LeafID = runtimeID
-					}
-
-					// 4. Skills reminder as role: "user" listing available skills.
-					skillsReminder := sessionconfig.FormatSkillsReminder(sessionCfg.Skills)
-					if skillsReminder != "" {
-						skillsID := "skills-" + agent.GenerateID()
-						parentID := req.LeafID
-						if parentID == "" {
-							parentID = sysID
-						}
-						if err := a.store.SaveMessage(threadID, thread.StoredMessage{
-							ID:       skillsID,
-							ParentID: parentID,
-							Message: message.Message{
-								Role:      "user",
-								Synthetic: true,
-								Parts:     []message.Part{message.TextPart{Text: skillsReminder}},
-							},
-						}); err != nil {
-							yield(nil, fmt.Errorf("save skills reminder: %w", err))
-							return
-						}
-						req.LeafID = skillsID
-					}
-				}
-			}
-		}
-
-		// If req.LeafID is still unset (no system prompt, or the injection block
-		// was skipped), resolve it from the current thread leaf so that new turns
-		// continue from where the conversation left off rather than starting fresh.
-		// Skip this when startFresh is set — the caller explicitly wants a new branch.
-		if req.LeafID == "" && !startFresh {
-			if leaf, err := a.resolveCurrentLeaf(threadID); err == nil {
-				req.LeafID = leaf
-			}
+		effectiveLeafID, err := a.resolveEffectiveLeafID(threadID, req.LeafID, req.FreshContext, env.systemPrompt, env.displayName, env.sessionCfg, env.subAgentCfg)
+		if err != nil {
+			yield(nil, err)
+			return
 		}
 
 		// Create a child context so Cancel(threadID) can stop this prompt.
@@ -423,12 +198,6 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		a.cancels[threadID] = cancel
 		a.mu.Unlock()
 
-		// Wrap the executor with MCP routing if the MCP manager is active.
-		executor := thread.ToolExecutor(a.executor)
-		if mcpMgr != nil {
-			executor = mcp.NewExecutor(a.executor, mcpMgr)
-		}
-
 		// Check for interrupted turn first.
 		state, err := a.store.LoadTurnState(threadID)
 		if err != nil {
@@ -437,60 +206,25 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		}
 
 		if state != nil {
-			log.Printf("agent: resuming interrupted turn %s for thread %s (step %d, phase %s)",
-				state.ID, threadID, state.CurrentStep, state.Phase)
-
-			// Normalize persisted model: old versions stored Model as "providerID/modelID"
-			// instead of the bare model ID. Strip the provider prefix if present.
-			if ref, err := providers.ParseModelRef(state.Config.Model); err == nil {
-				state.Config.ProviderID = ref.ProviderID
-				state.Config.Model = ref.ModelID
-			}
-
-			// If the current request specifies a model, override all user-configurable
-			// fields in the persisted turn config (model, reasoning, limits, context
-			// window metadata). The user message and tools are kept from the persisted
-			// state since they belong to the original interrupted turn.
-			if model != "" {
-				state.Config.ProviderID = providerID
-				state.Config.Model = modelID
-				state.Config.SupportingModels = cfg.SupportingModels
-				state.Config.Reasoning = cfg.Reasoning
-				state.Config.MaxSteps = cfg.MaxSteps
-			}
-
-			// Resolve provider from (possibly updated) turn state config.
-			state.ReplayTurn = req.ReplayTurn
-			provider, resolveErr := a.registry.Get(state.Config.ProviderID)
-			if resolveErr != nil {
-				yield(nil, fmt.Errorf("resolve provider for resume: %w", resolveErr))
-				return
-			}
-
-			for chunk, chunkErr := range thread.ResumeTurn(promptCtx, provider, executor, a.store, state, toolCtx) {
-				if !yield(chunk, chunkErr) {
-					return
-				}
-			}
-			a.persistActiveLeaf(threadID)
+			yield(nil, agent.ErrInterruptedTurnRequiresResume)
 			return
 		}
 
-		threadNameBg := a.startBackgroundThreadName(promptCtx, threadID, threadCfg, req.UserParts, threadSummaryRef)
+		threadNameBg := a.startBackgroundThreadName(promptCtx, threadID, env.threadCfg, req.UserParts, env.threadSummaryRef)
 
-		if modeChangedByPrompt {
+		if env.modeChangedByPrompt {
 			modeReminderID := "mode-" + agent.GenerateID()
 			if err := a.store.SaveMessage(threadID, thread.StoredMessage{
 				ID:       modeReminderID,
-				ParentID: req.LeafID,
+				ParentID: effectiveLeafID,
 				Message: message.Message{
 					Role:      "user",
 					Synthetic: true,
 					Parts: []message.Part{message.TextPart{
-						Text: formatModeChangeReminder(planMode),
+						Text: formatModeChangeReminder(env.planMode),
 						ProviderMetadata: message.MarshalProviderMetadata(message.DiscobotPartMetadata{
 							ReminderKind: "mode",
-							Mode:         map[bool]string{true: "plan", false: "build"}[planMode],
+							Mode:         map[bool]string{true: "plan", false: "build"}[env.planMode],
 						}),
 					}},
 				},
@@ -498,17 +232,9 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 				yield(nil, fmt.Errorf("save mode reminder: %w", err))
 				return
 			}
-			req.LeafID = modeReminderID
+			effectiveLeafID = modeReminderID
 
-			// Notify the server of the mode change so it can update the session.
-			newMode := "build"
-			if planMode {
-				newMode = "plan"
-			}
 			if !threadNameBg.flush(false, yield) {
-				return
-			}
-			if !yield(message.ModeChangeChunk{Data: message.ModeChangeData{Mode: newMode}}, nil) {
 				return
 			}
 		}
@@ -525,21 +251,31 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		if abs, err := filepath.Abs(cwd); err == nil {
 			cwd = abs
 		}
-		if threadCfgErr == nil && strings.TrimSpace(threadCfg.CWD) != "" {
-			cwd = threadCfg.CWD
+		if env.useThreadConfig && strings.TrimSpace(env.threadCfg.CWD) != "" {
+			cwd = env.threadCfg.CWD
 		}
-		_ = a.store.SaveConfig(threadID, thread.Config{
-			Name:         threadCfg.Name,
-			NameSource:   threadCfg.NameSource,
+		cfgToSave := thread.Config{
+			Name:         env.threadCfg.Name,
+			NameSource:   env.threadCfg.NameSource,
+			LastMessage:  lastUserPromptFromUIParts(req.UserParts),
 			Model:        cfg.ProviderID + "/" + cfg.Model,
 			Reasoning:    cfg.Reasoning,
 			CWD:          cwd,
-			PlanMode:     planMode,
-			ActiveLeafID: req.LeafID,
-		})
+			PlanMode:     env.planMode,
+			ActiveLeafID: effectiveLeafID,
+		}
+		if err := a.store.SaveConfig(threadID, cfgToSave); err != nil {
+			yield(nil, fmt.Errorf("save thread config: %w", err))
+			return
+		}
+		if env.modeChangedByPrompt {
+			if !yield(thread.UpdateChunkFromConfig(threadID, cfgToSave), nil) {
+				return
+			}
+		}
 
 		// Start new turn.
-		for chunk, chunkErr := range thread.RunTurn(promptCtx, provider, executor, a.store, threadID, req.LeafID, cfg, toolCtx) {
+		for chunk, chunkErr := range thread.RunTurn(promptCtx, provider, env.executor, a.store, threadID, effectiveLeafID, cfg, toolCtx) {
 			if !threadNameBg.flush(false, yield) {
 				return
 			}
@@ -552,6 +288,235 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 			return
 		}
 	}
+}
+
+// Resume continues or finalizes an interrupted turn from persisted disk state.
+func (a *DefaultAgent) Resume(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+	return func(yield func(message.MessageChunk, error) bool) {
+		state, err := a.store.LoadTurnState(threadID)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if state == nil {
+			yield(nil, agent.ErrInterruptedTurnRequiresResume)
+			return
+		}
+
+		log.Printf("agent: resuming interrupted turn %s for thread %s (step %d, phase %s)",
+			state.ID, threadID, state.CurrentStep, state.Phase)
+
+		if ref, err := providers.ParseModelRef(state.Config.Model); err == nil {
+			state.Config.ProviderID = ref.ProviderID
+			state.Config.Model = ref.ModelID
+		}
+
+		provider, resolveErr := a.registry.Get(state.Config.ProviderID)
+		if resolveErr != nil {
+			yield(nil, fmt.Errorf("resolve provider for resume: %w", resolveErr))
+			return
+		}
+
+		sessionCfg, err := sessionconfig.Load(a.cwd)
+		if err != nil {
+			log.Printf("agent: warning: session config: %v", err)
+			sessionCfg = &sessionconfig.SessionConfig{MaxSubagentDepth: sessionconfig.DefaultMaxSubagentDepth}
+		}
+
+		toolCtx := &thread.ToolContext{
+			ThreadID:              threadID,
+			PlanMode:              state.Config.PlanMode,
+			PromptRequestPlanMode: state.Config.PromptRequestPlanMode,
+			MaxSubagentDepth:      sessionCfg.MaxSubagentDepth,
+			ProviderResolver:      a.registry,
+			Agent:                 a,
+			ProviderID:            state.Config.ProviderID,
+			ModelID:               state.Config.Model,
+		}
+		resumeMessageID := a.resolveResumeMessageID(threadID, state)
+
+		executor := thread.ToolExecutor(a.executor)
+		if mcpMgr := a.resolveMCPManager(ctx, sessionCfg); mcpMgr != nil {
+			executor = mcp.NewExecutor(a.executor, mcpMgr)
+		}
+
+		promptCtx, cancel := context.WithCancel(ctx)
+		defer func() {
+			a.mu.Lock()
+			delete(a.cancels, threadID)
+			a.mu.Unlock()
+			cancel()
+		}()
+
+		a.mu.Lock()
+		a.cancels[threadID] = cancel
+		a.mu.Unlock()
+
+		if resumeMessageID != "" {
+			if !yield(message.ThreadResumeChunk{
+				Data: message.ThreadResumeData{ThreadID: threadID, MessageID: resumeMessageID},
+			}, nil) {
+				return
+			}
+		}
+
+		for chunk, chunkErr := range thread.ResumeTurn(promptCtx, provider, executor, a.store, state, toolCtx) {
+			if !yield(chunk, chunkErr) {
+				return
+			}
+		}
+		a.persistActiveLeaf(threadID)
+	}
+}
+
+func (a *DefaultAgent) resolvePromptEnvironment(ctx context.Context, threadID string, req agent.PromptRequest) (*promptEnvironment, error) {
+	threadCfg, threadCfgErr := a.store.LoadConfig(threadID)
+	if threadCfgErr != nil {
+		log.Printf("agent: warning: thread config: %v", threadCfgErr)
+		threadCfg = thread.Config{}
+	}
+	useThreadConfig := threadCfgErr == nil
+	planMode, modeChangedByPrompt := resolvePlanMode(req.Mode, threadCfg, useThreadConfig)
+	promptRequestPlanMode := req.Mode == "plan"
+	currentDepth := req.SubagentDepth
+	if currentDepth < 0 {
+		currentDepth = 0
+	}
+
+	sessionCfg, err := sessionconfig.Load(a.cwd)
+	if err != nil {
+		log.Printf("agent: warning: session config: %v", err)
+		sessionCfg = &sessionconfig.SessionConfig{MaxSubagentDepth: sessionconfig.DefaultMaxSubagentDepth}
+	}
+
+	subAgentCfg, err := resolveSubAgentConfig(sessionCfg, req.SubagentType)
+	if err != nil {
+		return nil, err
+	}
+
+	tools := resolvePromptTools(req, sessionCfg, subAgentCfg, currentDepth)
+	supportingModels := req.SupportingModels
+	if subAgentCfg != nil && len(subAgentCfg.SupportingModels) > 0 {
+		supportingModels = mergeSupportingModels(req.SupportingModels, subAgentCfg.SupportingModels)
+	}
+
+	systemPrompt := sessionCfg.SystemPrompt
+	if subAgentCfg != nil && subAgentCfg.Prompt != "" {
+		systemPrompt = subAgentCfg.Prompt
+	}
+
+	mcpMgr := a.resolveMCPManager(ctx, sessionCfg)
+	if mcpMgr != nil {
+		tools = append(tools, mcpMgr.Tools()...)
+	}
+	executor := thread.ToolExecutor(a.executor)
+	if mcpMgr != nil {
+		executor = mcp.NewExecutor(a.executor, mcpMgr)
+	}
+
+	model := req.Model
+	if model == "" && useThreadConfig && threadCfg.Model != "" {
+		model = threadCfg.Model
+	}
+
+	currentProviderID := ""
+	if useThreadConfig {
+		currentProviderID = providers.CurrentProviderFromRef(threadCfg.Model)
+	}
+
+	ref, err := a.registry.ResolveModelInProvider(currentProviderID, model, providers.ModelTaskChat)
+	if err != nil {
+		return nil, fmt.Errorf("invalid model: %w", err)
+	}
+	if subAgentCfg != nil && subAgentCfg.Model != "" {
+		ref, err = a.registry.ResolveModelInProvider(ref.ProviderID, subAgentCfg.Model, providers.ModelTaskChat)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sub-agent model: %w", err)
+		}
+	}
+	threadSummaryRef, err := a.registry.ResolveSupportingModel(ref, supportingModels, providers.SupportingModelThreadSummarization)
+	if err != nil {
+		return nil, fmt.Errorf("invalid thread summarization model: %w", err)
+	}
+
+	displayName := resolveModelDisplayName(ref.ProviderID, ref.ModelID)
+	if req.Tools == nil && req.SubagentType == "" {
+		tools = sessionconfig.BuiltinTools(displayName)
+		if mcpMgr != nil {
+			tools = append(tools, mcpMgr.Tools()...)
+		}
+	}
+
+	maxSteps := req.MaxTurns
+	if subAgentCfg != nil && subAgentCfg.MaxTurns > 0 {
+		if maxSteps == 0 || subAgentCfg.MaxTurns < maxSteps {
+			maxSteps = subAgentCfg.MaxTurns
+		}
+	}
+
+	return &promptEnvironment{
+		threadCfg:             threadCfg,
+		useThreadConfig:       useThreadConfig,
+		sessionCfg:            sessionCfg,
+		subAgentCfg:           subAgentCfg,
+		tools:                 tools,
+		modelRef:              ref,
+		threadSummaryRef:      threadSummaryRef,
+		displayName:           displayName,
+		systemPrompt:          systemPrompt,
+		mcpMgr:                mcpMgr,
+		executor:              executor,
+		planMode:              planMode,
+		modeChangedByPrompt:   modeChangedByPrompt,
+		promptRequestPlanMode: promptRequestPlanMode,
+		currentDepth:          currentDepth,
+		maxSteps:              maxSteps,
+	}, nil
+}
+
+func resolveSubAgentConfig(sessionCfg *sessionconfig.SessionConfig, subAgentType string) (*sessionconfig.SubAgentConfig, error) {
+	if subAgentType == "" {
+		return nil, nil
+	}
+	for i := range sessionCfg.SubAgents {
+		if sessionCfg.SubAgents[i].Name == subAgentType {
+			return &sessionCfg.SubAgents[i], nil
+		}
+	}
+	return nil, fmt.Errorf("sub-agent type %q not found in session config", subAgentType)
+}
+
+func resolvePromptTools(req agent.PromptRequest, sessionCfg *sessionconfig.SessionConfig, subAgentCfg *sessionconfig.SubAgentConfig, currentDepth int) []providers.ToolDefinition {
+	tools := req.Tools
+	if tools == nil {
+		tools = sessionCfg.Tools
+	}
+	if sessionCfg.MaxSubagentDepth > 0 && currentDepth >= sessionCfg.MaxSubagentDepth {
+		tools = filterTools(tools, nil, []string{"Task", "Agent"})
+	}
+	if subAgentCfg != nil {
+		tools = filterTools(tools, subAgentCfg.AllowedTools, subAgentCfg.DisallowedTools)
+	}
+	return tools
+}
+
+func (a *DefaultAgent) resolveMCPManager(ctx context.Context, sessionCfg *sessionconfig.SessionConfig) *mcp.Manager {
+	a.mcpMu.Lock()
+	defer a.mcpMu.Unlock()
+	if !mcpServersEqual(a.mcpServers, sessionCfg.MCPServers) {
+		if a.mcpMgr != nil {
+			log.Printf("agent: .mcp.json changed, reloading MCP manager")
+			a.mcpMgr.Close()
+			a.mcpMgr = nil
+		}
+		if len(sessionCfg.MCPServers) > 0 {
+			callback := mcp.MakeTokenCallback(a.mcpCfg.discobotServerURL, a.mcpCfg.projectID)
+			a.mcpMgr = mcp.NewManager(callback)
+			a.mcpMgr.Connect(ctx, sessionCfg.MCPServers, a.mcpCfg.redirectBase, a.mcpCfg.sessionID)
+		}
+		a.mcpServers = sessionCfg.MCPServers
+	}
+	return a.mcpMgr
 }
 
 // mcpServersEqual reports whether two MCP server config slices are identical.
@@ -576,6 +541,22 @@ func resolvePlanMode(reqMode string, cfg thread.Config, hasConfig bool) (planMod
 	}
 	planMode = reqMode == "plan"
 	return planMode, planMode != previousPlanMode
+}
+
+func lastUserPromptFromUIParts(parts []message.UIPart) string {
+	textParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		textPart, ok := part.(message.UITextPart)
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(textPart.Text)
+		if text == "" {
+			continue
+		}
+		textParts = append(textParts, text)
+	}
+	return strings.TrimSpace(strings.Join(textParts, "\n"))
 }
 
 func formatModeChangeReminder(planMode bool) string {
@@ -788,18 +769,18 @@ func (b *backgroundThreadName) flush(
 	}
 	b.resultCh = nil
 
-	savedName, changed, err := b.agent.saveGeneratedThreadName(b.threadID, result.name)
+	_, changed, err := b.agent.saveGeneratedThreadName(b.threadID, result.name)
 	if err != nil {
 		return yield(nil, fmt.Errorf("save thread name: %w", err))
 	}
 	if !changed {
 		return true
 	}
-	return yield(message.ThreadNameChunk{
-		Data: message.ThreadNameData{
-			Name: savedName,
-		},
-	}, nil)
+	cfg, err := b.agent.store.LoadConfig(b.threadID)
+	if err != nil {
+		return yield(nil, fmt.Errorf("load updated thread config: %w", err))
+	}
+	return yield(thread.UpdateChunkFromConfig(b.threadID, cfg), nil)
 }
 
 func firstThreadNameText(parts []message.UIPart) string {
@@ -1040,6 +1021,151 @@ func (a *DefaultAgent) FinalResponse(threadID string) (string, error) {
 	return "", nil
 }
 
+func (a *DefaultAgent) resolveEffectiveLeafID(
+	threadID string,
+	requestedLeafID string,
+	startFresh bool,
+	systemPrompt string,
+	displayName string,
+	sessionCfg *sessionconfig.SessionConfig,
+	subAgentCfg *sessionconfig.SubAgentConfig,
+) (string, error) {
+	effectiveLeafID := requestedLeafID
+	if effectiveLeafID != "" {
+		valid, err := a.store.IsLeaf(threadID, effectiveLeafID)
+		if err != nil {
+			return "", fmt.Errorf("validate requested leaf: %w", err)
+		}
+		if !valid {
+			return "", fmt.Errorf("message %q is not a valid leaf in this thread; the thread may have diverged", effectiveLeafID)
+		}
+	}
+
+	if effectiveLeafID == "" && hasStartupBootstrapContent(systemPrompt, displayName, sessionCfg, subAgentCfg) {
+		leaf, err := a.resolveExistingLeafForPrompt(threadID, startFresh)
+		if err != nil {
+			return "", fmt.Errorf("resolve current leaf: %w", err)
+		}
+		if leaf != "" {
+			return leaf, nil
+		}
+		return a.bootstrapNewThreadMessages(threadID, systemPrompt, displayName, sessionCfg, subAgentCfg)
+	}
+
+	if effectiveLeafID == "" && !startFresh {
+		leaf, err := a.resolveCurrentLeaf(threadID)
+		if err != nil {
+			return "", fmt.Errorf("resolve current leaf: %w", err)
+		}
+		effectiveLeafID = leaf
+	}
+
+	return effectiveLeafID, nil
+}
+
+func hasStartupBootstrapContent(
+	systemPrompt string,
+	displayName string,
+	sessionCfg *sessionconfig.SessionConfig,
+	subAgentCfg *sessionconfig.SubAgentConfig,
+) bool {
+	if systemPrompt != "" {
+		return true
+	}
+	if subAgentCfg != nil {
+		return false
+	}
+	if sessionconfig.FormatUserInstructions(sessionCfg.UserInstructions) != "" {
+		return true
+	}
+	if formatRuntimeEnvironmentReminder("", displayName) != "" {
+		return true
+	}
+	return sessionconfig.FormatSkillsReminder(sessionCfg.Skills) != ""
+}
+
+func (a *DefaultAgent) resolveExistingLeafForPrompt(threadID string, startFresh bool) (string, error) {
+	if startFresh {
+		return "", nil
+	}
+	return a.resolveCurrentLeaf(threadID)
+}
+
+func (a *DefaultAgent) bootstrapNewThreadMessages(
+	threadID string,
+	systemPrompt string,
+	displayName string,
+	sessionCfg *sessionconfig.SessionConfig,
+	subAgentCfg *sessionconfig.SubAgentConfig,
+) (string, error) {
+	effectiveLeafID := ""
+
+	appendMessage := func(id, role, text string) error {
+		if text == "" {
+			return nil
+		}
+		msg := thread.StoredMessage{
+			ID:       id,
+			ParentID: effectiveLeafID,
+			Message: message.Message{
+				Role:      role,
+				Synthetic: true,
+				Parts:     []message.Part{message.TextPart{Text: text}},
+			},
+		}
+		if err := a.store.SaveMessage(threadID, msg); err != nil {
+			return err
+		}
+		effectiveLeafID = id
+		return nil
+	}
+
+	if err := appendMessage("system-"+agent.GenerateID(), "system", systemPrompt); err != nil {
+		return "", fmt.Errorf("save system prompt: %w", err)
+	}
+
+	if subAgentCfg != nil {
+		return effectiveLeafID, nil
+	}
+
+	userInstr := sessionconfig.FormatUserInstructions(sessionCfg.UserInstructions)
+	if err := appendMessage("instructions-"+agent.GenerateID(), "user", userInstr); err != nil {
+		return "", fmt.Errorf("save user instructions: %w", err)
+	}
+
+	runtimeReminder := formatRuntimeEnvironmentReminder(a.cwd, displayName)
+	if err := appendMessage("runtime-"+agent.GenerateID(), "user", runtimeReminder); err != nil {
+		return "", fmt.Errorf("save runtime reminder: %w", err)
+	}
+
+	skillsReminder := sessionconfig.FormatSkillsReminder(sessionCfg.Skills)
+	if err := appendMessage("skills-"+agent.GenerateID(), "user", skillsReminder); err != nil {
+		return "", fmt.Errorf("save skills reminder: %w", err)
+	}
+
+	return effectiveLeafID, nil
+}
+
+func (a *DefaultAgent) resolveResumeMessageID(threadID string, state *thread.TurnState) string {
+	if state == nil || state.LeafMsgID == "" {
+		return ""
+	}
+	history, err := a.store.BuildHistory(threadID, state.LeafMsgID)
+	if err != nil {
+		return ""
+	}
+	uiMessages, err := message.ProjectUIMessages(history)
+	if err != nil {
+		return ""
+	}
+	for index := len(uiMessages) - 1; index >= 0; index-- {
+		if uiMessages[index].Role == "assistant" && uiMessages[index].ID != "" {
+			return uiMessages[index].ID
+		}
+	}
+	return ""
+}
+
 func (a *DefaultAgent) resolveCurrentLeaf(threadID string) (string, error) {
 	state, err := a.store.LoadTurnState(threadID)
 	if err != nil {
@@ -1089,7 +1215,6 @@ func (a *DefaultAgent) ListModels(ctx context.Context) ([]providers.ModelInfo, e
 // builtinCommands are slash commands handled natively by the agent, independent
 // of any user-defined skills or legacy commands.
 var builtinCommands = []agent.Command{
-	{Name: "clear", Description: "Clear the current thread and start a fresh conversation (history is preserved on disk).", Kind: agent.CommandKindBuiltin},
 	{Name: "compact", Description: "Force conversation compaction immediately.", Kind: agent.CommandKindBuiltin},
 }
 
@@ -1109,17 +1234,6 @@ func (a *DefaultAgent) ListCommands() ([]agent.Command, error) {
 	}
 	commands = append(commands, builtinCommands...)
 	return commands, nil
-}
-
-// IsLeaf reports whether msgID is a valid leaf in the thread's message tree.
-// Fast path: compares against the thread's persisted ActiveLeafID to avoid a
-// full store scan when the client is simply continuing the current branch.
-func (a *DefaultAgent) IsLeaf(threadID, msgID string) (bool, error) {
-	cfg, err := a.store.LoadConfig(threadID)
-	if err == nil && cfg.ActiveLeafID == msgID {
-		return true, nil
-	}
-	return a.store.IsLeaf(threadID, msgID)
 }
 
 // expandLegacyCommand checks whether the user parts contain a single text
@@ -1242,15 +1356,6 @@ func (a *DefaultAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQ
 		ApprovalID: approvalID,
 		Answers:    req.Answers,
 	})
-}
-
-// isClearCommand reports whether the user parts contain exactly the /clear command.
-func isClearCommand(parts []message.UIPart) bool {
-	if len(parts) != 1 {
-		return false
-	}
-	tp, ok := parts[0].(message.UITextPart)
-	return ok && strings.TrimSpace(tp.Text) == "/clear"
 }
 
 // isCompactCommand reports whether the user parts contain exactly the /compact command.

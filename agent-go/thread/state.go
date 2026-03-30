@@ -34,7 +34,6 @@ type TurnState struct {
 	StartedAt         *time.Time `json:"startedAt,omitempty"`
 	UpdatedAt         *time.Time `json:"updatedAt,omitempty"`
 	FinishedAt        *time.Time `json:"finishedAt,omitempty"`
-	ReplayTurn        bool       `json:"-"`
 }
 
 // PendingQuestionState persists a pending approval to disk.
@@ -43,11 +42,12 @@ type TurnState struct {
 // underlying paused tool invocation. A single tool call may emit multiple
 // approval prompts over time, each with its own ApprovalID.
 type PendingQuestionState struct {
-	ApprovalID string          `json:"approvalId"`
-	ToolCallID string          `json:"toolCallId"`
-	StepIndex  int             `json:"stepIndex"`
-	TaskID     string          `json:"taskId,omitempty"`    // set when the pending approval belongs to an async task
-	Questions  json.RawMessage `json:"questions,omitempty"` // raw JSON array from tool input
+	ApprovalID   string          `json:"approvalId"`
+	ToolCallID   string          `json:"toolCallId"`
+	StepIndex    int             `json:"stepIndex"`
+	ResumePhase  TurnPhase       `json:"resumePhase,omitempty"`  // phase to resume after this approval is answered
+	Continuation json.RawMessage `json:"continuation,omitempty"` // executor-owned continuation payload for resuming this approval
+	Questions    json.RawMessage `json:"questions,omitempty"`    // raw JSON array from tool input
 }
 
 // QuestionAnswer persists the user's response to a pending approval.
@@ -56,26 +56,37 @@ type QuestionAnswer struct {
 	Answers    map[string]string `json:"answers"`
 }
 
-// StepAsyncTasks holds metadata about in-flight async tool tasks for a step.
-// Persisted to step-NNN-async.json so that tasks can be resumed after a crash.
-type StepAsyncTasks struct {
-	Tasks []AsyncTaskInfo `json:"tasks"`
+// StepAsyncContinuations holds executor-owned continuation metadata for async
+// tool work that is still in progress for a step.
+// Persisted to step-NNN-async.json so those continuations can be resumed after
+// a crash.
+type StepAsyncContinuations struct {
+	Continuations []AsyncContinuationInfo `json:"continuations"`
 }
 
-// AsyncTaskInfo identifies a single async task launched by a tool executor.
-type AsyncTaskInfo struct {
-	ToolCallID string `json:"toolCallId"`
-	ToolName   string `json:"toolName"`
-	TaskID     string `json:"taskId"`
-	Input      string `json:"input"` // original tool input JSON, for ResumeAsync
+// StepEventMessages tracks immutable message IDs written for a step after the
+// assistant message is persisted. These are typically approval request,
+// approval response, and tool result messages in execution order.
+type StepEventMessages struct {
+	MessageIDs []string `json:"messageIds"`
+}
+
+// AsyncContinuationInfo identifies one persisted async continuation owned by a
+// tool executor.
+type AsyncContinuationInfo struct {
+	ToolCallID   string          `json:"toolCallId"`
+	ToolName     string          `json:"toolName"`
+	Continuation json.RawMessage `json:"continuation,omitempty"` // executor-owned continuation payload for resuming async work
+	Input        string          `json:"input"`                  // original tool input JSON, passed back to Continue
 }
 
 // StepResult is written after a step's streaming completes.
 // It contains the accumulated assistant Message and the
 // list of tool calls that need execution.
 type StepResult struct {
-	AssistantMessage message.Message `json:"assistantMessage"`
-	ToolCalls        []ToolCallInfo  `json:"toolCalls,omitempty"`
+	AssistantMessageID string          `json:"assistantMessageId,omitempty"`
+	AssistantMessage   message.Message `json:"assistantMessage"`
+	ToolCalls          []ToolCallInfo  `json:"toolCalls,omitempty"`
 }
 
 // ToolCallInfo identifies a tool call extracted from an assistant message.

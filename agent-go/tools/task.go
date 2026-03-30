@@ -28,9 +28,12 @@ type taskInput struct {
 	MaxTurns     int    `json:"max_turns"`
 }
 
+type taskContinuation struct {
+	SubThreadID string `json:"subThreadId"`
+}
+
 // taskRecord tracks an in-progress or completed Task.
 type taskRecord struct {
-	id      string
 	status  string // "pending", "in_progress", "waiting_for_answer", "completed", "failed"
 	output  string
 	created time.Time
@@ -55,8 +58,8 @@ type taskStore struct {
 
 var globalTasks = &taskStore{tasks: make(map[string]*taskRecord)}
 
-func newTaskID() string {
-	return fmt.Sprintf("task-%d", time.Now().UnixNano())
+func newSubThreadID(parentThreadID string) string {
+	return fmt.Sprintf("%s.sub.%d", parentThreadID, time.Now().UnixNano())
 }
 
 func subagentDepthFromThreadID(threadID string) int {
@@ -87,11 +90,9 @@ func (e *Executor) executeTask(_ context.Context, toolCtx *thread.ToolContext, c
 		return errResult(call, fmt.Sprintf("Task tool is not available: max sub-agent depth %d reached", toolCtx.MaxSubagentDepth)), nil
 	}
 
-	taskID := newTaskID()
-	subThreadID := fmt.Sprintf("%s.sub.%s", currentThreadID, taskID)
+	subThreadID := newSubThreadID(currentThreadID)
 
 	rec := &taskRecord{
-		id:             taskID,
 		status:         "in_progress",
 		created:        time.Now(),
 		parentThreadID: currentThreadID,
@@ -101,32 +102,59 @@ func (e *Executor) executeTask(_ context.Context, toolCtx *thread.ToolContext, c
 	}
 
 	globalTasks.mu.Lock()
-	globalTasks.tasks[taskID] = rec
+	globalTasks.tasks[subThreadID] = rec
 	globalTasks.mu.Unlock()
 
 	startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{
 		UserParts:     []message.UIPart{message.UITextPart{Text: prompt}},
 		SubagentType:  input.SubagentType,
-		ParentTaskID:  taskID,
+		ParentTaskID:  subThreadID,
 		SubagentDepth: rec.depth,
 		MaxTurns:      input.MaxTurns,
 	})
 
-	return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
+	return thread.ToolExecuteResult{Async: taskHandle(call, rec, subThreadID)}, nil
 }
 
-// resumeTask re-attaches to an in-flight or completed task after a crash.
-func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+func marshalTaskContinuation(subThreadID string) json.RawMessage {
+	if subThreadID == "" {
+		return nil
+	}
+	data, err := json.Marshal(taskContinuation{SubThreadID: subThreadID})
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func unmarshalTaskContinuation(data json.RawMessage) (string, error) {
+	var cont taskContinuation
+	if err := json.Unmarshal(data, &cont); err != nil {
+		return "", fmt.Errorf("invalid task continuation: %w", err)
+	}
+	if cont.SubThreadID == "" {
+		return "", fmt.Errorf("invalid task continuation: missing subThreadId")
+	}
+	return cont.SubThreadID, nil
+}
+
+// continueTask re-attaches to an in-flight or completed task after a crash or
+// after a question answer arrives.
+func (e *Executor) continueTask(_ context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	subThreadID, err := unmarshalTaskContinuation(continuation)
+	if err != nil {
+		return thread.ToolExecuteResult{}, err
+	}
 	if toolCtx == nil || toolCtx.Agent == nil {
 		return thread.ToolExecuteResult{
-			Result: errorResult(call, fmt.Sprintf("task %s lost after crash (sub-agent not configured)", taskID)),
+			Result: errorResult(call, fmt.Sprintf("sub-thread %s lost after crash (sub-agent not configured)", subThreadID)),
 		}, nil
 	}
 	subAgent := toolCtx.Agent
 
-	// Fast path: task is still alive in memory.
+	// Fast path: sub-thread is still alive in memory.
 	globalTasks.mu.Lock()
-	rec, ok := globalTasks.tasks[taskID]
+	rec, ok := globalTasks.tasks[subThreadID]
 	globalTasks.mu.Unlock()
 	if ok {
 		if req != nil {
@@ -138,7 +166,7 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 
 			if status != "waiting_for_answer" {
 				return thread.ToolExecuteResult{
-					Result: errorResult(call, fmt.Sprintf("task %s is not waiting for an answer", taskID)),
+					Result: errorResult(call, fmt.Sprintf("sub-thread %s is not waiting for an answer", subThreadID)),
 				}, nil
 			}
 			if approvalID == "" {
@@ -148,7 +176,7 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 				}
 				if pending == nil {
 					return thread.ToolExecuteResult{
-						Result: errorResult(call, fmt.Sprintf("task %s has no pending question", taskID)),
+						Result: errorResult(call, fmt.Sprintf("sub-thread %s has no pending question", subThreadID)),
 					}, nil
 				}
 				approvalID = pending.ApprovalID
@@ -156,12 +184,10 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 			if err := subAgent.SubmitAnswer(subThreadID, approvalID, *req); err != nil {
 				return thread.ToolExecuteResult{}, fmt.Errorf("submit sub-agent answer: %w", err)
 			}
-			startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{ParentTaskID: taskID, SubagentDepth: rec.depth})
+			startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{ParentTaskID: subThreadID, SubagentDepth: rec.depth})
 		}
-		return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
+		return thread.ToolExecuteResult{Async: taskHandle(call, rec, subThreadID)}, nil
 	}
-
-	subThreadID := fmt.Sprintf("%s.sub.%s", contextThreadID(toolCtx, e.defaultThreadID), taskID)
 
 	// Check whether the sub-agent already completed before the crash.
 	if output, err := subAgent.FinalResponse(subThreadID); err == nil && output != "" {
@@ -181,12 +207,11 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 		}
 		if pending == nil {
 			return thread.ToolExecuteResult{
-				Result: errorResult(call, fmt.Sprintf("task %s has no pending question", taskID)),
+				Result: errorResult(call, fmt.Sprintf("sub-thread %s has no pending question", subThreadID)),
 			}, nil
 		}
 
 		rec = &taskRecord{
-			id:             taskID,
 			status:         "in_progress",
 			created:        time.Now(),
 			parentThreadID: contextThreadID(toolCtx, e.defaultThreadID),
@@ -195,14 +220,14 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 			subThreadID:    subThreadID,
 		}
 		globalTasks.mu.Lock()
-		globalTasks.tasks[taskID] = rec
+		globalTasks.tasks[subThreadID] = rec
 		globalTasks.mu.Unlock()
 
 		if err := subAgent.SubmitAnswer(subThreadID, pending.ApprovalID, *req); err != nil {
 			return thread.ToolExecuteResult{}, fmt.Errorf("submit sub-agent answer: %w", err)
 		}
-		startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{ParentTaskID: taskID, SubagentDepth: rec.depth})
-		return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
+		startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{ParentTaskID: subThreadID, SubagentDepth: rec.depth})
+		return thread.ToolExecuteResult{Async: taskHandle(call, rec, subThreadID)}, nil
 	}
 
 	// Sub-agent was mid-turn when the process crashed. Re-parse the original
@@ -211,7 +236,7 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 	var input taskInput
 	if err := unmarshalInput(call, &input); err != nil {
 		return thread.ToolExecuteResult{
-			Result: errorResult(call, fmt.Sprintf("task %s: cannot recover input after crash: %v", taskID, err)),
+			Result: errorResult(call, fmt.Sprintf("sub-thread %s: cannot recover input after crash: %v", subThreadID, err)),
 		}, nil
 	}
 	prompt := input.Prompt
@@ -220,24 +245,23 @@ func (e *Executor) resumeTask(_ context.Context, toolCtx *thread.ToolContext, ca
 	}
 
 	rec = &taskRecord{
-		id:          taskID,
 		status:      "in_progress",
 		created:     time.Now(),
 		subThreadID: subThreadID,
 	}
 	globalTasks.mu.Lock()
-	globalTasks.tasks[taskID] = rec
+	globalTasks.tasks[subThreadID] = rec
 	globalTasks.mu.Unlock()
 
 	startSubAgentRun(rec, subAgent, subThreadID, agent.PromptRequest{
 		UserParts:     []message.UIPart{message.UITextPart{Text: prompt}},
 		SubagentType:  input.SubagentType,
-		ParentTaskID:  taskID,
+		ParentTaskID:  subThreadID,
 		SubagentDepth: rec.depth,
 		MaxTurns:      input.MaxTurns,
 	})
 
-	return thread.ToolExecuteResult{Async: taskHandle(call, rec, taskID)}, nil
+	return thread.ToolExecuteResult{Async: taskHandle(call, rec, subThreadID)}, nil
 }
 
 func startSubAgentRun(rec *taskRecord, subAgent agent.Agent, subThreadID string, req agent.PromptRequest) {
@@ -315,10 +339,11 @@ func runSubAgentGoroutine(ctx context.Context, rec *taskRecord, subAgent agent.A
 	rec.output = output
 }
 
-// taskHandle builds the AsyncTaskHandle that the turn loop waits on.
-func taskHandle(call message.ToolCallPart, rec *taskRecord, taskID string) *thread.AsyncTaskHandle {
-	return &thread.AsyncTaskHandle{
-		TaskID: taskID,
+// taskHandle builds the AsyncContinuationHandle that the turn loop waits on.
+func taskHandle(call message.ToolCallPart, rec *taskRecord, subThreadID string) *thread.AsyncContinuationHandle {
+	continuation := marshalTaskContinuation(subThreadID)
+	return &thread.AsyncContinuationHandle{
+		Continuation: continuation,
 		Wait: func(ctx context.Context) (thread.AsyncWaitResult, error) {
 			select {
 			case <-rec.done:
@@ -343,7 +368,8 @@ func taskHandle(call message.ToolCallPart, rec *taskRecord, taskID string) *thre
 			if rec.status == "waiting_for_answer" {
 				return thread.AsyncWaitResult{
 					Approval: &thread.ApprovalRequest{
-						Questions: rec.pendingQuestions,
+						Questions:    rec.pendingQuestions,
+						Continuation: continuation,
 					},
 				}, nil
 			}

@@ -199,6 +199,7 @@ func (ToolApprovalRequest) partType() string { return "tool-approval-request" }
 
 // ToolApprovalResponse responds to a tool approval request.
 type ToolApprovalResponse struct {
+	ToolCallID       string `json:"toolCallId,omitempty"`
 	ApprovalID       string `json:"approvalId"`
 	Approved         bool   `json:"approved"`
 	Reason           string `json:"reason,omitempty"`

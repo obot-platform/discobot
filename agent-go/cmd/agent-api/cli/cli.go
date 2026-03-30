@@ -213,19 +213,40 @@ func Run(cfg *config.Config, flags *Flags) {
 	// ── Main input loop ───────────────────────────────────────────────────────
 	showResume, showHistory := startupCommandHints(store, cfg, threadID)
 	fmt.Fprintln(os.Stderr, startupMessage(showResume, showHistory))
+	pendingFresh := map[string]bool{}
 
 	// Handle any pending AskUserQuestion left from a previous session.
 	if pending, _ := a.PendingQuestion(threadID); pending != nil {
 		fmt.Fprintln(os.Stderr, "Resuming pending approval from previous session...")
 		startTurn(func(ctx context.Context, cancel context.CancelFunc) {
 			if handlePendingQuestion(ctx, a, threadID, pending) {
-				runTurnLoop(ctx, cancel, a, threadID, agent.PromptRequest{Mode: planModeStr(planMode)}, func(enabled bool) {
+				runTurnLoop(ctx, cancel, a, threadID, agent.PromptRequest{Mode: planModeStr(planMode)}, true, func(enabled bool) {
 					planMode = enabled
 					saveThreadPlanMode(store, threadID, enabled)
 				})
 				planMode = getThreadPlanMode(store, threadID)
 			}
 		})
+	}
+
+	recoverIfInterrupted := func(ctx context.Context, cancel context.CancelFunc) {
+		interrupted, err := a.HasInterruptedTurn(threadID)
+		if err != nil || !interrupted {
+			return
+		}
+		fmt.Fprintln(os.Stderr, "Recovering interrupted turn...")
+		runTurnLoop(ctx, cancel, a, threadID, agent.PromptRequest{Mode: planModeStr(planMode)}, true, func(enabled bool) {
+			planMode = enabled
+			saveThreadPlanMode(store, threadID, enabled)
+		})
+		planMode = getThreadPlanMode(store, threadID)
+	}
+	consumeFreshContext := func(threadID string) bool {
+		if !pendingFresh[threadID] {
+			return false
+		}
+		delete(pendingFresh, threadID)
+		return true
 	}
 
 	// ── Background MCP OAuth watcher ─────────────────────────────────────────
@@ -251,6 +272,7 @@ func Run(cfg *config.Config, flags *Flags) {
 		if line == "/multiline" {
 			hist.push(line)
 			startTurn(func(ctx context.Context, cancel context.CancelFunc) {
+				recoverIfInterrupted(ctx, cancel)
 				parts, err := readMultilineInput("... ", "/end", cfg.AgentCwd)
 				if err == errInterrupt {
 					fmt.Fprintln(os.Stderr, "Multiline input cancelled.")
@@ -272,9 +294,10 @@ func Run(cfg *config.Config, flags *Flags) {
 					Mode:         planModeStr(planMode),
 					MaxTurns:     *flags.maxTurns,
 					SubagentType: *flags.subagent,
+					FreshContext: consumeFreshContext(threadID),
 					UserParts:    parts,
 				}
-				runTurnLoop(ctx, cancel, a, threadID, req, func(enabled bool) {
+				runTurnLoop(ctx, cancel, a, threadID, req, false, func(enabled bool) {
 					planMode = enabled
 					saveThreadPlanMode(store, threadID, enabled)
 				})
@@ -293,7 +316,7 @@ func Run(cfg *config.Config, flags *Flags) {
 		startTurn(func(ctx context.Context, cancel context.CancelFunc) {
 			// Handle slash commands.
 			if strings.HasPrefix(line, "/") {
-				if newID, handled := handleSlashCommand(ctx, line, a, store, cfg, threadID, reg, &model, &planMode); handled {
+				if newID, handled := handleSlashCommand(ctx, line, a, store, cfg, threadID, reg, &model, &planMode, pendingFresh); handled {
 					if newID != threadID {
 						threadID = newID
 						planMode = getThreadPlanMode(store, threadID)
@@ -302,7 +325,7 @@ func Run(cfg *config.Config, flags *Flags) {
 						if pending, _ := a.PendingQuestion(threadID); pending != nil {
 							fmt.Fprintln(os.Stderr, "Resuming pending approval...")
 							if handlePendingQuestion(ctx, a, threadID, pending) {
-								runTurnLoop(ctx, cancel, a, threadID, agent.PromptRequest{Mode: planModeStr(planMode)}, func(enabled bool) {
+								runTurnLoop(ctx, cancel, a, threadID, agent.PromptRequest{Mode: planModeStr(planMode)}, true, func(enabled bool) {
 									planMode = enabled
 									saveThreadPlanMode(store, threadID, enabled)
 								})
@@ -315,15 +338,17 @@ func Run(cfg *config.Config, flags *Flags) {
 			}
 
 			threadExistedBeforePrompt := threadExists(cfg.ThreadsDir, threadID)
+			recoverIfInterrupted(ctx, cancel)
 			req := agent.PromptRequest{
 				Model:        model,
 				Reasoning:    reasoning,
 				Mode:         planModeStr(planMode),
 				MaxTurns:     *flags.maxTurns,
 				SubagentType: *flags.subagent,
+				FreshContext: consumeFreshContext(threadID),
 				UserParts:    []message.UIPart{message.UITextPart{Text: line}},
 			}
-			runTurnLoop(ctx, cancel, a, threadID, req, func(enabled bool) {
+			runTurnLoop(ctx, cancel, a, threadID, req, false, func(enabled bool) {
 				planMode = enabled
 				saveThreadPlanMode(store, threadID, enabled)
 			})

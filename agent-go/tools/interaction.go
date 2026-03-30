@@ -141,16 +141,6 @@ Do NOT write code. Do NOT output text — start immediately with tool calls.`, p
 	}, nil
 }
 
-func (e *Executor) resolveEnterPlanMode(call message.ToolCallPart, _ api.AnswerQuestionRequest) (message.ToolResultPart, error) {
-	// EnterPlanMode no longer uses the approval flow; this resolver is unreachable
-	// but kept to satisfy the ResolveApproval dispatch table.
-	return message.ToolResultPart{
-		ToolCallID: call.ToolCallID,
-		ToolName:   call.ToolName,
-		Output:     message.TextOutput{Value: "Plan mode activated."},
-	}, nil
-}
-
 // ExitPlanMode — signals the agent is done with the plan and ready to implement.
 
 type exitPlanModeInput struct {

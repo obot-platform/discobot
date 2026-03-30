@@ -86,6 +86,11 @@ func MarshalChunk(c MessageChunk) ([]byte, error) {
 			Type string `json:"type"`
 			ToolApprovalRequestChunk
 		}{"tool-approval-request", v})
+	case ToolApprovalResponseChunk:
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			ToolApprovalResponseChunk
+		}{"tool-approval-response", v})
 
 	// --- Provider: File ---
 
@@ -164,16 +169,21 @@ func MarshalChunk(c MessageChunk) ([]byte, error) {
 
 	// --- Orchestrator: Data ---
 
-	case ModeChangeChunk:
+	case ThreadUpdateChunk:
 		return json.Marshal(struct {
 			Type string `json:"type"`
-			ModeChangeChunk
-		}{"data-mode-change", v})
-	case ThreadNameChunk:
+			ThreadUpdateChunk
+		}{"data-thread-update", v})
+	case ThreadResumeChunk:
 		return json.Marshal(struct {
 			Type string `json:"type"`
-			ThreadNameChunk
-		}{"data-thread-name", v})
+			ThreadResumeChunk
+		}{"data-thread-resume", v})
+	case ToolApprovalResponseDataChunk:
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			ToolApprovalResponseDataChunk
+		}{"data-tool-approval-response", v})
 	case UserMessageChunk:
 		return json.Marshal(struct {
 			Type string `json:"type"`
@@ -287,6 +297,9 @@ func UnmarshalChunk(data []byte) (MessageChunk, error) {
 	case disc.Type == "tool-approval-request":
 		var c ToolApprovalRequestChunk
 		return c, json.Unmarshal(data, &c)
+	case disc.Type == "tool-approval-response":
+		var c ToolApprovalResponseChunk
+		return c, json.Unmarshal(data, &c)
 
 	// Tool output (orchestrator)
 	case disc.Type == "tool-output-available":
@@ -344,11 +357,14 @@ func UnmarshalChunk(data []byte) (MessageChunk, error) {
 		return unmarshalFinishChunk(data)
 
 	// Data chunks
-	case disc.Type == "data-mode-change":
-		var c ModeChangeChunk
+	case disc.Type == "data-thread-update":
+		var c ThreadUpdateChunk
 		return c, json.Unmarshal(data, &c)
-	case disc.Type == "data-thread-name":
-		var c ThreadNameChunk
+	case disc.Type == "data-thread-resume":
+		var c ThreadResumeChunk
+		return c, json.Unmarshal(data, &c)
+	case disc.Type == "data-tool-approval-response":
+		var c ToolApprovalResponseDataChunk
 		return c, json.Unmarshal(data, &c)
 	case disc.Type == "data-user-message":
 		var c UserMessageChunk

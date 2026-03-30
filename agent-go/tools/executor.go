@@ -476,42 +476,52 @@ func (e *Executor) spillToFile(toolCtx *thread.ToolContext, call message.ToolCal
 	return path, nil
 }
 
-// ResolveAnswer converts a user's response into the next tool execution result.
-func (e *Executor) ResolveAnswer(toolCtx *thread.ToolContext, call message.ToolCallPart, req api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+// Continue resumes a previously paused or asynchronous tool execution using
+// executor-owned continuation metadata.
+func (e *Executor) Continue(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, continuation json.RawMessage, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	if len(continuation) > 0 {
+		switch call.ToolName {
+		case "Task", "Agent":
+			return e.continueTask(ctx, toolCtx, call, continuation, req)
+		default:
+			return thread.ToolExecuteResult{
+				Result: errorResult(call, fmt.Sprintf("continuation for %s lost after crash", call.ToolName)),
+			}, nil
+		}
+	}
+
+	if req == nil {
+		return thread.ToolExecuteResult{}, fmt.Errorf("Continue requires either continuation state or an answer for tool %s", call.ToolName)
+	}
+
 	switch call.ToolName {
 	case "AskUserQuestion":
-		result, err := e.resolveAskUserQuestion(call, req)
-		if err != nil {
-			return thread.ToolExecuteResult{}, err
-		}
-		return thread.ToolExecuteResult{Result: result}, nil
-	case "EnterPlanMode":
-		result, err := e.resolveEnterPlanMode(call, req)
+		result, err := e.resolveAskUserQuestion(call, *req)
 		if err != nil {
 			return thread.ToolExecuteResult{}, err
 		}
 		return thread.ToolExecuteResult{Result: result}, nil
 	case "ExitPlanMode":
-		result, err := e.resolveExitPlanMode(toolCtx, call, req)
+		result, err := e.resolveExitPlanMode(toolCtx, call, *req)
 		if err != nil {
 			return thread.ToolExecuteResult{}, err
 		}
 		return thread.ToolExecuteResult{Result: result}, nil
 	default:
-		return thread.ToolExecuteResult{}, fmt.Errorf("ResolveAnswer not supported for tool %s", call.ToolName)
+		return thread.ToolExecuteResult{}, fmt.Errorf("Continue not supported for tool %s", call.ToolName)
 	}
 }
 
-// ResumeAsync re-attaches to a previously launched async background task.
-func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, taskID string, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
-	switch call.ToolName {
-	case "Task", "Agent":
-		return e.resumeTask(ctx, toolCtx, call, taskID, req)
-	default:
-		return thread.ToolExecuteResult{
-			Result: errorResult(call, fmt.Sprintf("async task for %s lost after crash (taskID: %s)", call.ToolName, taskID)),
-		}, nil
-	}
+// ResolveAnswer is kept as a thin compatibility wrapper for callers/tests that
+// still invoke the older answered-tool API directly.
+func (e *Executor) ResolveAnswer(toolCtx *thread.ToolContext, call message.ToolCallPart, req api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	return e.Continue(context.Background(), toolCtx, call, nil, &req)
+}
+
+// ResumeAsync is kept as a thin compatibility wrapper for callers/tests that
+// still invoke the older async-recovery API directly.
+func (e *Executor) ResumeAsync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, subThreadID string, req *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	return e.Continue(ctx, toolCtx, call, marshalTaskContinuation(subThreadID), req)
 }
 
 // --- helpers ---

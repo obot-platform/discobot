@@ -18,7 +18,7 @@ type ChatRequest struct {
 	Messages  []message.UIMessage `json:"messages"`
 	Model     string              `json:"model,omitempty"`
 	Reasoning string              `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
-	Mode      string              `json:"mode,omitempty"`      // "plan" or ""
+	Mode      string              `json:"mode,omitempty"`      // "" keeps current thread mode (or defaults to build), "plan" sets plan, "build" sets build
 }
 
 // WriteFileRequest is the POST /files/write request body.

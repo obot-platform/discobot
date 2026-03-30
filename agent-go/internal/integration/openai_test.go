@@ -366,8 +366,8 @@ func TestOpenAI_WebSocketReconnectAfterStalePooledConnDropsPreviousResponseID(t 
 		}
 	}
 
-	if retryReqPrevID != assistantMsg.ID {
-		t.Fatalf("expected retry to preserve previous_response_id=%q, got %q", assistantMsg.ID, retryReqPrevID)
+	if retryReqPrevID != "" {
+		t.Fatalf("expected fresh retry to drop previous_response_id, got %q", retryReqPrevID)
 	}
 	if fallbackReqPrev != "" {
 		t.Fatalf("expected fallback retry to drop previous_response_id, got %q", fallbackReqPrev)

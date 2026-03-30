@@ -33,6 +33,9 @@ func (m *mockSubAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 	}
 	return func(_ func(message.MessageChunk, error) bool) {}
 }
+func (m *mockSubAgent) Resume(_ context.Context, _ string) iter.Seq2[message.MessageChunk, error] {
+	return func(_ func(message.MessageChunk, error) bool) {}
+}
 
 func (m *mockSubAgent) Cancel(_ string) bool                                        { return false }
 func (m *mockSubAgent) Messages(_, _ string) ([]message.UIMessage, error)           { return nil, nil }
@@ -52,7 +55,6 @@ func (m *mockSubAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQ
 	return nil
 }
 func (m *mockSubAgent) ListCommands() ([]agent.Command, error) { return nil, nil }
-func (m *mockSubAgent) IsLeaf(_, _ string) (bool, error)       { return true, nil }
 func (m *mockSubAgent) FinalResponse(threadID string) (string, error) {
 	if m.finalResponseFn != nil {
 		return m.finalResponseFn(threadID)
@@ -61,7 +63,7 @@ func (m *mockSubAgent) FinalResponse(threadID string) (string, error) {
 }
 
 type recursiveTaskState struct {
-	taskID        string
+	subThreadID   string
 	pending       *agent.PendingQuestion
 	pendingAnswer *api.AnswerQuestionRequest
 	final         string
@@ -138,16 +140,20 @@ func (a *recursiveTaskAgent) Prompt(ctx context.Context, threadID string, req ag
 
 		var execResult thread.ToolExecuteResult
 		var err error
-		if state.taskID == "" {
+		if state.subThreadID == "" {
 			execResult, err = a.exec.Execute(ctx, toolCtx, call)
 			if err == nil && execResult.Async != nil {
-				state.taskID = execResult.Async.TaskID
+				state.subThreadID, err = unmarshalTaskContinuation(execResult.Async.Continuation)
+				if err != nil {
+					yield(nil, err)
+					return
+				}
 			}
 		} else if state.pendingAnswer != nil {
-			execResult, err = a.exec.ResumeAsync(ctx, toolCtx, call, state.taskID, state.pendingAnswer)
+			execResult, err = a.exec.ResumeAsync(ctx, toolCtx, call, state.subThreadID, state.pendingAnswer)
 			state.pendingAnswer = nil
 		} else {
-			execResult, err = a.exec.ResumeAsync(ctx, toolCtx, call, state.taskID, nil)
+			execResult, err = a.exec.ResumeAsync(ctx, toolCtx, call, state.subThreadID, nil)
 		}
 		if err != nil {
 			yield(nil, err)
@@ -182,6 +188,9 @@ func (a *recursiveTaskAgent) Prompt(ctx context.Context, threadID string, req ag
 		}
 	}
 }
+func (a *recursiveTaskAgent) Resume(_ context.Context, _ string) iter.Seq2[message.MessageChunk, error] {
+	return func(_ func(message.MessageChunk, error) bool) {}
+}
 
 func (a *recursiveTaskAgent) Cancel(_ string) bool                              { return false }
 func (a *recursiveTaskAgent) Messages(_, _ string) ([]message.UIMessage, error) { return nil, nil }
@@ -207,7 +216,6 @@ func (a *recursiveTaskAgent) SubmitAnswer(threadID, approvalID string, req api.A
 	return nil
 }
 func (a *recursiveTaskAgent) ListCommands() ([]agent.Command, error) { return nil, nil }
-func (a *recursiveTaskAgent) IsLeaf(_, _ string) (bool, error)       { return true, nil }
 func (a *recursiveTaskAgent) FinalResponse(threadID string) (string, error) {
 	return a.state(threadID).final, nil
 }
@@ -229,7 +237,7 @@ func makeTaskCall(t *testing.T, prompt string) message.ToolCallPart {
 	}
 }
 
-func waitHandle(t *testing.T, handle *thread.AsyncTaskHandle, timeout time.Duration) message.ToolResultPart {
+func waitHandle(t *testing.T, handle *thread.AsyncContinuationHandle, timeout time.Duration) message.ToolResultPart {
 	t.Helper()
 	res := waitAsyncResult(t, handle, timeout)
 	if res.Approval != nil {
@@ -238,7 +246,7 @@ func waitHandle(t *testing.T, handle *thread.AsyncTaskHandle, timeout time.Durat
 	return res.Result
 }
 
-func waitAsyncResult(t *testing.T, handle *thread.AsyncTaskHandle, timeout time.Duration) thread.AsyncWaitResult {
+func waitAsyncResult(t *testing.T, handle *thread.AsyncContinuationHandle, timeout time.Duration) thread.AsyncWaitResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -247,6 +255,15 @@ func waitAsyncResult(t *testing.T, handle *thread.AsyncTaskHandle, timeout time.
 		t.Fatalf("Wait: %v", err)
 	}
 	return res
+}
+
+func continuationSubThreadID(t *testing.T, continuation json.RawMessage) string {
+	t.Helper()
+	subThreadID, err := unmarshalTaskContinuation(continuation)
+	if err != nil {
+		t.Fatalf("unmarshal continuation: %v", err)
+	}
+	return subThreadID
 }
 
 func textOutput(res message.ToolResultPart) string {
@@ -326,9 +343,9 @@ func TestTodoWriteReturnsMarkdownSummaryAndPersistsTodos(t *testing.T) {
 }
 
 // cleanupTask removes a task from globalTasks so tests don't interfere.
-func cleanupTask(taskID string) {
+func cleanupTask(subThreadID string) {
 	globalTasks.mu.Lock()
-	delete(globalTasks.tasks, taskID)
+	delete(globalTasks.tasks, subThreadID)
 	globalTasks.mu.Unlock()
 }
 
@@ -359,7 +376,7 @@ func TestTask_BasicSubAgent(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle, got nil")
 	}
-	t.Cleanup(func() { cleanupTask(result.Async.TaskID) })
+	t.Cleanup(func() { cleanupTask(continuationSubThreadID(t, result.Async.Continuation)) })
 
 	res := waitHandle(t, result.Async, 5*time.Second)
 	if got := textOutput(res); got != want {
@@ -429,7 +446,7 @@ func TestTask_ForwardsPromptAndSubagentType(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle")
 	}
-	t.Cleanup(func() { cleanupTask(result.Async.TaskID) })
+	t.Cleanup(func() { cleanupTask(continuationSubThreadID(t, result.Async.Continuation)) })
 
 	waitHandle(t, result.Async, 5*time.Second)
 
@@ -488,7 +505,7 @@ func TestTask_Cancellation(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle")
 	}
-	t.Cleanup(func() { cleanupTask(result.Async.TaskID) })
+	t.Cleanup(func() { cleanupTask(continuationSubThreadID(t, result.Async.Continuation)) })
 
 	// Cancel the Wait context after a brief delay so the goroutine has started.
 	waitCtx, waitCancel := context.WithCancel(context.Background())
@@ -544,7 +561,7 @@ func TestTask_CancellationBeforeGoroutineStarts(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle")
 	}
-	t.Cleanup(func() { cleanupTask(result.Async.TaskID) })
+	t.Cleanup(func() { cleanupTask(continuationSubThreadID(t, result.Async.Continuation)) })
 
 	res, err := result.Async.Wait(waitCtx)
 	if err != nil {
@@ -585,15 +602,15 @@ func TestTask_Resumption_InMemory(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle")
 	}
-	taskID := result.Async.TaskID
-	t.Cleanup(func() { cleanupTask(taskID) })
+	subThreadID := continuationSubThreadID(t, result.Async.Continuation)
+	t.Cleanup(func() { cleanupTask(subThreadID) })
 
 	// Wait for the goroutine to complete so the record is in "completed" state.
 	waitHandle(t, result.Async, 5*time.Second)
 
 	// ResumeAsync should find the record still in globalTasks and return a handle.
 	call := makeTaskCall(t, "some work")
-	resumed, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, nil)
+	resumed, err := exec.ResumeAsync(context.Background(), toolCtx, call, subThreadID, nil)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}
@@ -625,12 +642,12 @@ func TestTask_Resumption_AlreadyCompleted(t *testing.T) {
 	toolCtx := &thread.ToolContext{ThreadID: "parent-thread", Agent: subAgent}
 
 	// Use a task ID that is NOT in globalTasks (simulating a crash recovery).
-	taskID := "crashed-completed-" + t.Name()
+	subThreadID := "crashed-completed-" + t.Name()
 
 	call := makeTaskCall(t, "task that finished before crash")
 	call.ToolCallID = t.Name() + "-recover"
 
-	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, nil)
+	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, subThreadID, nil)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}
@@ -638,7 +655,7 @@ func TestTask_Resumption_AlreadyCompleted(t *testing.T) {
 	var res message.ToolResultPart
 	if result.Async != nil {
 		// Acceptable: implementation chose to wrap in async handle.
-		t.Cleanup(func() { cleanupTask(result.Async.TaskID) })
+		t.Cleanup(func() { cleanupTask(continuationSubThreadID(t, result.Async.Continuation)) })
 		res = waitHandle(t, result.Async, 5*time.Second)
 	} else {
 		res = result.Result
@@ -677,19 +694,19 @@ func TestTask_Resumption_MidTurn(t *testing.T) {
 	exec := New(t.TempDir(), t.TempDir(), "parent-thread")
 	toolCtx := &thread.ToolContext{ThreadID: "parent-thread", Agent: subAgent}
 
-	taskID := "crashed-midturn-" + t.Name()
+	subThreadID := "crashed-midturn-" + t.Name()
 
 	call := makeTaskCall(t, "task interrupted mid-turn")
 	call.ToolCallID = t.Name() + "-midturn"
 
-	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, nil)
+	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, subThreadID, nil)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}
 	if result.Async == nil {
 		t.Fatal("expected Async handle for mid-turn recovery")
 	}
-	t.Cleanup(func() { cleanupTask(result.Async.TaskID) })
+	t.Cleanup(func() { cleanupTask(continuationSubThreadID(t, result.Async.Continuation)) })
 
 	res := waitHandle(t, result.Async, 5*time.Second)
 	if got := textOutput(res); got != want {
@@ -752,8 +769,8 @@ func TestTask_SubAgentQuestionPropagatesApproval(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle")
 	}
-	taskID := result.Async.TaskID
-	t.Cleanup(func() { cleanupTask(taskID) })
+	subThreadID := continuationSubThreadID(t, result.Async.Continuation)
+	t.Cleanup(func() { cleanupTask(subThreadID) })
 
 	waitResult := waitAsyncResult(t, result.Async, 5*time.Second)
 	if waitResult.Approval == nil {
@@ -771,7 +788,7 @@ func TestTask_SubAgentQuestionPropagatesApproval(t *testing.T) {
 	answerReq := &api.AnswerQuestionRequest{
 		Answers: map[string]string{question: "A"},
 	}
-	resumed, err := exec.ResumeAsync(context.Background(), toolCtx, makeTaskCall(t, "ask the sub-agent"), taskID, answerReq)
+	resumed, err := exec.ResumeAsync(context.Background(), toolCtx, makeTaskCall(t, "ask the sub-agent"), subThreadID, answerReq)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}
@@ -793,10 +810,10 @@ func TestTask_SubAgentQuestionPropagatesApproval(t *testing.T) {
 
 func TestTask_ResumeAsync_CrashRecoveryAfterSubAgentQuestion(t *testing.T) {
 	const (
-		approvalID = "sub-approval-crash"
-		question   = "Continue with the risky step?"
-		finalText  = "resumed after crash"
-		taskID     = "paused-task-after-crash"
+		approvalID  = "sub-approval-crash"
+		question    = "Continue with the risky step?"
+		finalText   = "resumed after crash"
+		subThreadID = "paused-task-after-crash"
 	)
 
 	answered := false
@@ -846,14 +863,14 @@ func TestTask_ResumeAsync_CrashRecoveryAfterSubAgentQuestion(t *testing.T) {
 	answerReq := &api.AnswerQuestionRequest{
 		Answers: map[string]string{question: "Yes"},
 	}
-	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, taskID, answerReq)
+	result, err := exec.ResumeAsync(context.Background(), toolCtx, call, subThreadID, answerReq)
 	if err != nil {
 		t.Fatalf("ResumeAsync: %v", err)
 	}
 	if result.Async == nil {
 		t.Fatal("expected Async handle for crash recovery")
 	}
-	t.Cleanup(func() { cleanupTask(taskID) })
+	t.Cleanup(func() { cleanupTask(subThreadID) })
 
 	res := waitHandle(t, result.Async, 5*time.Second)
 	if got := textOutput(res); got != finalText {
@@ -894,8 +911,8 @@ func TestTask_ThreeLevelsDeepQuestionPropagatesAndResumes(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle")
 	}
-	taskID := result.Async.TaskID
-	t.Cleanup(func() { cleanupTask(taskID) })
+	subThreadID := continuationSubThreadID(t, result.Async.Continuation)
+	t.Cleanup(func() { cleanupTask(subThreadID) })
 
 	waitResult := waitAsyncResult(t, result.Async, 5*time.Second)
 	if waitResult.Approval == nil {
@@ -910,7 +927,7 @@ func TestTask_ThreeLevelsDeepQuestionPropagatesAndResumes(t *testing.T) {
 		t.Fatalf("unexpected approval questions: %#v", questions)
 	}
 
-	resumed, err := rootExec.ResumeAsync(context.Background(), toolCtx, call, taskID, &api.AnswerQuestionRequest{
+	resumed, err := rootExec.ResumeAsync(context.Background(), toolCtx, call, subThreadID, &api.AnswerQuestionRequest{
 		Answers: map[string]string{question: "Yes"},
 	})
 	if err != nil {
@@ -927,7 +944,7 @@ func TestTask_ThreeLevelsDeepQuestionPropagatesAndResumes(t *testing.T) {
 }
 
 // TestTask_SubThreadIDScheme verifies that the sub-thread ID is constructed as
-// "<parentThreadID>.sub.<taskID>" so crash-recovery can reconstruct it.
+// "<parentThreadID>.sub.<subThreadID>" so crash-recovery can reconstruct it.
 func TestTask_SubThreadIDScheme(t *testing.T) {
 	const parentThreadID = "parent-abc"
 	var capturedSubThreadID string
@@ -952,8 +969,8 @@ func TestTask_SubThreadIDScheme(t *testing.T) {
 	if result.Async == nil {
 		t.Fatal("expected Async handle")
 	}
-	taskID := result.Async.TaskID
-	t.Cleanup(func() { cleanupTask(taskID) })
+	subThreadID := continuationSubThreadID(t, result.Async.Continuation)
+	t.Cleanup(func() { cleanupTask(subThreadID) })
 
 	waitHandle(t, result.Async, 5*time.Second)
 
@@ -961,7 +978,7 @@ func TestTask_SubThreadIDScheme(t *testing.T) {
 	if len(capturedSubThreadID) <= len(wantPrefix) || capturedSubThreadID[:len(wantPrefix)] != wantPrefix {
 		t.Errorf("sub-thread ID %q does not start with %q", capturedSubThreadID, wantPrefix)
 	}
-	if got := capturedSubThreadID[len(wantPrefix):]; got != taskID {
-		t.Errorf("sub-thread ID suffix: got %q, want taskID %q", got, taskID)
+	if capturedSubThreadID != subThreadID {
+		t.Errorf("captured sub-thread ID: got %q, want %q", capturedSubThreadID, subThreadID)
 	}
 }

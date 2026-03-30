@@ -2,12 +2,15 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"iter"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
+
+var ErrInterruptedTurnRequiresResume = errors.New("interrupted turn requires resume")
 
 // CommandKind indicates the origin of a Command.
 type CommandKind string
@@ -54,11 +57,14 @@ type Agent interface {
 	// The iterator yields MessageChunks until the turn is complete.
 	//
 	// If the thread has an interrupted turn from a previous crash,
-	// the interrupted turn is resumed instead of starting a new one.
+	// Prompt returns ErrInterruptedTurnRequiresResume.
 	//
 	// Only one Prompt may be active per threadID. Calling Prompt while
 	// another is active for the same thread returns an error.
 	Prompt(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
+
+	// Resume continues or finalizes an interrupted turn from persisted disk state.
+	Resume(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error]
 
 	// Cancel cancels the active prompt for a thread.
 	// Returns true if a prompt was active and cancelled, false otherwise.
@@ -83,8 +89,7 @@ type Agent interface {
 	PendingQuestion(threadID string) (*PendingQuestion, error)
 
 	// SubmitAnswer persists the user's response for a pending approval.
-	// The turn is resumed by calling Prompt again (which detects the
-	// waiting_for_answer state and resumes with the answer).
+	// The turn is resumed by calling Resume.
 	SubmitAnswer(threadID, approvalID string, req api.AnswerQuestionRequest) error
 
 	// FinalResponse returns the last assistant text from a completed thread turn.
@@ -95,12 +100,6 @@ type Agent interface {
 	// ListCommands returns all slash commands available to the user, including
 	// user-defined skills, legacy commands, and built-in commands.
 	ListCommands() ([]Command, error)
-
-	// IsLeaf reports whether msgID is a valid leaf in the thread's message tree.
-	// Implementations may use cached state (e.g. ActiveLeafID from thread config)
-	// before falling back to a full store scan.
-	// Returns false (no error) when msgID does not exist.
-	IsLeaf(threadID, msgID string) (bool, error)
 }
 
 // PromptRequest holds the parameters for a Prompt call.
@@ -123,14 +122,15 @@ type PromptRequest struct {
 	// Reasoning controls extended thinking ("enabled" or "").
 	Reasoning string
 
-	// Mode is the permission mode ("plan" or "").
+	// Mode controls the requested permission mode.
+	// "" keeps the current thread mode when one exists, otherwise defaults to build.
+	// "plan" switches to plan mode.
+	// "build" switches to build mode.
 	Mode string
 
-	// ReplayTurn forces a resumed turn to replay its cached prefix even when the
-	// persisted phase would normally continue live without re-emitting earlier
-	// chunks. Used when an answered waiting_for_answer turn is resumed after the
-	// in-memory completion cache has been lost.
-	ReplayTurn bool
+	// FreshContext forces the next prompt to ignore the current leaf and start a
+	// fresh branch within the thread.
+	FreshContext bool
 
 	// Tools overrides the default tool set. Nil means use agent defaults.
 	Tools []providers.ToolDefinition

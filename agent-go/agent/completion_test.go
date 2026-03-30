@@ -16,6 +16,7 @@ import (
 
 type mockAgent struct {
 	promptFn   func(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
+	resumeFn   func(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error]
 	messagesFn func(threadID, leafID string) ([]message.UIMessage, error)
 
 	interruptedThreads []string
@@ -26,6 +27,13 @@ type mockAgent struct {
 func (m *mockAgent) Prompt(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	if m.promptFn != nil {
 		return m.promptFn(ctx, threadID, req)
+	}
+	return func(_ func(message.MessageChunk, error) bool) {}
+}
+
+func (m *mockAgent) Resume(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+	if m.resumeFn != nil {
+		return m.resumeFn(ctx, threadID)
 	}
 	return func(_ func(message.MessageChunk, error) bool) {}
 }
@@ -74,7 +82,22 @@ func (m *mockAgent) ListCommands() ([]Command, error) {
 	return nil, nil
 }
 
-func (m *mockAgent) IsLeaf(_, _ string) (bool, error) { return true, nil }
+type mockCompletionListener struct {
+	startCh    chan string
+	completeCh chan string
+}
+
+func (m *mockCompletionListener) OnTurnStart(threadID string) {
+	if m.startCh != nil {
+		m.startCh <- threadID
+	}
+}
+
+func (m *mockCompletionListener) OnTurnComplete(threadID string, _ error) {
+	if m.completeCh != nil {
+		m.completeCh <- threadID
+	}
+}
 
 // --- Helpers ---
 
@@ -404,18 +427,18 @@ func TestCompletionManager_ChatAfterDone(t *testing.T) {
 	waitForDone(t, cm, "thread1")
 }
 
-func TestCompletionManager_SetOnTurnComplete(t *testing.T) {
+func TestCompletionManager_AddListener_ReceivesLifecycleEvents(t *testing.T) {
 	chunks := []message.MessageChunk{
 		message.TextDeltaChunk{ID: "t1", Delta: "done"},
 	}
 
 	agent := &mockAgent{promptFn: simplePromptFn(chunks)}
 	cm := NewCompletionManager(agent)
-
-	completedCh := make(chan string, 1)
-	cm.SetOnTurnComplete(func(threadID string, _ error) {
-		completedCh <- threadID
-	})
+	listener := &mockCompletionListener{
+		startCh:    make(chan string, 1),
+		completeCh: make(chan string, 1),
+	}
+	cm.AddCompletionListener(listener)
 
 	_, err := cm.Chat("thread1", PromptRequest{
 		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
@@ -425,12 +448,21 @@ func TestCompletionManager_SetOnTurnComplete(t *testing.T) {
 	}
 
 	select {
-	case tid := <-completedCh:
+	case tid := <-listener.startCh:
 		if tid != "thread1" {
-			t.Errorf("expected thread1, got %s", tid)
+			t.Fatalf("expected thread1 start, got %s", tid)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for turn complete callback")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for start event")
+	}
+
+	select {
+	case tid := <-listener.completeCh:
+		if tid != "thread1" {
+			t.Fatalf("expected thread1 complete, got %s", tid)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for complete event")
 	}
 }
 
@@ -476,6 +508,32 @@ func TestCompletionManager_WaitNextCompletion_ReturnsFinishedNewCompletion(t *te
 	}
 	if delta, ok := result.Chunks[0].(message.TextDeltaChunk); !ok || delta.Delta != "done" {
 		t.Fatalf("unexpected chunk: %#v", result.Chunks[0])
+	}
+}
+
+func TestCompletionManager_ResumeInterruptedTurns(t *testing.T) {
+	resumeCh := make(chan string, 2)
+	agent := &mockAgent{
+		threads:            []string{"thread-a", "thread-b"},
+		interruptedThreads: []string{"thread-b"},
+		resumeFn: func(_ context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+			if threadID == "thread-b" {
+				resumeCh <- threadID
+			}
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+	}
+	cm := NewCompletionManager(agent)
+	if err := cm.ResumeInterruptedTurns(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case threadID := <-resumeCh:
+		if threadID != "thread-b" {
+			t.Fatalf("expected thread-b resume, got %s", threadID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for resume call")
 	}
 }
 

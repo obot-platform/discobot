@@ -14,7 +14,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/agentimpl"
 	"github.com/obot-platform/discobot/agent-go/internal/config"
 	"github.com/obot-platform/discobot/agent-go/message"
@@ -130,16 +129,18 @@ func imagePartFromRawBytes(input []byte) (message.UIFilePart, bool) {
 // Returns the (possibly changed) threadID and true when handled locally by the
 // CLI, or current threadID and false when the command should be passed through
 // to the agent.
-func handleSlashCommand(ctx context.Context, line string, a *agentimpl.DefaultAgent, store *thread.Store, cfg *config.Config, currentThreadID string, reg *providers.ProviderRegistry, currentModel *string, currentPlanMode *bool) (string, bool) {
+func handleSlashCommand(ctx context.Context, line string, a *agentimpl.DefaultAgent, store *thread.Store, cfg *config.Config, currentThreadID string, reg *providers.ProviderRegistry, currentModel *string, currentPlanMode *bool, pendingFresh map[string]bool) (string, bool) {
 	parts := strings.Fields(line)
 	cmd := parts[0]
 	switch cmd {
 	case "/resume":
 		return handleResumeCommand(ctx, a, store, cfg, currentThreadID), true
 	case "/clear":
-		newThreadID := "thread-" + agent.GenerateID()
-		fmt.Fprintf(os.Stderr, "Started new thread %s\n", newThreadID)
-		return newThreadID, true
+		if pendingFresh != nil {
+			pendingFresh[currentThreadID] = true
+		}
+		fmt.Fprintln(os.Stderr, "Next message will start a fresh conversation in this thread.")
+		return currentThreadID, true
 	case "/plan":
 		enabled := !*currentPlanMode
 		*currentPlanMode = enabled

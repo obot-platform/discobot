@@ -332,6 +332,54 @@ func TestProjectUIMessages_Approval(t *testing.T) {
 	_ = boolTrue
 }
 
+func TestProjectUIMessages_ApprovalAcrossToolMessages(t *testing.T) {
+	boolTrue := true
+	msgs := []Message{
+		{Role: "assistant", Parts: []Part{
+			ToolCallPart{ToolCallID: "tc1", ToolName: "rm", Input: `{}`},
+		}},
+		{Role: "tool", Parts: []Part{
+			ToolApprovalRequest{ApprovalID: "a1", ToolCallID: "tc1"},
+		}},
+		{Role: "tool", Parts: []Part{
+			ToolApprovalResponse{ApprovalID: "a1", ToolCallID: "tc1", Approved: true, Reason: "ok"},
+		}},
+		{Role: "tool", Parts: []Part{
+			ToolResultPart{ToolCallID: "tc1", ToolName: "rm", Output: TextOutput{Value: "deleted"}},
+		}},
+	}
+
+	result, err := ProjectUIMessages(msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ui struct {
+		Parts []json.RawMessage `json:"parts"`
+	}
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
+
+	var dp struct {
+		State    string `json:"state"`
+		Approval *struct {
+			ID       string `json:"id"`
+			Approved *bool  `json:"approved"`
+		} `json:"approval"`
+	}
+	json.Unmarshal(ui.Parts[0], &dp)
+
+	if dp.State != "output-available" {
+		t.Fatalf("state: got %q", dp.State)
+	}
+	if dp.Approval == nil || dp.Approval.ID != "a1" {
+		t.Fatalf("approval: got %+v", dp.Approval)
+	}
+	if dp.Approval.Approved == nil || !*dp.Approval.Approved {
+		t.Fatal("expected approved=true")
+	}
+	_ = boolTrue
+}
+
 // --- Projection field-coverage tests ---
 //
 // Each test below creates a source Part with every projectable field set to a
@@ -341,9 +389,9 @@ func TestProjectUIMessages_Approval(t *testing.T) {
 
 func projectAssistantPart(t *testing.T, p Part) UIPart {
 	t.Helper()
-	parts, err := convertAssistantToolPairToUI(Message{Role: "assistant", Parts: []Part{p}}, nil)
+	parts, err := convertAssistantToolStepToUI(Message{Role: "assistant", Parts: []Part{p}}, nil)
 	if err != nil {
-		t.Fatalf("convertAssistantToolPairToUI: %v", err)
+		t.Fatalf("convertAssistantToolStepToUI: %v", err)
 	}
 	if len(parts) != 1 {
 		t.Fatalf("expected 1 UIPart, got %d", len(parts))

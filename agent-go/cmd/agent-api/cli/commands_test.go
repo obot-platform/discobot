@@ -103,7 +103,7 @@ func TestHandleSlashCommand_ForwardsKnownAgentCommand(t *testing.T) {
 	}
 
 	cfg := &config.Config{AgentCwd: root}
-	threadID, handled := handleSlashCommand(context.Background(), "/deploy", nil, nil, cfg, "thread-1", nil, nil, nil)
+	threadID, handled := handleSlashCommand(context.Background(), "/deploy", nil, nil, cfg, "thread-1", nil, nil, nil, nil)
 	if handled {
 		t.Fatalf("expected /deploy to be forwarded to agent, handled=%v", handled)
 	}
@@ -117,7 +117,7 @@ func TestHandleSlashCommand_UnknownStillHandledLocally(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, "home"))
 
 	cfg := &config.Config{AgentCwd: root}
-	threadID, handled := handleSlashCommand(context.Background(), "/does-not-exist", nil, nil, cfg, "thread-1", nil, nil, nil)
+	threadID, handled := handleSlashCommand(context.Background(), "/does-not-exist", nil, nil, cfg, "thread-1", nil, nil, nil, nil)
 	if !handled {
 		t.Fatalf("expected unknown slash command to be handled locally")
 	}
@@ -133,7 +133,7 @@ func TestHandleSlashCommand_PlanDoesNotCreateThreadBeforePrompt(t *testing.T) {
 	planMode := false
 	threadID := "thread-lazy"
 
-	newThreadID, handled := handleSlashCommand(context.Background(), "/plan", nil, store, cfg, threadID, nil, nil, &planMode)
+	newThreadID, handled := handleSlashCommand(context.Background(), "/plan", nil, store, cfg, threadID, nil, nil, &planMode, nil)
 	if !handled {
 		t.Fatalf("expected /plan to be handled locally")
 	}
@@ -161,12 +161,16 @@ func TestHandleSlashCommand_LocalCommandsTakePriority(t *testing.T) {
 	}
 
 	cfg := &config.Config{AgentCwd: root}
-	newThreadID, handled := handleSlashCommand(context.Background(), "/clear", nil, nil, cfg, "thread-1", nil, nil, nil)
+	pendingFresh := map[string]bool{}
+	newThreadID, handled := handleSlashCommand(context.Background(), "/clear", nil, nil, cfg, "thread-1", nil, nil, nil, pendingFresh)
 	if !handled {
 		t.Fatalf("expected /clear to be handled locally")
 	}
-	if newThreadID == "thread-1" {
-		t.Fatalf("expected /clear to start a new thread")
+	if newThreadID != "thread-1" {
+		t.Fatalf("expected /clear to keep current thread, got %q", newThreadID)
+	}
+	if !pendingFresh["thread-1"] {
+		t.Fatalf("expected /clear to mark the current thread for fresh context")
 	}
 }
 

@@ -44,12 +44,8 @@ func (e *testToolExecutor) Execute(_ context.Context, _ *thread.ToolContext, cal
 	return thread.ToolExecuteResult{Result: result}, nil
 }
 
-func (e *testToolExecutor) ResolveAnswer(_ *thread.ToolContext, _ message.ToolCallPart, _ api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
-	return thread.ToolExecuteResult{}, fmt.Errorf("approval not supported in test executor")
-}
-
-func (e *testToolExecutor) ResumeAsync(_ context.Context, _ *thread.ToolContext, _ message.ToolCallPart, _ string, _ *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
-	return thread.ToolExecuteResult{}, fmt.Errorf("async not supported in test executor")
+func (e *testToolExecutor) Continue(_ context.Context, _ *thread.ToolContext, _ message.ToolCallPart, _ json.RawMessage, _ *api.AnswerQuestionRequest) (thread.ToolExecuteResult, error) {
+	return thread.ToolExecuteResult{}, fmt.Errorf("continuation not supported in test executor")
 }
 
 func (e *testToolExecutor) SetPlanMode(_ bool)   {}

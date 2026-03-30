@@ -24,6 +24,7 @@ import (
 
 type streamTestAgent struct {
 	promptFn             func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	resumeFn             func(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error]
 	messagesFn           func(threadID, leafID string) ([]message.UIMessage, error)
 	pendingQuestionFn    func(threadID string) (*agent.PendingQuestion, error)
 	submitAnswerFn       func(threadID, approvalID string, req api.AnswerQuestionRequest) error
@@ -34,6 +35,13 @@ type streamTestAgent struct {
 func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	if m.promptFn != nil {
 		return m.promptFn(ctx, threadID, req)
+	}
+	return func(_ func(message.MessageChunk, error) bool) {}
+}
+
+func (m *streamTestAgent) Resume(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+	if m.resumeFn != nil {
+		return m.resumeFn(ctx, threadID)
 	}
 	return func(_ func(message.MessageChunk, error) bool) {}
 }
@@ -74,7 +82,6 @@ func (m *streamTestAgent) SubmitAnswer(threadID, approvalID string, req api.Answ
 }
 func (m *streamTestAgent) FinalResponse(_ string) (string, error) { return "", nil }
 func (m *streamTestAgent) ListCommands() ([]agent.Command, error) { return nil, nil }
-func (m *streamTestAgent) IsLeaf(_, _ string) (bool, error)       { return true, nil }
 
 type sseFrame struct {
 	ID    string
@@ -270,7 +277,7 @@ func TestPostChat_AcceptsSingleUserMessage(t *testing.T) {
 	}
 }
 
-func TestPostChat_SeedsThreadMetadataBeforePromptStarts(t *testing.T) {
+func TestPostChat_StartsCompletion(t *testing.T) {
 	reqCh := make(chan agent.PromptRequest, 1)
 	ma := &streamTestAgent{
 		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
@@ -279,9 +286,7 @@ func TestPostChat_SeedsThreadMetadataBeforePromptStarts(t *testing.T) {
 		},
 	}
 	cm := agent.NewCompletionManager(ma)
-	store := thread.NewStore(t.TempDir())
-	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
-	h := New("", cm, nil, nil, defaultAgent)
+	h := New("", cm, nil, nil, nil)
 	ts := newChatTestServer(t, h)
 	defer ts.Close()
 
@@ -304,38 +309,27 @@ func TestPostChat_SeedsThreadMetadataBeforePromptStarts(t *testing.T) {
 		t.Fatalf("expected status 202, got %d", resp.StatusCode)
 	}
 
-	threadResp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer threadResp.Body.Close()
-
-	if threadResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", threadResp.StatusCode)
-	}
-
-	var got api.Thread
-	if err := json.NewDecoder(threadResp.Body).Decode(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Name != "" {
-		t.Fatalf("expected empty thread name before AI rename, got %+v", got)
-	}
-	if got.Model != "openai/gpt-5.4" {
-		t.Fatalf("expected seeded model, got %+v", got)
-	}
-	if got.Reasoning != "high" {
-		t.Fatalf("expected seeded reasoning, got %+v", got)
-	}
-	if got.Mode != "plan" {
-		t.Fatalf("expected seeded mode, got %+v", got)
-	}
-	if got.LastMessage != "Investigate thread metadata" {
-		t.Fatalf("expected seeded lastMessage, got %+v", got)
-	}
-
 	select {
-	case <-reqCh:
+	case req := <-reqCh:
+		if req.Model != "openai/gpt-5.4" {
+			t.Fatalf("expected prompt model to be forwarded, got %+v", req)
+		}
+		if req.Reasoning != "high" {
+			t.Fatalf("expected prompt reasoning to be forwarded, got %+v", req)
+		}
+		if req.Mode != "plan" {
+			t.Fatalf("expected prompt mode to be forwarded, got %+v", req)
+		}
+		if len(req.UserParts) != 1 {
+			t.Fatalf("expected 1 user part, got %d", len(req.UserParts))
+		}
+		part, ok := req.UserParts[0].(message.UITextPart)
+		if !ok {
+			t.Fatalf("expected UITextPart, got %T", req.UserParts[0])
+		}
+		if part.Text != "Investigate thread metadata" {
+			t.Fatalf("expected forwarded text %q, got %q", "Investigate thread metadata", part.Text)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for Prompt request")
 	}
@@ -587,8 +581,8 @@ func TestPostChat_RejectsNoUserMessageAfterAssistant(t *testing.T) {
 	}
 }
 
-func TestPostAnswer_UsesReplayTurnWithoutCachedCompletion(t *testing.T) {
-	reqCh := make(chan agent.PromptRequest, 1)
+func TestPostAnswer_UsesResumeWithoutCachedCompletion(t *testing.T) {
+	resumeCh := make(chan string, 1)
 	ma := &streamTestAgent{
 		submitAnswerFn: func(threadID, toolCallID string, req api.AnswerQuestionRequest) error {
 			if threadID != "thread-1" {
@@ -602,8 +596,8 @@ func TestPostAnswer_UsesReplayTurnWithoutCachedCompletion(t *testing.T) {
 			}
 			return nil
 		},
-		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
-			reqCh <- req
+		resumeFn: func(_ context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+			resumeCh <- threadID
 			return func(_ func(message.MessageChunk, error) bool) {}
 		},
 	}
@@ -628,23 +622,28 @@ func TestPostAnswer_UsesReplayTurnWithoutCachedCompletion(t *testing.T) {
 	}
 
 	select {
-	case req := <-reqCh:
-		if !req.ReplayTurn {
-			t.Fatal("expected ReplayTurn to be true when no cached completion exists")
+	case threadID := <-resumeCh:
+		if threadID != "thread-1" {
+			t.Fatalf("expected resume for thread-1, got %q", threadID)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for Prompt request")
+		t.Fatal("timed out waiting for Resume call")
 	}
 }
 
-func TestPostAnswer_UsesReplayTurnWhenOnlyDoneCachedCompletionExists(t *testing.T) {
-	reqCh := make(chan agent.PromptRequest, 2)
+func TestPostAnswer_UsesResumeWhenOnlyDoneCachedCompletionExists(t *testing.T) {
+	promptCh := make(chan agent.PromptRequest, 1)
+	resumeCh := make(chan string, 2)
 	ma := &streamTestAgent{
 		submitAnswerFn: func(_ string, _ string, _ api.AnswerQuestionRequest) error {
 			return nil
 		},
 		promptFn: func(_ context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
-			reqCh <- req
+			promptCh <- req
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+		resumeFn: func(_ context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+			resumeCh <- threadID
 			return func(_ func(message.MessageChunk, error) bool) {}
 		},
 	}
@@ -655,7 +654,7 @@ func TestPostAnswer_UsesReplayTurnWhenOnlyDoneCachedCompletionExists(t *testing.
 		t.Fatal(err)
 	}
 	select {
-	case <-reqCh:
+	case <-promptCh:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for seed Prompt request")
 	}
@@ -680,12 +679,12 @@ func TestPostAnswer_UsesReplayTurnWhenOnlyDoneCachedCompletionExists(t *testing.
 	}
 
 	select {
-	case req := <-reqCh:
-		if !req.ReplayTurn {
-			t.Fatal("expected ReplayTurn to be true when the cached completion is already done")
+	case threadID := <-resumeCh:
+		if threadID != "thread-1" {
+			t.Fatalf("expected resume for thread-1, got %q", threadID)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for resumed Prompt request")
+		t.Fatal("timed out waiting for Resume call")
 	}
 }
 
@@ -744,15 +743,15 @@ func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
 	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
 		t.Fatalf("unexpected history message frame: %+v", frames[1])
 	}
-	if frames[2].Event != "chunk" || frames[2].ID != completionID+":0" || frames[2].Data != string(liveChunkJSON) {
-		t.Fatalf("unexpected cached delta frame: %+v", frames[2])
+	if frames[2].Event != "history-end" {
+		t.Fatalf("expected history-end frame, got %+v", frames[2])
 	}
-	if frames[3].Event != "history-end" {
-		t.Fatalf("expected history-end frame, got %+v", frames[3])
+	if frames[3].Event != "chunk" || frames[3].ID != completionID+":0" || frames[3].Data != string(liveChunkJSON) {
+		t.Fatalf("expected cached delta after history-end, got %+v", frames[3])
 	}
 }
 
-func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *testing.T) {
+func TestChatStream_FreshRequest_DoesNotReplayCompletedSnapshot(t *testing.T) {
 	historyMsg := message.UIMessage{
 		ID:    "hist-done-1",
 		Role:  "user",
@@ -763,10 +762,6 @@ func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *tes
 		t.Fatal(err)
 	}
 	cachedChunk := message.TextDeltaChunk{ID: "delta-done-1", Delta: "completed"}
-	cachedChunkJSON, err := message.MarshalChunk(cachedChunk)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	ma := &streamTestAgent{
 		promptFn: yieldChunksAndFinish(cachedChunk),
@@ -775,10 +770,9 @@ func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *tes
 		},
 	}
 	cm := agent.NewCompletionManager(ma)
-	completionID, err := cm.Chat("thread-done", agent.PromptRequest{
+	if _, err := cm.Chat("thread-done", agent.PromptRequest{
 		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -797,9 +791,9 @@ func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *tes
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	frames := readFrames(t, resp.Body, 5, false)
-	if len(frames) != 5 {
-		t.Fatalf("expected 5 frames, got %d", len(frames))
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
@@ -807,14 +801,16 @@ func TestChatStream_FreshRequest_ReplaysCompletedSnapshotBeforeHistoryEnd(t *tes
 	if frames[1].Event != "history-message" || frames[1].Data != string(historyMsgJSON) {
 		t.Fatalf("unexpected history message frame: %+v", frames[1])
 	}
-	if frames[2].Event != "chunk" || frames[2].ID != completionID+":0" || frames[2].Data != string(cachedChunkJSON) {
-		t.Fatalf("expected completed snapshot chunk before history-end, got %+v", frames[2])
+	if frames[2].Event != "history-end" {
+		t.Fatalf("expected history-end after history replay, got %+v", frames[2])
 	}
-	if frames[3].Event != "history-end" {
-		t.Fatalf("expected history-end after completed snapshot chunk, got %+v", frames[3])
+	if frames[3].Event != "ping" {
+		t.Fatalf("expected ping after replay completes, got %+v", frames[3])
 	}
-	if frames[4].Event != "ping" {
-		t.Fatalf("expected ping after replay completes, got %+v", frames[4])
+	for _, frame := range frames {
+		if frame.Event == "chunk" {
+			t.Fatalf("did not expect completed snapshot chunk replay: %+v", frame)
+		}
 	}
 }
 
@@ -976,7 +972,7 @@ func TestChatStream_FreshRequest_WithPendingQuestionAndNoSnapshot_ReplaysHistory
 }
 
 func TestChatStream_FreshRequest_StartsInterruptedTurnRecovery(t *testing.T) {
-	reqCh := make(chan agent.PromptRequest, 1)
+	resumeCh := make(chan string, 1)
 	release := make(chan struct{})
 	liveChunk := message.TextDeltaChunk{ID: "delta-recover-1", Delta: "resumed"}
 	liveChunkJSON, err := message.MarshalChunk(liveChunk)
@@ -985,8 +981,8 @@ func TestChatStream_FreshRequest_StartsInterruptedTurnRecovery(t *testing.T) {
 	}
 
 	ma := &streamTestAgent{
-		promptFn: func(ctx context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
-			reqCh <- req
+		resumeFn: func(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+			resumeCh <- threadID
 			return func(yield func(message.MessageChunk, error) bool) {
 				<-release
 				if !yield(liveChunk, nil) {
@@ -1017,15 +1013,12 @@ func TestChatStream_FreshRequest_StartsInterruptedTurnRecovery(t *testing.T) {
 	}
 
 	select {
-	case req := <-reqCh:
-		if len(req.UserParts) != 0 {
-			t.Fatalf("expected recovery prompt to have no user parts, got %d", len(req.UserParts))
-		}
-		if req.LeafID != "" {
-			t.Fatalf("expected empty leaf ID for recovery prompt, got %q", req.LeafID)
+	case threadID := <-resumeCh:
+		if threadID != "thread-recover" {
+			t.Fatalf("expected resume for thread-recover, got %q", threadID)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for recovery prompt")
+		t.Fatal("timed out waiting for resume call")
 	}
 
 	close(release)
@@ -1093,16 +1086,20 @@ func TestChatStream_ValidLastEventID_ResumesWithoutHistory(t *testing.T) {
 	}
 }
 
-func TestChatStream_ForwardsThreadNameChunk(t *testing.T) {
-	nameChunk := message.ThreadNameChunk{
-		Data: message.ThreadNameData{Name: "Fix thread naming"},
+func TestChatStream_ForwardsThreadUpdateChunk(t *testing.T) {
+	threadUpdateChunk := message.ThreadUpdateChunk{
+		Data: message.ThreadUpdateData{Thread: message.ThreadUpdateInfo{
+			ID:   "thread-name",
+			Name: "Fix thread naming",
+			Mode: "build",
+		}},
 	}
-	nameChunkJSON, err := message.MarshalChunk(nameChunk)
+	threadUpdateChunkJSON, err := message.MarshalChunk(threadUpdateChunk)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ma := &streamTestAgent{promptFn: yieldChunksAndBlock(nameChunk)}
+	ma := &streamTestAgent{promptFn: yieldChunksAndBlock(threadUpdateChunk)}
 	cm := agent.NewCompletionManager(ma)
 	if _, err := cm.Chat("thread-name", agent.PromptRequest{
 		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
@@ -1133,8 +1130,11 @@ func TestChatStream_ForwardsThreadNameChunk(t *testing.T) {
 	if len(frames) != 4 {
 		t.Fatalf("expected 4 frames, got %d", len(frames))
 	}
-	if frames[1].Event != "chunk" || frames[1].Data != string(nameChunkJSON) {
-		t.Fatalf("expected thread-name chunk frame, got %+v", frames[1])
+	if frames[1].Event != "history-end" {
+		t.Fatalf("expected history-end frame, got %+v", frames[1])
+	}
+	if frames[2].Event != "chunk" || frames[2].Data != string(threadUpdateChunkJSON) {
+		t.Fatalf("expected thread-update chunk frame after history-end, got %+v", frames[2])
 	}
 }
 
@@ -1268,11 +1268,11 @@ func TestChatStream_CompletionEndDoesNotCloseStream(t *testing.T) {
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
 	}
-	if frames[1].Event != "chunk" || frames[1].Data != string(liveChunkJSON) {
-		t.Fatalf("unexpected chunk frame: %+v", frames[1])
+	if frames[1].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[1])
 	}
-	if frames[2].Event != "history-end" {
-		t.Fatalf("expected history-end, got %+v", frames[2])
+	if frames[2].Event != "chunk" || frames[2].Data != string(liveChunkJSON) {
+		t.Fatalf("unexpected chunk frame after history-end: %+v", frames[2])
 	}
 	if frames[3].Event != "ping" {
 		t.Fatalf("expected ping after completion finished, got %+v", frames[3])

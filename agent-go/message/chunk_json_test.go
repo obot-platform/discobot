@@ -73,6 +73,12 @@ func TestChunkRoundTrip_ToolApproval(t *testing.T) {
 		ApprovalID: "a1",
 		ToolCallID: "tc1",
 	})
+	chunkRoundTrip(t, "ToolApprovalResponse", ToolApprovalResponseChunk{
+		ApprovalID: "a1",
+		ToolCallID: "tc1",
+		Approved:   true,
+		Reason:     "ok",
+	})
 }
 
 func TestChunkRoundTrip_File(t *testing.T) {
@@ -148,11 +154,21 @@ func TestChunkRoundTrip_Data(t *testing.T) {
 		ID:       "d1",
 		Data:     json.RawMessage(`{"value":42}`),
 	})
-	chunkRoundTrip(t, "ModeChange", ModeChangeChunk{
-		Data: ModeChangeData{Mode: "planning"},
+	chunkRoundTrip(t, "ThreadUpdate", ThreadUpdateChunk{
+		Data: ThreadUpdateData{Thread: ThreadUpdateInfo{
+			ID:          "thread-1",
+			Name:        "Debug build failure",
+			LastMessage: "Investigate CI",
+			Model:       "anthropic/claude-sonnet-4-6",
+			Reasoning:   "enabled",
+			Mode:        "plan",
+		}},
 	})
-	chunkRoundTrip(t, "ThreadName", ThreadNameChunk{
-		Data: ThreadNameData{Name: "Debug build failure"},
+	chunkRoundTrip(t, "ThreadResume", ThreadResumeChunk{
+		Data: ThreadResumeData{ThreadID: "thread-1", MessageID: "assistant-1"},
+	})
+	chunkRoundTrip(t, "ToolApprovalResponseData", ToolApprovalResponseDataChunk{
+		Data: ToolApprovalResponseData{ApprovalID: "a1", ToolCallID: "tc1", Approved: true, Reason: "ok"},
 	})
 	chunkRoundTrip(t, "UserMessage", UserMessageChunk{
 		Data: UserMessageData{

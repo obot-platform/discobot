@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"iter"
+	"strings"
 	"sync"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
@@ -10,9 +12,11 @@ import (
 	"github.com/obot-platform/discobot/agent-go/providers"
 )
 
-// TurnCompleteFunc is called when a completion finishes.
-// threadID is the thread that completed, err is non-nil on failure.
-type TurnCompleteFunc func(threadID string, err error)
+// CompletionListener observes completion lifecycle events.
+type CompletionListener interface {
+	OnTurnStart(threadID string)
+	OnTurnComplete(threadID string, err error)
+}
 
 // CompletionManager wraps an Agent with goroutine management, chunk caching,
 // and SSE polling. It bridges the synchronous streaming Agent interface to
@@ -23,10 +27,10 @@ type TurnCompleteFunc func(threadID string, err error)
 type CompletionManager struct {
 	agent Agent
 
-	mu             sync.Mutex
-	cond           *sync.Cond
-	active         map[string]*activeCompletion // keyed by threadID
-	onTurnComplete TurnCompleteFunc
+	mu        sync.Mutex
+	cond      *sync.Cond
+	active    map[string]*activeCompletion // keyed by threadID
+	listeners []CompletionListener
 }
 
 type activeCompletion struct {
@@ -56,6 +60,19 @@ func NewCompletionManager(agent Agent) *CompletionManager {
 // or an error if a completion is already running for this thread.
 // The turn runs in a background goroutine; chunks are cached for SSE replay.
 func (cm *CompletionManager) Chat(threadID string, req PromptRequest) (string, error) {
+	return cm.startCompletion(threadID, req.LeafID, func(ctx context.Context) iter.Seq2[message.MessageChunk, error] {
+		return cm.agent.Prompt(ctx, threadID, req)
+	})
+}
+
+// Resume starts a background completion that resumes an interrupted turn.
+func (cm *CompletionManager) Resume(threadID string) (string, error) {
+	return cm.startCompletion(threadID, "", func(ctx context.Context) iter.Seq2[message.MessageChunk, error] {
+		return cm.agent.Resume(ctx, threadID)
+	})
+}
+
+func (cm *CompletionManager) startCompletion(threadID, leafID string, seqFn func(context.Context) iter.Seq2[message.MessageChunk, error]) (string, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -69,31 +86,25 @@ func (cm *CompletionManager) Chat(threadID string, req PromptRequest) (string, e
 	}
 
 	completionID := generateID()
-
 	ctx, cancel := context.WithCancel(context.Background())
-	comp := &activeCompletion{
-		id:       completionID,
-		threadID: threadID,
-		cancel:   cancel,
-		leafMsg:  req.LeafID,
-	}
+	comp := &activeCompletion{id: completionID, threadID: threadID, cancel: cancel, leafMsg: leafID}
 	comp.cond = sync.NewCond(&comp.mu)
 	cm.active[threadID] = comp
 	cm.cond.Broadcast()
-
-	go cm.runCompletion(ctx, comp, threadID, req)
-
+	listeners := append([]CompletionListener(nil), cm.listeners...)
+	for _, listener := range listeners {
+		listener.OnTurnStart(threadID)
+	}
+	go cm.runCompletion(ctx, comp, threadID, seqFn)
 	return completionID, nil
 }
 
-// runCompletion drives the Agent.Prompt iterator in a goroutine, caching chunks.
-func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeCompletion, threadID string, req PromptRequest) {
-	var turnErr error
+// runCompletion drives a completion iterator in a goroutine, caching chunks.
+func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeCompletion, threadID string, seqFn func(context.Context) iter.Seq2[message.MessageChunk, error]) {
 	sawStart := false
-	for chunk, err := range cm.agent.Prompt(ctx, threadID, req) {
+	for chunk, err := range seqFn(ctx) {
 		comp.mu.Lock()
 		if err != nil {
-			turnErr = err
 			comp.err = err
 			if !sawStart {
 				comp.events = append(comp.events, message.StartChunk{MessageID: generateID()})
@@ -105,7 +116,7 @@ func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeComp
 			cm.mu.Lock()
 			cm.cond.Broadcast()
 			cm.mu.Unlock()
-			cm.notifyComplete(threadID, turnErr)
+			cm.notifyTurnComplete(threadID, err)
 			return
 		}
 		if chunk != nil {
@@ -124,7 +135,7 @@ func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeComp
 	cm.mu.Lock()
 	cm.cond.Broadcast()
 	cm.mu.Unlock()
-	cm.notifyComplete(threadID, nil)
+	cm.notifyTurnComplete(threadID, nil)
 }
 
 // PollResult holds the chunks returned by PollChunks or WaitChunks.
@@ -306,6 +317,35 @@ func (cm *CompletionManager) ListThreads() ([]string, error) {
 	return cm.agent.ListThreads()
 }
 
+// AddCompletionListener registers a completion lifecycle listener.
+func (cm *CompletionManager) AddCompletionListener(listener CompletionListener) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.listeners = append(cm.listeners, listener)
+}
+
+// ResumeInterruptedTurns starts resume completions for any interrupted threads
+// that are not already running.
+func (cm *CompletionManager) ResumeInterruptedTurns() error {
+	threads, err := cm.ListThreads()
+	if err != nil {
+		return err
+	}
+	for _, threadID := range threads {
+		interrupted, err := cm.agent.HasInterruptedTurn(threadID)
+		if err != nil {
+			return err
+		}
+		if !interrupted {
+			continue
+		}
+		if _, err := cm.Resume(threadID); err != nil && !strings.Contains(err.Error(), "completion_in_progress") {
+			return err
+		}
+	}
+	return nil
+}
+
 // HasInterruptedTurn reports whether threadID has an unfinished turn.
 func (cm *CompletionManager) HasInterruptedTurn(threadID string) (bool, error) {
 	return cm.agent.HasInterruptedTurn(threadID)
@@ -321,24 +361,11 @@ func (cm *CompletionManager) SubmitAnswer(threadID, approvalID string, req api.A
 	return cm.agent.SubmitAnswer(threadID, approvalID, req)
 }
 
-// SetOnTurnComplete sets a callback that fires when any completion finishes.
-func (cm *CompletionManager) SetOnTurnComplete(fn TurnCompleteFunc) {
+func (cm *CompletionManager) notifyTurnComplete(threadID string, err error) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	cm.onTurnComplete = fn
-}
-
-// notifyComplete calls the onTurnComplete callback if set.
-func (cm *CompletionManager) notifyComplete(threadID string, err error) {
-	cm.mu.Lock()
-	fn := cm.onTurnComplete
+	listeners := append([]CompletionListener(nil), cm.listeners...)
 	cm.mu.Unlock()
-	if fn != nil {
-		fn(threadID, err)
+	for _, listener := range listeners {
+		listener.OnTurnComplete(threadID, err)
 	}
-}
-
-// IsLeaf reports whether msgID is a valid leaf in the thread's message tree.
-func (cm *CompletionManager) IsLeaf(threadID, msgID string) (bool, error) {
-	return cm.agent.IsLeaf(threadID, msgID)
 }
