@@ -51,8 +51,8 @@ func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig returned error: %v", err)
 	}
-	if !cfg.PlanMode {
-		t.Fatal("expected persisted planMode=true after EnterPlanMode")
+	if !strings.EqualFold(cfg.Mode.Value, "plan") {
+		t.Fatal("expected persisted mode=plan after EnterPlanMode")
 	}
 
 	textOut, ok := result.Result.Output.(message.TextOutput)
@@ -77,7 +77,7 @@ func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	}
 }
 
-func TestExecuteExitPlanMode_AutoApprovesWhenPromptRequestNotPlan(t *testing.T) {
+func TestExecuteExitPlanMode_AutoApprovesWhenLLMEnteredPlanMode(t *testing.T) {
 	dataDir := t.TempDir()
 	home := setTempHome(t)
 	threadID := "thread-1"
@@ -89,11 +89,19 @@ func TestExecuteExitPlanMode_AutoApprovesWhenPromptRequestNotPlan(t *testing.T) 
 		t.Fatal(err)
 	}
 
+	store := thread.NewStore(t.TempDir())
+	agent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	if err := store.CreateThread(threadID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig(threadID, thread.Config{Mode: thread.ModeState{Value: "plan", SetBy: "llm"}}); err != nil {
+		t.Fatal(err)
+	}
 	e := New(t.TempDir(), dataDir, threadID)
 	toolCtx := &thread.ToolContext{
-		ThreadID:              threadID,
-		PlanMode:              true,
-		PromptRequestPlanMode: false,
+		ThreadID: threadID,
+		PlanMode: true,
+		Agent:    agent,
 	}
 
 	result, err := e.Execute(context.Background(), toolCtx, message.ToolCallPart{
@@ -123,7 +131,7 @@ func TestExecuteExitPlanMode_AutoApprovesWhenPromptRequestNotPlan(t *testing.T) 
 	}
 }
 
-func TestExecuteExitPlanMode_RequiresApprovalWhenPromptRequestPlan(t *testing.T) {
+func TestExecuteExitPlanMode_RequiresApprovalWhenUserEnteredPlanMode(t *testing.T) {
 	dataDir := t.TempDir()
 	home := setTempHome(t)
 	threadID := "thread-1"
@@ -135,11 +143,19 @@ func TestExecuteExitPlanMode_RequiresApprovalWhenPromptRequestPlan(t *testing.T)
 		t.Fatal(err)
 	}
 
+	store := thread.NewStore(t.TempDir())
+	agent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	if err := store.CreateThread(threadID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig(threadID, thread.Config{Mode: thread.ModeState{Value: "plan", SetBy: "user"}}); err != nil {
+		t.Fatal(err)
+	}
 	e := New(t.TempDir(), dataDir, threadID)
 	toolCtx := &thread.ToolContext{
-		ThreadID:              threadID,
-		PlanMode:              true,
-		PromptRequestPlanMode: true,
+		ThreadID: threadID,
+		PlanMode: true,
+		Agent:    agent,
 	}
 
 	result, err := e.Execute(context.Background(), toolCtx, message.ToolCallPart{

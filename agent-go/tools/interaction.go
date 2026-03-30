@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
@@ -27,10 +28,22 @@ func persistToolContextPlanMode(toolCtx *thread.ToolContext) {
 	if err != nil {
 		return
 	}
-	if cfg.PlanMode == toolCtx.PlanMode {
+	// Update canonical Mode state.
+	newVal := "build"
+	if toolCtx.PlanMode {
+		newVal = "plan"
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Mode.Value), newVal) {
 		return
 	}
-	cfg.PlanMode = toolCtx.PlanMode
+	cfg.Mode.Value = newVal
+	cfg.Mode.SetBy = "llm"
+	if cfg.Mode.ChangedAt.IsZero() {
+		cfg.Mode.ChangedAt = time.Now().UTC()
+	} else {
+		// Always bump change time on explicit tool change.
+		cfg.Mode.ChangedAt = time.Now().UTC()
+	}
 	_ = owner.Store().SaveConfig(toolCtx.ThreadID, cfg)
 }
 
@@ -160,10 +173,24 @@ func (e *Executor) executeExitPlanMode(toolCtx *thread.ToolContext, call message
 		)), nil
 	}
 
-	if toolCtx != nil && !toolCtx.PromptRequestPlanMode {
+	// Determine approval policy from durable config when available:
+	// require approval iff the user put the thread in plan mode.
+	requireApproval := false
+	if toolCtx != nil && toolCtx.Agent != nil && strings.TrimSpace(toolCtx.ThreadID) != "" {
+		if owner, ok := toolCtx.Agent.(threadStoreOwner); ok && owner.Store() != nil {
+			if cfg, loadErr := owner.Store().LoadConfig(toolCtx.ThreadID); loadErr == nil {
+				requireApproval = strings.EqualFold(cfg.Mode.SetBy, "user") && strings.EqualFold(strings.TrimSpace(cfg.Mode.Value), "plan")
+			}
+		}
+	}
+
+	if toolCtx != nil && !requireApproval {
 		toolCtx.PlanMode = false
 		mode := "build"
 		toolCtx.ModeChange = &mode
+		// Persist the mode change so the subsequent ThreadUpdate reflects the
+		// updated state immediately and the UI exits plan mode reliably.
+		persistToolContextPlanMode(toolCtx)
 
 		result := "Plan mode exited. Continue forward and implement the plan now."
 		if len(planContent) > 0 {
@@ -223,6 +250,9 @@ func (e *Executor) resolveExitPlanMode(toolCtx *thread.ToolContext, call message
 			toolCtx.PlanMode = false
 			mode := "build"
 			toolCtx.ModeChange = &mode
+			// Persist the mode change immediately so clients receive a ThreadUpdate
+			// with the correct mode and write tools are unblocked.
+			persistToolContextPlanMode(toolCtx)
 		}
 		if planContent, err := os.ReadFile(planFile); err == nil {
 			result = fmt.Sprintf("Plan approved. Continue forward and implement the plan now.\n\nApproved plan:\n\n%s", string(planContent))
