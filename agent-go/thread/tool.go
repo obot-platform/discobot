@@ -45,18 +45,17 @@ type AsyncWaitResult struct {
 // It is passed explicitly to every tool call so executor implementations stay
 // stateless across threads and concurrent turns.
 type ToolContext struct {
-	ThreadID              string
-	PlanMode              bool
-	PlanFilePath          string
-	PromptRequestPlanMode bool
-	ProviderID            string
-	ModelID               string
-	SubagentDepth         int
-	MaxSubagentDepth      int
-	CurrentTaskID         string
-	ProviderResolver      providers.ProviderResolver
-	Agent                 agent.Agent
-	ModeChange            *string // set by a tool that changes the mode; consumed by the turn loop
+	ThreadID         string
+	PlanMode         bool
+	PlanFilePath     string
+	ProviderID       string
+	ModelID          string
+	SubagentDepth    int
+	MaxSubagentDepth int
+	CurrentTaskID    string
+	ProviderResolver providers.ProviderResolver
+	Agent            agent.Agent
+	ModeChange       *string // set by a tool that changes the mode; consumed by the turn loop
 }
 
 // AsyncContinuationHandle represents in-flight asynchronous tool work.

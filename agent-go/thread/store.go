@@ -647,8 +647,8 @@ type Config struct {
 	Reasoning providers.Reasoning `json:"reasoning,omitempty"`
 	// CWD is the working directory associated with this thread.
 	CWD string `json:"cwd,omitempty"`
-	// PlanMode tracks whether this thread is currently in plan mode.
-	PlanMode bool `json:"planMode,omitempty"`
+	// Mode is the canonical durable mode state ("build" | "plan" with metadata).
+	Mode ModeState `json:"mode,omitempty"`
 	// ActiveLeafID tracks the currently selected branch head for this thread.
 	ActiveLeafID string `json:"activeLeafId,omitempty"`
 }
@@ -657,6 +657,16 @@ const (
 	ThreadNameSourceUser      = "user"
 	ThreadNameSourceGenerated = "generated"
 )
+
+// ModeState captures the current mode with provenance information.
+type ModeState struct {
+	// Value is "build" or "plan".
+	Value string `json:"value,omitempty"`
+	// SetBy indicates who last set the mode: "user", "llm", or "system".
+	SetBy string `json:"setBy,omitempty"`
+	// ChangedAt is when the mode last changed.
+	ChangedAt time.Time `json:"changedAt,omitempty"`
+}
 
 // threadConfigPath returns the path to the thread config file.
 func (s *Store) threadConfigPath(threadID string) string {
@@ -668,6 +678,10 @@ func (s *Store) SaveConfig(threadID string, cfg Config) error {
 	dir := filepath.Join(s.baseDir, threadID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create thread dir: %w", err)
+	}
+	// Ensure Mode.Value is always set; default to build if empty.
+	if strings.TrimSpace(cfg.Mode.Value) == "" {
+		cfg.Mode.Value = "build"
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -697,7 +711,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		ProviderID   string              `json:"providerId"`
 		Reasoning    providers.Reasoning `json:"reasoning"`
 		CWD          string              `json:"cwd"`
-		PlanMode     bool                `json:"planMode"`
+		Mode         ModeState           `json:"mode"`
 		ActiveLeafID string              `json:"activeLeafId"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -708,6 +722,11 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 	if model != "" && !strings.Contains(model, "/") && raw.ProviderID != "" {
 		model = raw.ProviderID + "/" + model
 	}
+	// Ensure Mode has a value.
+	mode := raw.Mode
+	if strings.TrimSpace(mode.Value) == "" {
+		mode = ModeState{Value: "build"}
+	}
 	return Config{
 		Name:         raw.Name,
 		NameSource:   raw.NameSource,
@@ -715,7 +734,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		Model:        model,
 		Reasoning:    raw.Reasoning,
 		CWD:          raw.CWD,
-		PlanMode:     raw.PlanMode,
+		Mode:         mode,
 		ActiveLeafID: raw.ActiveLeafID,
 	}, nil
 }

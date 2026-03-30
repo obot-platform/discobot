@@ -477,7 +477,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 		LastMessage:  "latest prompt",
 		Model:        "anthropic/claude-sonnet-4-6",
 		CWD:          "/tmp/project",
-		PlanMode:     true,
+		Mode:         ModeState{Value: "plan"},
 		ActiveLeafID: "msg-active",
 	}
 
@@ -504,8 +504,8 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	if loaded.CWD != cfg.CWD {
 		t.Errorf("expected cwd=%q, got %q", cfg.CWD, loaded.CWD)
 	}
-	if loaded.PlanMode != cfg.PlanMode {
-		t.Errorf("expected planMode=%v, got %v", cfg.PlanMode, loaded.PlanMode)
+	if loaded.Mode.Value != cfg.Mode.Value {
+		t.Errorf("expected mode=%v, got %v", cfg.Mode.Value, loaded.Mode.Value)
 	}
 	if loaded.ActiveLeafID != cfg.ActiveLeafID {
 		t.Errorf("expected activeLeafId=%q, got %q", cfg.ActiveLeafID, loaded.ActiveLeafID)

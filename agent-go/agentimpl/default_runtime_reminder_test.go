@@ -66,8 +66,8 @@ func TestFormatModeChangeReminder_IncludesTargetMode(t *testing.T) {
 }
 
 func TestResolvePlanMode_OnlyChangesOnExplicitRequest(t *testing.T) {
-	cfgPlan := thread.Config{PlanMode: true}
-	cfgBuild := thread.Config{PlanMode: false}
+	cfgPlan := thread.Config{Mode: thread.ModeState{Value: "plan"}}
+	cfgBuild := thread.Config{Mode: thread.ModeState{Value: "build"}}
 
 	planMode, changed := resolvePlanMode("", cfgPlan, true)
 	if !planMode || changed {

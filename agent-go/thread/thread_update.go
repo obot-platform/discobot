@@ -2,14 +2,16 @@ package thread
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/obot-platform/discobot/agent-go/message"
 )
 
 func UpdateChunkFromConfig(threadID string, cfg Config) message.ThreadUpdateChunk {
-	mode := "build"
-	if cfg.PlanMode {
-		mode = "plan"
+	// Prefer the canonical Mode.Value; default to build if empty.
+	mode := strings.TrimSpace(cfg.Mode.Value)
+	if mode == "" {
+		mode = "build"
 	}
 
 	return message.ThreadUpdateChunk{

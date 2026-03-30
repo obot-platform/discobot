@@ -508,13 +508,13 @@ func TestRegisterRoutes_ThreadModeIncludesPlanAndBuild(t *testing.T) {
 	if err := store.CreateThread("thread-build"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveConfig("thread-build", thread.Config{Name: "Build Thread", NameSource: thread.ThreadNameSourceUser, PlanMode: false}); err != nil {
+	if err := store.SaveConfig("thread-build", thread.Config{Name: "Build Thread", NameSource: thread.ThreadNameSourceUser, Mode: thread.ModeState{Value: "build"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.CreateThread("thread-plan"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveConfig("thread-plan", thread.Config{Name: "Plan Thread", NameSource: thread.ThreadNameSourceUser, PlanMode: true}); err != nil {
+	if err := store.SaveConfig("thread-plan", thread.Config{Name: "Plan Thread", NameSource: thread.ThreadNameSourceUser, Mode: thread.ModeState{Value: "plan"}}); err != nil {
 		t.Fatal(err)
 	}
 

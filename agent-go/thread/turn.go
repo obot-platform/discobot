@@ -18,23 +18,22 @@ import (
 // TurnConfig holds the parameters for a single turn of the agent loop.
 // It is persisted to disk as part of TurnState for crash recovery.
 type TurnConfig struct {
-	ProviderID            string                     `json:"providerId"`
-	Model                 string                     `json:"model"`
-	SupportingModels      providers.SupportingModels `json:"supportingModels,omitempty"` // supporting model type -> full "providerId/modelId" ref
-	UserParts             []message.Part             `json:"-"`
-	UserMessage           message.Message            `json:"userMessage"` // serializable form of UserParts
-	OriginalUserText      string                     `json:"originalUserText,omitempty"`
-	Tools                 []providers.ToolDefinition `json:"tools,omitempty"`
-	MaxTokens             *int                       `json:"maxTokens,omitempty"`
-	Temperature           *float64                   `json:"temperature,omitempty"`
-	TopP                  *float64                   `json:"topP,omitempty"`
-	Reasoning             providers.Reasoning        `json:"reasoning,omitempty"`
-	PlanMode              bool                       `json:"planMode,omitempty"`
-	PromptRequestPlanMode bool                       `json:"promptRequestPlanMode,omitempty"`
-	ProviderOptions       json.RawMessage            `json:"providerOptions,omitempty"`
-	ContextWindow         int                        `json:"contextWindow,omitempty"`   // model context window in tokens
-	MaxOutputTokens       int                        `json:"maxOutputTokens,omitempty"` // model max output tokens
-	MaxSteps              int                        `json:"maxSteps,omitempty"`        // max LLM calls; 0 = unlimited
+	ProviderID       string                     `json:"providerId"`
+	Model            string                     `json:"model"`
+	SupportingModels providers.SupportingModels `json:"supportingModels,omitempty"` // supporting model type -> full "providerId/modelId" ref
+	UserParts        []message.Part             `json:"-"`
+	UserMessage      message.Message            `json:"userMessage"` // serializable form of UserParts
+	OriginalUserText string                     `json:"originalUserText,omitempty"`
+	Tools            []providers.ToolDefinition `json:"tools,omitempty"`
+	MaxTokens        *int                       `json:"maxTokens,omitempty"`
+	Temperature      *float64                   `json:"temperature,omitempty"`
+	TopP             *float64                   `json:"topP,omitempty"`
+	Reasoning        providers.Reasoning        `json:"reasoning,omitempty"`
+	PlanMode         bool                       `json:"planMode,omitempty"`
+	ProviderOptions  json.RawMessage            `json:"providerOptions,omitempty"`
+	ContextWindow    int                        `json:"contextWindow,omitempty"`   // model context window in tokens
+	MaxOutputTokens  int                        `json:"maxOutputTokens,omitempty"` // model max output tokens
+	MaxSteps         int                        `json:"maxSteps,omitempty"`        // max LLM calls; 0 = unlimited
 }
 
 // RunTurn executes a multi-step agent turn with crash-resilient persistence.
@@ -293,7 +292,6 @@ func executeLoop(
 	if toolCtx.ThreadID == "" {
 		toolCtx.ThreadID = threadID
 	}
-	toolCtx.PromptRequestPlanMode = cfg.PromptRequestPlanMode
 	lc := &loopContext{
 		ctx:       ctx,
 		provider:  provider,

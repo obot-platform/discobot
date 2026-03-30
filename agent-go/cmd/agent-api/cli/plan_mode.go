@@ -1,6 +1,10 @@
 package cli
 
-import "github.com/obot-platform/discobot/agent-go/thread"
+import (
+	"strings"
+
+	"github.com/obot-platform/discobot/agent-go/thread"
+)
 
 // getThreadPlanMode reads the persisted plan mode state for a thread.
 func getThreadPlanMode(store *thread.Store, threadID string) bool {
@@ -8,13 +12,19 @@ func getThreadPlanMode(store *thread.Store, threadID string) bool {
 	if err != nil {
 		return false
 	}
-	return cfg.PlanMode
+	return strings.EqualFold(strings.TrimSpace(cfg.Mode.Value), "plan")
 }
 
 // saveThreadPlanMode persists the plan mode state for a thread, preserving other config fields.
 func saveThreadPlanMode(store *thread.Store, threadID string, enabled bool) {
 	cfg, _ := store.LoadConfig(threadID)
-	cfg.PlanMode = enabled
+	if enabled {
+		cfg.Mode.Value = "plan"
+		cfg.Mode.SetBy = "user"
+	} else {
+		cfg.Mode.Value = "build"
+		cfg.Mode.SetBy = "user"
+	}
 	_ = store.SaveConfig(threadID, cfg)
 }
 

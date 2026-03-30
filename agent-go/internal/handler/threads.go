@@ -26,7 +26,7 @@ func threadResponse(threadID string, cfg thread.Config, fallbackName string) api
 	}
 
 	mode := "build"
-	if cfg.PlanMode {
+	if strings.EqualFold(strings.TrimSpace(cfg.Mode.Value), "plan") {
 		mode = "plan"
 	}
 
