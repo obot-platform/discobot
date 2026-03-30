@@ -3,7 +3,6 @@
 	import { cn } from "$lib/utils";
 	import { setReasoningContext } from "./context";
 
-	const AUTO_CLOSE_DELAY = 1000;
 	const MS_IN_S = 1000;
 
 	type Props = {
@@ -28,8 +27,22 @@
 	}: Props = $props();
 
 	let duration = $state<number | undefined>(undefined);
-	let hasAutoClosed = $state(false);
 	let startTime = $state<number | null>(null);
+	let previousIsStreaming = $state(false);
+	let previousOpen = $state(false);
+	let hasTrackedStreamingState = $state(false);
+	let hasTrackedOpenState = $state(false);
+	let hasUserModifiedOpen = $state(false);
+	let isAutomaticOpenChange = $state(false);
+
+	function setOpenAutomatically(nextOpen: boolean): void {
+		if (open === nextOpen) {
+			return;
+		}
+
+		isAutomaticOpenChange = true;
+		open = nextOpen;
+	}
 
 	const reasoning = $state({
 		isStreaming: false,
@@ -68,20 +81,41 @@
 	});
 
 	$effect(() => {
-		if (defaultOpen && !isStreaming && open && !hasAutoClosed) {
-			const timer = setTimeout(() => {
-				open = false;
-				hasAutoClosed = true;
-			}, AUTO_CLOSE_DELAY);
-
-			return () => clearTimeout(timer);
+		if (!hasTrackedOpenState) {
+			previousOpen = open;
+			hasTrackedOpenState = true;
+			return;
 		}
+
+		if (open === previousOpen) {
+			return;
+		}
+
+		if (isAutomaticOpenChange) {
+			isAutomaticOpenChange = false;
+		} else {
+			hasUserModifiedOpen = true;
+		}
+
+		previousOpen = open;
 	});
 
 	$effect(() => {
-		if (isStreaming && !open) {
-			open = true;
+		if (!hasTrackedStreamingState) {
+			previousIsStreaming = isStreaming;
+			hasTrackedStreamingState = true;
+			return;
 		}
+
+		if (isStreaming && !previousIsStreaming) {
+			setOpenAutomatically(true);
+		}
+
+		if (!isStreaming && previousIsStreaming && !hasUserModifiedOpen) {
+			setOpenAutomatically(false);
+		}
+
+		previousIsStreaming = isStreaming;
 	});
 
 	$effect(() => {
