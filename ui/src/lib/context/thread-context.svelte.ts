@@ -176,6 +176,7 @@ function createThreadContext(
 	const conversation = createConversationDomain({
 		sessionId: session.sessionId,
 		hasSession: () => hasSession,
+		getSessionStatus: () => session.current?.status ?? null,
 		threadId,
 		refreshThread: async () => {
 			await session.threads.refreshThread(threadId);

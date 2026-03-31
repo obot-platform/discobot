@@ -154,11 +154,13 @@ test("getStartChatErrorDetails suppresses the auto-resume conflict message", () 
 	});
 });
 
-test("conversation loader streams directly without replay bookkeeping", () => {
+test("conversation loader derives running state from backend lifecycle", () => {
 	const source = readFileSync(CONVERSATION_DOMAIN_SOURCE, "utf-8");
 
-	assert.doesNotMatch(source, /historyReplayVersion/);
-	assert.doesNotMatch(source, /getSessionStatus/);
-	assert.match(source, /syncStream\(\);/);
-	assert.match(source, /ensureStream\(\);/);
+	assert.match(source, /completionRunning/);
+	assert.match(source, /onCompletionStatus/);
+	assert.match(source, /getThreadMessages/);
+	assert.match(source, /getSessionStatus/);
+	assert.doesNotMatch(source, /isStreamingAssistantMessage/);
+	assert.doesNotMatch(source, /hasStreamingAssistantMessage/);
 });
