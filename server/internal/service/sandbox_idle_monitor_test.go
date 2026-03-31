@@ -49,7 +49,7 @@ func TestSandboxIdleMonitor_StopsIdleSessions(t *testing.T) {
 	// Track stop calls
 	var stopCalled atomic.Bool
 
-	// Create mock agent API that returns not running (204 No Content on stream endpoint)
+	// Create mock agent API that reports no active chat via /chat/status.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/chat/status") {
 			w.Header().Set("Content-Type", "application/json")

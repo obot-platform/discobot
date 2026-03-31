@@ -321,8 +321,7 @@ func TestSandboxChatClient_StartChat_InterruptedTurnConflictIncludesCompletionID
 	}
 }
 
-func TestSandboxChatClient_GetStream_NoContent(t *testing.T) {
-	// Create handler that returns 204 No Content (no completion record at all)
+func TestSandboxChatClient_GetStream_RejectsNoContent(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/chat/stream") {
 			w.WriteHeader(http.StatusNoContent)
@@ -337,24 +336,18 @@ func TestSandboxChatClient_GetStream_NoContent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := client.GetStream(ctx, "test-session", "test-session", nil)
-	if err != nil {
-		t.Fatalf("GetStream failed: %v", err)
+	_, err := client.GetStream(ctx, "test-session", "test-session", nil)
+	if err == nil {
+		t.Fatal("expected GetStream to reject 204 response")
 	}
-
-	// Channel should be closed immediately (no events)
-	var count int
-	for range ch {
-		count++
-	}
-	if count != 0 {
-		t.Errorf("Expected 0 events for 204, got %d", count)
+	if !strings.Contains(err.Error(), "sandbox returned status 204") {
+		t.Fatalf("expected 204 status error, got %v", err)
 	}
 }
 
-func TestSandboxChatClient_GetStream_CompletionInactive(t *testing.T) {
+func TestSandboxChatClient_GetStream_EmptySSEStream(t *testing.T) {
 	// Create handler that returns 200 with X-Discobot-Completion-Active: false
-	// (completion record exists but is no longer running)
+	// and then immediately closes the stream without any events.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/chat/stream") {
 			w.Header().Set("X-Discobot-Completion-Active", "false")
@@ -376,13 +369,13 @@ func TestSandboxChatClient_GetStream_CompletionInactive(t *testing.T) {
 		t.Fatalf("GetStream failed: %v", err)
 	}
 
-	// Channel should be closed immediately — same as 204 behavior
+	// Channel should be closed immediately with no events.
 	var count int
 	for range ch {
 		count++
 	}
 	if count != 0 {
-		t.Errorf("Expected 0 events for inactive completion, got %d", count)
+		t.Errorf("Expected 0 events for empty SSE stream, got %d", count)
 	}
 }
 

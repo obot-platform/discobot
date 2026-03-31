@@ -167,15 +167,12 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, response)
 }
 
-// ChatStream handles resuming a thread chat stream.
+// ChatStream proxies the reusable thread chat SSE stream.
 // GET /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/stream
-//
-// Response: long-lived SSE stream for the thread, or 204 No Content if the
-// thread/session cannot currently provide a stream
 func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectID := middleware.GetProjectID(ctx)
-	sessionID, threadID, _, ok := h.resolveSessionAndThread(w, r, projectID, true)
+	sessionID, threadID, _, ok := h.resolveSessionAndThread(w, r, projectID, false)
 	if !ok {
 		return
 	}
@@ -186,25 +183,9 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	// default; valid Last-Event-ID reconnects continue from the requested offset.
 	sseCh, err := h.chatService.GetStream(ctx, projectID, sessionID, threadID, lastEventID)
 	if err != nil {
-		// Sandbox unavailable or error - return 204 (no active stream)
 		log.Printf("[ChatStream] Error getting stream: %v", err)
-		w.WriteHeader(http.StatusNoContent)
+		h.Error(w, http.StatusBadGateway, err.Error())
 		return
-	}
-
-	// Store the first message if we consume one during this initial readiness check.
-	var firstLine *service.SSELine
-	select {
-	case line, ok := <-sseCh:
-		if !ok {
-			// Channel closed immediately - no active stream
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		// We consumed a message - store it to send after setting headers
-		firstLine = &line
-	default:
-		// Channel not ready yet - we have a stream, set up SSE
 	}
 
 	// Set up SSE headers
@@ -219,16 +200,9 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusInternalServerError, "Streaming not supported")
 		return
 	}
+	flusher.Flush()
 
-	// Send the first event if we consumed one during the check
-	if firstLine != nil {
-		if !firstLine.Done {
-			writeStreamEvent(w, *firstLine)
-			flusher.Flush()
-		}
-	}
-
-	// Pass through remaining SSE events from sandbox
+	// Pass through SSE events from sandbox
 	for {
 		select {
 		case <-ctx.Done():

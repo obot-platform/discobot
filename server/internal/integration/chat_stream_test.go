@@ -100,18 +100,30 @@ func TestChatStream_ValidSession_NoActiveStream(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
 	project := ts.CreateTestProject(user, "Test Project")
-	workspace := ts.CreateTestWorkspace(project, "/home/user/code")
-	session := ts.CreateTestSession(workspace, "Test Session")
+	workspace := ts.CreateTestWorkspaceWithGitRepo(project)
+	session := ts.CreateTestSessionWithSandbox(workspace, "Test Session")
 	client := ts.AuthenticatedClient(user)
 
-	// Request stream for valid session but no active completion
-	// The mock sandbox will return an error (no sandbox running), which
-	// should be handled gracefully as 204 No Content
+	// Request stream for a valid session with no active completion.
+	// The stream endpoint should still be available and return an SSE response.
 	resp := client.Get(threadChatStreamPath(project.ID, session.ID, session.ID))
 	defer resp.Body.Close()
 
-	// No sandbox/no active stream = 204 No Content
-	AssertStatus(t, resp, http.StatusNoContent)
+	AssertStatus(t, resp, http.StatusOK)
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("expected Content-Type text/event-stream, got %s", ct)
+	}
+	if stream := resp.Header.Get("x-vercel-ai-ui-message-stream"); stream != "v1" {
+		t.Fatalf("expected x-vercel-ai-ui-message-stream v1, got %s", stream)
+	}
+
+	frames, err := readChatSSEFrames(resp.Body)
+	if err != nil {
+		t.Fatalf("Error reading SSE stream: %v", err)
+	}
+	if len(frames) != 0 {
+		t.Fatalf("expected idle stream to close without forwarding events, got %d frames", len(frames))
+	}
 }
 
 func TestChatStream_RequiresAuthentication(t *testing.T) {
@@ -148,9 +160,8 @@ func TestChatStream_MissingThreadId(t *testing.T) {
 	AssertStatus(t, resp, http.StatusBadRequest)
 }
 
-// TestChatStream_ActiveStream_FirstMessageConsumed tests the bug fix for losing
-// the first message when checking if a stream is active. This verifies that
-// the message consumed during the channel check is properly sent to the client.
+// TestChatStream_ActiveStream_FirstMessageConsumed verifies the stream forwards
+// the first buffered message instead of dropping it.
 func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -182,8 +193,7 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 			w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 			w.WriteHeader(http.StatusOK)
 
-			// Write all messages immediately so they're available when
-			// the handler checks the channel
+			// Write all messages immediately so the first event is already buffered.
 			for _, msg := range messages {
 				_, _ = fmt.Fprintf(w, "event: chunk\n")
 				_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
@@ -247,7 +257,7 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 
 	// Most importantly: verify the first message was NOT lost
 	if len(receivedMessages) > 0 && !strings.Contains(receivedMessages[0], "First message") {
-		t.Error("First message was lost during channel check")
+		t.Error("First buffered message was lost")
 	}
 }
 
@@ -347,8 +357,8 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 	}
 }
 
-// TestChatStream_ActiveStream_OnlyDone tests edge case where stream
-// immediately sends DONE without any messages.
+// TestChatStream_ActiveStream_OnlyDone tests the edge case where the sandbox
+// immediately closes the stream with only a terminal done event.
 func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("test@example.com")
@@ -387,20 +397,12 @@ func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 
 	AssertStatus(t, resp, http.StatusOK)
 
-	// Read and verify we get the done event
-	gotDone := false
+	// Read and verify the server does not forward the terminal done event.
 	frames, err := readChatSSEFrames(resp.Body)
 	if err != nil {
 		t.Fatalf("Error reading SSE stream: %v", err)
 	}
-	for _, frame := range frames {
-		if frame.Event == "done" {
-			gotDone = true
-			break
-		}
-	}
-
-	if !gotDone {
-		t.Error("expected to receive done event")
+	if len(frames) != 0 {
+		t.Fatalf("expected no forwarded events, got %d", len(frames))
 	}
 }

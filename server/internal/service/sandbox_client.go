@@ -398,8 +398,6 @@ func (c *SandboxChatClient) SendMessages(ctx context.Context, sessionID, threadI
 }
 
 // GetStream connects to the sandbox's long-lived SSE stream for a thread.
-// Returns a channel of raw SSE lines. If the sandbox reports 204 No Content,
-// this method returns an empty closed channel.
 // Retries with exponential backoff on connection errors and 5xx responses.
 func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID string, opts *RequestOptions) (<-chan SSELine, error) {
 	// Use retry logic to handle transient connection errors during container startup
@@ -434,14 +432,6 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-
-	// 204 No Content means no completion record exists at all.
-	if resp.StatusCode == http.StatusNoContent {
-		_ = resp.Body.Close()
-		ch := make(chan SSELine)
-		close(ch)
-		return ch, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
