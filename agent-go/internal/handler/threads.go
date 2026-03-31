@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -45,7 +46,26 @@ func (h *Handler) threadResponse(threadID string, cfg thread.Config, fallbackNam
 		Reasoning:   string(cfg.Reasoning),
 		Mode:        mode,
 		State:       state,
+		PromptQueue: queuedPromptResponse(cfg.PromptQueue),
 	}
+}
+
+func queuedPromptResponse(queue []thread.QueuedPrompt) []api.QueuedPrompt {
+	if len(queue) == 0 {
+		return nil
+	}
+	items := make([]api.QueuedPrompt, 0, len(queue))
+	for _, prompt := range queue {
+		items = append(items, api.QueuedPrompt{
+			ID:        prompt.ID,
+			CreatedAt: prompt.CreatedAt.UTC().Format(time.RFC3339Nano),
+			Message:   prompt.Message,
+			Model:     prompt.Model,
+			Reasoning: prompt.Reasoning,
+			Mode:      prompt.Mode,
+		})
+	}
+	return items
 }
 
 // ListThreads handles GET /threads — lists all threads.
@@ -235,4 +255,50 @@ func (h *Handler) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.JSON(w, http.StatusOK, api.DeleteThreadResponse{Success: true})
+}
+
+// DeleteQueuedPrompt handles DELETE /threads/{id}/queue/{queueId} — removes a queued prompt.
+func (h *Handler) DeleteQueuedPrompt(w http.ResponseWriter, r *http.Request) {
+	if !h.requireThreadStore(w) {
+		return
+	}
+
+	threadID := chi.URLParam(r, "id")
+	queueID := chi.URLParam(r, "queueId")
+	if strings.TrimSpace(threadID) == "" {
+		h.Error(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	if strings.TrimSpace(queueID) == "" {
+		h.Error(w, http.StatusBadRequest, "queueId is required")
+		return
+	}
+
+	store := h.defaultAgent.Store()
+	exists, err := store.ThreadExists(threadID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !exists {
+		h.Error(w, http.StatusNotFound, "thread not found")
+		return
+	}
+
+	h.queueMu.Lock()
+	cfg, removed, err := store.DeleteQueuedPrompt(threadID, queueID)
+	if err == nil && removed {
+		h.completions.EmitChunkIfActive(threadID, thread.UpdateChunkFromConfig(threadID, cfg))
+	}
+	h.queueMu.Unlock()
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !removed {
+		h.Error(w, http.StatusNotFound, "queued prompt not found")
+		return
+	}
+
+	h.JSON(w, http.StatusOK, api.DeleteQueuedPromptResponse{Success: true})
 }

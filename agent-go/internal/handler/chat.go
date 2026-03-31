@@ -16,6 +16,7 @@ import (
 	"github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/internal/api"
 	"github.com/obot-platform/discobot/agent-go/message"
+	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
 const defaultChatStreamPingInterval = 15 * time.Second
@@ -41,11 +42,41 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	leafID, userMessage, err := resolveLeafAndUserMessage(req.Messages)
+	if err != nil {
+		h.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Check for active completion.
 	if activeID := h.completions.ActiveCompletionID(threadID); activeID != "" {
-		h.JSON(w, http.StatusConflict, api.ChatConflictResponse{
-			Error:        "completion_in_progress",
-			CompletionID: activeID,
+		if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
+			h.JSON(w, http.StatusConflict, api.ChatConflictResponse{
+				Error:        "completion_in_progress",
+				CompletionID: activeID,
+			})
+			return
+		}
+
+		h.queueMu.Lock()
+		cfg, queuedPrompt, queueErr := h.defaultAgent.Store().AppendQueuedPrompt(threadID, thread.QueuedPrompt{
+			Message:   userMessage,
+			Model:     req.Model,
+			Reasoning: req.Reasoning,
+			Mode:      req.Mode,
+		})
+		if queueErr == nil {
+			h.completions.EmitChunkIfActive(threadID, thread.UpdateChunkFromConfig(threadID, cfg))
+		}
+		h.queueMu.Unlock()
+		if queueErr != nil {
+			h.Error(w, http.StatusInternalServerError, queueErr.Error())
+			return
+		}
+
+		h.JSON(w, http.StatusAccepted, api.ChatStartedResponse{
+			Status:         "queued",
+			QueuedPromptID: queuedPrompt.ID,
 		})
 		return
 	}
@@ -90,21 +121,13 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Derive leafID and userParts from the full message history the client sent.
-	// leafID is the last assistant message's ID (the branch point); userParts
-	// come from the user messages that follow it.
-	leafID, userParts, err := resolveLeafAndParts(req.Messages)
-	if err != nil {
-		h.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
 	promptReq := agent.PromptRequest{
 		LeafID:    leafID,
 		Model:     req.Model,
 		Reasoning: req.Reasoning,
 		Mode:      req.Mode,
-		UserParts: userParts,
+		UserParts: userMessage.Parts,
+		Metadata:  userMessage.Metadata,
 	}
 
 	completionID, err := h.completions.Chat(threadID, promptReq)
@@ -395,16 +418,16 @@ func writeSSEEvent(w http.ResponseWriter, id, event string, data []byte) {
 	fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
-// resolveLeafAndParts extracts the leaf ID and user parts from the message
-// history the client sends on every chat request.
+// resolveLeafAndUserMessage extracts the leaf ID and the queued/submitted user
+// message from the message history the client sends on every chat request.
 //
 //   - leafID: the ID of the last assistant message in msgs. This is the branch
 //     point the new user turn will extend. Empty when there are no assistant
 //     messages yet (first turn of a new thread).
-//   - userParts: the parts from the last user message that follows the leaf
-//     (i.e. the new user input). Returns an error when no user message is found
-//     after the last assistant, or when the last assistant message has no ID.
-func resolveLeafAndParts(msgs []message.UIMessage) (leafID string, userParts []message.UIPart, err error) {
+//   - userMessage: the last user message that follows the leaf (i.e. the new
+//     user input). Returns an error when no user message is found after the
+//     last assistant, or when the last assistant message has no ID.
+func resolveLeafAndUserMessage(msgs []message.UIMessage) (leafID string, userMessage message.UIMessage, err error) {
 	// Find the last assistant message.
 	lastAssistantIdx := -1
 	for i := len(msgs) - 1; i >= 0; i-- {
@@ -417,24 +440,18 @@ func resolveLeafAndParts(msgs []message.UIMessage) (leafID string, userParts []m
 	startIdx := 0
 	if lastAssistantIdx >= 0 {
 		if msgs[lastAssistantIdx].ID == "" {
-			return "", nil, fmt.Errorf("last assistant message has no ID")
+			return "", message.UIMessage{}, fmt.Errorf("last assistant message has no ID")
 		}
 		leafID = msgs[lastAssistantIdx].ID
 		startIdx = lastAssistantIdx + 1
 	}
 
-	// Extract user parts from the last user message at or after startIdx.
 	for i := len(msgs) - 1; i >= startIdx; i-- {
 		if msgs[i].Role == "user" && len(msgs[i].Parts) > 0 {
-			userParts = msgs[i].Parts
-			break
+			return leafID, msgs[i], nil
 		}
 	}
-	if len(userParts) == 0 {
-		return "", nil, fmt.Errorf("no user message found after the last assistant message")
-	}
-
-	return leafID, userParts, nil
+	return "", message.UIMessage{}, fmt.Errorf("no user message found after the last assistant message")
 }
 
 // parseSSEEventID parses a "{completionID}:{offset}" SSE event ID.

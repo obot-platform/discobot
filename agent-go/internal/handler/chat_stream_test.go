@@ -9,7 +9,9 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -362,6 +364,175 @@ func TestPostChat_StartsCompletion(t *testing.T) {
 	}
 }
 
+func TestPostChat_QueuesPromptWhileCompletionIsActive(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{Name: "Thread 1", NameSource: thread.ThreadNameSourceUser}); err != nil {
+		t.Fatal(err)
+	}
+
+	ma := &streamTestAgent{
+		promptFn: yieldChunksAndBlock(message.StartChunk{MessageID: "assistant-1"}),
+	}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if _, err := cm.Chat("thread-1", agent.PromptRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	defer cm.Cancel("thread-1")
+
+	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "queued follow-up", State: "done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d", resp.StatusCode)
+	}
+
+	var started api.ChatStartedResponse
+	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
+		t.Fatal(err)
+	}
+	if started.Status != "queued" {
+		t.Fatalf("expected queued status, got %#v", started)
+	}
+	if started.QueuedPromptID == "" {
+		t.Fatalf("expected queuedPromptId, got %#v", started)
+	}
+
+	threadResp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer threadResp.Body.Close()
+	if threadResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected get status 200, got %d", threadResp.StatusCode)
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(threadResp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.PromptQueue) != 1 {
+		t.Fatalf("expected 1 queued prompt, got %#v", got.PromptQueue)
+	}
+	if got.PromptQueue[0].ID != started.QueuedPromptID {
+		t.Fatalf("expected queued prompt id %q, got %#v", started.QueuedPromptID, got.PromptQueue[0])
+	}
+	part, ok := got.PromptQueue[0].Message.Parts[0].(message.UITextPart)
+	if !ok || part.Text != "queued follow-up" {
+		t.Fatalf("expected queued prompt text %q, got %#v", "queued follow-up", got.PromptQueue[0].Message.Parts)
+	}
+}
+
+func TestOnTurnComplete_StartsNextQueuedPrompt(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{Name: "Thread 1", NameSource: thread.ThreadNameSourceUser}); err != nil {
+		t.Fatal(err)
+	}
+
+	reqCh := make(chan agent.PromptRequest, 2)
+	releaseFirst := make(chan struct{})
+	var callCount int
+	var callCountMu sync.Mutex
+	ma := &streamTestAgent{
+		promptFn: func(ctx context.Context, _ string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			callCountMu.Lock()
+			callCount++
+			currentCall := callCount
+			callCountMu.Unlock()
+			reqCh <- req
+			if currentCall == 1 {
+				return func(yield func(message.MessageChunk, error) bool) {
+					if !yield(message.StartChunk{MessageID: "assistant-1"}, nil) {
+						return
+					}
+					select {
+					case <-releaseFirst:
+					case <-ctx.Done():
+					}
+				}
+			}
+			return yieldChunksAndFinish(message.StartChunk{MessageID: "assistant-2"})(ctx, "thread-1", req)
+		},
+	}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	firstBody, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-1",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "first", State: "done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBody, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
+		ID:    "msg-2",
+		Role:  "user",
+		Parts: []message.UIPart{message.UITextPart{Text: "second", State: "done"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstResp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(firstBody)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstResp.Body.Close()
+
+	select {
+	case req := <-reqCh:
+		part, ok := req.UserParts[0].(message.UITextPart)
+		if !ok || part.Text != "first" {
+			t.Fatalf("expected first prompt, got %#v", req.UserParts)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first prompt")
+	}
+
+	secondResp, err := ts.Client().Post(ts.URL+"/threads/thread-1/chat", "application/json", strings.NewReader(string(secondBody)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondResp.Body.Close()
+
+	close(releaseFirst)
+
+	select {
+	case req := <-reqCh:
+		part, ok := req.UserParts[0].(message.UITextPart)
+		if !ok || part.Text != "second" {
+			t.Fatalf("expected second queued prompt, got %#v", req.UserParts)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for queued prompt to start")
+	}
+}
+
 func TestPostChat_ReturnsPendingQuestionConflict(t *testing.T) {
 	ma := &streamTestAgent{
 		pendingQuestionFn: func(threadID string) (*agent.PendingQuestion, error) {
@@ -518,7 +689,7 @@ func TestRegisterRoutes_GetThreadMatchesListThreads(t *testing.T) {
 	if err := json.NewDecoder(threadResp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got != listed.Threads[0] {
+	if !reflect.DeepEqual(got, listed.Threads[0]) {
 		t.Fatalf("expected get thread %+v to match listed thread %+v", got, listed.Threads[0])
 	}
 }

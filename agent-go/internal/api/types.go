@@ -74,13 +74,23 @@ type ErrorResponse struct {
 
 // Thread represents a single conversation thread.
 type Thread struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	LastMessage string `json:"lastMessage,omitempty"`
-	Model       string `json:"model,omitempty"`     // full "providerId/modelId" ref
-	Reasoning   string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
-	Mode        string `json:"mode"`                // "build" or "plan"
-	State       string `json:"state,omitempty"`     // "interrupted" or "cancelled"
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	LastMessage string         `json:"lastMessage,omitempty"`
+	Model       string         `json:"model,omitempty"`     // full "providerId/modelId" ref
+	Reasoning   string         `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
+	Mode        string         `json:"mode"`                // "build" or "plan"
+	State       string         `json:"state,omitempty"`     // "interrupted" or "cancelled"
+	PromptQueue []QueuedPrompt `json:"promptQueue,omitempty"`
+}
+
+type QueuedPrompt struct {
+	ID        string            `json:"id"`
+	CreatedAt string            `json:"createdAt,omitempty"`
+	Message   message.UIMessage `json:"message"`
+	Model     string            `json:"model,omitempty"`
+	Reasoning string            `json:"reasoning,omitempty"`
+	Mode      string            `json:"mode,omitempty"`
 }
 
 // ListThreadsResponse is the GET /threads response.
@@ -104,6 +114,11 @@ type DeleteThreadResponse struct {
 	Success bool `json:"success"`
 }
 
+// DeleteQueuedPromptResponse is the DELETE /threads/{id}/queue/{queueId} response body.
+type DeleteQueuedPromptResponse struct {
+	Success bool `json:"success"`
+}
+
 // ChatStatusResponse is the GET /threads/{id}/chat/status response.
 type ChatStatusResponse struct {
 	IsRunning bool `json:"isRunning"`
@@ -111,8 +126,9 @@ type ChatStatusResponse struct {
 
 // ChatStartedResponse is the POST /threads/{id}/chat response (202 Accepted).
 type ChatStartedResponse struct {
-	CompletionID string `json:"completionId"`
-	Status       string `json:"status"` // "started"
+	CompletionID   string `json:"completionId,omitempty"`
+	Status         string `json:"status"` // "started" or "queued"
+	QueuedPromptID string `json:"queuedPromptId,omitempty"`
 }
 
 // ChatConflictResponse is the POST /threads/{id}/chat response (409 Conflict).

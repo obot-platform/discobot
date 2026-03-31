@@ -1159,6 +1159,16 @@ func main() {
 					})
 
 					sidReg.Register(r, routes.Route{
+						Method: "DELETE", Pattern: "/threads/{threadId}/queue/{queueId}",
+						Handler: h.DeleteQueuedPrompt,
+						Meta: routes.Meta{
+							Group:       "Threads",
+							Description: "Delete queued prompt from session thread",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}, {Name: "queueId", Example: "queue-1"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
 						Method: "GET", Pattern: "/threads/{threadId}/stream",
 						Handler: h.ChatStream,
 						Meta: routes.Meta{

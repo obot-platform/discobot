@@ -38,11 +38,13 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	WorkspaceID  string `json:"workspaceId"`
-	SessionID    string `json:"sessionId"`
-	ThreadID     string `json:"threadId"`
-	MessageID    string `json:"messageId,omitempty"`
-	CompletionID string `json:"completionId,omitempty"`
+	WorkspaceID    string `json:"workspaceId"`
+	SessionID      string `json:"sessionId"`
+	ThreadID       string `json:"threadId"`
+	MessageID      string `json:"messageId,omitempty"`
+	CompletionID   string `json:"completionId,omitempty"`
+	Status         string `json:"status,omitempty"`
+	QueuedPromptID string `json:"queuedPromptId,omitempty"`
 }
 
 // Chat handles AI chat initiation.
@@ -163,6 +165,8 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.CompletionID = started.CompletionID
+	response.Status = started.Status
+	response.QueuedPromptID = started.QueuedPromptID
 
 	h.JSON(w, http.StatusOK, response)
 }

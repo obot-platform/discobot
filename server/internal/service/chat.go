@@ -292,6 +292,22 @@ func (c *ChatService) UpdateThread(ctx context.Context, projectID, sessionID, th
 	return client.UpdateThread(ctx, threadID, req)
 }
 
+// DeleteQueuedPrompt removes a queued prompt for a thread in the sandbox agent.
+func (c *ChatService) DeleteQueuedPrompt(ctx context.Context, projectID, sessionID, threadID, queuedPromptID string) (*sandboxapi.DeleteQueuedPromptResponse, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.DeleteQueuedPrompt(ctx, threadID, queuedPromptID)
+}
+
 // DeleteThread deletes a thread for a session in the sandbox agent.
 func (c *ChatService) DeleteThread(ctx context.Context, projectID, sessionID, threadID string) (*sandboxapi.DeleteThreadResponse, error) {
 	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {

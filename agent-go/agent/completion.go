@@ -301,6 +301,27 @@ func (cm *CompletionManager) Cancel(threadID string) (string, bool) {
 	return comp.id, true
 }
 
+// EmitChunkIfActive appends a non-provider chunk to the current active
+// completion for threadID so connected SSE clients observe thread-scoped updates
+// such as prompt queue changes immediately.
+func (cm *CompletionManager) EmitChunkIfActive(threadID string, chunk message.MessageChunk) bool {
+	cm.mu.Lock()
+	comp, ok := cm.active[threadID]
+	cm.mu.Unlock()
+	if !ok {
+		return false
+	}
+
+	comp.mu.Lock()
+	defer comp.mu.Unlock()
+	if comp.done {
+		return false
+	}
+	comp.events = append(comp.events, chunk)
+	comp.cond.Broadcast()
+	return true
+}
+
 // ActiveCompletionID returns the active completion ID for a thread,
 // or empty string if none is active.
 func (cm *CompletionManager) ActiveCompletionID(threadID string) string {

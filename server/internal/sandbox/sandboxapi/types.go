@@ -11,7 +11,10 @@
 //	POST /chat    - Send messages and stream response (SSE)
 package sandboxapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ============================================================================
 // Request Types
@@ -83,8 +86,9 @@ type ChatStatusResponse struct {
 
 // ChatStartedResponse is the POST /chat response.
 type ChatStartedResponse struct {
-	CompletionID string `json:"completionId,omitempty"`
-	Status       string `json:"status,omitempty"`
+	CompletionID   string `json:"completionId,omitempty"`
+	Status         string `json:"status,omitempty"`
+	QueuedPromptID string `json:"queuedPromptId,omitempty"`
 }
 
 // ChatConflictResponse is the POST /chat response when another completion is already active.
@@ -113,14 +117,24 @@ type ErrorResponse struct {
 
 // Thread represents a conversation thread persisted by the agent.
 type Thread struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	LastMessage string `json:"lastMessage,omitempty"`
-	Model       string `json:"model,omitempty"`     // full "providerId/modelId" ref
-	Reasoning   string `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", or "default"
-	Mode        string `json:"mode"`                // "build" or "plan"
-	State       string `json:"state,omitempty"`     // "interrupted" or "cancelled"
-	Pending     bool   `json:"pending,omitempty"`   // true when the thread exists in concept but the sandbox hasn't created it yet
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	LastMessage string         `json:"lastMessage,omitempty"`
+	Model       string         `json:"model,omitempty"`     // full "providerId/modelId" ref
+	Reasoning   string         `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", or "default"
+	Mode        string         `json:"mode"`                // "build" or "plan"
+	State       string         `json:"state,omitempty"`     // "interrupted" or "cancelled"
+	Pending     bool           `json:"pending,omitempty"`   // true when the thread exists in concept but the sandbox hasn't created it yet
+	PromptQueue []QueuedPrompt `json:"promptQueue,omitempty"`
+}
+
+type QueuedPrompt struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
+	Message   UIMessage `json:"message"`
+	Model     string    `json:"model,omitempty"`
+	Reasoning string    `json:"reasoning,omitempty"`
+	Mode      string    `json:"mode,omitempty"`
 }
 
 // ListThreadsResponse is the GET /threads response.
@@ -141,6 +155,10 @@ type UpdateThreadRequest struct {
 
 // DeleteThreadResponse is the DELETE /threads/{id} response body.
 type DeleteThreadResponse struct {
+	Success bool `json:"success"`
+}
+
+type DeleteQueuedPromptResponse struct {
 	Success bool `json:"success"`
 }
 

@@ -716,6 +716,46 @@ func (c *SandboxChatClient) UpdateThread(ctx context.Context, sessionID, threadI
 	return &result, nil
 }
 
+// DeleteQueuedPrompt removes a queued prompt from a thread in the sandbox agent.
+func (c *SandboxChatClient) DeleteQueuedPrompt(ctx context.Context, sessionID, threadID, queuedPromptID string) (*sandboxapi.DeleteQueuedPromptResponse, error) {
+	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
+		client, err := c.getHTTPClient(ctx, sessionID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "DELETE", c.threadURL(threadID, "/queue/"+url.PathEscape(queuedPromptID)), nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+		if err := c.applyRequestAuth(ctx, req, sessionID, nil); err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		return resp, resp.StatusCode, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete queued prompt: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result sandboxapi.DeleteQueuedPromptResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // DeleteThread removes a thread from the sandbox agent.
 func (c *SandboxChatClient) DeleteThread(ctx context.Context, sessionID, threadID string) (*sandboxapi.DeleteThreadResponse, error) {
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {

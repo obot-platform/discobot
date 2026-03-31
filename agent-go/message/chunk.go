@@ -331,14 +331,25 @@ func (c DataChunk) chunkType() string { return "data-" + c.DataType }
 
 // ThreadUpdateInfo mirrors the thread summary shape exposed by the agent API.
 type ThreadUpdateInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	LastMessage string `json:"lastMessage,omitempty"`
-	Model       string `json:"model,omitempty"`
-	Reasoning   string `json:"reasoning,omitempty"`
-	Mode        string `json:"mode"`
-	State       string `json:"state,omitempty"`
-	Pending     *bool  `json:"pending,omitempty"`
+	ID          string                   `json:"id"`
+	Name        string                   `json:"name"`
+	LastMessage string                   `json:"lastMessage,omitempty"`
+	Model       string                   `json:"model,omitempty"`
+	Reasoning   string                   `json:"reasoning,omitempty"`
+	Mode        string                   `json:"mode"`
+	State       string                   `json:"state,omitempty"`
+	Pending     *bool                    `json:"pending,omitempty"`
+	PromptQueue []ThreadQueuedPromptInfo `json:"promptQueue,omitempty"`
+}
+
+// ThreadQueuedPromptInfo summarizes one queued prompt for thread chrome.
+type ThreadQueuedPromptInfo struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
+	Message   UIMessage `json:"message"`
+	Model     string    `json:"model,omitempty"`
+	Reasoning string    `json:"reasoning,omitempty"`
+	Mode      string    `json:"mode,omitempty"`
 }
 
 // ThreadUpdateData is the payload for a data-thread-update chunk.

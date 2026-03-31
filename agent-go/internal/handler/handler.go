@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/obot-platform/discobot/agent-go/internal/routes"
 	"github.com/obot-platform/discobot/agent-go/internal/services"
 	"github.com/obot-platform/discobot/agent-go/message"
+	"github.com/obot-platform/discobot/agent-go/thread"
 )
 
 const maxHookRetries = 3
@@ -33,6 +35,7 @@ type Handler struct {
 
 	answeredMu        sync.Mutex
 	answeredQuestions map[string]bool // toolCallID → true (tracks answered questions for status polling)
+	queueMu           sync.Mutex
 }
 
 // New creates a new Handler.
@@ -47,10 +50,7 @@ func New(agentCwd string, completions *agent.CompletionManager, hookManager *hoo
 		answeredQuestions: make(map[string]bool),
 	}
 
-	// Wire up post-completion hook evaluation.
-	if hookManager != nil {
-		completions.AddCompletionListener(h)
-	}
+	completions.AddCompletionListener(h)
 
 	return h
 }
@@ -62,11 +62,63 @@ func (h *Handler) OnTurnStart(_ string) {
 
 // OnTurnComplete is called when a completion finishes. It schedules hook evaluation.
 func (h *Handler) OnTurnComplete(threadID string, _ error) {
-	if h.hookManager == nil || !h.hookManager.HasFileHooks() {
+	if h.hookManager != nil && h.hookManager.HasFileHooks() {
+		// Fire-and-forget goroutine matching the TS scheduleHookEvaluation pattern.
+		go h.scheduleHookEvaluation(threadID)
+	}
+	go h.startNextQueuedPrompt(threadID)
+}
+
+func (h *Handler) startNextQueuedPrompt(threadID string) {
+	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
 		return
 	}
-	// Fire-and-forget goroutine matching the TS scheduleHookEvaluation pattern.
-	go h.scheduleHookEvaluation(threadID)
+
+	h.queueMu.Lock()
+	defer h.queueMu.Unlock()
+
+	if h.completions.ActiveCompletionID(threadID) != "" {
+		return
+	}
+
+	store := h.defaultAgent.Store()
+	cfg, queuedPrompt, err := store.PopQueuedPrompt(threadID)
+	if err != nil {
+		log.Printf("queue: failed to pop queued prompt for %s: %v", threadID, err)
+		return
+	}
+	if queuedPrompt == nil {
+		return
+	}
+
+	leafID := strings.TrimSpace(cfg.ActiveLeafID)
+	if leafID == "" {
+		leafID, err = store.FindLeaf(threadID)
+		if err != nil {
+			log.Printf("queue: failed to resolve leaf for %s: %v", threadID, err)
+			if _, restoreErr := store.PrependQueuedPrompt(threadID, *queuedPrompt); restoreErr != nil {
+				log.Printf("queue: failed to restore queued prompt for %s: %v", threadID, restoreErr)
+			}
+			return
+		}
+	}
+
+	req := agent.PromptRequest{
+		LeafID:    leafID,
+		UserParts: append([]message.UIPart{}, queuedPrompt.Message.Parts...),
+		Metadata:  queuedPrompt.Message.Metadata,
+		Model:     queuedPrompt.Model,
+		Reasoning: queuedPrompt.Reasoning,
+		Mode:      queuedPrompt.Mode,
+	}
+	if _, err := h.completions.Chat(threadID, req); err != nil {
+		if _, restoreErr := store.PrependQueuedPrompt(threadID, *queuedPrompt); restoreErr != nil {
+			log.Printf("queue: failed to restore queued prompt for %s: %v", threadID, restoreErr)
+		}
+		log.Printf("queue: failed to start queued prompt for %s: %v", threadID, err)
+		return
+	}
+	h.completions.EmitChunkIfActive(threadID, thread.UpdateChunkFromConfig(threadID, cfg))
 }
 
 // startHookFailureReprompt sends a hook-failure follow-up message to the LLM.
@@ -167,6 +219,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			}})
 		threadReg.Register(r, routes.Route{Method: "DELETE", Pattern: "/", Handler: h.DeleteThread,
 			Meta: routes.Meta{Group: "Threads", Description: "Delete a thread"}})
+		threadReg.Register(r, routes.Route{Method: "DELETE", Pattern: "/queue/{queueId}", Handler: h.DeleteQueuedPrompt,
+			Meta: routes.Meta{Group: "Threads", Description: "Delete a queued prompt"}})
 
 		threadReg.Register(r, routes.Route{Method: "GET", Pattern: "/models", Handler: h.ListModels,
 			Meta: routes.Meta{Group: "Threads", Description: "List available models"}})

@@ -654,6 +654,19 @@ type Config struct {
 	LastTurnState State `json:"lastTurnState,omitempty"`
 	// ActiveLeafID tracks the currently selected branch head for this thread.
 	ActiveLeafID string `json:"activeLeafId,omitempty"`
+	// PromptQueue stores queued follow-up prompts waiting to run after the
+	// current completion finishes.
+	PromptQueue []QueuedPrompt `json:"promptQueue,omitempty"`
+}
+
+// QueuedPrompt stores one queued user submission for a thread.
+type QueuedPrompt struct {
+	ID        string            `json:"id"`
+	CreatedAt time.Time         `json:"createdAt,omitempty"`
+	Message   message.UIMessage `json:"message"`
+	Model     string            `json:"model,omitempty"`
+	Reasoning string            `json:"reasoning,omitempty"`
+	Mode      string            `json:"mode,omitempty"`
 }
 
 const (
@@ -688,6 +701,11 @@ func (s *Store) SaveConfig(threadID string, cfg Config) error {
 	dir := filepath.Join(s.baseDir, threadID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create thread dir: %w", err)
+	}
+	if cfg.PromptQueue == nil {
+		if existing, err := s.LoadConfig(threadID); err == nil {
+			cfg.PromptQueue = existing.PromptQueue
+		}
 	}
 	// Ensure Mode.Value is always set; default to build if empty.
 	if strings.TrimSpace(cfg.Mode.Value) == "" {
@@ -724,6 +742,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		Mode          ModeState           `json:"mode"`
 		LastTurnState State               `json:"lastTurnState"`
 		ActiveLeafID  string              `json:"activeLeafId"`
+		PromptQueue   []QueuedPrompt      `json:"promptQueue"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Config{}, fmt.Errorf("unmarshal thread config: %w", err)
@@ -748,7 +767,82 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		Mode:          mode,
 		LastTurnState: raw.LastTurnState,
 		ActiveLeafID:  raw.ActiveLeafID,
+		PromptQueue:   raw.PromptQueue,
 	}, nil
+}
+
+// AppendQueuedPrompt adds a queued prompt to the end of the thread queue.
+func (s *Store) AppendQueuedPrompt(threadID string, prompt QueuedPrompt) (Config, QueuedPrompt, error) {
+	cfg, err := s.LoadConfig(threadID)
+	if err != nil {
+		return Config{}, QueuedPrompt{}, err
+	}
+	if prompt.ID == "" {
+		prompt.ID = generateID()
+	}
+	if prompt.CreatedAt.IsZero() {
+		prompt.CreatedAt = time.Now().UTC()
+	}
+	cfg.PromptQueue = append(append([]QueuedPrompt{}, cfg.PromptQueue...), prompt)
+	if err := s.SaveConfig(threadID, cfg); err != nil {
+		return Config{}, QueuedPrompt{}, err
+	}
+	return cfg, prompt, nil
+}
+
+// DeleteQueuedPrompt removes one queued prompt by ID.
+func (s *Store) DeleteQueuedPrompt(threadID, promptID string) (Config, bool, error) {
+	cfg, err := s.LoadConfig(threadID)
+	if err != nil {
+		return Config{}, false, err
+	}
+	nextQueue := make([]QueuedPrompt, 0, len(cfg.PromptQueue))
+	removed := false
+	for _, prompt := range cfg.PromptQueue {
+		if prompt.ID == promptID {
+			removed = true
+			continue
+		}
+		nextQueue = append(nextQueue, prompt)
+	}
+	if !removed {
+		return cfg, false, nil
+	}
+	cfg.PromptQueue = nextQueue
+	if err := s.SaveConfig(threadID, cfg); err != nil {
+		return Config{}, false, err
+	}
+	return cfg, true, nil
+}
+
+// PopQueuedPrompt removes and returns the next queued prompt.
+func (s *Store) PopQueuedPrompt(threadID string) (Config, *QueuedPrompt, error) {
+	cfg, err := s.LoadConfig(threadID)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	if len(cfg.PromptQueue) == 0 {
+		return cfg, nil, nil
+	}
+	prompt := cfg.PromptQueue[0]
+	cfg.PromptQueue = append([]QueuedPrompt{}, cfg.PromptQueue[1:]...)
+	if err := s.SaveConfig(threadID, cfg); err != nil {
+		return Config{}, nil, err
+	}
+	return cfg, &prompt, nil
+}
+
+// PrependQueuedPrompt pushes a prompt onto the front of the queue.
+func (s *Store) PrependQueuedPrompt(threadID string, prompt QueuedPrompt) (Config, error) {
+	cfg, err := s.LoadConfig(threadID)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.PromptQueue = append([]QueuedPrompt{prompt}, cfg.PromptQueue...)
+	if err := s.SaveConfig(threadID, cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 // FindLeaf returns the leaf message ID for a thread — the message that is not

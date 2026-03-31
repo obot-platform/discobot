@@ -24,9 +24,28 @@ func UpdateChunkFromConfig(threadID string, cfg Config) message.ThreadUpdateChun
 				Reasoning:   string(cfg.Reasoning),
 				Mode:        mode,
 				State:       string(cfg.LastTurnState),
+				PromptQueue: promptQueueToThreadUpdateInfo(cfg.PromptQueue),
 			},
 		},
 	}
+}
+
+func promptQueueToThreadUpdateInfo(queue []QueuedPrompt) []message.ThreadQueuedPromptInfo {
+	if len(queue) == 0 {
+		return nil
+	}
+	items := make([]message.ThreadQueuedPromptInfo, 0, len(queue))
+	for _, prompt := range queue {
+		items = append(items, message.ThreadQueuedPromptInfo{
+			ID:        prompt.ID,
+			CreatedAt: prompt.CreatedAt,
+			Message:   prompt.Message,
+			Model:     prompt.Model,
+			Reasoning: prompt.Reasoning,
+			Mode:      prompt.Mode,
+		})
+	}
+	return items
 }
 
 func YieldThreadUpdate(

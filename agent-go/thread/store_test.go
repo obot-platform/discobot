@@ -480,6 +480,18 @@ func TestSaveAndLoadConfig(t *testing.T) {
 		CWD:           "/tmp/project",
 		Mode:          ModeState{Value: "plan"},
 		ActiveLeafID:  "msg-active",
+		PromptQueue: []QueuedPrompt{{
+			ID:        "queue-1",
+			CreatedAt: time.Date(2026, time.March, 31, 1, 0, 0, 0, time.UTC),
+			Message: message.UIMessage{
+				ID:    "user-queued",
+				Role:  "user",
+				Parts: []message.UIPart{message.UITextPart{Text: "queued prompt"}},
+			},
+			Model:     "openai/gpt-5.4",
+			Reasoning: "high",
+			Mode:      "plan",
+		}},
 	}
 
 	if err := store.SaveConfig("thread1", cfg); err != nil {
@@ -513,6 +525,101 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 	if loaded.ActiveLeafID != cfg.ActiveLeafID {
 		t.Errorf("expected activeLeafId=%q, got %q", cfg.ActiveLeafID, loaded.ActiveLeafID)
+	}
+	if len(loaded.PromptQueue) != 1 {
+		t.Fatalf("expected 1 queued prompt, got %d", len(loaded.PromptQueue))
+	}
+	if loaded.PromptQueue[0].ID != cfg.PromptQueue[0].ID {
+		t.Fatalf("expected queued prompt id %q, got %q", cfg.PromptQueue[0].ID, loaded.PromptQueue[0].ID)
+	}
+	part, ok := loaded.PromptQueue[0].Message.Parts[0].(message.UITextPart)
+	if !ok || part.Text != "queued prompt" {
+		t.Fatalf("expected queued prompt text %q, got %#v", "queued prompt", loaded.PromptQueue[0].Message.Parts)
+	}
+}
+
+func TestQueueHelpers(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.CreateThread("thread1"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, queued, err := store.AppendQueuedPrompt("thread1", QueuedPrompt{
+		Message: message.UIMessage{
+			ID:    "user-1",
+			Role:  "user",
+			Parts: []message.UIPart{message.UITextPart{Text: "first"}},
+		},
+		Model: "anthropic/claude-sonnet-4-6",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued.ID == "" {
+		t.Fatal("expected queued prompt id")
+	}
+	if len(cfg.PromptQueue) != 1 {
+		t.Fatalf("expected 1 queued prompt, got %d", len(cfg.PromptQueue))
+	}
+
+	cfg, removed, err := store.DeleteQueuedPrompt("thread1", queued.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("expected queued prompt to be removed")
+	}
+	if len(cfg.PromptQueue) != 0 {
+		t.Fatalf("expected empty queue, got %d items", len(cfg.PromptQueue))
+	}
+
+	_, first, err := store.AppendQueuedPrompt("thread1", QueuedPrompt{
+		ID: "queue-1",
+		Message: message.UIMessage{
+			ID:    "user-1",
+			Role:  "user",
+			Parts: []message.UIPart{message.UITextPart{Text: "first"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = store.AppendQueuedPrompt("thread1", QueuedPrompt{
+		ID: "queue-2",
+		Message: message.UIMessage{
+			ID:    "user-2",
+			Role:  "user",
+			Parts: []message.UIPart{message.UITextPart{Text: "second"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, popped, err := store.PopQueuedPrompt("thread1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if popped == nil || popped.ID != first.ID {
+		t.Fatalf("expected to pop %q, got %#v", first.ID, popped)
+	}
+	if len(cfg.PromptQueue) != 1 || cfg.PromptQueue[0].ID != "queue-2" {
+		t.Fatalf("expected remaining queue [queue-2], got %#v", cfg.PromptQueue)
+	}
+
+	cfg, err = store.PrependQueuedPrompt("thread1", QueuedPrompt{
+		ID: "queue-0",
+		Message: message.UIMessage{
+			ID:    "user-0",
+			Role:  "user",
+			Parts: []message.UIPart{message.UITextPart{Text: "zeroth"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.PromptQueue) != 2 || cfg.PromptQueue[0].ID != "queue-0" {
+		t.Fatalf("expected queue-0 to be prepended, got %#v", cfg.PromptQueue)
 	}
 }
 
