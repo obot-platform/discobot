@@ -33,7 +33,9 @@
 	}
 </script>
 
-<div class="flex h-10 min-w-0 items-center gap-1 bg-background px-3 pt-6">
+<div
+	class="flex min-h-10 min-w-0 items-center gap-1 bg-background px-3 pb-2 pt-6"
+>
 	{#if !sidebarOpen}
 		<Button
 			variant="ghost"
