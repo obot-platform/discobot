@@ -2,12 +2,96 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	applyStreamedThreadUpdate,
 	clearComposerDraftState,
 	getThreadComposerValues,
 	normalizeThreadComposerReasoning,
 	parseComposerModelSelection,
 	resolveThreadComposerSubmitValues,
 } from "./thread-context.svelte";
+
+test("applyStreamedThreadUpdate refreshes the recent thread entry and reloads the primary session title", async () => {
+	const upserted: string[] = [];
+	const refreshed: Array<Record<string, string | undefined>> = [];
+	let reloaded = false;
+
+	applyStreamedThreadUpdate({
+		sessionId: "session-1",
+		sessionName: "New Session",
+		sessionDisplayName: null,
+		previousThreadName: "New Thread",
+		thread: {
+			id: "session-1",
+			name: "Fix flaky sidebar refresh",
+			lastMessage: "Fix the delayed sidebar titles",
+			mode: "build",
+		},
+		upsertThread: (thread) => {
+			upserted.push(thread.name);
+		},
+		refreshRecentThread: (payload) => {
+			refreshed.push(payload);
+		},
+		reloadSession: async () => {
+			reloaded = true;
+		},
+	});
+
+	assert.deepEqual(upserted, ["Fix flaky sidebar refresh"]);
+	assert.deepEqual(refreshed, [
+		{
+			sessionId: "session-1",
+			sessionName: "New Session",
+			threadId: "session-1",
+			threadName: "Fix flaky sidebar refresh",
+			state: undefined,
+			lastMessage: "Fix the delayed sidebar titles",
+		},
+	]);
+	assert.equal(reloaded, true);
+});
+
+test("applyStreamedThreadUpdate avoids reloading renamed or secondary sessions", () => {
+	let reloadCount = 0;
+
+	applyStreamedThreadUpdate({
+		sessionId: "session-1",
+		sessionName: "Pinned session",
+		sessionDisplayName: "Pinned session",
+		previousThreadName: "Old title",
+		thread: {
+			id: "session-1",
+			name: "New streamed title",
+			lastMessage: "latest prompt",
+			mode: "build",
+		},
+		upsertThread: () => {},
+		refreshRecentThread: () => {},
+		reloadSession: () => {
+			reloadCount += 1;
+		},
+	});
+
+	applyStreamedThreadUpdate({
+		sessionId: "session-1",
+		sessionName: "Pinned session",
+		sessionDisplayName: null,
+		previousThreadName: "Secondary thread",
+		thread: {
+			id: "thread-2",
+			name: "Secondary thread",
+			lastMessage: "follow-up prompt",
+			mode: "build",
+		},
+		upsertThread: () => {},
+		refreshRecentThread: () => {},
+		reloadSession: () => {
+			reloadCount += 1;
+		},
+	});
+
+	assert.equal(reloadCount, 0);
+});
 
 test("clearComposerDraftState clears storage before resetting the in-memory draft", () => {
 	const calls: string[] = [];

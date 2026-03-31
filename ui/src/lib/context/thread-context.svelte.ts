@@ -1,5 +1,6 @@
 import { getContext, hasContext, setContext } from "svelte";
 
+import type { Thread } from "$lib/api-types";
 import {
 	clearComposerDraft,
 	readComposerDraft,
@@ -108,6 +109,54 @@ export function clearComposerDraftState({
 	clearInMemoryDraft();
 }
 
+export function applyStreamedThreadUpdate({
+	sessionId,
+	sessionName,
+	sessionDisplayName,
+	previousThreadName,
+	thread,
+	upsertThread,
+	refreshRecentThread,
+	reloadSession,
+}: {
+	sessionId: string;
+	sessionName: string;
+	sessionDisplayName?: string | null;
+	previousThreadName?: string | null;
+	thread: Thread;
+	upsertThread: (thread: Thread) => void;
+	refreshRecentThread: (payload: {
+		sessionId: string;
+		sessionName: string;
+		threadId: string;
+		threadName: string;
+		state?: Thread["state"];
+		lastMessage: string;
+	}) => void;
+	reloadSession: () => void | Promise<void>;
+}): void {
+	upsertThread(thread);
+	refreshRecentThread({
+		sessionId,
+		sessionName,
+		threadId: thread.id,
+		threadName: thread.name,
+		state: thread.state,
+		lastMessage: thread.lastMessage || "",
+	});
+
+	if (
+		thread.id !== sessionId ||
+		sessionDisplayName ||
+		previousThreadName === thread.name ||
+		thread.name.trim().length === 0
+	) {
+		return;
+	}
+
+	void reloadSession();
+}
+
 function createThreadContext(
 	threadId: string,
 	session: SessionContextValue,
@@ -132,7 +181,22 @@ function createThreadContext(
 			await session.threads.refreshThread(threadId);
 		},
 		applyThreadUpdate: (thread) => {
-			session.stores.threads.upsert(thread);
+			const previousThread = session.stores.threads.get(thread.id);
+			applyStreamedThreadUpdate({
+				sessionId: session.sessionId,
+				sessionName:
+					session.current?.displayName ||
+					session.current?.name ||
+					"New Session",
+				sessionDisplayName: session.current?.displayName ?? null,
+				previousThreadName: previousThread?.name ?? null,
+				thread,
+				upsertThread: (nextThread) => {
+					session.stores.threads.upsert(nextThread);
+				},
+				refreshRecentThread: app.sessions.refreshRecentThread,
+				reloadSession: () => app.sessions.reloadSession(session.sessionId),
+			});
 		},
 		refreshSessionState,
 		afterTurn: async () => {
