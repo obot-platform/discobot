@@ -1244,7 +1244,7 @@ func TestPerformCommit_NoCommitsAfterPrompt_DirtyWorkTree_MarksFailed(t *testing
 
 	handler := &trackingHandler{
 		onChat: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) },
-		onCommits: func(w http.ResponseWriter, r *http.Request) {
+		onCommits: func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			// Both pre-check and post-prompt return no_commits with dirty working tree.
 			w.WriteHeader(http.StatusNotFound)
@@ -1294,7 +1294,7 @@ func TestPerformCommit_NoCommitsAfterPrompt_HeadMismatch_MarksFailed(t *testing.
 
 	handler := &trackingHandler{
 		onChat: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) },
-		onCommits: func(w http.ResponseWriter, r *http.Request) {
+		onCommits: func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(sandboxapi.CommitsErrorResponse{

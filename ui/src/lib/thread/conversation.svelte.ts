@@ -369,10 +369,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			const nextReasoning = reasoning ?? "";
 			const nextMode = mode === "plan" ? "plan" : "build";
 			const submittingWhileGenerating =
-				args.hasSession() &&
-				(streamStatus === "streaming" ||
-					loadStatus === "loading" ||
-					hasStreamingAssistantMessage(messages));
+				args.hasSession() && (status === "streaming" || status === "loading");
 			const userMessage = hasMessageContent
 				? createUserMessageFromParts(parts, {
 						provisional: true,
