@@ -192,6 +192,108 @@ test("history replay accepts Discobot assistant parts", async () => {
 	);
 });
 
+test("history replay accepts denied dynamic tool parts", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "history-start",
+		data: "{}",
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-message",
+		data: JSON.stringify({
+			id: "assistant-denied",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "tool-denied-1",
+					toolName: "ExitPlanMode",
+					state: "output-denied",
+					input: { allowedPrompts: [] },
+					approval: {
+						id: "approval-denied-1",
+						approved: false,
+						reason: "continue",
+					},
+				},
+			],
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-end",
+		data: "{}",
+	});
+
+	assert.equal(harness.messages.length, 1);
+	assert.equal(harness.messages[0]?.parts[0]?.type, "dynamic-tool");
+	assert.equal(
+		harness.messages[0]?.parts[0]?.type === "dynamic-tool"
+			? harness.messages[0].parts[0].state
+			: undefined,
+		"output-denied",
+	);
+	assert.equal(
+		harness.messages[0]?.parts[0]?.type === "dynamic-tool"
+			? harness.messages[0].parts[0].approval?.approved
+			: undefined,
+		false,
+	);
+});
+
+test("history replay normalizes legacy dynamic tool approvals", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "history-start",
+		data: "{}",
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-message",
+		data: JSON.stringify({
+			id: "assistant-legacy-tools",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "tool-legacy-approval-1",
+					toolName: "ExitPlanMode",
+					state: "output-available",
+					output: "Approved plan:\n\nContinue",
+					approval: { id: "approval-legacy-1" },
+				},
+				{
+					type: "dynamic-tool",
+					toolCallId: "tool-legacy-denied-1",
+					toolName: "Bash",
+					state: "output-denied",
+					input: { command: "rm -rf /tmp/demo" },
+				},
+			],
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-end",
+		data: "{}",
+	});
+
+	assert.equal(harness.messages.length, 1);
+	assert.equal(harness.messages[0]?.parts[0]?.type, "dynamic-tool");
+	assert.equal(
+		harness.messages[0]?.parts[0]?.type === "dynamic-tool"
+			? harness.messages[0].parts[0].approval?.approved
+			: undefined,
+		true,
+	);
+	assert.equal(harness.messages[0]?.parts[1]?.type, "dynamic-tool");
+	assert.deepEqual(
+		harness.messages[0]?.parts[1]?.type === "dynamic-tool"
+			? harness.messages[0].parts[1].approval
+			: undefined,
+		{ id: "tool-legacy-denied-1", approved: false },
+	);
+});
+
 test("history replay buffers messages until history-end", async () => {
 	const harness = createHarness();
 
@@ -931,6 +1033,52 @@ test("tool outputs update the tool part without extra callbacks", async () => {
 			? (harness.messages[0]?.parts[0] as { state: string }).state
 			: undefined,
 		"output-available",
+	);
+});
+
+test("denied tool outputs preserve rejected approval metadata", async () => {
+	const harness = createHarness([
+		makeCustomAssistantMessage("assistant-custom"),
+	]);
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-thread-resume",
+			data: { threadId: "thread-1", messageId: "assistant-custom" },
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-tool-approval-response",
+			data: {
+				approvalId: "approval-123",
+				approved: false,
+				reason: "continue",
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "tool-output-denied",
+			toolCallId: "tool-123",
+		}),
+	});
+
+	assert.equal(harness.messages[0]?.parts[1]?.type, "dynamic-tool");
+	assert.equal(
+		harness.messages[0]?.parts[1]?.type === "dynamic-tool"
+			? harness.messages[0].parts[1].state
+			: undefined,
+		"output-denied",
+	);
+	assert.deepEqual(
+		harness.messages[0]?.parts[1]?.type === "dynamic-tool"
+			? harness.messages[0].parts[1].approval
+			: undefined,
+		{ id: "approval-123", approved: false, reason: "continue" },
 	);
 });
 

@@ -159,8 +159,21 @@ test("conversation loader derives running state from backend lifecycle", () => {
 
 	assert.match(source, /completionRunning/);
 	assert.match(source, /onCompletionStatus/);
-	assert.match(source, /getThreadMessages/);
-	assert.match(source, /getSessionStatus/);
+	assert.match(source, /getThreadChatStreamUrl/);
+	assert.match(source, /onHistoryReplayEnd/);
+	assert.doesNotMatch(source, /getThreadMessages/);
 	assert.doesNotMatch(source, /isStreamingAssistantMessage/);
 	assert.doesNotMatch(source, /hasStreamingAssistantMessage/);
+});
+
+test("conversation loader stops reconnecting after fatal stream parse errors", () => {
+	const source = readFileSync(CONVERSATION_DOMAIN_SOURCE, "utf-8");
+
+	assert.match(source, /fatalStreamError/);
+	assert.match(
+		source,
+		/onError: \(error\) => \{[\s\S]*fatalStreamError = true/,
+	);
+	assert.match(source, /onError: \(error\) => \{[\s\S]*disconnectStream\(\)/);
+	assert.match(source, /if \(args\.hasSession\(\) && !fatalStreamError\)/);
 });

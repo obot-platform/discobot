@@ -51,11 +51,101 @@ export type ChatStreamChunk = UIMessageChunk<
 	ChatMessageDataTypes
 >;
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function normalizeDynamicToolPart(
+	part: Record<string, unknown>,
+): Record<string, unknown> {
+	const normalized = { ...part };
+	const state = normalized.state;
+	const toolCallId =
+		typeof normalized.toolCallId === "string"
+			? normalized.toolCallId
+			: undefined;
+
+	if (
+		state === "input-available" ||
+		state === "approval-requested" ||
+		state === "approval-responded" ||
+		state === "output-available" ||
+		state === "output-denied"
+	) {
+		if (!("input" in normalized)) {
+			normalized.input = null;
+		}
+	}
+
+	if (state === "output-error" && !("input" in normalized)) {
+		normalized.input =
+			"rawInput" in normalized ? (normalized.rawInput ?? null) : null;
+	}
+
+	if (
+		(state === "approval-requested" ||
+			state === "approval-responded" ||
+			state === "output-available" ||
+			state === "output-error" ||
+			state === "output-denied") &&
+		toolCallId &&
+		(!isObjectRecord(normalized.approval) ||
+			typeof normalized.approval.id !== "string")
+	) {
+		normalized.approval = { id: toolCallId };
+	}
+
+	if (
+		(state === "approval-responded" ||
+			state === "output-available" ||
+			state === "output-error") &&
+		isObjectRecord(normalized.approval) &&
+		typeof normalized.approval.id === "string" &&
+		typeof normalized.approval.approved !== "boolean"
+	) {
+		normalized.approval = {
+			...normalized.approval,
+			approved: true,
+		};
+	}
+
+	if (
+		state === "output-denied" &&
+		isObjectRecord(normalized.approval) &&
+		typeof normalized.approval.id === "string" &&
+		typeof normalized.approval.approved !== "boolean"
+	) {
+		normalized.approval = {
+			...normalized.approval,
+			approved: false,
+		};
+	}
+
+	return normalized;
+}
+
+function normalizeChatStreamMessageValue(message: unknown): unknown {
+	if (!isObjectRecord(message) || !Array.isArray(message.parts)) {
+		return message;
+	}
+
+	return {
+		...message,
+		parts: message.parts.map((part) => {
+			if (!isObjectRecord(part) || part.type !== "dynamic-tool") {
+				return part;
+			}
+			return normalizeDynamicToolPart(part);
+		}),
+	};
+}
+
 export async function parseChatStreamMessageValue(
 	message: unknown,
 ): Promise<ChatMessage> {
+	const normalizedMessage = normalizeChatStreamMessageValue(message);
 	const validation = await safeValidateUIMessages<ChatMessage>({
-		messages: [message],
+		messages: [normalizedMessage],
 	});
 	if (!validation.success) {
 		throw validation.error;

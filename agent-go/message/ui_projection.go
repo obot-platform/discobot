@@ -291,6 +291,10 @@ func applyToolResultToDynamicPart(dp *DynamicToolPart, result ToolResultPart) {
 		dp.ErrorText = string(o.Value)
 	case ExecutionDeniedOutput:
 		dp.State = "output-denied"
+		if dp.Approval != nil && dp.Approval.Approved == nil {
+			approved := false
+			dp.Approval.Approved = &approved
+		}
 	default:
 		dp.State = "output-available"
 		data, _ := MarshalToolResultOutput(result.Output)

@@ -54,12 +54,6 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		if (historyMessages === null) {
 			return;
 		}
-
-		if (historyMessages.length === 0) {
-			historyMessages = null;
-			return;
-		}
-
 		options.setMessages(historyMessages);
 		historyMessages = null;
 		runCallbackInBackground("onHistoryReplayEnd", options.onHistoryReplayEnd);
@@ -564,10 +558,17 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 			case "tool-output-denied": {
 				const toolPart = getToolPart(activeMessage, chunk.toolCallId);
+				const approval =
+					toolPart?.approval && toolPart.approval.approved === undefined
+						? { ...toolPart.approval, approved: false }
+						: toolPart?.approval;
 				updateToolPart(
 					activeMessage,
 					chunk.toolCallId,
-					{ state: "output-denied" },
+					{
+						state: "output-denied",
+						...(approval ? { approval } : {}),
+					},
 					toolPart?.toolName,
 					toolPart?.title,
 				);

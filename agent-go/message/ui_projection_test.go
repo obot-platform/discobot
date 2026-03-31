@@ -384,6 +384,52 @@ func TestProjectUIMessages_ApprovalAcrossToolMessages(t *testing.T) {
 	_ = boolTrue
 }
 
+func TestProjectUIMessages_DeniedApproval(t *testing.T) {
+	msgs := []Message{
+		{Role: "assistant", Parts: []Part{
+			ToolCallPart{ToolCallID: "tc1", ToolName: "rm", Input: `{}`},
+			ToolApprovalRequest{ApprovalID: "a1", ToolCallID: "tc1"},
+		}},
+		{Role: "tool", Parts: []Part{
+			ToolApprovalResponse{ApprovalID: "a1", ToolCallID: "tc1", Approved: false, Reason: "user declined"},
+			ToolResultPart{ToolCallID: "tc1", ToolName: "rm", Output: ExecutionDeniedOutput{Reason: "user declined"}},
+		}},
+	}
+
+	result, err := ProjectUIMessages(msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ui struct {
+		Parts []json.RawMessage `json:"parts"`
+	}
+	json.Unmarshal(mustMarshal(t, result[0]), &ui)
+
+	var dp struct {
+		State    string `json:"state"`
+		Approval *struct {
+			ID       string `json:"id"`
+			Approved *bool  `json:"approved"`
+			Reason   string `json:"reason"`
+		} `json:"approval"`
+	}
+	json.Unmarshal(ui.Parts[0], &dp)
+
+	if dp.State != "output-denied" {
+		t.Fatalf("state: got %q", dp.State)
+	}
+	if dp.Approval == nil || dp.Approval.ID != "a1" {
+		t.Fatalf("approval: got %+v", dp.Approval)
+	}
+	if dp.Approval.Approved == nil || *dp.Approval.Approved {
+		t.Fatal("expected approved=false")
+	}
+	if dp.Approval.Reason != "user declined" {
+		t.Fatalf("approval reason: got %q", dp.Approval.Reason)
+	}
+}
+
 // --- Projection field-coverage tests ---
 //
 // Each test below creates a source Part with every projectable field set to a

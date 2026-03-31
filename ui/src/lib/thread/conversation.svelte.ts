@@ -1,7 +1,7 @@
 import { api } from "$lib/api-client";
 import { StartChatError } from "$lib/api-client";
 import { useAppContext } from "$lib/context/app-context.svelte";
-import type { ChatMessage, Session, Thread } from "$lib/api-types";
+import type { ChatMessage, Thread } from "$lib/api-types";
 import {
 	bindChatStreamEventSource,
 	createChatStreamState,
@@ -16,7 +16,6 @@ import {
 type CreateConversationDomainArgs = {
 	sessionId: string;
 	hasSession: () => boolean;
-	getSessionStatus: () => Session["status"] | null;
 	threadId: string;
 	refreshThread: () => Promise<void>;
 	applyThreadUpdate?: (thread: Thread) => void;
@@ -89,12 +88,16 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	let messages = $state<ChatMessage[]>([]);
 	let historyReplayVersion = $state(0);
 	let streamError = $state<string | null>(null);
+	let fatalStreamError = $state(false);
 	let completionRunning = $state(false);
 	let pendingQuestionId = $state<string | null>(null);
 	let loadStatus = $state<"idle" | "loading" | "ready" | "error">("idle");
 	let activeSource: EventSource | null = null;
 	let unbindStream: (() => void) | null = null;
 	let activeStreamKey: string | null = null;
+	let pendingLoadPromise: Promise<void> | null = null;
+	let resolvePendingLoad: (() => void) | null = null;
+	let rejectPendingLoad: ((error?: unknown) => void) | null = null;
 
 	const status = $derived.by(() => {
 		if (completionRunning) {
@@ -134,11 +137,28 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			}
 		},
 		onHistoryReplayEnd: () => {
+			fatalStreamError = false;
 			historyReplayVersion += 1;
+			pendingQuestionId = getPendingQuestionApprovalId(messages);
+			if (loadStatus === "loading") {
+				loadStatus = "ready";
+			}
+			resolvePendingLoad?.();
+			pendingLoadPromise = null;
+			resolvePendingLoad = null;
+			rejectPendingLoad = null;
 		},
 		onChunkError: (errorText) => {
+			fatalStreamError = true;
 			completionRunning = false;
 			streamError = errorText;
+			if (loadStatus === "loading") {
+				loadStatus = "error";
+			}
+			rejectPendingLoad?.(new Error(errorText));
+			pendingLoadPromise = null;
+			resolvePendingLoad = null;
+			rejectPendingLoad = null;
 		},
 		onThreadUpdate: (thread) => {
 			args.applyThreadUpdate?.(thread);
@@ -153,25 +173,39 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		activeStreamKey = null;
 	}
 
+	function resetLoadPromise() {
+		pendingLoadPromise = null;
+		resolvePendingLoad = null;
+		rejectPendingLoad = null;
+	}
+
+	function beginLoadPromise() {
+		if (pendingLoadPromise) {
+			return pendingLoadPromise;
+		}
+		pendingLoadPromise = new Promise<void>((resolve, reject) => {
+			resolvePendingLoad = resolve;
+			rejectPendingLoad = reject;
+		});
+		return pendingLoadPromise;
+	}
+
+	function rejectLoad(error: unknown, fallbackMessage: string) {
+		loadStatus = "error";
+		streamError = error instanceof Error ? error.message : fallbackMessage;
+		rejectPendingLoad?.(error);
+		resetLoadPromise();
+	}
+
 	function streamKey(sessionId: string) {
 		return `${sessionId}:${args.threadId}`;
 	}
 
-	function syncStream() {
-		if (!args.hasSession()) {
-			disconnectStream();
-			completionRunning = false;
-			return;
-		}
-		if (args.getSessionStatus() === "ready") {
-			ensureStream();
-			return;
-		}
-		disconnectStream();
-	}
-
 	function ensureStream() {
 		if (typeof window === "undefined") {
+			return;
+		}
+		if (fatalStreamError) {
 			return;
 		}
 		if (activeStreamKey === streamKey(args.sessionId)) {
@@ -202,10 +236,15 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		};
 		unbindStream = bindChatStreamEventSource(source, streamState, {
 			onError: (error) => {
+				fatalStreamError = true;
 				streamError =
 					error instanceof Error
 						? error.message
 						: "Failed to process chat stream";
+				disconnectStream();
+				if (loadStatus === "loading") {
+					rejectLoad(error, "Failed to load messages");
+				}
 			},
 		});
 		source.onerror = () => {
@@ -215,22 +254,37 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 
 			if (source.readyState === EventSource.CLOSED) {
 				completionRunning = false;
-				streamError = "Lost chat stream connection";
+				const error = new Error("Lost chat stream connection");
+				streamError = error.message;
 				disconnectStream();
-				if (args.hasSession() && args.getSessionStatus() === "ready") {
+				if (loadStatus === "loading") {
+					rejectLoad(error, "Lost chat stream connection");
+					return;
+				}
+				if (args.hasSession() && !fatalStreamError) {
 					ensureStream();
 				}
 			}
 		};
 	}
 
-	async function refreshMessages() {
-		const { messages: nextMessages } = await api.getThreadMessages(
-			args.sessionId,
-			args.threadId,
-		);
-		messages = nextMessages;
-		pendingQuestionId = getPendingQuestionApprovalId(nextMessages);
+	async function loadFromStream(forceReconnect = false) {
+		if (!forceReconnect && pendingLoadPromise) {
+			return pendingLoadPromise;
+		}
+		if (fatalStreamError && !forceReconnect) {
+			throw new Error(streamError ?? "Failed to process chat stream");
+		}
+		if (forceReconnect) {
+			fatalStreamError = false;
+		}
+		if (forceReconnect || activeStreamKey === streamKey(args.sessionId)) {
+			disconnectStream();
+		}
+		loadStatus = "loading";
+		streamError = null;
+		ensureStream();
+		return beginLoadPromise();
 	}
 
 	async function load() {
@@ -240,22 +294,14 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			completionRunning = false;
 			pendingQuestionId = null;
 			disconnectStream();
+			resetLoadPromise();
 			return;
 		}
-		if (loadStatus !== "ready") {
-			loadStatus = "loading";
-			streamError = null;
-			try {
-				await refreshMessages();
-				loadStatus = "ready";
-			} catch (error) {
-				loadStatus = "error";
-				streamError =
-					error instanceof Error ? error.message : "Failed to load messages";
-				throw error;
-			}
+		if (loadStatus === "ready") {
+			ensureStream();
+			return;
 		}
-		syncStream();
+		await loadFromStream();
 	}
 
 	async function refresh() {
@@ -265,20 +311,10 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			completionRunning = false;
 			pendingQuestionId = null;
 			disconnectStream();
+			resetLoadPromise();
 			return;
 		}
-		loadStatus = "loading";
-		streamError = null;
-		try {
-			await refreshMessages();
-			loadStatus = "ready";
-			syncStream();
-		} catch (error) {
-			loadStatus = "error";
-			streamError =
-				error instanceof Error ? error.message : "Failed to load messages";
-			throw error;
-		}
+		await loadFromStream(true);
 	}
 
 	return {
@@ -419,6 +455,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			loadStatus = "idle";
 			completionRunning = false;
 			pendingQuestionId = null;
+			resetLoadPromise();
 			disconnectStream();
 		},
 	};
