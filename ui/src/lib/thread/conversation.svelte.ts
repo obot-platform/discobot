@@ -248,7 +248,10 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			disconnectStream();
 			return;
 		}
-		if (activeStreamKey === streamKey(args.sessionId) && loadStatus !== "error") {
+		if (
+			activeStreamKey === streamKey(args.sessionId) &&
+			loadStatus !== "error"
+		) {
 			return;
 		}
 		loadStatus = "loading";
