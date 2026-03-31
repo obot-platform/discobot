@@ -27,10 +27,12 @@ type CompletionListener interface {
 type CompletionManager struct {
 	agent Agent
 
-	mu        sync.Mutex
-	cond      *sync.Cond
-	active    map[string]*activeCompletion // keyed by threadID
-	listeners []CompletionListener
+	mu                      sync.Mutex
+	cond                    *sync.Cond
+	active                  map[string]*activeCompletion // keyed by threadID
+	listeners               []CompletionListener
+	ephemeralSubscribers    map[int]chan message.MessageChunk
+	nextEphemeralSubscriber int
 }
 
 type activeCompletion struct {
@@ -49,8 +51,9 @@ type activeCompletion struct {
 // NewCompletionManager creates a CompletionManager wrapping the given Agent.
 func NewCompletionManager(agent Agent) *CompletionManager {
 	cm := &CompletionManager{
-		agent:  agent,
-		active: make(map[string]*activeCompletion),
+		agent:                agent,
+		active:               make(map[string]*activeCompletion),
+		ephemeralSubscribers: make(map[int]chan message.MessageChunk),
 	}
 	cm.cond = sync.NewCond(&cm.mu)
 	return cm
@@ -146,6 +149,40 @@ type PollResult struct {
 	NextOffset   int
 	Done         bool
 	Err          error
+}
+
+// EmitEphemeralChunk publishes a global ephemeral chunk to current subscribers only.
+func (cm *CompletionManager) EmitEphemeralChunk(_ string, chunk message.MessageChunk) {
+	cm.mu.Lock()
+	subscribers := make([]chan message.MessageChunk, 0, len(cm.ephemeralSubscribers))
+	for _, ch := range cm.ephemeralSubscribers {
+		subscribers = append(subscribers, ch)
+	}
+	cm.mu.Unlock()
+
+	for _, ch := range subscribers {
+		select {
+		case ch <- chunk:
+		default:
+		}
+	}
+}
+
+// SubscribeEphemeral subscribes to live ephemeral chunks until the caller unsubscribes.
+func (cm *CompletionManager) SubscribeEphemeral() (<-chan message.MessageChunk, func()) {
+	ch := make(chan message.MessageChunk, 16)
+
+	cm.mu.Lock()
+	id := cm.nextEphemeralSubscriber
+	cm.nextEphemeralSubscriber++
+	cm.ephemeralSubscribers[id] = ch
+	cm.mu.Unlock()
+
+	return ch, func() {
+		cm.mu.Lock()
+		delete(cm.ephemeralSubscribers, id)
+		cm.mu.Unlock()
+	}
 }
 
 // PollChunks returns cached events from the given offset for a thread's

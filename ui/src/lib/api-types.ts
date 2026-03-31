@@ -76,6 +76,7 @@ export type ChatMessageDataTypes = {
 		approved?: boolean;
 		reason?: string;
 	};
+	"hooks-status": HooksStatusResponse;
 };
 
 /** User preference key-value pair */

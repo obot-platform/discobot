@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatMessage, Thread } from "$lib/api-types";
+import type { ChatMessage, HooksStatusResponse, Thread } from "$lib/api-types";
 
 import {
 	bindChatStreamEventSource,
@@ -127,6 +127,9 @@ function createHarness(
 		onThreadUpdate: (thread) => {
 			threadUpdates.push(thread);
 			return overrides.onThreadUpdate?.(thread);
+		},
+		onHooksStatusUpdate: (status) => {
+			return overrides.onHooksStatusUpdate?.(status);
 		},
 		onStart: (info) => {
 			startEvents.push(info);
@@ -672,6 +675,44 @@ test("data-thread-update notifies the caller", async () => {
 	});
 
 	assert.deepEqual(harness.threadUpdates, [thread]);
+});
+
+test("data-hooks-status notifies the caller", async () => {
+	const hookStatusUpdates: HooksStatusResponse[] = [];
+	const harness = createHarness([], {
+		onHooksStatusUpdate: (status) => {
+			hookStatusUpdates.push(status);
+		},
+	});
+	const status: HooksStatusResponse = {
+		hooks: {
+			"go-check": {
+				hookId: "go-check",
+				hookName: "Go Check",
+				type: "file",
+				lastRunAt: "2026-03-31T00:00:00Z",
+				lastResult: "running",
+				lastExitCode: 0,
+				outputPath: "/tmp/go-check.log",
+				runCount: 3,
+				failCount: 1,
+				consecutiveFailures: 0,
+			},
+		},
+		pendingHooks: ["go-check"],
+		lastEvaluatedAt: "2026-03-31T00:00:00Z",
+	};
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-hooks-status",
+			data: status,
+		}),
+	});
+
+	assert.deepEqual(hookStatusUpdates, [status]);
+	assert.deepEqual(harness.messages, []);
 });
 
 test("appending a new message removes all provisional messages first", async () => {

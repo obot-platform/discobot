@@ -661,6 +661,68 @@ func TestCompletionManager_WaitChunks_SwitchesToNewCompletionWithoutReusingOffse
 	}
 }
 
+func TestCompletionManager_SubscribeEphemeral_ReceivesFutureChunk(t *testing.T) {
+	cm := NewCompletionManager(&mockAgent{})
+	ch, unsubscribe := cm.SubscribeEphemeral()
+	defer unsubscribe()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cm.EmitEphemeralChunk("hooks-status", message.DataChunk{DataType: "hooks-status", Data: []byte(`{"step":2}`)})
+	}()
+
+	select {
+	case chunk := <-ch:
+		dataChunk, ok := chunk.(message.DataChunk)
+		if !ok {
+			t.Fatalf("expected DataChunk, got %T", chunk)
+		}
+		if string(dataChunk.Data) != `{"step":2}` {
+			t.Fatalf("expected payload {\"step\":2}, got %s", dataChunk.Data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected ephemeral chunk")
+	}
+}
+
+func TestCompletionManager_SubscribeEphemeral_DoesNotReplayPastChunk(t *testing.T) {
+	cm := NewCompletionManager(&mockAgent{})
+	cm.EmitEphemeralChunk("hooks-status", message.DataChunk{DataType: "hooks-status", Data: []byte(`{"step":1}`)})
+
+	ch, unsubscribe := cm.SubscribeEphemeral()
+	defer unsubscribe()
+
+	select {
+	case chunk := <-ch:
+		t.Fatalf("expected no replayed ephemeral chunk, got %#v", chunk)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestCompletionManager_SubscribeEphemeral_ReceivesMultipleLiveChunks(t *testing.T) {
+	cm := NewCompletionManager(&mockAgent{})
+	ch, unsubscribe := cm.SubscribeEphemeral()
+	defer unsubscribe()
+
+	cm.EmitEphemeralChunk("hooks-status", message.DataChunk{DataType: "hooks-status", Data: []byte(`{"step":1}`)})
+	cm.EmitEphemeralChunk("hooks-status", message.DataChunk{DataType: "hooks-status", Data: []byte(`{"step":2}`)})
+
+	for _, want := range []string{`{"step":1}`, `{"step":2}`} {
+		select {
+		case chunk := <-ch:
+			dataChunk, ok := chunk.(message.DataChunk)
+			if !ok {
+				t.Fatalf("expected DataChunk, got %T", chunk)
+			}
+			if string(dataChunk.Data) != want {
+				t.Fatalf("expected payload %s, got %s", want, dataChunk.Data)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("expected ephemeral chunk %s", want)
+		}
+	}
+}
+
 func TestCompletionManager_ResumeInterruptedTurns(t *testing.T) {
 	resumeCh := make(chan string, 2)
 	agent := &mockAgent{

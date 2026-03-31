@@ -50,6 +50,11 @@ func New(agentCwd string, completions *agent.CompletionManager, hookManager *hoo
 		answeredQuestions: make(map[string]bool),
 	}
 
+	if hookManager != nil {
+		hookManager.SetChunkEmitter(func(chunk message.MessageChunk) {
+			completions.EmitEphemeralChunk("hooks-status", chunk)
+		})
+	}
 	completions.AddCompletionListener(h)
 
 	return h

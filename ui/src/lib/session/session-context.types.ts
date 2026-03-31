@@ -1,6 +1,7 @@
 import type {
 	ChatMessage,
 	FileStatus,
+	HooksStatusResponse,
 	QueuedPrompt,
 	Session,
 	SessionDiffFileEntry,
@@ -46,6 +47,7 @@ export type SessionHooksService = {
 	outputById: Record<string, string>;
 	rerun: (hookId: string) => void;
 	refresh: () => Promise<void>;
+	applyStatusUpdate: (status: HooksStatusResponse) => Promise<void>;
 };
 
 export type SessionThreadsService = {

@@ -1,7 +1,7 @@
 import { api } from "$lib/api-client";
 import { StartChatError } from "$lib/api-client";
 import { useAppContext } from "$lib/context/app-context.svelte";
-import type { ChatMessage, Thread } from "$lib/api-types";
+import type { ChatMessage, HooksStatusResponse, Thread } from "$lib/api-types";
 import {
 	bindChatStreamEventSource,
 	createChatStreamState,
@@ -19,6 +19,9 @@ type CreateConversationDomainArgs = {
 	threadId: string;
 	refreshThread: () => Promise<void>;
 	applyThreadUpdate?: (thread: Thread) => void;
+	applyHooksStatusUpdate?: (
+		status: HooksStatusResponse,
+	) => void | Promise<void>;
 	refreshSessionState?: () => Promise<void>;
 	afterTurn?: () => Promise<void>;
 };
@@ -162,6 +165,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		},
 		onThreadUpdate: (thread) => {
 			args.applyThreadUpdate?.(thread);
+		},
+		onHooksStatusUpdate: (status) => {
+			return args.applyHooksStatusUpdate?.(status);
 		},
 	});
 

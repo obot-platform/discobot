@@ -199,6 +199,9 @@ function createThreadContext(
 				reloadSession: () => app.sessions.reloadSession(session.sessionId),
 			});
 		},
+		applyHooksStatusUpdate: (status) => {
+			return session.hooks.applyStatusUpdate(status);
+		},
 		refreshSessionState,
 		afterTurn: async () => {
 			await session.threads.refreshThread(threadId);

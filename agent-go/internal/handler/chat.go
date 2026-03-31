@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -257,11 +258,22 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var writeMu sync.Mutex
+	writeEvent := func(id, event string, data []byte) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		writeSSEEvent(w, id, event, data)
+		flusher.Flush()
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+
+	ephemeralCh, unsubscribeEphemeral := h.completions.SubscribeEphemeral()
+	defer unsubscribeEphemeral()
 
 	currentCompletionID := ""
 	lastSeenCompletionID := ""
@@ -273,33 +285,43 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if freshRequest {
-		writeSSEEvent(w, "", "history-start", json.RawMessage(`{}`))
-		flusher.Flush()
+		writeEvent("", "history-start", json.RawMessage(`{}`))
 		for _, msg := range historyMessages {
 			data, err := json.Marshal(msg)
 			if err != nil {
 				continue
 			}
-			writeSSEEvent(w, "", "history-message", data)
-			flusher.Flush()
+			writeEvent("", "history-message", data)
 		}
 
-		writeSSEEvent(w, "", "history-end", json.RawMessage(`{}`))
-		flusher.Flush()
+		writeEvent("", "history-end", json.RawMessage(`{}`))
 		if currentCompletionID != "" {
-			emitCompletionStatusEvent(
-				w,
-				flusher,
-				threadID,
-				currentCompletionID,
-				true,
-			)
+			emitCompletionStatusEvent(writeEvent, threadID, currentCompletionID, true)
 			offset = 0
 		}
 	} else if snapshot != nil && !snapshot.Done {
 		currentCompletionID = snapshot.CompletionID
 		lastSeenCompletionID = snapshot.CompletionID
 	}
+
+	go func() {
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case chunk := <-ephemeralCh:
+				if chunk == nil {
+					continue
+				}
+				data, err := message.MarshalChunk(chunk)
+				if err != nil {
+					log.Printf("chat stream: failed to marshal ephemeral chunk: %v", err)
+					continue
+				}
+				writeEvent("", "chunk", data)
+			}
+		}
+	}()
 
 	for {
 		if currentCompletionID == "" {
@@ -313,8 +335,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			}
 			if result == nil {
 				if timedOut {
-					writeSSEEvent(w, "", "ping", json.RawMessage(`{}`))
-					flusher.Flush()
+					writeEvent("", "ping", json.RawMessage(`{}`))
 				}
 				continue
 			}
@@ -322,15 +343,14 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			currentCompletionID = result.CompletionID
 			lastSeenCompletionID = result.CompletionID
 			if !result.Done {
-				emitCompletionStatusEvent(w, flusher, threadID, result.CompletionID, true)
+				emitCompletionStatusEvent(writeEvent, threadID, result.CompletionID, true)
 			}
 			for i, chunk := range result.Chunks {
 				data, err := message.MarshalChunk(chunk)
 				if err != nil {
 					continue
 				}
-				writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, result.ChunkOffsets[i]), "chunk", data)
-				flusher.Flush()
+				writeEvent(fmt.Sprintf("%s:%d", result.CompletionID, result.ChunkOffsets[i]), "chunk", data)
 			}
 			offset = result.NextOffset
 			if result.Done {
@@ -349,12 +369,11 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if result == nil {
-			emitCompletionStatusEvent(w, flusher, threadID, currentCompletionID, false)
+			emitCompletionStatusEvent(writeEvent, threadID, currentCompletionID, false)
 			currentCompletionID = ""
 			offset = 0
 			if timedOut {
-				writeSSEEvent(w, "", "ping", json.RawMessage(`{}`))
-				flusher.Flush()
+				writeEvent("", "ping", json.RawMessage(`{}`))
 			}
 			continue
 		}
@@ -368,29 +387,26 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			writeSSEEvent(w, fmt.Sprintf("%s:%d", result.CompletionID, result.ChunkOffsets[i]), "chunk", data)
-			flusher.Flush()
+			writeEvent(fmt.Sprintf("%s:%d", result.CompletionID, result.ChunkOffsets[i]), "chunk", data)
 		}
 		offset = result.NextOffset
 
 		if result.Done {
 			lastSeenCompletionID = result.CompletionID
-			emitCompletionStatusEvent(w, flusher, threadID, result.CompletionID, false)
+			emitCompletionStatusEvent(writeEvent, threadID, result.CompletionID, false)
 			currentCompletionID = ""
 			offset = 0
 			continue
 		}
 
 		if timedOut && len(result.Chunks) == 0 {
-			writeSSEEvent(w, "", "ping", json.RawMessage(`{}`))
-			flusher.Flush()
+			writeEvent("", "ping", json.RawMessage(`{}`))
 		}
 	}
 }
 
 func emitCompletionStatusEvent(
-	w http.ResponseWriter,
-	flusher http.Flusher,
+	writeEvent func(id, event string, data []byte),
 	threadID, completionID string,
 	isRunning bool,
 ) {
@@ -404,8 +420,7 @@ func emitCompletionStatusEvent(
 	if err != nil {
 		return
 	}
-	writeSSEEvent(w, "", "chunk", data)
-	flusher.Flush()
+	writeEvent("", "chunk", data)
 }
 
 func writeSSEEvent(w http.ResponseWriter, id, event string, data []byte) {

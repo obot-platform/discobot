@@ -74,6 +74,14 @@ export function createSessionHooksDomain(
 		await loadOutputs(nextStatus);
 	}
 
+	async function applyStatusUpdate(nextStatus: HooksStatusResponse) {
+		if (!args.hasSession()) {
+			return;
+		}
+		hooksData = nextStatus;
+		await loadOutputs(nextStatus);
+	}
+
 	return {
 		get status() {
 			return status;
@@ -96,5 +104,6 @@ export function createSessionHooksDomain(
 			})();
 		},
 		refresh,
+		applyStatusUpdate,
 	};
 }

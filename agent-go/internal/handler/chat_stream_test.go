@@ -1761,6 +1761,86 @@ func TestChatStream_ForwardsThreadUpdateChunk(t *testing.T) {
 	}
 }
 
+func TestChatStream_DoesNotReplayPastEphemeralChunk(t *testing.T) {
+	cm := agent.NewCompletionManager(&streamTestAgent{})
+	cm.EmitEphemeralChunk("hooks-status", message.DataChunk{
+		DataType: "hooks-status",
+		Data:     []byte(`{"hooks":{"go-check":{"hookId":"go-check"}}}`),
+	})
+
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 10 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-hooks/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	frames := readFrames(t, resp.Body, 3, false)
+	if len(frames) != 3 {
+		t.Fatalf("expected 3 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[1])
+	}
+	if frames[2].Event != "ping" {
+		t.Fatalf("expected ping with no replayed ephemeral chunk, got %+v", frames[2])
+	}
+}
+
+func TestChatStream_ForwardsLiveEphemeralChunk(t *testing.T) {
+	expectedChunk, err := message.MarshalChunk(message.DataChunk{
+		DataType: "hooks-status",
+		Data:     []byte(`{"hooks":{"go-check":{"hookId":"go-check"}}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cm := agent.NewCompletionManager(&streamTestAgent{})
+	h := New("", cm, nil, nil, nil)
+	h.chatPingEvery = 25 * time.Millisecond
+	ts := newStreamTestServer(t, h)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-hooks/chat/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	time.AfterFunc(5*time.Millisecond, func() {
+		cm.EmitEphemeralChunk("hooks-status", message.DataChunk{
+			DataType: "hooks-status",
+			Data:     []byte(`{"hooks":{"go-check":{"hookId":"go-check"}}}`),
+		})
+	})
+
+	frames := readFrames(t, resp.Body, 3, false)
+	if len(frames) != 3 {
+		t.Fatalf("expected 3 frames, got %d", len(frames))
+	}
+	if frames[0].Event != "history-start" {
+		t.Fatalf("expected history-start, got %+v", frames[0])
+	}
+	if frames[1].Event != "history-end" {
+		t.Fatalf("expected history-end, got %+v", frames[1])
+	}
+	if frames[2].Event != "chunk" || frames[2].Data != string(expectedChunk) {
+		t.Fatalf("expected live ephemeral chunk after subscribe, got %+v", frames[2])
+	}
+}
+
 func TestChatStream_InvalidLastEventID_TreatedAsFreshRequest(t *testing.T) {
 	historyMsg := message.UIMessage{
 		ID:    "hist-2",

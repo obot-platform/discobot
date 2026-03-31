@@ -1,5 +1,5 @@
 import { addToolApprovalResponse } from "$lib/session/domains/session-domain.helpers";
-import type { ChatMessage, Thread } from "$lib/api-types";
+import type { ChatMessage, HooksStatusResponse, Thread } from "$lib/api-types";
 import {
 	parseChatStreamChunk,
 	parseChatStreamMessage,
@@ -28,6 +28,7 @@ export type ChatStreamStateOptions = {
 	onHistoryReplayEnd?: () => void | Promise<void>;
 	onChunkError?: (errorText: string) => void | Promise<void>;
 	onThreadUpdate?: (thread: Thread) => void | Promise<void>;
+	onHooksStatusUpdate?: (status: HooksStatusResponse) => void | Promise<void>;
 };
 
 type MessagePart = ChatMessage["parts"][number];
@@ -103,6 +104,63 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 	const isObjectRecord = (value: unknown): value is Record<string, unknown> => {
 		return typeof value === "object" && value !== null;
+	};
+
+	const isHookRunStatus = (
+		value: unknown,
+	): value is HooksStatusResponse["hooks"][string] => {
+		return (
+			isObjectRecord(value) &&
+			typeof value.hookId === "string" &&
+			typeof value.hookName === "string" &&
+			typeof value.type === "string" &&
+			typeof value.lastRunAt === "string" &&
+			typeof value.lastResult === "string" &&
+			typeof value.lastExitCode === "number" &&
+			typeof value.outputPath === "string" &&
+			typeof value.runCount === "number" &&
+			typeof value.failCount === "number" &&
+			typeof value.consecutiveFailures === "number"
+		);
+	};
+
+	const parseHooksStatusUpdate = (
+		value: unknown,
+	): HooksStatusResponse | null => {
+		if (!isObjectRecord(value) || !isObjectRecord(value.hooks)) {
+			return null;
+		}
+		if (
+			!Array.isArray(value.pendingHooks) ||
+			!value.pendingHooks.every((hookId) => typeof hookId === "string") ||
+			typeof value.lastEvaluatedAt !== "string"
+		) {
+			return null;
+		}
+
+		const hooks: HooksStatusResponse["hooks"] = {};
+		for (const [hookId, hookStatus] of Object.entries(value.hooks)) {
+			if (!isHookRunStatus(hookStatus)) {
+				return null;
+			}
+			hooks[hookId] = hookStatus;
+		}
+
+		return {
+			hooks,
+			pendingHooks: [...value.pendingHooks],
+			lastEvaluatedAt: value.lastEvaluatedAt,
+		};
+	};
+
+	const parseHooksStatusChunkData = (
+		data: string,
+	): HooksStatusResponse | null => {
+		const chunk = JSON.parse(data);
+		if (!isObjectRecord(chunk) || chunk.type !== "data-hooks-status") {
+			return null;
+		}
+		return parseHooksStatusUpdate(chunk.data);
 	};
 
 	const runCallbackInBackground = <TArgs extends unknown[]>(
@@ -634,6 +692,16 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 		if (event.event === "history-end") {
 			commitHistoryReplay();
+			return;
+		}
+
+		const hooksStatus = parseHooksStatusChunkData(event.data);
+		if (hooksStatus) {
+			runCallbackInBackground(
+				"onHooksStatusUpdate",
+				options.onHooksStatusUpdate,
+				hooksStatus,
+			);
 			return;
 		}
 

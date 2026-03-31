@@ -1,11 +1,14 @@
 package hooks
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/obot-platform/discobot/agent-go/message"
 )
 
 func TestFormatHookFailureMessage_UsesMarkdownWithInlineOutput(t *testing.T) {
@@ -178,5 +181,55 @@ exit 1
 	}
 	if !strings.Contains(runResult.Eval.LLMMessage, "### Hook failed: Go Check") {
 		t.Fatalf("expected rerun failure message, got: %s", runResult.Eval.LLMMessage)
+	}
+}
+
+func TestEmitCurrentStatusChunk_EmitsHooksStatusDataChunk(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	mgr := NewManager(t.TempDir(), "session-123")
+
+	status := StatusFile{
+		Hooks: map[string]HookRunStatus{
+			"go-check": {
+				HookID:       "go-check",
+				HookName:     "Go Check",
+				Type:         string(HookTypeFile),
+				LastRunAt:    "2026-03-31T00:00:00Z",
+				LastResult:   "pending",
+				LastExitCode: 0,
+				OutputPath:   "/tmp/go-check.log",
+			},
+		},
+		PendingHooks:    []string{"go-check"},
+		LastEvaluatedAt: "2026-03-31T00:00:00Z",
+	}
+	if err := SaveStatus(mgr.hooksDataDir, status); err != nil {
+		t.Fatalf("SaveStatus() failed: %v", err)
+	}
+
+	var gotChunk message.MessageChunk
+	mgr.SetChunkEmitter(func(chunk message.MessageChunk) {
+		gotChunk = chunk
+	})
+	if gotChunk != nil {
+		t.Fatalf("expected no initial chunk replay, got %#v", gotChunk)
+	}
+
+	mgr.emitCurrentStatusChunk()
+
+	dataChunk, ok := gotChunk.(message.DataChunk)
+	if !ok {
+		t.Fatalf("expected DataChunk, got %T", gotChunk)
+	}
+	if dataChunk.DataType != "hooks-status" {
+		t.Fatalf("data type = %q, want hooks-status", dataChunk.DataType)
+	}
+
+	var gotStatus StatusFile
+	if err := json.Unmarshal(dataChunk.Data, &gotStatus); err != nil {
+		t.Fatalf("json.Unmarshal() failed: %v", err)
+	}
+	if gotStatus.Hooks["go-check"].LastResult != "pending" {
+		t.Fatalf("hook result = %q, want pending", gotStatus.Hooks["go-check"].LastResult)
 	}
 }
