@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"regexp"
 	"strings"
@@ -1165,6 +1166,19 @@ func waitForPromptTerminalEvent(ctx context.Context, streamCh <-chan SSELine) er
 	}
 }
 
+func isPromptStreamInterruption(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	message := err.Error()
+	return strings.Contains(message, "failed to read chat stream:") ||
+		strings.Contains(message, "chat stream ended before completion finished")
+}
+
 // sendCommitPrompt sends the /discobot-commit command to the agent.
 func (s *SessionService) sendCommitPrompt(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session) error {
 	if s.sandboxService == nil {
@@ -1206,6 +1220,10 @@ func (s *SessionService) sendCommitPrompt(ctx context.Context, projectID string,
 	s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusCommitting)
 
 	if err := waitForPromptTerminalEvent(streamCtx, streamCh); err != nil {
+		if isPromptStreamInterruption(err) {
+			log.Printf("Session %s: commit prompt stream interrupted before terminal chunk (%v), continuing with replay reconciliation", sess.ID, err)
+			return nil
+		}
 		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed while waiting for commit prompt to finish: %v", err))
 		return nil
 	}
@@ -1253,6 +1271,10 @@ func (s *SessionService) sendRebasePrompt(ctx context.Context, projectID string,
 	s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusCommitting)
 
 	if err := waitForPromptTerminalEvent(streamCtx, streamCh); err != nil {
+		if isPromptStreamInterruption(err) {
+			log.Printf("Session %s: rebase prompt stream interrupted before terminal chunk (%v), continuing with rebase validation", sess.ID, err)
+			return nil
+		}
 		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed while waiting for rebase prompt to finish: %v", err))
 		return nil
 	}
