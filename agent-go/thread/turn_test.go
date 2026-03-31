@@ -3744,6 +3744,63 @@ func TestRunTurn_MessageIDFromStartChunk(t *testing.T) {
 	}
 }
 
+func TestRunTurn_UserMessageChunkProjectsImagePartsToUIFiles(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	prov := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{
+			{
+				message.StreamStartChunk{},
+				message.TextStartChunk{ID: "t1"},
+				message.TextDeltaChunk{ID: "t1", Delta: "ok"},
+				message.TextEndChunk{ID: "t1"},
+				message.FinishChunk{FinishReason: message.FinishReason{Unified: "stop"}},
+			},
+		},
+	}
+
+	chunks := collectChunks(t, RunTurn(
+		context.Background(), prov, &mockExecutor{}, store,
+		"thread-image", "", TurnConfig{
+			Model: "test-model",
+			UserParts: []message.Part{
+				message.TextPart{Text: "Does this rendering look correct?"},
+				message.ImagePart{
+					Image:     "data:image/png;base64,abc123",
+					MediaType: "image/png",
+				},
+			},
+		},
+	))
+
+	userChunk, ok := chunks[0].(message.UserMessageChunk)
+	if !ok {
+		t.Fatalf("expected UserMessageChunk at index 0, got %T", chunks[0])
+	}
+	if len(userChunk.Data.Message.Parts) != 2 {
+		t.Fatalf("expected 2 projected user parts, got %d", len(userChunk.Data.Message.Parts))
+	}
+
+	textPart, ok := userChunk.Data.Message.Parts[0].(message.UITextPart)
+	if !ok {
+		t.Fatalf("expected first user part to be UITextPart, got %T", userChunk.Data.Message.Parts[0])
+	}
+	if textPart.Text != "Does this rendering look correct?" {
+		t.Fatalf("unexpected text part: %+v", textPart)
+	}
+
+	filePart, ok := userChunk.Data.Message.Parts[1].(message.UIFilePart)
+	if !ok {
+		t.Fatalf("expected second user part to be UIFilePart, got %T", userChunk.Data.Message.Parts[1])
+	}
+	if filePart.MediaType != "image/png" {
+		t.Fatalf("expected projected image media type image/png, got %q", filePart.MediaType)
+	}
+	if filePart.URL != "data:image/png;base64,abc123" {
+		t.Fatalf("expected projected image URL to be preserved, got %q", filePart.URL)
+	}
+}
+
 // --- P2: Async Interrupted Fallback + FindLeaf Store Tests ---
 
 // TestResumeTurn_AsyncPhase_MissingToolResult verifies that when a tool call

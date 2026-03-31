@@ -172,11 +172,11 @@ func TestChunkRoundTrip_Data(t *testing.T) {
 	})
 	chunkRoundTrip(t, "UserMessage", UserMessageChunk{
 		Data: UserMessageData{
-			Message: Message{
+			Message: UIMessage{
 				ID:   "u1",
 				Role: "user",
-				Parts: []Part{
-					TextPart{Text: "hello"},
+				Parts: []UIPart{
+					UITextPart{Type: "text", Text: "hello", State: "done"},
 				},
 			},
 			InsertBeforeMessageID: "a1",

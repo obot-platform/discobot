@@ -37,63 +37,53 @@ test("parseChatStreamMessageValue accepts current AI SDK assistant parts", async
 	);
 });
 
-test("parseChatStreamMessageValue normalizes legacy tool-call parts", async () => {
-	const parsed = await parseChatStreamMessageValue({
-		id: "assistant-legacy",
-		role: "assistant",
-		parts: [
-			{
-				type: "reasoning",
-				text: "Planning the next step.",
-				state: "done",
-			},
-			{
-				type: "tool-call",
-				toolCallId: "tool-legacy-1",
-				toolName: "EnterPlanMode",
-				input: {},
-			},
-		],
-	});
+test("parseChatStreamMessageValue rejects legacy part formats", async () => {
+	await assert.rejects(() =>
+		parseChatStreamMessageValue({
+			id: "assistant-legacy",
+			role: "assistant",
+			parts: [
+				{
+					type: "tool-call",
+					toolCallId: "tool-legacy-1",
+					toolName: "EnterPlanMode",
+					input: {},
+				},
+			],
+		}),
+	);
 
-	assert.equal(parsed.parts[1]?.type, "dynamic-tool");
-	assert.deepEqual(parsed.parts[1], {
-		type: "dynamic-tool",
-		toolCallId: "tool-legacy-1",
-		toolName: "EnterPlanMode",
-		state: "input-available",
-		input: {},
-	});
-});
+	await assert.rejects(() =>
+		parseChatStreamMessageValue({
+			id: "assistant-legacy-approval",
+			role: "assistant",
+			parts: [
+				{
+					type: "dynamic-tool",
+					toolCallId: "tool-legacy-approval-1",
+					toolName: "ExitPlanMode",
+					state: "output-available",
+					input: {},
+					output: "Plan feedback from user: Continue with your work.",
+					approval: { id: "approval-legacy-1" },
+				},
+			],
+		}),
+	);
 
-test("parseChatStreamMessageValue normalizes legacy dynamic-tool approvals", async () => {
-	const parsed = await parseChatStreamMessageValue({
-		id: "assistant-legacy-approval",
-		role: "assistant",
-		parts: [
-			{
-				type: "dynamic-tool",
-				toolCallId: "tool-legacy-approval-1",
-				toolName: "ExitPlanMode",
-				state: "output-available",
-				input: {},
-				output: "Plan feedback from user: Continue with your work.",
-				approval: { id: "approval-legacy-1" },
-			},
-			{ type: "step-start" },
-		],
-	});
-
-	assert.deepEqual(parsed.parts[0], {
-		type: "dynamic-tool",
-		toolCallId: "tool-legacy-approval-1",
-		toolName: "ExitPlanMode",
-		state: "output-available",
-		input: {},
-		output: "Plan feedback from user: Continue with your work.",
-		approval: { id: "approval-legacy-1", approved: true },
-	});
-	assert.equal(parsed.parts[1]?.type, "step-start");
+	await assert.rejects(() =>
+		parseChatStreamMessageValue({
+			id: "user-legacy-image",
+			role: "user",
+			parts: [
+				{
+					type: "image",
+					image: "data:image/png;base64,abc123",
+					mediaType: "image/png",
+				},
+			],
+		}),
+	);
 });
 
 test("parseChatStreamMessageValue accepts data-* parts", async () => {

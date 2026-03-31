@@ -233,9 +233,9 @@ func TestPromptLegacyCommand_PreservesOriginalTextInUserMessageMetadata(t *testi
 	if metadata.OriginalText != "/commit fix the bug" {
 		t.Fatalf("originalText = %q", metadata.OriginalText)
 	}
-	textPart, ok := userChunk.Data.Message.Parts[0].(message.TextPart)
+	textPart, ok := userChunk.Data.Message.Parts[0].(message.UITextPart)
 	if !ok {
-		t.Fatalf("expected first user part to be TextPart, got %T", userChunk.Data.Message.Parts[0])
+		t.Fatalf("expected first user part to be UITextPart, got %T", userChunk.Data.Message.Parts[0])
 	}
 	if !strings.HasPrefix(textPart.Text, "Expanded command body.") {
 		t.Fatalf("expanded text = %q", textPart.Text)

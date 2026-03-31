@@ -390,8 +390,8 @@ func (ToolApprovalResponseDataChunk) chunkType() string {
 
 // UserMessageData is the payload for a user message stream chunk.
 type UserMessageData struct {
-	Message               Message `json:"message"`
-	InsertBeforeMessageID string  `json:"insertBeforeMessageId,omitempty"`
+	Message               UIMessage `json:"message"`
+	InsertBeforeMessageID string    `json:"insertBeforeMessageId,omitempty"`
 }
 
 // UserMessageChunk carries the user message that initiated the current turn.
