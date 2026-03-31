@@ -24,7 +24,6 @@ import (
 	"github.com/obot-platform/discobot/agent-go/internal/middleware"
 	"github.com/obot-platform/discobot/agent-go/internal/routes"
 	"github.com/obot-platform/discobot/agent-go/internal/services"
-	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
 	"github.com/obot-platform/discobot/agent-go/thread"
 	"github.com/obot-platform/discobot/agent-go/tools"
@@ -81,18 +80,8 @@ func Run(cfg *config.Config) {
 		if err := hookMgr.Init(); err != nil {
 			log.Printf("warn: hooks init: %v", err)
 		}
-		if hookMgr.HasFileHooks() {
-			hookMgr.SetReprompt(func(threadID, hookMessage string) error {
-				_, err := completions.Chat(threadID, agent.PromptRequest{
-					UserParts: []message.UIPart{message.UITextPart{Text: hookMessage}},
-				})
-				if err != nil {
-					log.Printf("hooks: failed to start re-prompt: %v", err)
-				}
-				return err
-			})
-			completions.AddCompletionListener(hookMgr)
-		}
+		// The HTTP handler owns post-completion hook evaluation so hook-failure
+		// re-prompts preserve structured metadata for optimized UI rendering.
 	}
 
 	// ── Service manager ──────────────────────────────────────────────────────
