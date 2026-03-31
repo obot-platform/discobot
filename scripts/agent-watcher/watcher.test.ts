@@ -622,8 +622,8 @@ describe("AgentWatcher E2E with Docker", { skip: !isDockerAvailable() }, () => {
 		// Create a minimal Dockerfile at project root (tempDir)
 		await writeFile(
 			join(tempDir, "Dockerfile"),
-			`FROM busybox:1.36
-CMD ["echo", "hello"]
+			`FROM scratch
+LABEL org.opencontainers.image.title="agent-watcher-test"
 `,
 		);
 	});
