@@ -81,12 +81,12 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 		if (insertBeforeIndex === -1) {
 			messages.push(message);
-			// Return the object from the array to get the reactive proxy
+			// Return the array entry so callers keep Svelte's reactive proxy instead of the plain object we inserted.
 			return messages[messages.length - 1];
 		}
 
 		messages.splice(insertBeforeIndex, 0, message);
-		// Return the object from the array to get the reactive proxy
+		// Return the array entry so callers keep Svelte's reactive proxy instead of the plain object we inserted.
 		return messages[insertBeforeIndex];
 	};
 
@@ -131,7 +131,8 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 
 		if (existingIndex !== -1) {
 			targetMessages[existingIndex] = message;
-			return message;
+			// Return the array entry so callers keep Svelte's reactive proxy instead of the plain object we assigned.
+			return targetMessages[existingIndex];
 		}
 
 		removeProvisionalMessages(targetMessages);
@@ -173,11 +174,14 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		}
 	};
 
-	const ensureAssistantMessage = (messageId: string): ChatMessage => {
+	const ensureAssistantMessage = (
+		messageId: string,
+		options: { resetIfExisting?: boolean } = {},
+	): ChatMessage => {
 		const existingMessage = getTargetMessages().find(
 			(message) => message.id === messageId,
 		);
-		if (existingMessage?.role === "assistant") {
+		if (existingMessage?.role === "assistant" && !options.resetIfExisting) {
 			return existingMessage;
 		}
 		return upsertMessage({
@@ -308,7 +312,10 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 		return toolPart;
 	};
 
-	const startAssistantStream = (messageId: string | undefined) => {
+	const startAssistantStream = (
+		messageId: string | undefined,
+		options: { resume?: boolean } = {},
+	) => {
 		if (!messageId) {
 			throw new Error("Received start chunk without a messageId");
 		}
@@ -317,7 +324,9 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 			closeActiveAssistantStream();
 		}
 
-		const message = ensureAssistantMessage(messageId);
+		const message = ensureAssistantMessage(messageId, {
+			resetIfExisting: !options.resume,
+		});
 		setAssistantMessageStreamingStatus(message, "streaming");
 		activeAssistantMessage = message;
 	};
@@ -338,7 +347,7 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 					return;
 				}
 				runCallbackInBackground("onStart", options.onStart, { resume: true });
-				startAssistantStream(chunk.data.messageId);
+				startAssistantStream(chunk.data.messageId, { resume: true });
 				return;
 			}
 

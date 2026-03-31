@@ -236,6 +236,53 @@ test("history replay buffers messages until history-end", async () => {
 	assert.deepEqual(harness.startEvents, [{ resume: false }]);
 });
 
+test("start chunks replace an existing assistant message instead of appending", async () => {
+	const existingMessage = makeTextMessage(
+		"assistant-existing",
+		"assistant",
+		"stale reply",
+	);
+	existingMessage.metadata = { step: 1 };
+	existingMessage.status = "streaming";
+
+	const harness = createHarness([existingMessage]);
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "start", messageId: "assistant-existing" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "text-start", id: "part-2" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "text-delta",
+			id: "part-2",
+			delta: "fresh reply",
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "text-end", id: "part-2" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "finish", finishReason: "stop" }),
+	});
+
+	assert.equal(harness.messages.length, 1);
+	assert.notEqual(harness.messages[0], existingMessage);
+	assert.equal(harness.messages[0]?.id, "assistant-existing");
+	assert.deepEqual(harness.messages[0]?.parts, [
+		{ type: "text", text: "fresh reply", state: "done" },
+	]);
+	assert.equal(harness.messages[0]?.metadata, undefined);
+	assert.equal(harness.messages[0]?.status, undefined);
+	assert.deepEqual(harness.startEvents, [{ resume: false }]);
+});
+
 test("history replay resumes an existing assistant message when instructed", async () => {
 	const harness = createHarness([
 		makeTextMessage("assistant-existing", "assistant", "partial reply"),
