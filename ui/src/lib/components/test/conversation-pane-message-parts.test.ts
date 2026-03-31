@@ -311,6 +311,7 @@ test("getHookFailureMessageMetadata normalizes absolute hook paths", () => {
 	});
 });
 
+<<<<<<< ours
 test("getHookFailureMessageMetadata includes truncated output tail metadata", () => {
 	const message = createUserMessage([
 		{ type: "text", text: "### Hook failed: lint" },

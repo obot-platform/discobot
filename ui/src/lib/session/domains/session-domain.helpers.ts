@@ -65,6 +65,7 @@ export function buildImplicitThread(session: Session | null): ThreadSummary[] {
 			model: session.model,
 			reasoning: session.reasoning,
 			mode: session.mode ?? "build",
+			promptQueue: [],
 		},
 	];
 }

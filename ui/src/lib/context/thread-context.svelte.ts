@@ -1,5 +1,6 @@
 import { getContext, hasContext, setContext } from "svelte";
 
+import { api } from "$lib/api-client";
 import type { Thread } from "$lib/api-types";
 import {
 	clearComposerDraft,
@@ -384,6 +385,9 @@ function createThreadContext(
 		get planEntries() {
 			return getPlanEntries(conversation.messages);
 		},
+		get promptQueue() {
+			return threadSummary?.promptQueue ?? [];
+		},
 		get status() {
 			return conversation.status;
 		},
@@ -402,6 +406,10 @@ function createThreadContext(
 		load: conversation.load,
 		refresh: conversation.refresh,
 		addToolApprovalResponse: conversation.addToolApprovalResponse,
+		deleteQueuedPrompt: async (queueId) => {
+			await api.deleteQueuedPrompt(session.sessionId, threadId, queueId);
+			await session.threads.refreshThread(threadId);
+		},
 		dispose: () => {
 			if (composerDraftPersistTimer !== null) {
 				clearTimeout(composerDraftPersistTimer);

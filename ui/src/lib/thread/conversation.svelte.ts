@@ -368,13 +368,18 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			const nextModel = normalizeModelId(modelId ?? null) ?? "";
 			const nextReasoning = reasoning ?? "";
 			const nextMode = mode === "plan" ? "plan" : "build";
+			const submittingWhileGenerating =
+				args.hasSession() &&
+				(streamStatus === "streaming" ||
+					loadStatus === "loading" ||
+					hasStreamingAssistantMessage(messages));
 			const userMessage = hasMessageContent
 				? createUserMessageFromParts(parts, {
 						provisional: true,
 					})
 				: null;
 
-			if (userMessage) {
+			if (userMessage && !submittingWhileGenerating) {
 				messages = [...messages, userMessage];
 			}
 
@@ -399,11 +404,12 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 						sessionId: response.sessionId,
 						threadId: response.threadId,
 						materialized: true,
+						queued: response.status === "queued",
 					};
 				}
 
 				ensureStream();
-				await app.chat({
+				const response = await app.chat({
 					sessionId: args.sessionId,
 					threadId: args.threadId,
 					messages: userMessage ? getSubmitMessages(userMessage) : [],
@@ -411,10 +417,14 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 					reasoning: nextReasoning,
 					mode: nextMode,
 				});
+				if (response.status === "queued" && userMessage) {
+					messages = removeProvisionalSubmitMessage(messages, userMessage.id);
+				}
 				return {
 					sessionId: args.sessionId,
 					threadId: args.threadId,
 					materialized: false,
+					queued: response.status === "queued",
 				};
 			} catch (error) {
 				completionRunning = false;

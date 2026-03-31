@@ -56,6 +56,7 @@ test("buildImplicitThread derives a single thread from the current session", () 
 			model: "openai/gpt-5",
 			reasoning: "enabled",
 			mode: "plan",
+			promptQueue: [],
 		},
 	]);
 });

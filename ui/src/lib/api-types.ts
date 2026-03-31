@@ -17,6 +17,35 @@ export interface Thread {
 	mode: string;
 	state?: ThreadState;
 	pending?: boolean;
+	promptQueue?: QueuedPrompt[];
+}
+
+export type QueuedPromptMessagePart =
+	| {
+			type: "text";
+			text: string;
+	  }
+	| {
+			type: "file";
+			filename?: string;
+			mediaType?: string;
+			url: string;
+	  };
+
+export interface QueuedPromptMessage {
+	id: string;
+	role: string;
+	parts: QueuedPromptMessagePart[];
+	metadata?: Record<string, unknown>;
+}
+
+export interface QueuedPrompt {
+	id: string;
+	createdAt?: string;
+	message: QueuedPromptMessage;
+	model?: string;
+	reasoning?: string;
+	mode?: string;
 }
 
 export type ChatMessageMetadata = {
@@ -616,6 +645,10 @@ export interface DeleteThreadResponse {
 	success: boolean;
 }
 
+export interface DeleteQueuedPromptResponse {
+	success: boolean;
+}
+
 export interface StartChatRequest {
 	id?: string;
 	sessionId: string;
@@ -635,6 +668,8 @@ export interface StartChatResponse {
 	threadId: string;
 	messageId?: string;
 	completionId?: string;
+	status?: "started" | "queued";
+	queuedPromptId?: string;
 }
 
 export interface StartChatConflictResponse {

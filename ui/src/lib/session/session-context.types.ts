@@ -1,6 +1,7 @@
 import type {
 	ChatMessage,
 	FileStatus,
+	QueuedPrompt,
 	Session,
 	SessionDiffFileEntry,
 	SessionDiffStats,
@@ -157,6 +158,7 @@ export type ThreadSubmitResult = {
 	sessionId: string;
 	threadId: string;
 	materialized: boolean;
+	queued?: boolean;
 };
 
 export type ThreadContextValue = {
@@ -174,6 +176,7 @@ export type ThreadContextValue = {
 	clearNextComposerValues: () => void;
 	messages: ChatMessage[];
 	planEntries: PlanEntry[];
+	promptQueue: QueuedPrompt[];
 	status: AsyncStatus | "streaming";
 	error: string | null;
 	hasPendingQuestion: boolean;
@@ -194,6 +197,7 @@ export type ThreadContextValue = {
 		approved: boolean;
 		reason?: string;
 	}) => void;
+	deleteQueuedPrompt: (queueId: string) => Promise<void>;
 	dispose: () => void;
 	editorFiles: string[];
 	fileContents: Record<string, string>;

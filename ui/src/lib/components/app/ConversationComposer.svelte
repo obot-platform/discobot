@@ -9,6 +9,7 @@
 	import ConversationComposerPlanControl from "$lib/components/app/parts/ConversationComposerPlanControl.svelte";
 	import ConversationComposerQueueControl from "$lib/components/app/parts/ConversationComposerQueueControl.svelte";
 	import ConversationComposerReasoningControl from "$lib/components/app/parts/ConversationComposerReasoningControl.svelte";
+	import ConversationPromptQueuePanel from "$lib/components/app/parts/ConversationPromptQueuePanel.svelte";
 	import ConversationComposerSessionSetupStatus from "$lib/components/app/ConversationComposerSessionSetupStatus.svelte";
 	import ConversationComposerSubmitButton from "$lib/components/app/parts/ConversationComposerSubmitButton.svelte";
 	import ConversationComposerTextarea from "$lib/components/app/parts/ConversationComposerTextarea.svelte";
@@ -339,6 +340,10 @@
 		thread.clearComposerDraft();
 	}
 
+	async function handleDeleteQueuedPrompt(queueId: string) {
+		await thread.deleteQueuedPrompt(queueId);
+	}
+
 	async function createSessionForFileMentions(): Promise<boolean> {
 		if (!session.isPending) {
 			return true;
@@ -370,15 +375,14 @@
 		if (composerDisabled && !forceEmptyPendingMessage) {
 			return false;
 		}
-		if (isGenerating()) {
+		const emptyWithoutAttachments =
+			inputEmpty() && attachmentFiles.length === 0;
+		if (isGenerating() && emptyWithoutAttachments) {
 			await thread.cancel();
 			composerTextareaRef?.closeMentionDropdown();
 			composerTextareaRef?.closePromptHistoryDropdown();
 			return false;
 		}
-
-		const emptyWithoutAttachments =
-			inputEmpty() && attachmentFiles.length === 0;
 		if (!session.isPending && emptyWithoutAttachments) {
 			return false;
 		}
@@ -450,6 +454,11 @@
 		class={`w-full ${preferences.chatWidthMode === "constrained" ? "md:mx-auto md:max-w-3xl" : ""}`}
 	>
 		{#if !session.isPending}
+			<ConversationPromptQueuePanel
+				entries={thread.promptQueue}
+				onDelete={handleDeleteQueuedPrompt}
+			/>
+
 			<ConversationQueuePanel
 				expanded={sessionView.queueExpanded}
 				entries={thread.planEntries}

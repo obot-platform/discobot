@@ -37,6 +37,7 @@ import type {
 	CreateWorkspaceRequest,
 	CredentialInfo,
 	CredentialType,
+	DeleteQueuedPromptResponse,
 	DeleteSessionFileRequest,
 	DeleteSessionFileResponse,
 	EnvSetInfo,
@@ -541,6 +542,19 @@ class ApiClient {
 	): Promise<{ success: boolean }> {
 		return this.fetch<{ success: boolean }>(
 			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}`,
+			{
+				method: "DELETE",
+			},
+		);
+	}
+
+	async deleteQueuedPrompt(
+		sessionId: string,
+		threadId: string,
+		queueId: string,
+	): Promise<DeleteQueuedPromptResponse> {
+		return this.fetch<DeleteQueuedPromptResponse>(
+			`/sessions/${sessionId}/threads/${encodeURIComponent(threadId)}/queue/${encodeURIComponent(queueId)}`,
 			{
 				method: "DELETE",
 			},

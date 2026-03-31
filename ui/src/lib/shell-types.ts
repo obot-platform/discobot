@@ -1,4 +1,5 @@
 import type {
+	QueuedPrompt,
 	ServiceStatus,
 	Session,
 	SessionStatus,
@@ -139,6 +140,7 @@ export type ThreadSummary = {
 	reasoning?: string;
 	mode: string;
 	state?: ThreadState;
+	promptQueue?: QueuedPrompt[];
 };
 
 export type PlanEntry = {
