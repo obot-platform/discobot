@@ -91,6 +91,32 @@ type sseFrame struct {
 	Done  bool
 }
 
+func assertCompletionStatusFrame(
+	t *testing.T,
+	frame sseFrame,
+	threadID, completionID string,
+	isRunning bool,
+) {
+	t.Helper()
+	if frame.Event != "chunk" {
+		t.Fatalf("expected chunk frame, got %+v", frame)
+	}
+	chunk, err := message.UnmarshalChunk([]byte(frame.Data))
+	if err != nil {
+		t.Fatalf("failed to parse chunk frame %+v: %v", frame, err)
+	}
+	status, ok := chunk.(message.CompletionStatusChunk)
+	if !ok {
+		t.Fatalf("expected completion status chunk, got %T (%+v)", chunk, frame)
+	}
+	if status.Data.ThreadID != threadID || status.Data.IsRunning != isRunning {
+		t.Fatalf("unexpected completion status payload: %+v", status.Data)
+	}
+	if completionID != "" && status.Data.CompletionID != completionID {
+		t.Fatalf("unexpected completion status payload: %+v", status.Data)
+	}
+}
+
 func yieldChunksAndBlock(chunks ...message.MessageChunk) func(context.Context, string, agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	return func(ctx context.Context, _ string, _ agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 		return func(yield func(message.MessageChunk, error) bool) {
@@ -1109,9 +1135,9 @@ func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	frames := readFrames(t, resp.Body, 4, false)
-	if len(frames) != 4 {
-		t.Fatalf("expected 4 frames, got %d", len(frames))
+	frames := readFrames(t, resp.Body, 5, false)
+	if len(frames) != 5 {
+		t.Fatalf("expected 5 frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected first frame history-start, got %+v", frames[0])
@@ -1122,8 +1148,9 @@ func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
 	if frames[2].Event != "history-end" {
 		t.Fatalf("expected history-end frame, got %+v", frames[2])
 	}
-	if frames[3].Event != "chunk" || frames[3].ID != completionID+":0" || frames[3].Data != string(liveChunkJSON) {
-		t.Fatalf("expected cached delta after history-end, got %+v", frames[3])
+	assertCompletionStatusFrame(t, frames[3], "thread-1", completionID, true)
+	if frames[4].Event != "chunk" || frames[4].ID != completionID+":0" || frames[4].Data != string(liveChunkJSON) {
+		t.Fatalf("expected cached delta after history-end, got %+v", frames[4])
 	}
 }
 
@@ -1399,9 +1426,9 @@ func TestChatStream_FreshRequest_StartsInterruptedTurnRecovery(t *testing.T) {
 
 	close(release)
 
-	frames := readFrames(t, resp.Body, 3, false)
-	if len(frames) != 3 {
-		t.Fatalf("expected 3 frames, got %d", len(frames))
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start frame, got %+v", frames[0])
@@ -1409,8 +1436,9 @@ func TestChatStream_FreshRequest_StartsInterruptedTurnRecovery(t *testing.T) {
 	if frames[1].Event != "history-end" {
 		t.Fatalf("expected history-end frame, got %+v", frames[1])
 	}
-	if frames[2].Event != "chunk" || frames[2].Data != string(liveChunkJSON) {
-		t.Fatalf("unexpected recovery chunk frame: %+v", frames[2])
+	assertCompletionStatusFrame(t, frames[2], "thread-recover", "", true)
+	if frames[3].Event != "chunk" || frames[3].Data != string(liveChunkJSON) {
+		t.Fatalf("unexpected recovery chunk frame: %+v", frames[3])
 	}
 }
 
@@ -1493,9 +1521,9 @@ func TestChatStream_FreshRequest_CoalescesCachedDeltaBatch(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	frames := readFrames(t, resp.Body, 3, false)
-	if len(frames) != 3 {
-		t.Fatalf("expected 3 frames, got %d", len(frames))
+	frames := readFrames(t, resp.Body, 4, false)
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
@@ -1503,8 +1531,9 @@ func TestChatStream_FreshRequest_CoalescesCachedDeltaBatch(t *testing.T) {
 	if frames[1].Event != "history-end" {
 		t.Fatalf("expected history-end, got %+v", frames[1])
 	}
-	if frames[2].Event != "chunk" || frames[2].ID != completionID+":1" || frames[2].Data != string(coalescedJSON) {
-		t.Fatalf("unexpected coalesced chunk frame: %+v", frames[2])
+	assertCompletionStatusFrame(t, frames[2], "thread-coalesce", completionID, true)
+	if frames[3].Event != "chunk" || frames[3].ID != completionID+":1" || frames[3].Data != string(coalescedJSON) {
+		t.Fatalf("unexpected coalesced chunk frame: %+v", frames[3])
 	}
 }
 
@@ -1548,15 +1577,16 @@ func TestChatStream_ForwardsThreadUpdateChunk(t *testing.T) {
 		cm.Cancel("thread-name")
 	})
 
-	frames := readFrames(t, resp.Body, 4, false)
-	if len(frames) != 4 {
-		t.Fatalf("expected 4 frames, got %d", len(frames))
+	frames := readFrames(t, resp.Body, 5, false)
+	if len(frames) != 5 {
+		t.Fatalf("expected 5 frames, got %d", len(frames))
 	}
 	if frames[1].Event != "history-end" {
 		t.Fatalf("expected history-end frame, got %+v", frames[1])
 	}
-	if frames[2].Event != "chunk" || frames[2].Data != string(threadUpdateChunkJSON) {
-		t.Fatalf("expected thread-update chunk frame after history-end, got %+v", frames[2])
+	assertCompletionStatusFrame(t, frames[2], "thread-name", "", true)
+	if frames[3].Event != "chunk" || frames[3].Data != string(threadUpdateChunkJSON) {
+		t.Fatalf("expected thread-update chunk frame after history-end, got %+v", frames[3])
 	}
 }
 
@@ -1683,9 +1713,9 @@ func TestChatStream_CompletionEndDoesNotCloseStream(t *testing.T) {
 		cm.Cancel("thread-5")
 	})
 
-	frames := readFrames(t, resp.Body, 4, false)
-	if len(frames) != 4 {
-		t.Fatalf("expected 4 frames, got %d", len(frames))
+	frames := readFrames(t, resp.Body, 6, false)
+	if len(frames) != 6 {
+		t.Fatalf("expected 6 frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
@@ -1693,11 +1723,13 @@ func TestChatStream_CompletionEndDoesNotCloseStream(t *testing.T) {
 	if frames[1].Event != "history-end" {
 		t.Fatalf("expected history-end, got %+v", frames[1])
 	}
-	if frames[2].Event != "chunk" || frames[2].Data != string(liveChunkJSON) {
-		t.Fatalf("unexpected chunk frame after history-end: %+v", frames[2])
+	assertCompletionStatusFrame(t, frames[2], "thread-5", "", true)
+	if frames[3].Event != "chunk" || frames[3].Data != string(liveChunkJSON) {
+		t.Fatalf("unexpected chunk frame after history-end: %+v", frames[3])
 	}
-	if frames[3].Event != "ping" {
-		t.Fatalf("expected ping after completion finished, got %+v", frames[3])
+	assertCompletionStatusFrame(t, frames[4], "thread-5", "", false)
+	if frames[5].Event != "ping" {
+		t.Fatalf("expected ping after completion finished, got %+v", frames[5])
 	}
 }
 

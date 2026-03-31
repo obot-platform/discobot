@@ -369,6 +369,22 @@ type ThreadResumeChunk struct {
 
 func (ThreadResumeChunk) chunkType() string { return "data-thread-resume" }
 
+// CompletionStatusData is the payload for a data-completion-status chunk.
+type CompletionStatusData struct {
+	ThreadID     string `json:"threadId"`
+	CompletionID string `json:"completionId,omitempty"`
+	IsRunning    bool   `json:"isRunning"`
+}
+
+// CompletionStatusChunk is a transient data chunk carrying the authoritative
+// backend completion lifecycle state for a thread.
+type CompletionStatusChunk struct {
+	Data      CompletionStatusData `json:"data"`
+	Transient *bool                `json:"transient,omitempty"`
+}
+
+func (CompletionStatusChunk) chunkType() string { return "data-completion-status" }
+
 // ToolApprovalResponseData is the payload for a data-tool-approval-response chunk.
 type ToolApprovalResponseData struct {
 	ApprovalID string `json:"approvalId"`

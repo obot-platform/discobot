@@ -97,10 +97,19 @@ test("parseChatStreamMessageValue accepts data-* parts", async () => {
 					thread: { id: "thread-1", name: "Thread 1", mode: "build" },
 				},
 			},
+			{
+				type: "data-completion-status",
+				data: {
+					threadId: "thread-1",
+					completionId: "completion-1",
+					isRunning: true,
+				},
+			},
 		],
 	});
 
 	assert.equal(parsed.parts[0]?.type, "data-thread-update");
+	assert.equal(parsed.parts[1]?.type, "data-completion-status");
 });
 
 test("parseChatStreamMessageValue rejects unsupported part types", async () => {

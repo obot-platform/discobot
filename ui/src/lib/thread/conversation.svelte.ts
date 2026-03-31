@@ -1,7 +1,7 @@
 import { api } from "$lib/api-client";
 import { StartChatError } from "$lib/api-client";
 import { useAppContext } from "$lib/context/app-context.svelte";
-import type { ChatMessage, Thread } from "$lib/api-types";
+import type { ChatMessage, Session, Thread } from "$lib/api-types";
 import {
 	bindChatStreamEventSource,
 	createChatStreamState,
@@ -16,6 +16,7 @@ import {
 type CreateConversationDomainArgs = {
 	sessionId: string;
 	hasSession: () => boolean;
+	getSessionStatus: () => Session["status"] | null;
 	threadId: string;
 	refreshThread: () => Promise<void>;
 	applyThreadUpdate?: (thread: Thread) => void;
@@ -83,29 +84,12 @@ export function getStartChatErrorDetails(error: unknown): {
 	};
 }
 
-export function isStreamingAssistantMessage(message: ChatMessage): boolean {
-	if (message.role !== "assistant") {
-		return false;
-	}
-	if ((message as { status?: string }).status === "streaming") {
-		return true;
-	}
-	return message.parts.some(
-		(part) =>
-			(part.type === "text" || part.type === "reasoning") &&
-			part.state === "streaming",
-	);
-}
-
-export function hasStreamingAssistantMessage(messages: ChatMessage[]): boolean {
-	return messages.some(isStreamingAssistantMessage);
-}
-
 export function createConversationDomain(args: CreateConversationDomainArgs) {
 	const app = useAppContext();
 	let messages = $state<ChatMessage[]>([]);
+	let historyReplayVersion = $state(0);
 	let streamError = $state<string | null>(null);
-	let streamStatus = $state<"idle" | "streaming" | null>(null);
+	let completionRunning = $state(false);
 	let pendingQuestionId = $state<string | null>(null);
 	let loadStatus = $state<"idle" | "loading" | "ready" | "error">("idle");
 	let activeSource: EventSource | null = null;
@@ -113,10 +97,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	let activeStreamKey: string | null = null;
 
 	const status = $derived.by(() => {
-		if (
-			streamStatus === "streaming" ||
-			hasStreamingAssistantMessage(messages)
-		) {
+		if (completionRunning) {
 			return "streaming" as const;
 		}
 		if (loadStatus === "loading") {
@@ -140,25 +121,23 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		setMessages: (nextMessages) => {
 			messages = nextMessages;
 		},
-		onStart: ({ resume } = {}) => {
+		onCompletionStatus: ({ isRunning }) => {
+			const wasRunning = completionRunning;
 			streamError = null;
-			streamStatus = "streaming";
-			pendingQuestionId = null;
-			if (resume) {
+			completionRunning = isRunning;
+			if (isRunning) {
+				pendingQuestionId = null;
 				return;
 			}
-			return args.refreshThread();
-		},
-		onFinish: () => {
-			streamStatus = null;
-			return args.afterTurn?.();
+			if (wasRunning) {
+				return args.afterTurn?.();
+			}
 		},
 		onHistoryReplayEnd: () => {
-			loadStatus = "ready";
+			historyReplayVersion += 1;
 		},
 		onChunkError: (errorText) => {
-			streamStatus = null;
-			loadStatus = "error";
+			completionRunning = false;
 			streamError = errorText;
 		},
 		onThreadUpdate: (thread) => {
@@ -181,15 +160,18 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	function syncStream() {
 		if (!args.hasSession()) {
 			disconnectStream();
-			streamStatus = null;
+			completionRunning = false;
 			return;
 		}
-		ensureStream();
+		if (args.getSessionStatus() === "ready") {
+			ensureStream();
+			return;
+		}
+		disconnectStream();
 	}
 
 	function ensureStream() {
 		if (typeof window === "undefined") {
-			loadStatus = "ready";
 			return;
 		}
 		if (activeStreamKey === streamKey(args.sessionId)) {
@@ -220,7 +202,6 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		};
 		unbindStream = bindChatStreamEventSource(source, streamState, {
 			onError: (error) => {
-				loadStatus = "error";
 				streamError =
 					error instanceof Error
 						? error.message
@@ -232,30 +213,48 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				return;
 			}
 
-			if (loadStatus === "loading") {
-				loadStatus = "error";
+			if (source.readyState === EventSource.CLOSED) {
+				completionRunning = false;
 				streamError = "Lost chat stream connection";
+				disconnectStream();
+				if (args.hasSession() && args.getSessionStatus() === "ready") {
+					ensureStream();
+				}
 			}
 		};
+	}
+
+	async function refreshMessages() {
+		const { messages: nextMessages } = await api.getThreadMessages(
+			args.sessionId,
+			args.threadId,
+		);
+		messages = nextMessages;
+		pendingQuestionId = getPendingQuestionApprovalId(nextMessages);
 	}
 
 	async function load() {
 		if (!args.hasSession()) {
 			loadStatus = "idle";
 			streamError = null;
-			streamStatus = null;
+			completionRunning = false;
 			pendingQuestionId = null;
 			disconnectStream();
 			return;
 		}
-		if (
-			activeStreamKey === streamKey(args.sessionId) &&
-			loadStatus !== "error"
-		) {
-			return;
+		if (loadStatus !== "ready") {
+			loadStatus = "loading";
+			streamError = null;
+			try {
+				await refreshMessages();
+				loadStatus = "ready";
+			} catch (error) {
+				loadStatus = "error";
+				streamError =
+					error instanceof Error ? error.message : "Failed to load messages";
+				throw error;
+			}
 		}
-		loadStatus = "loading";
-		streamError = null;
 		syncStream();
 	}
 
@@ -263,20 +262,31 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		if (!args.hasSession()) {
 			loadStatus = "idle";
 			streamError = null;
-			streamStatus = null;
+			completionRunning = false;
 			pendingQuestionId = null;
 			disconnectStream();
 			return;
 		}
 		loadStatus = "loading";
 		streamError = null;
-		disconnectStream();
-		ensureStream();
+		try {
+			await refreshMessages();
+			loadStatus = "ready";
+			syncStream();
+		} catch (error) {
+			loadStatus = "error";
+			streamError =
+				error instanceof Error ? error.message : "Failed to load messages";
+			throw error;
+		}
 	}
 
 	return {
 		get messages() {
 			return messages;
+		},
+		get historyReplayVersion() {
+			return historyReplayVersion;
 		},
 		get status() {
 			return status;
@@ -371,7 +381,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 					materialized: false,
 				};
 			} catch (error) {
-				streamStatus = null;
+				completionRunning = false;
 				const errorDetails = getStartChatErrorDetails(error);
 				if (args.hasSession()) {
 					await refresh();
@@ -390,6 +400,8 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				return;
 			}
 			await api.cancelThreadChat(args.sessionId, args.threadId);
+			completionRunning = false;
+			await refresh();
 		},
 		refresh,
 		addToolApprovalResponse: ({
@@ -405,7 +417,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		},
 		dispose: () => {
 			loadStatus = "idle";
-			streamStatus = null;
+			completionRunning = false;
 			pendingQuestionId = null;
 			disconnectStream();
 		},

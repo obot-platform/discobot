@@ -20,6 +20,11 @@ export type ChatStreamStateOptions = {
 	setMessages: (messages: ChatMessage[]) => void;
 	onStart?: (info?: { resume?: boolean }) => void | Promise<void>;
 	onFinish?: () => void | Promise<void>;
+	onCompletionStatus?: (info: {
+		threadId?: string;
+		completionId?: string;
+		isRunning: boolean;
+	}) => void | Promise<void>;
 	onHistoryReplayEnd?: () => void | Promise<void>;
 	onChunkError?: (errorText: string) => void | Promise<void>;
 	onThreadUpdate?: (thread: Thread) => void | Promise<void>;
@@ -348,6 +353,28 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 				}
 				runCallbackInBackground("onStart", options.onStart, { resume: true });
 				startAssistantStream(chunk.data.messageId, { resume: true });
+				return;
+			}
+
+			case "data-completion-status": {
+				if (typeof chunk.data?.isRunning !== "boolean") {
+					return;
+				}
+				runCallbackInBackground(
+					"onCompletionStatus",
+					options.onCompletionStatus,
+					{
+						threadId:
+							typeof chunk.data.threadId === "string"
+								? chunk.data.threadId
+								: undefined,
+						completionId:
+							typeof chunk.data.completionId === "string"
+								? chunk.data.completionId
+								: undefined,
+						isRunning: chunk.data.isRunning,
+					},
+				);
 				return;
 			}
 

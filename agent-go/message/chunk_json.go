@@ -179,6 +179,11 @@ func MarshalChunk(c MessageChunk) ([]byte, error) {
 			Type string `json:"type"`
 			ThreadResumeChunk
 		}{"data-thread-resume", v})
+	case CompletionStatusChunk:
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			CompletionStatusChunk
+		}{"data-completion-status", v})
 	case ToolApprovalResponseDataChunk:
 		return json.Marshal(struct {
 			Type string `json:"type"`
@@ -362,6 +367,9 @@ func UnmarshalChunk(data []byte) (MessageChunk, error) {
 		return c, json.Unmarshal(data, &c)
 	case disc.Type == "data-thread-resume":
 		var c ThreadResumeChunk
+		return c, json.Unmarshal(data, &c)
+	case disc.Type == "data-completion-status":
+		var c CompletionStatusChunk
 		return c, json.Unmarshal(data, &c)
 	case disc.Type == "data-tool-approval-response":
 		var c ToolApprovalResponseDataChunk

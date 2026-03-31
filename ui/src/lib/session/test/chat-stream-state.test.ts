@@ -99,6 +99,11 @@ function createHarness(
 	messages: ChatMessage[];
 	threadUpdates: Thread[];
 	startEvents: Array<{ resume?: boolean } | undefined>;
+	completionStatusEvents: Array<{
+		threadId?: string;
+		completionId?: string;
+		isRunning: boolean;
+	}>;
 	setCount: number;
 	state: ReturnType<typeof createChatStreamState>;
 } {
@@ -106,6 +111,11 @@ function createHarness(
 	let setCount = 0;
 	const threadUpdates: Thread[] = [];
 	const startEvents: Array<{ resume?: boolean } | undefined> = [];
+	const completionStatusEvents: Array<{
+		threadId?: string;
+		completionId?: string;
+		isRunning: boolean;
+	}> = [];
 
 	const state = createChatStreamState({
 		getMessages: () => currentMessages,
@@ -122,6 +132,10 @@ function createHarness(
 			startEvents.push(info);
 			return overrides.onStart?.(info);
 		},
+		onCompletionStatus: (info) => {
+			completionStatusEvents.push(info);
+			return overrides.onCompletionStatus?.(info);
+		},
 		onFinish: overrides.onFinish,
 		onHistoryReplayEnd: overrides.onHistoryReplayEnd,
 		onChunkError: overrides.onChunkError,
@@ -136,6 +150,9 @@ function createHarness(
 		},
 		get startEvents() {
 			return startEvents;
+		},
+		get completionStatusEvents() {
+			return completionStatusEvents;
 		},
 		get setCount() {
 			return setCount;
@@ -440,6 +457,38 @@ test("resumed tool input deltas create and update tool parts without a start chu
 			: undefined,
 		"approval-resume-1",
 	);
+});
+
+test("completion status chunks notify the caller", async () => {
+	const harness = createHarness();
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-completion-status",
+			data: {
+				threadId: "thread-1",
+				completionId: "completion-1",
+				isRunning: true,
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-completion-status",
+			data: {
+				threadId: "thread-1",
+				completionId: "completion-1",
+				isRunning: false,
+			},
+		}),
+	});
+
+	assert.deepEqual(harness.completionStatusEvents, [
+		{ threadId: "thread-1", completionId: "completion-1", isRunning: true },
+		{ threadId: "thread-1", completionId: "completion-1", isRunning: false },
+	]);
 });
 
 test("data-user-message inserts a preserved user message before the assistant reply", async () => {

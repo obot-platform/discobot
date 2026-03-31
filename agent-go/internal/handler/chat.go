@@ -234,8 +234,6 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isActive := snapshot != nil && !snapshot.Done
-	w.Header().Set("X-Discobot-Completion-Active", strconv.FormatBool(isActive))
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -244,6 +242,12 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 	currentCompletionID := ""
 	lastSeenCompletionID := ""
+	if snapshot != nil {
+		lastSeenCompletionID = snapshot.CompletionID
+		if !snapshot.Done {
+			currentCompletionID = snapshot.CompletionID
+		}
+	}
 
 	if freshRequest {
 		writeSSEEvent(w, "", "history-start", json.RawMessage(`{}`))
@@ -259,19 +263,17 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 		writeSSEEvent(w, "", "history-end", json.RawMessage(`{}`))
 		flusher.Flush()
-
-		if snapshot != nil && !snapshot.Done {
-			currentCompletionID = snapshot.CompletionID
-			lastSeenCompletionID = snapshot.CompletionID
+		if currentCompletionID != "" {
+			emitCompletionStatusEvent(
+				w,
+				flusher,
+				threadID,
+				currentCompletionID,
+				true,
+			)
 			offset = 0
-		} else {
-			if snapshot != nil {
-				lastSeenCompletionID = snapshot.CompletionID
-			}
-			offset = 0
-			currentCompletionID = ""
 		}
-	} else if snapshot != nil {
+	} else if snapshot != nil && !snapshot.Done {
 		currentCompletionID = snapshot.CompletionID
 		lastSeenCompletionID = snapshot.CompletionID
 	}
@@ -296,6 +298,9 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 			currentCompletionID = result.CompletionID
 			lastSeenCompletionID = result.CompletionID
+			if !result.Done {
+				emitCompletionStatusEvent(w, flusher, threadID, result.CompletionID, true)
+			}
 			for i, chunk := range result.Chunks {
 				data, err := message.MarshalChunk(chunk)
 				if err != nil {
@@ -321,6 +326,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if result == nil {
+			emitCompletionStatusEvent(w, flusher, threadID, currentCompletionID, false)
 			currentCompletionID = ""
 			offset = 0
 			if timedOut {
@@ -346,6 +352,7 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 
 		if result.Done {
 			lastSeenCompletionID = result.CompletionID
+			emitCompletionStatusEvent(w, flusher, threadID, result.CompletionID, false)
 			currentCompletionID = ""
 			offset = 0
 			continue
@@ -356,6 +363,26 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func emitCompletionStatusEvent(
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	threadID, completionID string,
+	isRunning bool,
+) {
+	data, err := message.MarshalChunk(message.CompletionStatusChunk{
+		Data: message.CompletionStatusData{
+			ThreadID:     threadID,
+			CompletionID: completionID,
+			IsRunning:    isRunning,
+		},
+	})
+	if err != nil {
+		return
+	}
+	writeSSEEvent(w, "", "chunk", data)
+	flusher.Flush()
 }
 
 func writeSSEEvent(w http.ResponseWriter, id, event string, data []byte) {

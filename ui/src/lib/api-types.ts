@@ -33,6 +33,11 @@ export type ChatMessageDataTypes = {
 		threadId?: string;
 		messageId?: string;
 	};
+	"completion-status": {
+		threadId?: string;
+		completionId?: string;
+		isRunning?: boolean;
+	};
 	"user-message": {
 		insertBeforeMessageId?: string;
 		message: ChatMessage;
