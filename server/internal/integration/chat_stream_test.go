@@ -190,7 +190,6 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 		// Check if this is an SSE stream request
 		if r.Header.Get("Accept") == "text/event-stream" {
 			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 			w.WriteHeader(http.StatusOK)
 
 			// Write all messages immediately so the first event is already buffered.
@@ -223,9 +222,6 @@ func TestChatStream_ActiveStream_FirstMessageConsumed(t *testing.T) {
 	AssertStatus(t, resp, http.StatusOK)
 	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("Expected Content-Type text/event-stream, got %s", ct)
-	}
-	if stream := resp.Header.Get("x-vercel-ai-ui-message-stream"); stream != "v1" {
-		t.Errorf("Expected x-vercel-ai-ui-message-stream v1, got %s", stream)
 	}
 
 	frames, err := readChatSSEFrames(resp.Body)
@@ -281,7 +277,6 @@ func TestChatStream_ActiveStream_SlowMessages(t *testing.T) {
 
 		if r.Header.Get("Accept") == "text/event-stream" {
 			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 			w.WriteHeader(http.StatusOK)
 
 			// Send first message immediately
@@ -377,7 +372,6 @@ func TestChatStream_ActiveStream_OnlyDone(t *testing.T) {
 
 		if r.Header.Get("Accept") == "text/event-stream" {
 			w.Header().Set("Content-Type", "text/event-stream")
-			w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 			w.WriteHeader(http.StatusOK)
 
 			_, _ = fmt.Fprintf(w, "event: done\n")

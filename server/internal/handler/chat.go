@@ -193,7 +193,6 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

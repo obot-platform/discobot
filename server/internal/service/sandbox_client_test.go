@@ -346,11 +346,9 @@ func TestSandboxChatClient_GetStream_RejectsNoContent(t *testing.T) {
 }
 
 func TestSandboxChatClient_GetStream_EmptySSEStream(t *testing.T) {
-	// Create handler that returns 200 with X-Discobot-Completion-Active: false
-	// and then immediately closes the stream without any events.
+	// Create handler that returns 200 with an empty SSE response body.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/chat/stream") {
-			w.Header().Set("X-Discobot-Completion-Active", "false")
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			return

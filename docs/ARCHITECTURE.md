@@ -373,7 +373,7 @@ Each workspace will have an associated Docker container:
 
 ### AI Chat Streaming (Phase 9)
 
-- Vercel AI SDK compatible streaming endpoint
+- Streaming chat endpoint
 - Multi-provider support (Anthropic, OpenAI, Google)
 - Tool use / function calling
 - Message persistence
