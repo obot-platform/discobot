@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -61,6 +62,10 @@ func (e *Executor) bashLogPath(toolCtx *thread.ToolContext, toolCallID string) s
 func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, command string, timeout time.Duration) (thread.ToolExecuteResult, error) {
 	cwd := e.getCwd()
 	logPath := e.bashLogPath(toolCtx, call.ToolCallID)
+	bashPath, err := resolveBashCommand()
+	if err != nil {
+		return errResult(call, err.Error()), nil
+	}
 
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return errResult(call, fmt.Sprintf("failed to create log directory: %v", err)), nil
@@ -79,7 +84,7 @@ func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext,
 	const sentinel = "__DISCOBOT_PWD_SENTINEL__"
 	wrapped := fmt.Sprintf("%s\n__exit=$?\nprintf '%%s\\n' '%s'\npwd\nexit $__exit", command, sentinel)
 
-	cmd := exec.CommandContext(cmdCtx, "bash", "-c", wrapped)
+	cmd := exec.CommandContext(cmdCtx, bashPath, "-c", wrapped)
 	cmd.Dir = cwd
 	cmd.Env = e.bashEnv()
 	// Put bash in its own process group so that killing it also kills any
@@ -124,6 +129,10 @@ func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext,
 func (e *Executor) startBashBackground(toolCtx *thread.ToolContext, call message.ToolCallPart, command string) (thread.ToolExecuteResult, error) {
 	cwd := e.getCwd()
 	logPath := e.bashLogPath(toolCtx, call.ToolCallID)
+	bashPath, err := resolveBashCommand()
+	if err != nil {
+		return errResult(call, err.Error()), nil
+	}
 
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return errResult(call, fmt.Sprintf("failed to create log directory: %v", err)), nil
@@ -134,7 +143,7 @@ func (e *Executor) startBashBackground(toolCtx *thread.ToolContext, call message
 		return errResult(call, fmt.Sprintf("failed to create log file: %v", err)), nil
 	}
 
-	cmd := exec.Command("bash", "-c", command) //nolint:gosec
+	cmd := exec.Command(bashPath, "-c", command) //nolint:gosec
 	cmd.Dir = cwd
 	cmd.Env = e.bashEnv()
 	cmd.Stdout = logFile
@@ -157,6 +166,60 @@ func (e *Executor) startBashBackground(toolCtx *thread.ToolContext, call message
 		"Background process started.\nPID: %d\nOutput: %s\n\nUse `tail -f %s` to follow the output, or `kill %d` to stop it.",
 		pid, logPath, logPath, pid,
 	)), nil
+}
+
+func resolveBashCommand() (string, error) {
+	return resolveBashCommandForOS(runtime.GOOS, filepath.SplitList(os.Getenv("PATH")), os.Getenv("PATHEXT"))
+}
+
+func resolveBashCommandForOS(goos string, pathDirs []string, pathExt string) (string, error) {
+	if goos != "windows" {
+		return "bash", nil
+	}
+
+	for _, dir := range pathDirs {
+		dir = strings.TrimSpace(strings.Trim(dir, `"`))
+		if dir == "" {
+			continue
+		}
+		for _, ext := range windowsBashExtensions(pathExt) {
+			candidate := filepath.Join(dir, "bash"+ext)
+			info, err := os.Stat(candidate)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("bash is not available: no real Bash executable was found in PATH. Install a Bash executable such as bash.exe from Git Bash or another compatibility layer; bash.cmd and bash.bat are not supported")
+}
+
+func windowsBashExtensions(pathExt string) []string {
+	exts := []string{".exe"}
+	seen := map[string]struct{}{
+		".exe": {},
+	}
+
+	for _, raw := range strings.Split(pathExt, ";") {
+		ext := strings.TrimSpace(strings.ToLower(raw))
+		if ext == "" {
+			continue
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		if ext == ".cmd" || ext == ".bat" {
+			continue
+		}
+		if _, ok := seen[ext]; ok {
+			continue
+		}
+		seen[ext] = struct{}{}
+		exts = append(exts, ext)
+	}
+
+	return exts
 }
 
 // extractCwdFromOutput splits the sentinel + pwd from the end of the output.

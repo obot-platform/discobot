@@ -383,6 +383,77 @@ func TestBash_RequestScopedEnvOverridesProcessEnv(t *testing.T) {
 	}
 }
 
+func TestResolveBashCommandForOS_NonWindows(t *testing.T) {
+	got, err := resolveBashCommandForOS("linux", nil, "")
+	if err != nil {
+		t.Fatalf("resolveBashCommandForOS returned error: %v", err)
+	}
+	if got != "bash" {
+		t.Fatalf("resolveBashCommandForOS() = %q, want %q", got, "bash")
+	}
+}
+
+func TestResolveBashCommandForOS_WindowsPrefersRealExecutable(t *testing.T) {
+	dirWithCmd := t.TempDir()
+	dirWithExe := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dirWithCmd, "bash.cmd"), []byte("@echo off\r\n"), 0o644); err != nil {
+		t.Fatalf("failed to create bash.cmd: %v", err)
+	}
+	want := filepath.Join(dirWithExe, "bash.exe")
+	if err := os.WriteFile(want, []byte("fake exe"), 0o644); err != nil {
+		t.Fatalf("failed to create bash.exe: %v", err)
+	}
+
+	got, err := resolveBashCommandForOS("windows", []string{dirWithCmd, dirWithExe}, ".CMD;.EXE;.BAT")
+	if err != nil {
+		t.Fatalf("resolveBashCommandForOS returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("resolveBashCommandForOS() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveBashCommandForOS_WindowsUsesFirstExecutableInPath(t *testing.T) {
+	firstDir := t.TempDir()
+	secondDir := t.TempDir()
+
+	first := filepath.Join(firstDir, "bash.exe")
+	second := filepath.Join(secondDir, "bash.exe")
+	if err := os.WriteFile(first, []byte("first"), 0o644); err != nil {
+		t.Fatalf("failed to create first bash.exe: %v", err)
+	}
+	if err := os.WriteFile(second, []byte("second"), 0o644); err != nil {
+		t.Fatalf("failed to create second bash.exe: %v", err)
+	}
+
+	got, err := resolveBashCommandForOS("windows", []string{firstDir, secondDir}, ".EXE")
+	if err != nil {
+		t.Fatalf("resolveBashCommandForOS returned error: %v", err)
+	}
+	if got != first {
+		t.Fatalf("resolveBashCommandForOS() = %q, want %q", got, first)
+	}
+}
+
+func TestResolveBashCommandForOS_WindowsRejectsBatchShims(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bash.cmd"), []byte("@echo off\r\n"), 0o644); err != nil {
+		t.Fatalf("failed to create bash.cmd: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bash.bat"), []byte("@echo off\r\n"), 0o644); err != nil {
+		t.Fatalf("failed to create bash.bat: %v", err)
+	}
+
+	_, err := resolveBashCommandForOS("windows", []string{dir}, ".CMD;.BAT")
+	if err == nil {
+		t.Fatal("expected resolveBashCommandForOS to fail when only batch shims exist")
+	}
+	if !strings.Contains(err.Error(), "bash.cmd and bash.bat are not supported") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // TestExtractCwdFromOutput unit-tests the sentinel-based cwd extraction helper.
 func TestExtractCwdFromOutput(t *testing.T) {
 	const sentinel = "__DISCOBOT_PWD_SENTINEL__"
