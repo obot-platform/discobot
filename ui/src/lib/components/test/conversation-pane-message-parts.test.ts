@@ -278,6 +278,7 @@ test("isHookFailureMessage returns true for hook-failure metadata", () => {
 		hookPath: ".claude/hooks/backend-check.sh",
 		output: "lint failed",
 		outputPath: undefined,
+		outputTail: undefined,
 		outputTruncated: undefined,
 	});
 });
@@ -305,7 +306,38 @@ test("getHookFailureMessageMetadata normalizes absolute hook paths", () => {
 		extraFileCount: undefined,
 		output: undefined,
 		outputPath: undefined,
+		outputTail: undefined,
 		outputTruncated: undefined,
+	});
+});
+
+test("getHookFailureMessageMetadata includes truncated output tail metadata", () => {
+	const message = createUserMessage([
+		{ type: "text", text: "### Hook failed: lint" },
+	]);
+	(message as ChatMessage & { metadata?: unknown }).metadata = {
+		discobot: {
+			kind: "hook-failure",
+			hookName: "lint",
+			exitCode: 1,
+			outputPath: "/tmp/hook.log",
+			outputTail: "line 6\nline 7\nline 8",
+			outputTruncated: true,
+		},
+	};
+
+	assert.deepEqual(getHookFailureMessageMetadata(message), {
+		kind: "hook-failure",
+		hookName: "lint",
+		exitCode: 1,
+		pattern: undefined,
+		hookPath: undefined,
+		files: undefined,
+		extraFileCount: undefined,
+		output: undefined,
+		outputPath: "/tmp/hook.log",
+		outputTail: "line 6\nline 7\nline 8",
+		outputTruncated: true,
 	});
 });
 

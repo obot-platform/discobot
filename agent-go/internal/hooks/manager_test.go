@@ -3,6 +3,7 @@ package hooks
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -34,19 +35,61 @@ func TestFormatHookFailureMessage_UsesMarkdownWithInlineOutput(t *testing.T) {
 }
 
 func TestFormatHookFailureMessage_UsesOutputPathWhenInlineOutputTooLarge(t *testing.T) {
+	var outputLines []string
+	for i := 1; i <= 20; i++ {
+		outputLines = append(outputLines, strings.Repeat("x", 300)+strings.Join([]string{" line ", strconv.Itoa(i)}, ""))
+	}
+
 	message := formatHookFailureMessage(buildHookFailureMessageMetadata(HookResult{
 		Hook: Hook{
 			Name: "Go Check",
 		},
 		ExitCode: 1,
-		Output:   strings.Repeat("x", InlineOutputMaxBytes+1),
+		Output:   strings.Join(outputLines, "\n"),
 	}, nil, "/tmp/go-check.log", ""))
 
 	if !strings.Contains(message, "Full output was written to `/tmp/go-check.log`.") {
 		t.Fatalf("expected message to reference full output path, got:\n%s", message)
 	}
-	if strings.Contains(message, "```text") {
-		t.Fatalf("did not expect inline code fence when output is too large, got:\n%s", message)
+	if !strings.Contains(message, "Last 15 lines:") {
+		t.Fatalf("expected message to include the truncated output tail, got:\n%s", message)
+	}
+	if !strings.Contains(message, outputLines[5]) {
+		t.Fatalf("expected message to include the first tailed line %q, got:\n%s", outputLines[5], message)
+	}
+	if !strings.Contains(message, outputLines[len(outputLines)-1]) {
+		t.Fatalf("expected message to include the last tailed line %q, got:\n%s", outputLines[len(outputLines)-1], message)
+	}
+	if strings.Contains(message, outputLines[4]) {
+		t.Fatalf("did not expect message to include lines before the tail, got:\n%s", message)
+	}
+}
+
+func TestBuildHookFailureMessageMetadata_UsesTailForTruncatedOutput(t *testing.T) {
+	var outputLines []string
+	for i := 1; i <= 20; i++ {
+		outputLines = append(outputLines, strings.Repeat("y", 300)+" line "+strconv.Itoa(i))
+	}
+
+	meta := buildHookFailureMessageMetadata(HookResult{
+		Hook: Hook{
+			Name: "Go Check",
+		},
+		ExitCode: 1,
+		Output:   strings.Join(outputLines, "\n"),
+	}, nil, "/tmp/go-check.log", "")
+
+	if !meta.OutputTruncated {
+		t.Fatal("expected output to be marked truncated")
+	}
+	if meta.OutputPath != "/tmp/go-check.log" {
+		t.Fatalf("output path = %q, want %q", meta.OutputPath, "/tmp/go-check.log")
+	}
+	if meta.OutputTail != strings.Join(outputLines[5:], "\n") {
+		t.Fatalf("output tail = %q, want %q", meta.OutputTail, strings.Join(outputLines[5:], "\n"))
+	}
+	if meta.Output != "" {
+		t.Fatalf("expected inline output to be empty for truncated output, got %q", meta.Output)
 	}
 }
 

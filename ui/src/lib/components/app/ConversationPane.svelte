@@ -520,18 +520,39 @@
 							></pre>
 					</div>
 				</div>
-			{:else if metadata.outputPath}
+			{:else if metadata.outputPath || metadata.outputTail}
 				<div class="space-y-2">
-					<div
-						class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
-					>
-						Output path
-					</div>
-					<div
-						class="rounded-md border border-border bg-background px-3 py-2 font-mono text-foreground text-xs break-all"
-					>
-						{metadata.outputPath}
-					</div>
+					{#if metadata.outputPath}
+						<div class="space-y-2">
+							<div
+								class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+							>
+								Log file
+							</div>
+							<div
+								class="rounded-md border border-border bg-background px-3 py-2 font-mono text-foreground text-xs break-all"
+							>
+								{metadata.outputPath}
+							</div>
+						</div>
+					{/if}
+					{#if metadata.outputTail}
+						<div class="space-y-2">
+							<div
+								class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+							>
+								Last 15 lines
+							</div>
+							<div
+								class="overflow-x-auto rounded-md border border-border bg-background"
+							>
+								<pre
+									class="min-w-max whitespace-pre p-3 font-mono text-foreground text-xs leading-5"><code
+										>{metadata.outputTail}</code
+									></pre>
+							</div>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

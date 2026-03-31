@@ -18,6 +18,8 @@ const (
 	InlineOutputMaxLines = 200
 	// InlineOutputMaxBytes is the max bytes to inline in LLM failure messages.
 	InlineOutputMaxBytes = 5 * 1024
+	// TruncatedOutputTailLines is the number of trailing lines to show for large hook output.
+	TruncatedOutputTailLines = 15
 )
 
 // HookFailureMessageMetadata carries structured hook-failure details for UI rendering.
@@ -31,6 +33,7 @@ type HookFailureMessageMetadata struct {
 	ExtraFileCount  int      `json:"extraFileCount,omitempty"`
 	Output          string   `json:"output,omitempty"`
 	OutputPath      string   `json:"outputPath,omitempty"`
+	OutputTail      string   `json:"outputTail,omitempty"`
 	OutputTruncated bool     `json:"outputTruncated,omitempty"`
 }
 
@@ -544,12 +547,26 @@ func buildHookFailureMessageMetadata(result HookResult, matchingFiles []string, 
 	lines := strings.Split(output, "\n")
 	if len(lines) > InlineOutputMaxLines || len(output) > InlineOutputMaxBytes {
 		meta.OutputPath = outputPath
+		meta.OutputTail = lastLines(output, TruncatedOutputTailLines)
 		meta.OutputTruncated = true
 		return meta
 	}
 
 	meta.Output = output
 	return meta
+}
+
+func lastLines(output string, maxLines int) string {
+	if maxLines <= 0 || output == "" {
+		return ""
+	}
+
+	lines := strings.Split(output, "\n")
+	if len(lines) <= maxLines {
+		return output
+	}
+
+	return strings.Join(lines[len(lines)-maxLines:], "\n")
 }
 
 // formatHookFailureMessage builds the markdown message for LLM re-prompt.
@@ -573,6 +590,17 @@ func formatHookFailureMessage(meta HookFailureMessageMetadata) string {
 	if meta.OutputTruncated && meta.OutputPath != "" {
 		b.WriteString("#### Output\n\n")
 		b.WriteString(fmt.Sprintf("Output was too long to inline. Full output was written to `%s`.\n\n", meta.OutputPath))
+		if meta.OutputTail != "" {
+			b.WriteString(fmt.Sprintf("Last %d lines:\n\n", TruncatedOutputTailLines))
+			b.WriteString("```text\n")
+			b.WriteString(meta.OutputTail)
+			b.WriteString("\n```\n\n")
+		}
+	} else if meta.OutputTruncated && meta.OutputTail != "" {
+		b.WriteString("#### Output\n\n")
+		b.WriteString("```text\n")
+		b.WriteString(meta.OutputTail)
+		b.WriteString("\n```\n\n")
 	} else if meta.Output != "" {
 		b.WriteString("#### Output\n\n")
 		b.WriteString("```text\n")

@@ -37,6 +37,7 @@ export type HookFailureMessageMetadata = {
 	extraFileCount?: number;
 	output?: string;
 	outputPath?: string;
+	outputTail?: string;
 	outputTruncated?: boolean;
 };
 
@@ -207,6 +208,10 @@ export function getHookFailureMessageMetadata(
 		outputPath:
 			typeof candidate.outputPath === "string"
 				? candidate.outputPath
+				: undefined,
+		outputTail:
+			typeof candidate.outputTail === "string"
+				? candidate.outputTail
 				: undefined,
 		outputTruncated:
 			typeof candidate.outputTruncated === "boolean"
