@@ -89,9 +89,6 @@
 	const conversationMessages = $derived.by(
 		() => messages ?? thread?.messages ?? [],
 	);
-	const conversationHistoryReplayVersion = $derived.by(() =>
-		messages ? 0 : (thread?.historyReplayVersion ?? 0),
-	);
 	const conversationStatus = $derived.by(
 		() => status ?? thread?.status ?? "ready",
 	);
@@ -120,7 +117,6 @@
 
 	let viewport = $state<HTMLDivElement | null>(null);
 	let hasInitialBottomScroll = $state(false);
-	let hasInitialHistoryReplayBottomScroll = $state(false);
 	let isNearBottom = $state(true);
 	let expandedAssistantStepMessages = $state<Record<string, boolean>>({});
 	let expandedGeneratedUserMessages = $state<Record<string, boolean>>({});
@@ -323,7 +319,6 @@
 		}
 
 		hasInitialBottomScroll = false;
-		hasInitialHistoryReplayBottomScroll = false;
 		expandedGeneratedUserMessages = {};
 		lastReservedSubmitMessageId = null;
 		reservedTurnMinHeight = 0;
@@ -346,20 +341,6 @@
 			if (conversationMessages.length > 0) {
 				scrollToBottom("auto");
 			}
-		});
-	});
-
-	$effect(() => {
-		if (!viewport || hasInitialHistoryReplayBottomScroll) {
-			return;
-		}
-		if (conversationHistoryReplayVersion === 0) {
-			return;
-		}
-
-		hasInitialHistoryReplayBottomScroll = true;
-		void tick().then(() => {
-			scrollToBottom("auto");
 		});
 	});
 

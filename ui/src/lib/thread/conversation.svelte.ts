@@ -1,7 +1,7 @@
 import { api } from "$lib/api-client";
 import { StartChatError } from "$lib/api-client";
 import { useAppContext } from "$lib/context/app-context.svelte";
-import type { ChatMessage, Session, Thread } from "$lib/api-types";
+import type { ChatMessage, Thread } from "$lib/api-types";
 import {
 	bindChatStreamEventSource,
 	createChatStreamState,
@@ -16,7 +16,6 @@ import {
 type CreateConversationDomainArgs = {
 	sessionId: string;
 	hasSession: () => boolean;
-	getSessionStatus: () => Session["status"] | null;
 	threadId: string;
 	refreshThread: () => Promise<void>;
 	applyThreadUpdate?: (thread: Thread) => void;
@@ -105,7 +104,6 @@ export function hasStreamingAssistantMessage(messages: ChatMessage[]): boolean {
 export function createConversationDomain(args: CreateConversationDomainArgs) {
 	const app = useAppContext();
 	let messages = $state<ChatMessage[]>([]);
-	let historyReplayVersion = $state(0);
 	let streamError = $state<string | null>(null);
 	let streamStatus = $state<"idle" | "streaming" | null>(null);
 	let pendingQuestionId = $state<string | null>(null);
@@ -113,11 +111,6 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 	let activeSource: EventSource | null = null;
 	let unbindStream: (() => void) | null = null;
 	let activeStreamKey: string | null = null;
-	let pendingHistoryReplay: {
-		promise: Promise<void>;
-		resolve: () => void;
-		reject: (error?: unknown) => void;
-	} | null = null;
 
 	const status = $derived.by(() => {
 		if (
@@ -162,16 +155,11 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		},
 		onHistoryReplayEnd: () => {
 			loadStatus = "ready";
-			pendingHistoryReplay?.resolve();
-			pendingHistoryReplay = null;
-			historyReplayVersion += 1;
 		},
 		onChunkError: (errorText) => {
 			streamStatus = null;
 			loadStatus = "error";
 			streamError = errorText;
-			pendingHistoryReplay?.reject(new Error(errorText));
-			pendingHistoryReplay = null;
 		},
 		onThreadUpdate: (thread) => {
 			args.applyThreadUpdate?.(thread);
@@ -186,25 +174,6 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		activeStreamKey = null;
 	}
 
-	function beginHistoryReplayWait() {
-		if (pendingHistoryReplay) {
-			return pendingHistoryReplay.promise;
-		}
-		let resolve!: () => void;
-		let reject!: (error?: unknown) => void;
-		const promise = new Promise<void>((nextResolve, nextReject) => {
-			resolve = nextResolve;
-			reject = nextReject;
-		});
-		pendingHistoryReplay = { promise, resolve, reject };
-		return promise;
-	}
-
-	function settleHistoryReplayWait() {
-		pendingHistoryReplay?.resolve();
-		pendingHistoryReplay = null;
-	}
-
 	function streamKey(sessionId: string) {
 		return `${sessionId}:${args.threadId}`;
 	}
@@ -215,17 +184,12 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamStatus = null;
 			return;
 		}
-		if (args.getSessionStatus() === "ready") {
-			ensureStream();
-			return;
-		}
-		disconnectStream();
+		ensureStream();
 	}
 
 	function ensureStream() {
 		if (typeof window === "undefined") {
 			loadStatus = "ready";
-			settleHistoryReplayWait();
 			return;
 		}
 		if (activeStreamKey === streamKey(args.sessionId)) {
@@ -261,8 +225,6 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 					error instanceof Error
 						? error.message
 						: "Failed to process chat stream";
-				pendingHistoryReplay?.reject(error);
-				pendingHistoryReplay = null;
 			},
 		});
 		source.onerror = () => {
@@ -270,15 +232,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				return;
 			}
 
-			if (source.readyState === EventSource.CLOSED) {
+			if (loadStatus === "loading") {
 				loadStatus = "error";
 				streamError = "Lost chat stream connection";
-				pendingHistoryReplay?.reject(new Error(streamError));
-				pendingHistoryReplay = null;
-				disconnectStream();
-				if (args.hasSession() && args.getSessionStatus() === "ready") {
-					ensureStream();
-				}
 			}
 		};
 	}
@@ -289,21 +245,15 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamError = null;
 			streamStatus = null;
 			pendingQuestionId = null;
-			settleHistoryReplayWait();
 			disconnectStream();
 			return;
 		}
-		if (
-			loadStatus === "ready" &&
-			activeStreamKey === streamKey(args.sessionId)
-		) {
+		if (activeStreamKey === streamKey(args.sessionId) && loadStatus !== "error") {
 			return;
 		}
 		loadStatus = "loading";
 		streamError = null;
-		const replay = beginHistoryReplayWait();
 		syncStream();
-		await replay;
 	}
 
 	async function refresh() {
@@ -312,24 +262,18 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamError = null;
 			streamStatus = null;
 			pendingQuestionId = null;
-			settleHistoryReplayWait();
 			disconnectStream();
 			return;
 		}
 		loadStatus = "loading";
 		streamError = null;
 		disconnectStream();
-		const replay = beginHistoryReplayWait();
 		ensureStream();
-		await replay;
 	}
 
 	return {
 		get messages() {
 			return messages;
-		},
-		get historyReplayVersion() {
-			return historyReplayVersion;
 		},
 		get status() {
 			return status;

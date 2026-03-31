@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import { StartChatError } from "$lib/api-client";
@@ -11,6 +13,11 @@ import {
 	isStreamingAssistantMessage,
 	removeProvisionalSubmitMessage,
 } from "./conversation.svelte";
+
+const CONVERSATION_DOMAIN_SOURCE = path.resolve(
+	import.meta.dirname,
+	"./conversation.svelte.ts",
+);
 
 function makeUserMessage(
 	parts: ChatMessage["parts"] = [{ type: "text", text: "latest prompt" }],
@@ -210,4 +217,13 @@ test("getStartChatErrorDetails suppresses the auto-resume conflict message", () 
 		pendingQuestionId: null,
 		completionId: "resume-123",
 	});
+});
+
+test("conversation loader streams directly without replay bookkeeping", () => {
+	const source = readFileSync(CONVERSATION_DOMAIN_SOURCE, "utf-8");
+
+	assert.doesNotMatch(source, /historyReplayVersion/);
+	assert.doesNotMatch(source, /getSessionStatus/);
+	assert.match(source, /syncStream\(\);/);
+	assert.match(source, /ensureStream\(\);/);
 });

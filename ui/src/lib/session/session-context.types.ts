@@ -145,7 +145,6 @@ export type SessionEnvSetsDomain = SessionEnvSetsService & {
 
 export type SessionConversationDomain = {
 	messages: ChatMessage[];
-	historyReplayVersion: number;
 	status: AsyncStatus | "streaming";
 	error: string | null;
 	hasPendingQuestion: boolean;
@@ -174,7 +173,6 @@ export type ThreadContextValue = {
 	setNextReasoning: (reasoning: string | undefined) => void;
 	clearNextComposerValues: () => void;
 	messages: ChatMessage[];
-	historyReplayVersion: number;
 	planEntries: PlanEntry[];
 	status: AsyncStatus | "streaming";
 	error: string | null;

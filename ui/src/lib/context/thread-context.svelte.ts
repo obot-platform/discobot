@@ -114,7 +114,6 @@ function createThreadContext(
 ): ThreadContextValue {
 	const app = useAppContext();
 	const hasSession = $derived.by(() => session.current !== null);
-	const sessionStatus = $derived.by(() => session.current?.status ?? null);
 	const refreshSessionState = async () => {
 		await Promise.all([
 			session.files.refresh(),
@@ -128,7 +127,6 @@ function createThreadContext(
 	const conversation = createConversationDomain({
 		sessionId: session.sessionId,
 		hasSession: () => hasSession,
-		getSessionStatus: () => sessionStatus,
 		threadId,
 		refreshThread: async () => {
 			await session.threads.refreshThread(threadId);
@@ -318,9 +316,6 @@ function createThreadContext(
 		clearNextComposerValues,
 		get messages() {
 			return conversation.messages;
-		},
-		get historyReplayVersion() {
-			return conversation.historyReplayVersion;
 		},
 		get planEntries() {
 			return getPlanEntries(conversation.messages);
