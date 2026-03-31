@@ -266,7 +266,7 @@ func (m *Manager) RerunHook(hookID string) (*HookRunResult, error) {
 
 	eval := FileHookEvalResult{}
 	if !result.Success {
-		eval = buildHookFailureEvalResult(result, matching, outputPath)
+		eval = buildHookFailureEvalResult(result, matching, outputPath, m.workspaceRoot)
 	}
 
 	_ = UpdateHookStatus(m.hooksDataDir, result, outputPath)
@@ -367,7 +367,7 @@ func (m *Manager) EvaluateFileHooks() FileHookEvalResult {
 		}
 
 		// Hook failed
-		return buildHookFailureEvalResult(result, matching, outputPath)
+		return buildHookFailureEvalResult(result, matching, outputPath, m.workspaceRoot)
 	}
 
 	// All pending hooks cleared
@@ -481,7 +481,7 @@ func matchFiles(files []string, pattern string) []string {
 }
 
 // buildHookFailureEvalResult builds the evaluation response for a failed hook.
-func buildHookFailureEvalResult(result HookResult, matchingFiles []string, outputPath string) FileHookEvalResult {
+func buildHookFailureEvalResult(result HookResult, matchingFiles []string, outputPath, workspaceRoot string) FileHookEvalResult {
 	if result.Success {
 		return FileHookEvalResult{}
 	}
@@ -493,7 +493,7 @@ func buildHookFailureEvalResult(result HookResult, matchingFiles []string, outpu
 		}
 	}
 
-	meta := buildHookFailureMessageMetadata(result, matchingFiles, outputPath)
+	meta := buildHookFailureMessageMetadata(result, matchingFiles, outputPath, workspaceRoot)
 	msg := formatHookFailureMessage(meta)
 	return FileHookEvalResult{
 		Evaluated:      true,
@@ -504,14 +504,27 @@ func buildHookFailureEvalResult(result HookResult, matchingFiles []string, outpu
 	}
 }
 
+func normalizeHookMessagePath(workspaceRoot, path string) string {
+	if path == "" || !filepath.IsAbs(path) || workspaceRoot == "" {
+		return path
+	}
+
+	relPath, err := filepath.Rel(workspaceRoot, path)
+	if err != nil || relPath == "." || strings.HasPrefix(relPath, "..") {
+		return path
+	}
+
+	return relPath
+}
+
 // buildHookFailureMessageMetadata builds structured hook-failure metadata for UI rendering.
-func buildHookFailureMessageMetadata(result HookResult, matchingFiles []string, outputPath string) HookFailureMessageMetadata {
+func buildHookFailureMessageMetadata(result HookResult, matchingFiles []string, outputPath, workspaceRoot string) HookFailureMessageMetadata {
 	meta := HookFailureMessageMetadata{
 		Kind:     "hook-failure",
 		HookName: result.Hook.Name,
 		ExitCode: result.ExitCode,
 		Pattern:  result.Hook.Pattern,
-		HookPath: result.Hook.Path,
+		HookPath: normalizeHookMessagePath(workspaceRoot, result.Hook.Path),
 	}
 
 	if len(matchingFiles) > 0 {

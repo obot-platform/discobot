@@ -281,6 +281,33 @@ test("isHookFailureMessage returns true for hook-failure metadata", () => {
 	});
 });
 
+test("getHookFailureMessageMetadata normalizes absolute hook paths", () => {
+	const message = createUserMessage([
+		{ type: "text", text: "### Hook failed: lint" },
+	]);
+	(message as ChatMessage & { metadata?: unknown }).metadata = {
+		discobot: {
+			kind: "hook-failure",
+			hookName: "lint",
+			exitCode: 1,
+			hookPath: "/home/discobot/workspace/.discobot/hooks/09-ci.sh",
+		},
+	};
+
+	assert.deepEqual(getHookFailureMessageMetadata(message), {
+		kind: "hook-failure",
+		hookName: "lint",
+		exitCode: 1,
+		pattern: undefined,
+		hookPath: ".discobot/hooks/09-ci.sh",
+		files: undefined,
+		extraFileCount: undefined,
+		output: undefined,
+		outputPath: undefined,
+		outputTruncated: undefined,
+	});
+});
+
 test("isHookFailureMessage returns false for ordinary user messages", () => {
 	const message = createUserMessage([{ type: "text", text: "hello" }]);
 

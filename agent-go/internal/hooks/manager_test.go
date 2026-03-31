@@ -15,7 +15,7 @@ func TestFormatHookFailureMessage_UsesMarkdownWithInlineOutput(t *testing.T) {
 		},
 		ExitCode: 2,
 		Output:   "lint failed\nsecond line",
-	}, []string{"main.go", "internal/app.go"}, "/tmp/go-check.log"))
+	}, []string{"main.go", "internal/app.go"}, "/tmp/go-check.log", ""))
 
 	for _, want := range []string{
 		"### Hook failed: Go Check",
@@ -40,7 +40,7 @@ func TestFormatHookFailureMessage_UsesOutputPathWhenInlineOutputTooLarge(t *test
 		},
 		ExitCode: 1,
 		Output:   strings.Repeat("x", InlineOutputMaxBytes+1),
-	}, nil, "/tmp/go-check.log"))
+	}, nil, "/tmp/go-check.log", ""))
 
 	if !strings.Contains(message, "Full output was written to `/tmp/go-check.log`.") {
 		t.Fatalf("expected message to reference full output path, got:\n%s", message)
@@ -58,10 +58,26 @@ func TestBuildHookFailureMessageMetadata_IncludesHookPath(t *testing.T) {
 			Pattern: "*.go",
 		},
 		ExitCode: 1,
-	}, []string{"main.go"}, "/tmp/go-check.log")
+	}, []string{"main.go"}, "/tmp/go-check.log", "")
 
 	if meta.HookPath != ".claude/hooks/go-check.sh" {
 		t.Fatalf("hook path = %q, want %q", meta.HookPath, ".claude/hooks/go-check.sh")
+	}
+}
+
+func TestBuildHookFailureMessageMetadata_RelativizesAbsoluteHookPath(t *testing.T) {
+	workspaceRoot := "/workspace"
+	meta := buildHookFailureMessageMetadata(HookResult{
+		Hook: Hook{
+			Name:    "Go Check",
+			Path:    filepath.Join(workspaceRoot, ".discobot", "hooks", "go-check.sh"),
+			Pattern: "*.go",
+		},
+		ExitCode: 1,
+	}, []string{"main.go"}, "/tmp/go-check.log", workspaceRoot)
+
+	if meta.HookPath != ".discobot/hooks/go-check.sh" {
+		t.Fatalf("hook path = %q, want %q", meta.HookPath, ".discobot/hooks/go-check.sh")
 	}
 }
 

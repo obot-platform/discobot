@@ -123,6 +123,26 @@ export function getUserMessageOriginalCommandDisplay(
 	};
 }
 
+function normalizeHookPathFromMetadata(
+	path: string | undefined,
+): string | undefined {
+	if (!path) {
+		return undefined;
+	}
+	if (!path.startsWith("/")) {
+		return path;
+	}
+
+	for (const marker of ["/.discobot/hooks/", "/.claude/hooks/"]) {
+		const markerIndex = path.indexOf(marker);
+		if (markerIndex !== -1) {
+			return path.slice(markerIndex + 1);
+		}
+	}
+
+	return path;
+}
+
 export function getHookFailureMessageMetadata(
 	message: ChatMessage,
 ): HookFailureMessageMetadata | null {
@@ -159,8 +179,9 @@ export function getHookFailureMessageMetadata(
 		exitCode: candidate.exitCode,
 		pattern:
 			typeof candidate.pattern === "string" ? candidate.pattern : undefined,
-		hookPath:
+		hookPath: normalizeHookPathFromMetadata(
 			typeof candidate.hookPath === "string" ? candidate.hookPath : undefined,
+		),
 		files,
 		extraFileCount:
 			typeof candidate.extraFileCount === "number"
