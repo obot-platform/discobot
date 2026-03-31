@@ -939,6 +939,90 @@ func TestPerformRebase_ParentMismatchPrecheckContinuesToPrompt(t *testing.T) {
 	}
 }
 
+func TestPerformCommit_NoCommitsAfterPromptMarksCompleted(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	project := env.createTestProject(t)
+	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
+
+	requestOrder := make([]string, 0, 3)
+	var mu sync.Mutex
+
+	handler := &trackingHandler{
+		onChat: func(w http.ResponseWriter, _ *http.Request) {
+			mu.Lock()
+			requestOrder = append(requestOrder, "chat")
+			mu.Unlock()
+			w.WriteHeader(http.StatusAccepted)
+		},
+		onCommits: func(w http.ResponseWriter, _ *http.Request) {
+			mu.Lock()
+			callNumber := len(requestOrder)
+			requestOrder = append(requestOrder, "commits")
+			mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			if callNumber == 0 {
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{CommitCount: 0})
+				return
+			}
+
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(sandboxapi.CommitsErrorResponse{
+				Error:   "no_commits",
+				Message: "No commits found",
+			})
+		},
+	}
+	env.mockSandbox.HTTPHandler = handler
+
+	_, err := env.mockSandbox.Create(context.Background(), session.ID, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox: %v", err)
+	}
+	if err := env.mockSandbox.Start(context.Background(), session.ID); err != nil {
+		t.Fatalf("Failed to start sandbox: %v", err)
+	}
+
+	sandboxSvc := NewSandboxService(env.store, env.mockSandbox, &config.Config{}, nil, env.eventBroker, nil, nil)
+	sandboxSvc.SetSessionInitializer(&testSessionInitializer{})
+	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, sandboxSvc, env.eventBroker, nil)
+
+	err = sessionSvc.PerformCommit(context.Background(), project.ID, session.ID)
+	if err != nil {
+		t.Fatalf("PerformCommit failed: %v", err)
+	}
+
+	mu.Lock()
+	order := append([]string(nil), requestOrder...)
+	mu.Unlock()
+
+	if len(order) != 3 {
+		t.Fatalf("Expected 3 requests, got %d: %v", len(order), order)
+	}
+	if order[0] != "commits" || order[1] != "chat" || order[2] != "commits" {
+		t.Fatalf("Expected commits -> chat -> commits request order, got %v", order)
+	}
+
+	updatedSession, err := env.store.GetSessionByID(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("Failed to get session: %v", err)
+	}
+
+	if updatedSession.CommitStatus != model.CommitStatusCompleted {
+		t.Fatalf("Expected commit status %q, got %q", model.CommitStatusCompleted, updatedSession.CommitStatus)
+	}
+	if updatedSession.CommitError != nil {
+		t.Fatalf("Expected commit error to be cleared, got %v", updatedSession.CommitError)
+	}
+	if updatedSession.AppliedCommit != nil && *updatedSession.AppliedCommit != "" {
+		t.Fatalf("Expected applied commit to remain unset for a no-op commit, got %q", *updatedSession.AppliedCommit)
+	}
+}
+
 // trackingHandler is a custom handler that allows separate handling of chat and commits.
 type trackingHandler struct {
 	onChat    func(w http.ResponseWriter, r *http.Request)

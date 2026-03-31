@@ -964,7 +964,11 @@ func (s *SessionService) PerformCommit(ctx context.Context, projectID, sessionID
 	}
 
 	// Step 4: Complete
-	log.Printf("Session %s: commit completed with applied commit %s", sess.ID, *sess.AppliedCommit)
+	appliedCommit := ""
+	if sess.AppliedCommit != nil {
+		appliedCommit = *sess.AppliedCommit
+	}
+	log.Printf("Session %s: commit completed with applied commit %s", sess.ID, appliedCommit)
 	if err := s.markCommitCompleted(ctx, projectID, sess); err != nil {
 		return err
 	}
@@ -1320,12 +1324,23 @@ func (s *SessionService) fetchAndApplyReplayBundle(ctx context.Context, projectI
 
 	commitsResp, err := client.GetCommits(ctx, *sess.BaseCommit)
 	if err != nil {
+		if strings.Contains(err.Error(), "commits error (no_commits)") {
+			if completeErr := s.markCommitCompleted(ctx, projectID, sess); completeErr != nil {
+				return completeErr
+			}
+			log.Printf("Session %s: agent reported no commits to replay for base %s", sess.ID, *sess.BaseCommit)
+			return nil
+		}
+
 		s.setCommitFailed(ctx, projectID, workspace, sess, fmt.Sprintf("Failed to get commits from agent: %v", err))
 		return nil
 	}
 
 	if commitsResp.CommitCount == 0 {
-		s.setCommitFailed(ctx, projectID, workspace, sess, "No commits found in agent sandbox")
+		if err := s.markCommitCompleted(ctx, projectID, sess); err != nil {
+			return err
+		}
+		log.Printf("Session %s: commit replay fetch returned zero commits for base %s", sess.ID, *sess.BaseCommit)
 		return nil
 	}
 
