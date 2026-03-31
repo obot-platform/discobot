@@ -176,8 +176,8 @@ func (c *ChatService) StartChat(ctx context.Context, projectID, sessionID, threa
 	if err != nil {
 		return "", nil, err
 	}
-	if err := c.sessionService.ClearCompletedCommitStatus(ctx, projectID, sessionID); err != nil {
-		log.Printf("Warning: failed to clear completed commit status for %s: %v", sessionID, err)
+	if err := c.sessionService.ClearTerminalCommitState(ctx, projectID, sessionID); err != nil {
+		log.Printf("Warning: failed to clear terminal commit state for %s: %v", sessionID, err)
 	}
 	return messageID, started, nil
 }
@@ -202,8 +202,8 @@ func (c *ChatService) SendToSandbox(ctx context.Context, projectID, sessionID, t
 	if err != nil {
 		return nil, err
 	}
-	if err := c.sessionService.ClearCompletedCommitStatus(ctx, projectID, sessionID); err != nil {
-		log.Printf("Warning: failed to clear completed commit status for %s: %v", sessionID, err)
+	if err := c.sessionService.ClearTerminalCommitState(ctx, projectID, sessionID); err != nil {
+		log.Printf("Warning: failed to clear terminal commit state for %s: %v", sessionID, err)
 	}
 
 	return innerCh, nil

@@ -297,14 +297,14 @@ func (s *SessionService) UpdateSession(ctx context.Context, sessionID, name stri
 	return s.mapSession(sess), nil
 }
 
-// ClearCompletedCommitStatus resets the commit status for a session that is
+// ClearTerminalCommitState resets terminal commit metadata for a session that is
 // moving back into active editing/chat work.
-func (s *SessionService) ClearCompletedCommitStatus(ctx context.Context, projectID, sessionID string) error {
+func (s *SessionService) ClearTerminalCommitState(ctx context.Context, projectID, sessionID string) error {
 	sess, err := s.store.GetSessionByID(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
 	}
-	if sess.CommitStatus != model.CommitStatusCompleted {
+	if sess.CommitStatus != model.CommitStatusCompleted && sess.CommitStatus != model.CommitStatusFailed {
 		return nil
 	}
 
@@ -312,7 +312,7 @@ func (s *SessionService) ClearCompletedCommitStatus(ctx context.Context, project
 	sess.CommitOperation = nil
 	sess.CommitError = nil
 	if err := s.store.UpdateSession(ctx, sess); err != nil {
-		return fmt.Errorf("failed to clear commit status: %w", err)
+		return fmt.Errorf("failed to clear commit state: %w", err)
 	}
 
 	s.publishCommitStatusChanged(ctx, projectID, sessionID, model.CommitStatusNone)

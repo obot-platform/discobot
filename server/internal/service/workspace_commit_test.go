@@ -403,9 +403,9 @@ func TestSessionRebasePayload_AllowDuplicates(t *testing.T) {
 	}
 }
 
-// TestClearCompletedCommitStatus clears a completed commit state when the
+// TestClearTerminalCommitState clears a completed commit state when the
 // session resumes active chat/editing work.
-func TestClearCompletedCommitStatus(t *testing.T) {
+func TestClearTerminalCommitState(t *testing.T) {
 	env := newTestEnv(t)
 	defer env.cleanup()
 
@@ -422,9 +422,9 @@ func TestClearCompletedCommitStatus(t *testing.T) {
 
 	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, nil, env.eventBroker, nil)
 
-	err := sessionSvc.ClearCompletedCommitStatus(context.Background(), project.ID, session.ID)
+	err := sessionSvc.ClearTerminalCommitState(context.Background(), project.ID, session.ID)
 	if err != nil {
-		t.Fatalf("ClearCompletedCommitStatus failed: %v", err)
+		t.Fatalf("ClearTerminalCommitState failed: %v", err)
 	}
 
 	// Verify commit status was cleared
@@ -442,9 +442,50 @@ func TestClearCompletedCommitStatus(t *testing.T) {
 	}
 }
 
-// TestClearCompletedCommitStatus_DoesNotChangeIncompleteState tests that commit
-// status is only cleared when it is "completed".
-func TestClearCompletedCommitStatus_DoesNotChangeIncompleteState(t *testing.T) {
+func TestClearTerminalCommitState_ClearsFailedCommitError(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	project := env.createTestProject(t)
+	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
+
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
+	session.CommitStatus = model.CommitStatusFailed
+	session.CommitOperation = ptrString(model.CommitOperationRebase)
+	session.CommitError = ptrString("Patch conflict on file.txt")
+	session.AppliedCommit = ptrString("abc123")
+	if err := env.store.UpdateSession(context.Background(), session); err != nil {
+		t.Fatalf("Failed to update session: %v", err)
+	}
+
+	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, nil, env.eventBroker, nil)
+
+	err := sessionSvc.ClearTerminalCommitState(context.Background(), project.ID, session.ID)
+	if err != nil {
+		t.Fatalf("ClearTerminalCommitState failed: %v", err)
+	}
+
+	sess, err := env.store.GetSessionByID(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("Failed to get session: %v", err)
+	}
+	if sess.CommitStatus != model.CommitStatusNone {
+		t.Errorf("Expected commit status to be cleared to none, got %s", sess.CommitStatus)
+	}
+	if sess.CommitOperation != nil {
+		t.Errorf("Expected commit operation to be cleared, got %v", sess.CommitOperation)
+	}
+	if sess.CommitError != nil {
+		t.Errorf("Expected commit error to be cleared, got %v", sess.CommitError)
+	}
+	if sess.AppliedCommit == nil || *sess.AppliedCommit != "abc123" {
+		t.Errorf("Expected applied commit to be preserved as 'abc123', got %v", sess.AppliedCommit)
+	}
+}
+
+// TestClearTerminalCommitState_DoesNotChangeIncompleteState tests that terminal
+// commit state clearing does not affect non-terminal commit states.
+func TestClearTerminalCommitState_DoesNotChangeIncompleteState(t *testing.T) {
 	env := newTestEnv(t)
 	defer env.cleanup()
 
@@ -460,9 +501,9 @@ func TestClearCompletedCommitStatus_DoesNotChangeIncompleteState(t *testing.T) {
 
 	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, nil, env.eventBroker, nil)
 
-	err := sessionSvc.ClearCompletedCommitStatus(context.Background(), project.ID, session.ID)
+	err := sessionSvc.ClearTerminalCommitState(context.Background(), project.ID, session.ID)
 	if err != nil {
-		t.Fatalf("ClearCompletedCommitStatus failed: %v", err)
+		t.Fatalf("ClearTerminalCommitState failed: %v", err)
 	}
 
 	// Verify commit status remains none (unchanged)
