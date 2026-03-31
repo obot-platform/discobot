@@ -227,6 +227,29 @@ type SSELine struct {
 	Done bool
 }
 
+func readSSELines(r io.Reader, handleLine func(string) bool) error {
+	reader := bufio.NewReader(r)
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		if line == "" && errors.Is(err, io.EOF) {
+			return nil
+		}
+
+		line = strings.TrimRight(line, "\r\n")
+		if !handleLine(line) {
+			return nil
+		}
+
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+	}
+}
+
 // getHTTPClient returns an HTTP client configured for the sandbox.
 // This uses the provider's HTTPClient which handles transport-level details
 // (TCP for Docker, vsock for vz, mock transport for testing).
@@ -448,9 +471,6 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 		defer close(lineCh)
 		defer func() { _ = resp.Body.Close() }()
 
-		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
 		current := SSELine{}
 		hasCurrent := false
 		emitCurrent := func() bool {
@@ -475,17 +495,12 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 			}
 		}
 
-		for scanner.Scan() {
-			line := scanner.Text()
-
+		if err := readSSELines(resp.Body, func(line string) bool {
 			if strings.HasPrefix(line, ":") {
-				continue
+				return true
 			}
 			if line == "" {
-				if !emitCurrent() {
-					return
-				}
-				continue
+				return emitCurrent()
 			}
 
 			hasCurrent = true
@@ -502,14 +517,8 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 					current.Data += "\n" + data
 				}
 			}
-		}
-		if hasCurrent {
-			if !emitCurrent() {
-				return
-			}
-		}
-
-		if err := scanner.Err(); err != nil && ctx.Err() == nil {
+			return true
+		}); err != nil && ctx.Err() == nil {
 			log.Printf("[SandboxChatClient] Error reading chat stream for session %s: %v", sessionID, err)
 			errorData, marshalErr := json.Marshal(struct {
 				Type      string `json:"type"`
@@ -524,6 +533,11 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 				case <-ctx.Done():
 				}
 			}
+			return
+		}
+
+		if hasCurrent {
+			_ = emitCurrent()
 		}
 	}()
 
@@ -1768,14 +1782,10 @@ func (c *SandboxChatClient) GetServiceOutput(ctx context.Context, sessionID stri
 		defer close(lineCh)
 		defer func() { _ = resp.Body.Close() }()
 
-		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-
+		_ = readSSELines(resp.Body, func(line string) bool {
 			// Skip empty lines and comments
 			if line == "" || strings.HasPrefix(line, ":") {
-				continue
+				return true
 			}
 
 			// Pass through SSE data lines
@@ -1788,17 +1798,18 @@ func (c *SandboxChatClient) GetServiceOutput(ctx context.Context, sessionID stri
 					case lineCh <- SSELine{Done: true}:
 					case <-ctx.Done():
 					}
-					return
+					return false
 				}
 
 				// Pass through raw data without parsing
 				select {
 				case lineCh <- SSELine{Data: data}:
 				case <-ctx.Done():
-					return
+					return false
 				}
 			}
-		}
+			return true
+		})
 	}()
 
 	return lineCh, nil

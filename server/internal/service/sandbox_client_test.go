@@ -472,12 +472,14 @@ func TestSandboxChatClient_GetStream_AllowsLargeSSEDataLine(t *testing.T) {
 	}
 }
 
-func TestSandboxChatClient_GetStream_ScannerErrorEmitsErrorEvent(t *testing.T) {
+func TestSandboxChatClient_GetStream_AllowsVeryLargeSSEDataLine(t *testing.T) {
+	largeDelta := strings.Repeat("x", 2*1024*1024)
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/chat/stream") {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("data: " + strings.Repeat("x", 2*1024*1024) + "\n\n"))
+			_, _ = w.Write([]byte("data: " + largeDelta + "\n\n"))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -499,27 +501,54 @@ func TestSandboxChatClient_GetStream_ScannerErrorEmitsErrorEvent(t *testing.T) {
 		events = append(events, line)
 	}
 
-	if len(events) == 0 {
-		t.Fatal("Expected an SSE error event when scanner fails")
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 SSE data event, got %d", len(events))
 	}
-
 	if events[0].Done {
-		t.Fatal("Expected first event to be error data, got done signal")
+		t.Fatal("Expected data event, got done signal")
+	}
+	if events[0].Data != largeDelta {
+		t.Fatalf("Expected very large delta to pass through unchanged, got %d bytes", len(events[0].Data))
+	}
+}
+
+func TestSandboxChatClient_GetServiceOutput_AllowsVeryLargeSSEDataLine(t *testing.T) {
+	largeDelta := strings.Repeat("x", 2*1024*1024)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/services/test-service/output") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("data: " + largeDelta + "\n\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	provider := &mockSandboxProvider{handler: handler}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ch, err := client.GetServiceOutput(ctx, "test-session", "test-service")
+	if err != nil {
+		t.Fatalf("GetServiceOutput failed: %v", err)
 	}
 
-	var payload struct {
-		Type      string `json:"type"`
-		ErrorText string `json:"errorText"`
-	}
-	if err := json.Unmarshal([]byte(events[0].Data), &payload); err != nil {
-		t.Fatalf("Expected JSON error payload, got %q: %v", events[0].Data, err)
+	var events []SSELine
+	for line := range ch {
+		events = append(events, line)
 	}
 
-	if payload.Type != "error" {
-		t.Fatalf("Expected type=error, got %q", payload.Type)
+	if len(events) != 1 {
+		t.Fatalf("Expected 1 SSE data event, got %d", len(events))
 	}
-	if !contains(payload.ErrorText, "failed to read chat stream") {
-		t.Fatalf("Expected error text to mention stream read failure, got %q", payload.ErrorText)
+	if events[0].Done {
+		t.Fatal("Expected data event, got done signal")
+	}
+	if events[0].Data != largeDelta {
+		t.Fatalf("Expected very large service output to pass through unchanged, got %d bytes", len(events[0].Data))
 	}
 }
 
