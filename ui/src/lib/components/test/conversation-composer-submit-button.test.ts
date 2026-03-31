@@ -13,12 +13,21 @@ const CONVERSATION_COMPOSER_COMPONENT = path.resolve(
 	"../app/ConversationComposer.svelte",
 );
 
+const CONVERSATION_ENV_SETS_CONTROL_COMPONENT = path.resolve(
+	import.meta.dirname,
+	"../app/ConversationEnvSetsControl.svelte",
+);
+
 function readSubmitButtonSource() {
 	return readFileSync(SUBMIT_BUTTON_COMPONENT, "utf-8");
 }
 
 function readConversationComposerSource() {
 	return readFileSync(CONVERSATION_COMPOSER_COMPONENT, "utf-8");
+}
+
+function readConversationEnvSetsControlSource() {
+	return readFileSync(CONVERSATION_ENV_SETS_CONTROL_COMPONENT, "utf-8");
 }
 
 test("composer submit button only shows the plus icon for pending empty sessions", () => {
@@ -39,5 +48,16 @@ test("conversation composer passes pending session state to the submit button", 
 	assert.match(
 		source,
 		/<ConversationComposerSubmitButton[\s\S]*isPending=\{session\.isPending\}/,
+	);
+});
+
+test("env sets control only shows a numeric badge when multiple env sets are active", () => {
+	const source = readConversationEnvSetsControlSource();
+
+	assert.match(source, /\{#if activeEnvSetCount\(\) > 1\}/);
+	assert.match(source, /<span>\{activeEnvSetCount\(\)\}<\/span>/);
+	assert.doesNotMatch(
+		source,
+		/activeEnvSetCount\(\)\/\{totalEnvSetCount\(\)\}/,
 	);
 });

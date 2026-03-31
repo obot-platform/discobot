@@ -216,8 +216,8 @@
 			<LayersIcon
 				class={`size-3.5 ${activeEnvSetCount() > 0 ? "text-yellow-500" : "text-muted-foreground"}`}
 			/>
-			{#if activeEnvSetCount() > 0}
-				<span>{activeEnvSetCount()}/{totalEnvSetCount()}</span>
+			{#if activeEnvSetCount() > 1}
+				<span>{activeEnvSetCount()}</span>
 			{/if}
 		</Button>
 	</DropdownMenuTrigger>
