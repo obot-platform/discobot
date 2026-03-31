@@ -4,10 +4,14 @@ import test from "node:test";
 
 import { parseMarkdownToHast } from "./pipeline";
 import { renderMarkdownTree } from "./render-dom";
+import type { CodeHighlighterPlugin, RenderMarkdownOptions } from "./types";
 
-function renderMarkdown(markdown: string): HTMLDivElement {
+function renderMarkdown(
+	markdown: string,
+	options: RenderMarkdownOptions = {},
+): HTMLDivElement {
 	const container = document.createElement("div");
-	container.append(renderMarkdownTree(parseMarkdownToHast(markdown)));
+	container.append(renderMarkdownTree(parseMarkdownToHast(markdown), options));
 	return container;
 }
 
@@ -54,4 +58,35 @@ test("renderMarkdownTree shows explicit code fence languages", () => {
 
 	assert.ok(header);
 	assert.equal(header?.textContent?.trim(), "yaml");
+});
+
+test("renderMarkdownTree falls back to plain text for unsupported code fence languages", () => {
+	const unsupportedCodePlugin: CodeHighlighterPlugin = {
+		getSupportedLanguages: () => ["typescript"],
+		getThemes: () => ["github-light", "github-dark"],
+		highlight: () => {
+			throw new Error(
+				"highlight should not be called for unsupported languages",
+			);
+		},
+		name: "shiki",
+		supportsLanguage: () => false,
+		type: "code-highlighter",
+	};
+
+	const container = renderMarkdown("```gitignore\ndist/\n.env\n```", {
+		plugins: { code: unsupportedCodePlugin },
+	});
+	const header = container.querySelector(
+		'[data-streamdown="code-block-header"]',
+	);
+	const codeBlock = container.querySelector(
+		'[data-streamdown="code-block-body"]',
+	);
+
+	assert.ok(header);
+	assert.equal(header?.textContent?.trim(), "gitignore");
+	assert.ok(codeBlock);
+	assert.match(codeBlock?.textContent ?? "", /dist\//);
+	assert.match(codeBlock?.textContent ?? "", /\.env/);
 });

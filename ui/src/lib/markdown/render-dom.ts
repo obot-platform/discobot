@@ -210,6 +210,31 @@ function createRawHighlightResult(code: string): HighlightResult {
 	};
 }
 
+function shouldHighlightCode(
+	language: string,
+	options: RenderMarkdownOptions,
+): boolean {
+	const codePlugin = options.plugins?.code;
+	if (!codePlugin) {
+		return false;
+	}
+
+	if (!language) {
+		return true;
+	}
+
+	if (codePlugin.supportsLanguage) {
+		return codePlugin.supportsLanguage(language);
+	}
+
+	const supportedLanguages = codePlugin.getSupportedLanguages?.();
+	if (supportedLanguages) {
+		return supportedLanguages.includes(language);
+	}
+
+	return true;
+}
+
 function renderHighlightedCodeBody(
 	container: HTMLElement,
 	result: HighlightResult,
@@ -485,6 +510,10 @@ function renderCodeBlock(
 		className,
 	);
 	container.append(bodyContainer);
+
+	if (!shouldHighlightCode(language, options)) {
+		return container;
+	}
 
 	const themes = options.plugins?.code?.getThemes?.() ?? [
 		"github-light",
