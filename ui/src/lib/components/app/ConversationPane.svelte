@@ -55,6 +55,7 @@
 	import type { ThreadContextValue } from "$lib/session/session-context.types";
 
 	type ConversationPaneStatus = ThreadContextValue["status"];
+	type ConversationPaneErrorBannerKey = "session" | "thread";
 	type Props = {
 		contentTopPadding?: number;
 		messages?: ChatMessage[];
@@ -127,6 +128,9 @@
 	let hookPreviewContent = $state("");
 	let hookPreviewLoading = $state(false);
 	let hookPreviewError = $state<string | null>(null);
+	let expandedErrorBanners = $state<
+		Partial<Record<ConversationPaneErrorBannerKey, boolean>>
+	>({});
 
 	function getHookFileLanguage(path: string | undefined): string {
 		const extension = path?.split(".").at(-1)?.toLowerCase() ?? "";
@@ -217,6 +221,30 @@
 
 	function getCollapsedStepLabel(stepCount: number): string {
 		return `${stepCount} ${stepCount === 1 ? "step" : "steps"}`;
+	}
+
+	function shouldCollapseErrorBanner(errorText: string): boolean {
+		return errorText.split(/\r?\n/).length > 3 || errorText.length > 240;
+	}
+
+	function isErrorBannerExpanded(key: ConversationPaneErrorBannerKey): boolean {
+		return expandedErrorBanners[key] ?? false;
+	}
+
+	function setErrorBannerExpanded(
+		key: ConversationPaneErrorBannerKey,
+		expanded: boolean,
+	) {
+		expandedErrorBanners = {
+			...expandedErrorBanners,
+			[key]: expanded,
+		};
+	}
+
+	function getErrorBannerToggleLabel(
+		key: ConversationPaneErrorBannerKey,
+	): string {
+		return isErrorBannerExpanded(key) ? "Show less" : "Show full error";
 	}
 
 	function isActiveStreamingAssistantMessage(message: ChatMessage): boolean {
@@ -533,18 +561,44 @@
 	{/each}
 {/snippet}
 
+{#snippet renderErrorBanner(
+	key: ConversationPaneErrorBannerKey,
+	errorText: string,
+)}
+	{@const shouldCollapse = shouldCollapseErrorBanner(errorText)}
+	{@const isExpanded = isErrorBannerExpanded(key)}
+	<Alert variant="destructive">
+		<AlertDescription class="min-w-0">
+			<div class="flex min-w-0 flex-col items-start gap-2">
+				<p
+					class={`min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${shouldCollapse && !isExpanded ? "line-clamp-3" : ""}`}
+				>
+					{errorText}
+				</p>
+				{#if shouldCollapse}
+					<Button
+						aria-expanded={isExpanded}
+						class="h-auto px-0 text-xs text-destructive hover:text-destructive"
+						onclick={() => setErrorBannerExpanded(key, !isExpanded)}
+						size="sm"
+						variant="link"
+					>
+						{getErrorBannerToggleLabel(key)}
+					</Button>
+				{/if}
+			</div>
+		</AlertDescription>
+	</Alert>
+{/snippet}
+
 <div class="flex h-full min-h-0 flex-col overflow-hidden bg-background">
 	{#if sessionError || threadError}
 		<div class="flex flex-col gap-2 p-3">
 			{#if sessionError}
-				<Alert variant="destructive">
-					<AlertDescription>{sessionError}</AlertDescription>
-				</Alert>
+				{@render renderErrorBanner("session", sessionError)}
 			{/if}
 			{#if threadError}
-				<Alert variant="destructive">
-					<AlertDescription>{threadError}</AlertDescription>
-				</Alert>
+				{@render renderErrorBanner("thread", threadError)}
 			{/if}
 		</div>
 	{/if}

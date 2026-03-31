@@ -40,3 +40,27 @@ test("conversation pane delegates user text rendering to MessageResponseWithComm
 	assert.match(source, /<MessageResponseWithCommand/);
 	assert.doesNotMatch(source, /Command: \{originalCommand\.command\}/);
 });
+
+test("conversation pane renders expandable top-level error banners", () => {
+	const source = readComponentSource(CONVERSATION_PANE_COMPONENT);
+
+	assert.match(
+		source,
+		/type ConversationPaneErrorBannerKey = "session" \| "thread";/,
+	);
+	assert.match(
+		source,
+		/function shouldCollapseErrorBanner\(errorText: string\): boolean/,
+	);
+	assert.match(source, /line-clamp-3/);
+	assert.match(source, /Show full error/);
+	assert.match(source, /Show less/);
+	assert.match(
+		source,
+		/\{@render renderErrorBanner\("session", sessionError\)\}/,
+	);
+	assert.match(
+		source,
+		/\{@render renderErrorBanner\("thread", threadError\)\}/,
+	);
+});
