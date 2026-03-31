@@ -33,6 +33,18 @@ const (
 // ErrSessionOperationInProgress indicates a commit/rebase operation is already running.
 var ErrSessionOperationInProgress = errors.New("session operation already in progress")
 
+// CommitsNoOpError is returned by GetCommits when the sandbox has no commits beyond the
+// base, carrying the sandbox's working-tree state so callers can decide whether the
+// absence of commits is safe to treat as a completed no-op.
+type CommitsNoOpError struct {
+	IsClean    bool   // true when the sandbox working tree has no uncommitted changes
+	HeadCommit string // the sandbox HEAD commit SHA
+}
+
+func (e *CommitsNoOpError) Error() string {
+	return fmt.Sprintf("commits error (no_commits): head=%s isClean=%v", e.HeadCommit, e.IsClean)
+}
+
 const (
 	legacySessionStatusRunning    = "running"
 	sessionDeletionRetentionDelay = 24 * time.Hour
@@ -1300,11 +1312,11 @@ func (s *SessionService) validateSandboxRebased(ctx context.Context, projectID s
 
 	commitsResp, err := client.GetCommits(ctx, *sess.BaseCommit)
 	if err != nil {
-		if strings.Contains(err.Error(), "commits error (no_commits)") {
-			if completeErr := s.markCommitCompleted(ctx, projectID, sess); completeErr != nil {
-				return false, completeErr
+		var noOp *CommitsNoOpError
+		if errors.As(err, &noOp) {
+			if err := s.validateAndCompleteNoOp(ctx, projectID, workspace, sess, noOp, "sandbox already aligned with workspace base commit"); err != nil {
+				return false, err
 			}
-			log.Printf("Session %s: sandbox already aligned with workspace base commit %s", sess.ID, *sess.BaseCommit)
 			return true, nil
 		}
 
@@ -1346,11 +1358,11 @@ func (s *SessionService) fetchAndApplyReplayBundle(ctx context.Context, projectI
 
 	commitsResp, err := client.GetCommits(ctx, *sess.BaseCommit)
 	if err != nil {
-		if strings.Contains(err.Error(), "commits error (no_commits)") {
-			if completeErr := s.markCommitCompleted(ctx, projectID, sess); completeErr != nil {
+		var noOp *CommitsNoOpError
+		if errors.As(err, &noOp) {
+			if completeErr := s.validateAndCompleteNoOp(ctx, projectID, workspace, sess, noOp, "agent reported no commits to replay"); completeErr != nil {
 				return completeErr
 			}
-			log.Printf("Session %s: agent reported no commits to replay for base %s", sess.ID, *sess.BaseCommit)
 			return nil
 		}
 
@@ -1359,10 +1371,8 @@ func (s *SessionService) fetchAndApplyReplayBundle(ctx context.Context, projectI
 	}
 
 	if commitsResp.CommitCount == 0 {
-		if err := s.markCommitCompleted(ctx, projectID, sess); err != nil {
-			return err
-		}
-		log.Printf("Session %s: commit replay fetch returned zero commits for base %s", sess.ID, *sess.BaseCommit)
+		// Agent returned a success response with zero commits — treat as a dirty no-op and fail.
+		s.setCommitFailed(ctx, projectID, workspace, sess, "Agent returned zero commits in replay bundle without a clean working tree confirmation")
 		return nil
 	}
 
@@ -1393,6 +1403,28 @@ func (s *SessionService) applyReplayBundle(ctx context.Context, projectID string
 	s.publishCommitStatusChanged(ctx, projectID, sess.ID, model.CommitStatusCommitting)
 	log.Printf("Session %s: %d replayed commits applied, final commit=%s", sess.ID, commitCount, finalCommit)
 	return nil
+}
+
+// validateAndCompleteNoOp checks whether a no_commits response from the sandbox is safe
+// to treat as a completed no-op. It requires:
+//  1. The sandbox working tree is clean (no uncommitted changes).
+//  2. The sandbox HEAD commit matches the session base commit, confirming the sandbox
+//     is exactly at the target workspace state with nothing left behind.
+//
+// If either condition fails the commit is marked as failed so the work is not silently lost.
+func (s *SessionService) validateAndCompleteNoOp(ctx context.Context, projectID string, workspace *model.Workspace, sess *model.Session, noOp *CommitsNoOpError, logMsg string) error {
+	if !noOp.IsClean {
+		s.setCommitFailed(ctx, projectID, workspace, sess,
+			fmt.Sprintf("Sandbox reports no commits but working tree is dirty (uncommitted changes present); head=%s base=%s", noOp.HeadCommit, *sess.BaseCommit))
+		return nil
+	}
+	if noOp.HeadCommit != *sess.BaseCommit {
+		s.setCommitFailed(ctx, projectID, workspace, sess,
+			fmt.Sprintf("Sandbox reports no commits but HEAD (%s) does not match session base (%s); changes may be uncommitted", noOp.HeadCommit, *sess.BaseCommit))
+		return nil
+	}
+	log.Printf("Session %s: %s %s (head=%s isClean=true)", sess.ID, logMsg, *sess.BaseCommit, noOp.HeadCommit)
+	return s.markCommitCompleted(ctx, projectID, sess)
 }
 
 func (s *SessionService) markCommitCompleted(ctx context.Context, projectID string, sess *model.Session) error {

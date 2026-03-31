@@ -1172,15 +1172,19 @@ func TestPerformCommit_NoCommitsAfterPromptMarksCompleted(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			if callNumber == 0 {
+				// Pre-check (tryApplyExistingReplayBundle): no bundle yet, continue to prompt.
 				w.WriteHeader(http.StatusOK)
 				_ = json.NewEncoder(w).Encode(sandboxapi.CommitsResponse{CommitCount: 0})
 				return
 			}
 
+			// Post-prompt (fetchAndApplyReplayBundle): clean sandbox at the exact base commit.
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(sandboxapi.CommitsErrorResponse{
-				Error:   "no_commits",
-				Message: "No commits found",
+				Error:      "no_commits",
+				Message:    "No commits found",
+				IsClean:    true,
+				HeadCommit: initialCommit,
 			})
 		},
 	}
@@ -1220,13 +1224,112 @@ func TestPerformCommit_NoCommitsAfterPromptMarksCompleted(t *testing.T) {
 	}
 
 	if updatedSession.CommitStatus != model.CommitStatusCompleted {
-		t.Fatalf("Expected commit status %q, got %q", model.CommitStatusCompleted, updatedSession.CommitStatus)
+		t.Fatalf("Expected commit status %q, got %q (error: %v)", model.CommitStatusCompleted, updatedSession.CommitStatus, updatedSession.CommitError)
 	}
 	if updatedSession.CommitError != nil {
 		t.Fatalf("Expected commit error to be cleared, got %v", updatedSession.CommitError)
 	}
 	if updatedSession.AppliedCommit != nil && *updatedSession.AppliedCommit != "" {
 		t.Fatalf("Expected applied commit to remain unset for a no-op commit, got %q", *updatedSession.AppliedCommit)
+	}
+}
+
+func TestPerformCommit_NoCommitsAfterPrompt_DirtyWorkTree_MarksFailed(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	project := env.createTestProject(t)
+	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
+
+	handler := &trackingHandler{
+		onChat: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) },
+		onCommits: func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			// Both pre-check and post-prompt return no_commits with dirty working tree.
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(sandboxapi.CommitsErrorResponse{
+				Error:      "no_commits",
+				Message:    "No commits found",
+				IsClean:    false, // dirty — uncommitted changes present
+				HeadCommit: initialCommit,
+			})
+		},
+	}
+	env.mockSandbox.HTTPHandler = handler
+
+	_, err := env.mockSandbox.Create(context.Background(), session.ID, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox: %v", err)
+	}
+	if err := env.mockSandbox.Start(context.Background(), session.ID); err != nil {
+		t.Fatalf("Failed to start sandbox: %v", err)
+	}
+
+	sandboxSvc := NewSandboxService(env.store, env.mockSandbox, &config.Config{}, nil, env.eventBroker, nil, nil)
+	sandboxSvc.SetSessionInitializer(&testSessionInitializer{})
+	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, sandboxSvc, env.eventBroker, nil)
+
+	err = sessionSvc.PerformCommit(context.Background(), project.ID, session.ID)
+	if err != nil {
+		t.Fatalf("PerformCommit returned unexpected error: %v", err)
+	}
+
+	updatedSession, err := env.store.GetSessionByID(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("Failed to get session: %v", err)
+	}
+	if updatedSession.CommitStatus != model.CommitStatusFailed {
+		t.Fatalf("Expected commit status %q for dirty working tree, got %q", model.CommitStatusFailed, updatedSession.CommitStatus)
+	}
+}
+
+func TestPerformCommit_NoCommitsAfterPrompt_HeadMismatch_MarksFailed(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.cleanup()
+
+	project := env.createTestProject(t)
+	workspace, initialCommit := env.createTestWorkspace(t, project.ID)
+	session := env.createTestSession(t, project.ID, workspace.ID, initialCommit)
+
+	handler := &trackingHandler{
+		onChat: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) },
+		onCommits: func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(sandboxapi.CommitsErrorResponse{
+				Error:      "no_commits",
+				Message:    "No commits found",
+				IsClean:    true,
+				HeadCommit: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", // does not match base commit
+			})
+		},
+	}
+	env.mockSandbox.HTTPHandler = handler
+
+	_, err := env.mockSandbox.Create(context.Background(), session.ID, sandbox.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox: %v", err)
+	}
+	if err := env.mockSandbox.Start(context.Background(), session.ID); err != nil {
+		t.Fatalf("Failed to start sandbox: %v", err)
+	}
+
+	sandboxSvc := NewSandboxService(env.store, env.mockSandbox, &config.Config{}, nil, env.eventBroker, nil, nil)
+	sandboxSvc.SetSessionInitializer(&testSessionInitializer{})
+	sessionSvc := NewSessionService(env.store, env.gitService, env.mockSandbox, sandboxSvc, env.eventBroker, nil)
+
+	err = sessionSvc.PerformCommit(context.Background(), project.ID, session.ID)
+	if err != nil {
+		t.Fatalf("PerformCommit returned unexpected error: %v", err)
+	}
+
+	updatedSession, err := env.store.GetSessionByID(context.Background(), session.ID)
+	if err != nil {
+		t.Fatalf("Failed to get session: %v", err)
+	}
+	if updatedSession.CommitStatus != model.CommitStatusFailed {
+		t.Fatalf("Expected commit status %q for head mismatch, got %q", model.CommitStatusFailed, updatedSession.CommitStatus)
 	}
 }
 

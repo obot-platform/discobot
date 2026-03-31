@@ -1445,6 +1445,9 @@ func (c *SandboxChatClient) GetCommits(ctx context.Context, sessionID string, pa
 			body, _ := io.ReadAll(resp.Body)
 			return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
 		}
+		if errResp.Error == "no_commits" {
+			return nil, &CommitsNoOpError{IsClean: errResp.IsClean, HeadCommit: errResp.HeadCommit}
+		}
 		return nil, fmt.Errorf("commits error (%s): %s", errResp.Error, errResp.Message)
 	}
 

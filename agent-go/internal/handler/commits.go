@@ -35,8 +35,10 @@ func (h *Handler) GetCommits(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.JSON(w, status, api.CommitsErrorResponse{
-			Error:   commitsErr.Code,
-			Message: commitsErr.Message,
+			Error:      commitsErr.Code,
+			Message:    commitsErr.Message,
+			IsClean:    commitsErr.IsClean,
+			HeadCommit: commitsErr.HeadCommit,
 		})
 		return
 	}

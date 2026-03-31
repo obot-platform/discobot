@@ -72,8 +72,10 @@ type commitFileChange struct {
 
 // CommitsError represents an error during commit operations.
 type CommitsError struct {
-	Code    string // "invalid_parent", "not_git_repo", "parent_mismatch", "no_commits"
-	Message string
+	Code       string // "invalid_parent", "not_git_repo", "parent_mismatch", "no_commits"
+	Message    string
+	IsClean    bool   // populated for "no_commits": true when working tree has no uncommitted changes
+	HeadCommit string // populated for "no_commits": the current HEAD commit SHA
 }
 
 func (e *CommitsError) Error() string {
@@ -84,6 +86,21 @@ func (e *CommitsError) Error() string {
 func IsGitRepo(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
 	return err == nil
+}
+
+// IsWorkingTreeClean returns true when there are no staged, unstaged, or untracked changes.
+func IsWorkingTreeClean(workspaceRoot string) bool {
+	out, err := gitCmd(workspaceRoot, "status", "--porcelain")
+	return err == nil && strings.TrimSpace(out) == ""
+}
+
+// HeadCommitSHA returns the current HEAD commit SHA for the repository.
+func HeadCommitSHA(workspaceRoot string) string {
+	out, err := gitCmd(workspaceRoot, "rev-parse", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }
 
 // gitCmd runs a git command in the given directory and returns stdout.
@@ -381,11 +398,21 @@ func GetCommitReplayBundle(workspaceRoot, parent string) (*CommitsResult, *Commi
 
 	countStr, err := gitCmd(workspaceRoot, "rev-list", "--count", parent+"..HEAD")
 	if err != nil {
-		return nil, &CommitsError{Code: "no_commits", Message: "Failed to count commits"}
+		return nil, &CommitsError{
+			Code:       "no_commits",
+			Message:    "Failed to count commits",
+			IsClean:    IsWorkingTreeClean(workspaceRoot),
+			HeadCommit: HeadCommitSHA(workspaceRoot),
+		}
 	}
 	commitCount, err := strconv.Atoi(countStr)
 	if err != nil || commitCount == 0 {
-		return nil, &CommitsError{Code: "no_commits", Message: fmt.Sprintf("No commits found between %s and HEAD", parent)}
+		return nil, &CommitsError{
+			Code:       "no_commits",
+			Message:    fmt.Sprintf("No commits found between %s and HEAD", parent),
+			IsClean:    IsWorkingTreeClean(workspaceRoot),
+			HeadCommit: HeadCommitSHA(workspaceRoot),
+		}
 	}
 
 	bundleJSON, err := buildCommitReplayBundle(workspaceRoot, parent)

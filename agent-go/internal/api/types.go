@@ -279,8 +279,10 @@ type CommitsResponse struct {
 
 // CommitsErrorResponse is the GET /commits error response.
 type CommitsErrorResponse struct {
-	Error   string `json:"error"` // "parent_mismatch", "no_commits", "invalid_parent", "not_git_repo"
-	Message string `json:"message"`
+	Error      string `json:"error"`                // "parent_mismatch", "no_commits", "invalid_parent", "not_git_repo"
+	Message    string `json:"message"`
+	IsClean    bool   `json:"isClean,omitempty"`    // Only set for "no_commits": true when working tree has no uncommitted changes
+	HeadCommit string `json:"headCommit,omitempty"` // Only set for "no_commits": the current HEAD commit SHA
 }
 
 // ============================================================================
