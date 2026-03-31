@@ -12,6 +12,7 @@
 	import {
 		getAssistantMessagePartGroups,
 		getHookFailureMessageMetadata,
+		getHookPathDisplayLabel,
 		getUserMessageRenderableParts,
 		isConversationPaneMessageStreaming,
 	} from "$lib/components/app/conversation-pane-message-parts";
@@ -477,7 +478,7 @@
 							size="sm"
 							variant="link"
 						>
-							{metadata.hookPath}
+							{getHookPathDisplayLabel(metadata.hookPath)}
 						</Button>
 					</div>
 				{/if}
@@ -743,7 +744,7 @@
 				{#if hookPreviewMetadata?.hookPath}
 					<div class="space-y-3">
 						<div class="font-mono text-muted-foreground text-xs break-all">
-							{hookPreviewMetadata.hookPath}
+							{getHookPathDisplayLabel(hookPreviewMetadata.hookPath)}
 						</div>
 						{#if hookPreviewLoading}
 							<div

@@ -5,6 +5,7 @@ import type { ChatMessage } from "$lib/api-types";
 import {
 	getAssistantMessagePartGroups,
 	getHookFailureMessageMetadata,
+	getHookPathDisplayLabel,
 	getUserMessageOriginalCommandDisplay,
 	getUserMessageOriginalText,
 	getUserMessageRenderableParts,
@@ -306,6 +307,17 @@ test("getHookFailureMessageMetadata normalizes absolute hook paths", () => {
 		outputPath: undefined,
 		outputTruncated: undefined,
 	});
+});
+
+test("getHookPathDisplayLabel trims the discobot hook directory", () => {
+	assert.equal(getHookPathDisplayLabel(".discobot/hooks/09-ci.sh"), "09-ci.sh");
+});
+
+test("getHookPathDisplayLabel keeps non-discobot hook paths intact", () => {
+	assert.equal(
+		getHookPathDisplayLabel(".claude/hooks/backend-check.sh"),
+		".claude/hooks/backend-check.sh",
+	);
 });
 
 test("isHookFailureMessage returns false for ordinary user messages", () => {

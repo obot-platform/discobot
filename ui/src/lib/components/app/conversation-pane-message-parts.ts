@@ -143,6 +143,22 @@ function normalizeHookPathFromMetadata(
 	return path;
 }
 
+export function getHookPathDisplayLabel(
+	path: string | undefined,
+): string | undefined {
+	if (!path) {
+		return undefined;
+	}
+
+	for (const marker of [".discobot/hooks/", "/.discobot/hooks/"]) {
+		if (path.startsWith(marker)) {
+			return path.slice(marker.length);
+		}
+	}
+
+	return path;
+}
+
 export function getHookFailureMessageMetadata(
 	message: ChatMessage,
 ): HookFailureMessageMetadata | null {
