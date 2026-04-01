@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -205,8 +206,8 @@ func DiscoverHooks(hooksDir string) ([]Hook, error) {
 			continue
 		}
 
-		// Must be executable
-		if info.Mode()&0o111 == 0 {
+		// Must be executable (Windows has no Unix-style execute bits, so all files qualify).
+		if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
 			continue
 		}
 

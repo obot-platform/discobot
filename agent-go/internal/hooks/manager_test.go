@@ -125,7 +125,9 @@ func TestBuildHookFailureMessageMetadata_RelativizesAbsoluteHookPath(t *testing.
 }
 
 func TestRerunHook_FailureWithNotifyLLMReturnsReprompt(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testHomeDir := t.TempDir()
+	t.Setenv("HOME", testHomeDir)        // Unix
+	t.Setenv("USERPROFILE", testHomeDir) // Windows
 	workspaceRoot := t.TempDir()
 	hooksDir := filepath.Join(workspaceRoot, HooksDir)
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {

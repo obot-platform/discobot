@@ -116,7 +116,8 @@ func TestRecoverInterruptedHooks_ResetsRunningHooksAndRequeuesFileHooks(t *testi
 func TestManagerInit_RecoversInterruptedFileHooksOnStartup(t *testing.T) {
 	homeDir := t.TempDir()
 	workspaceRoot := filepath.Join(t.TempDir(), "workspace")
-	t.Setenv("HOME", homeDir)
+	t.Setenv("HOME", homeDir)        // Unix
+	t.Setenv("USERPROFILE", homeDir) // Windows
 
 	hooksDir := filepath.Join(workspaceRoot, HooksDir)
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
