@@ -92,9 +92,10 @@ type Config struct {
 	DispatcherHeartbeatTimeout   time.Duration // Timeout before leader is considered dead (default: 30s)
 	DispatcherJobTimeout         time.Duration // Max time for a single job (default: 5m)
 	DispatcherStaleJobTimeout    time.Duration // Time after which running jobs are considered stale (default: 10m)
-	DispatcherImmediateExecution bool          // Try to execute jobs immediately when enqueued (default: true)
-	JobRetryBackoff              time.Duration // Base backoff between job retries, multiplied by attempt number (default: 5s)
-	JobMaxAttempts               int           // Default max attempts for jobs (default: 3)
+	DispatcherImmediateExecution        bool          // Try to execute jobs immediately when enqueued (default: true)
+	DisableSessionSandboxDeleteJobs     bool          // Disable execution of session_sandbox_delete jobs (default: false)
+	JobRetryBackoff                     time.Duration // Base backoff between job retries, multiplied by attempt number (default: 5s)
+	JobMaxAttempts                      int           // Default max attempts for jobs (default: 3)
 
 	// OAuth providers (for user login)
 	GitHubClientID     string
@@ -219,6 +220,7 @@ func Load() (*Config, error) {
 	cfg.DispatcherJobTimeout = getEnvDuration("DISPATCHER_JOB_TIMEOUT", 20*time.Minute)
 	cfg.DispatcherStaleJobTimeout = getEnvDuration("DISPATCHER_STALE_JOB_TIMEOUT", 10*time.Minute)
 	cfg.DispatcherImmediateExecution = getEnvBool("DISPATCHER_IMMEDIATE_EXECUTION", true)
+	cfg.DisableSessionSandboxDeleteJobs = getEnvBool("DISABLE_SESSION_SANDBOX_DELETE_JOBS", false)
 	cfg.JobRetryBackoff = getEnvDuration("JOB_RETRY_BACKOFF", 5*time.Second)
 	cfg.JobMaxAttempts = getEnvInt("JOB_MAX_ATTEMPTS", 3)
 

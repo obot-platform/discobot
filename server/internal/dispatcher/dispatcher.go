@@ -119,6 +119,9 @@ func (d *Service) Start(parentCtx context.Context) {
 	d.ctx, d.cancel = context.WithCancel(parentCtx)
 
 	log.Printf("Dispatcher starting with server ID: %s", d.serverID)
+	if d.cfg.DisableSessionSandboxDeleteJobs {
+		log.Println("DISABLE_SESSION_SANDBOX_DELETE_JOBS is set: session_sandbox_delete jobs will not be executed")
+	}
 
 	if d.singleNode {
 		// SQLite is single-host: become leader immediately and clean up
@@ -355,6 +358,9 @@ func (d *Service) getAvailableJobTypes() []string {
 
 	var available []string
 	for jobType := range d.executors {
+		if d.cfg.DisableSessionSandboxDeleteJobs && jobType == jobs.JobTypeSessionSandboxDelete {
+			continue
+		}
 		running := d.runningJobs[jobType]
 		limit := GetConcurrencyLimit(jobType)
 		if running < limit {
