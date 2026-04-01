@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from "svelte";
 	import { InputGroup, InputGroupAddon } from "$lib/components/ui/input-group";
+	import { Button } from "$lib/components/ui/button";
 	import ConversationComposerAttachmentButton from "$lib/components/app/parts/ConversationComposerAttachmentButton.svelte";
 	import ConversationComposerAttachments from "$lib/components/app/parts/ConversationComposerAttachments.svelte";
 	import ConversationComposerHooksControl from "$lib/components/app/parts/ConversationComposerHooksControl.svelte";
@@ -46,6 +47,7 @@
 	const models = app.models;
 	const preferences = app.preferences;
 	const sessions = app.sessions;
+	const ui = app.ui;
 	const session = useSessionContext();
 	const thread = useThreadContext();
 	const sessionView = session.ui;
@@ -137,6 +139,7 @@
 		() => selectedModel?.reasoningLevels ?? [],
 	);
 	const latestPlan = $derived.by(() => getLatestPlanState(thread.messages));
+	const hasAvailableModels = $derived.by(() => models.list.length > 0);
 	const sessionSetupDisabled = $derived.by(
 		() =>
 			sessionView.pendingWorkspaceRequiresSourceInput &&
@@ -204,6 +207,9 @@
 		return "ready" as const;
 	});
 	const composerDisabledMessage = $derived.by(() => {
+		if (!hasAvailableModels) {
+			return "Please add a valid LLM provider credential";
+		}
 		if (thread.hasPendingQuestion) {
 			return "Answer the agent's pending question before sending a new message.";
 		}
@@ -486,13 +492,26 @@
 			<div class="mb-2 text-sm text-destructive">{pendingSubmitError}</div>
 		{/if}
 		{#if composerDisabledMessage}
-			<div class="mb-2 text-sm text-muted-foreground">
-				{composerDisabledMessage}
+			<div
+				class="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+			>
+				<span>{composerDisabledMessage}</span>
+				{#if !hasAvailableModels}
+					<Button
+						variant="link"
+						size="xs"
+						class="h-auto px-0"
+						onclick={ui.openCredentialsDialog}
+					>
+						Open credentials
+					</Button>
+				{/if}
 			</div>
 		{/if}
 
 		<div class="relative">
 			<form
+				class={composerDisabled ? "pointer-events-none opacity-60" : undefined}
 				onsubmit={(event) => {
 					event.preventDefault();
 					void submitComposer();

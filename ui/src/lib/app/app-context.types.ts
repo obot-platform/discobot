@@ -76,6 +76,8 @@ export type AppUI = {
 	openSettings: (tab?: SettingsDialogTab) => void;
 	closeSettings: () => void;
 	openGitHubCredentialFlow: () => void;
+	openCredentialsDialog: () => void;
+	closeCredentialsDialog: () => void;
 	openSupportInfo: () => void;
 	closeSupportInfo: () => void;
 };

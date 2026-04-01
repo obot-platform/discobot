@@ -51,6 +51,22 @@ test("conversation composer passes pending session state to the submit button", 
 	);
 });
 
+test("conversation composer disables input when no models are available", () => {
+	const source = readConversationComposerSource();
+
+	assert.match(
+		source,
+		/const hasAvailableModels = \$derived\.by\(\(\) => models\.list\.length > 0\);/,
+	);
+	assert.match(source, /if \(!hasAvailableModels\) \{/);
+	assert.match(source, /Please add a valid LLM provider credential/);
+	assert.match(source, /onclick=\{ui\.openCredentialsDialog\}/);
+	assert.match(
+		source,
+		/class=\{composerDisabled \? "pointer-events-none opacity-60" : undefined\}/,
+	);
+});
+
 test("env sets control only shows a numeric badge when multiple env sets are active", () => {
 	const source = readConversationEnvSetsControlSource();
 
