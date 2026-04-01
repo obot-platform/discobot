@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "concurrently -n backend,app -c cyan,yellow \"pnpm dev:backend\" \"pnpm dev:app\"",
 		"dev:backend": "concurrently -n vite,server,agent -c cyan,green,magenta \"pnpm dev:frontend\" \"pnpm dev:server\" \"pnpm dev:agent\"",
-		"dev:app": "tauri dev",
+		"dev:app": "pnpm build:server && tauri dev",
 		"dev:frontend": "pnpm ui:dev",
 		"dev:server": "cd server && cross-env SUGGESTIONS_ENABLED=true go run github.com/air-verse/air@latest",
 		"dev:agent": "tsx --watch scripts/agent-watcher/index.ts",

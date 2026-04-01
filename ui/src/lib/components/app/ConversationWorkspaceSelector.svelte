@@ -63,8 +63,11 @@
 			selectedExistingWorkspace !== null &&
 			isGithubWorkspace(selectedExistingWorkspace),
 	);
+	const BRANCH_SELECTOR_ENABLED = false;
 	const showBranchSelector = $derived.by(
-		() => sessionView.pendingWorkspaceOption !== "new-workspace",
+		() =>
+			BRANCH_SELECTOR_ENABLED &&
+			sessionView.pendingWorkspaceOption !== "new-workspace",
 	);
 	const availableWorkspaceBranches = $derived.by(() => {
 		if (sessionView.pendingWorkspaceOption === "local-directory") {
