@@ -1,4 +1,4 @@
-//go:build linux
+//go:build darwin
 
 package cli
 
@@ -13,34 +13,23 @@ import (
 )
 
 // watchEscDuringTurn monitors stdin for ESC while an agent turn is streaming.
-// It switches stdin into a non-canonical, no-echo mode so ESC is delivered as
-// soon as it is pressed, while preserving output processing so rendered newlines
-// still return the cursor to column 0.
-//
-// Ctrl+C continues to flow through the normal SIGINT path, and ESC cancels the
-// turn directly here so both keys end up interrupting the active turn.
-//
-// Any byte other than ESC that arrives while the watcher is running is
-// discarded. This means keystrokes typed during a turn will not appear at the
-// next prompt.
-//
-// The function returns as soon as ctx is cancelled (either by an ESC press or
-// because the turn ended normally).
+// This is the Darwin implementation; it uses TIOCGETA/TIOCSETA instead of
+// the Linux-specific TCGETS/TCSETS ioctl constants.
 func watchEscDuringTurn(ctx context.Context, cancel context.CancelFunc) {
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return
 	}
 
-	oldState, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+	oldState, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
 	if err != nil {
 		return
 	}
 	state := escWatchTermios(oldState)
-	if err := unix.IoctlSetTermios(fd, unix.TCSETS, &state); err != nil {
+	if err := unix.IoctlSetTermios(fd, unix.TIOCSETA, &state); err != nil {
 		return
 	}
-	defer unix.IoctlSetTermios(fd, unix.TCSETS, oldState) //nolint:errcheck
+	defer unix.IoctlSetTermios(fd, unix.TIOCSETA, oldState) //nolint:errcheck
 
 	if err := unix.SetNonblock(fd, true); err != nil {
 		return

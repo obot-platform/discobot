@@ -1290,16 +1290,17 @@ func TestGetUserConfig(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		t.Setenv("XDG_CONFIG_HOME", homeDir)
+		t.Setenv("USERPROFILE", homeDir) // Windows: git uses USERPROFILE instead of HOME
 
 		// Configure git user in the test environment
 		cmd := exec.Command("git", "config", "--global", "user.name", "Test User")
-		cmd.Env = append(os.Environ(), "HOME="+homeDir, "XDG_CONFIG_HOME="+homeDir)
+		cmd.Env = append(os.Environ(), "HOME="+homeDir, "XDG_CONFIG_HOME="+homeDir, "USERPROFILE="+homeDir)
 		if err := cmd.Run(); err != nil {
 			t.Fatalf("Failed to set user.name: %v", err)
 		}
 
 		cmd = exec.Command("git", "config", "--global", "user.email", "test@example.com")
-		cmd.Env = append(os.Environ(), "HOME="+homeDir, "XDG_CONFIG_HOME="+homeDir)
+		cmd.Env = append(os.Environ(), "HOME="+homeDir, "XDG_CONFIG_HOME="+homeDir, "USERPROFILE="+homeDir)
 		if err := cmd.Run(); err != nil {
 			t.Fatalf("Failed to set user.email: %v", err)
 		}
@@ -1319,6 +1320,7 @@ func TestGetUserConfig(t *testing.T) {
 		emptyHome := t.TempDir()
 		t.Setenv("HOME", emptyHome)
 		t.Setenv("XDG_CONFIG_HOME", emptyHome)
+		t.Setenv("USERPROFILE", emptyHome) // Windows: git uses USERPROFILE instead of HOME
 
 		name, email := provider.GetUserConfig(ctx)
 

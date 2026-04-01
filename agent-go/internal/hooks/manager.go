@@ -517,7 +517,7 @@ func normalizeHookMessagePath(workspaceRoot, path string) string {
 		return path
 	}
 
-	return relPath
+	return filepath.ToSlash(relPath)
 }
 
 // buildHookFailureMessageMetadata builds structured hook-failure metadata for UI rendering.

@@ -271,12 +271,16 @@ func TestPrompt_GeneratesThreadNameInBackground(t *testing.T) {
 	mockProvider := &compactCommandMockProvider{
 		beforeRespond: func(req providers.CompleteRequest) {
 			if isThreadNameRequest(req) {
-				time.Sleep(10 * time.Millisecond)
+				// Use a generous delay so the main response always starts
+				// streaming before the name is ready, even on slow CI runners
+				// (Windows arm64 in particular).
+				time.Sleep(200 * time.Millisecond)
 			}
 		},
 		beforeChunk: func(req providers.CompleteRequest, chunkIndex int) {
 			if !isThreadNameRequest(req) && chunkIndex == 3 {
-				time.Sleep(25 * time.Millisecond)
+				// Pause long enough for naming to complete mid-stream.
+				time.Sleep(500 * time.Millisecond)
 			}
 		},
 		responseForReq: func(req providers.CompleteRequest) string {

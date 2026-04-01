@@ -77,6 +77,8 @@ func (e *Executor) executeGlob(call message.ToolCallPart) (thread.ToolExecuteRes
 		if relErr != nil {
 			return nil
 		}
+		// Normalize to forward slashes for consistent cross-platform output.
+		rel = filepath.ToSlash(rel)
 		ok, matchErr := doublestar.Match(matchPattern, rel)
 		if matchErr == nil && ok {
 			matched = append(matched, rel)
