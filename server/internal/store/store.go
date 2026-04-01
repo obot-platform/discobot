@@ -395,7 +395,6 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	})
 }
 
-
 func (s *Store) CreateMessage(ctx context.Context, message *model.Message) error {
 	return s.writeDB.WithContext(ctx).Create(message).Error
 }

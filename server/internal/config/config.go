@@ -86,16 +86,16 @@ type Config struct {
 	SSHHostKeyPath string // Path to SSH host key file (default: ./ssh_host_key)
 
 	// Job Dispatcher settings
-	DispatcherEnabled            bool          // Enable job dispatcher (default: true)
-	DispatcherPollInterval       time.Duration // How often to poll for jobs (default: 1s)
-	DispatcherHeartbeatInterval  time.Duration // Heartbeat interval for leader (default: 10s)
-	DispatcherHeartbeatTimeout   time.Duration // Timeout before leader is considered dead (default: 30s)
-	DispatcherJobTimeout         time.Duration // Max time for a single job (default: 5m)
-	DispatcherStaleJobTimeout    time.Duration // Time after which running jobs are considered stale (default: 10m)
-	DispatcherImmediateExecution        bool          // Try to execute jobs immediately when enqueued (default: true)
-	DisableSessionSandboxDeleteJobs     bool          // Disable execution of session_sandbox_delete jobs (default: false)
-	JobRetryBackoff                     time.Duration // Base backoff between job retries, multiplied by attempt number (default: 5s)
-	JobMaxAttempts                      int           // Default max attempts for jobs (default: 3)
+	DispatcherEnabled               bool          // Enable job dispatcher (default: true)
+	DispatcherPollInterval          time.Duration // How often to poll for jobs (default: 1s)
+	DispatcherHeartbeatInterval     time.Duration // Heartbeat interval for leader (default: 10s)
+	DispatcherHeartbeatTimeout      time.Duration // Timeout before leader is considered dead (default: 30s)
+	DispatcherJobTimeout            time.Duration // Max time for a single job (default: 5m)
+	DispatcherStaleJobTimeout       time.Duration // Time after which running jobs are considered stale (default: 10m)
+	DispatcherImmediateExecution    bool          // Try to execute jobs immediately when enqueued (default: true)
+	DisableSessionSandboxDeleteJobs bool          // Disable execution of session_sandbox_delete jobs (default: false)
+	JobRetryBackoff                 time.Duration // Base backoff between job retries, multiplied by attempt number (default: 5s)
+	JobMaxAttempts                  int           // Default max attempts for jobs (default: 3)
 
 	// OAuth providers (for user login)
 	GitHubClientID     string
