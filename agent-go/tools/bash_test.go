@@ -195,7 +195,7 @@ func TestBash_LogFileCreatedForeground(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	logPath := filepath.Join(dataDir, "bash", "thread-1", callID+".log")
+	logPath := filepath.Join(dataDir, "threads", "thread-1", "bash", callID+".log")
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("log file not found at %s: %v", logPath, err)
@@ -289,7 +289,7 @@ func TestBash_BackgroundLogFileWritten(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	logPath := filepath.Join(dataDir, "bash", "bg-thread", "bg-log.log")
+	logPath := filepath.Join(dataDir, "threads", "bg-thread", "bash", "bg-log.log")
 	// Give the background process time to write.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

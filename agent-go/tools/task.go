@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -386,19 +384,11 @@ func taskHandle(call message.ToolCallPart, rec *taskRecord, subThreadID string) 
 
 // --- TodoWrite ---
 
-// globalTodos holds the current todo list managed by the TodoWrite tool.
-type todoStore struct {
-	mu    sync.Mutex
-	todos []todoItem
-}
-
 type todoItem struct {
 	Content    string `json:"content"`
 	Status     string `json:"status"`
 	ActiveForm string `json:"activeForm"`
 }
-
-var globalTodos = &todoStore{}
 
 type todoWriteInput struct {
 	Todos []todoItem `json:"todos"`
@@ -465,25 +455,10 @@ func renderTodoWriteSummary(todos []todoItem) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (e *Executor) executeTodoWrite(_ context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart) (thread.ToolExecuteResult, error) {
+func (e *Executor) executeTodoWrite(_ context.Context, _ *thread.ToolContext, call message.ToolCallPart) (thread.ToolExecuteResult, error) {
 	var input todoWriteInput
 	if err := unmarshalInput(call, &input); err != nil {
 		return errResult(call, err.Error()), nil
-	}
-
-	globalTodos.mu.Lock()
-	globalTodos.todos = input.Todos
-	globalTodos.mu.Unlock()
-
-	// Persist to {dataDir}/todos/{threadID}.json so the API can read it.
-	threadID := contextThreadID(toolCtx, e.defaultThreadID)
-	dir := filepath.Join(e.dataDir, "todos")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return errResult(call, fmt.Sprintf("failed to create todos dir: %v", err)), nil
-	}
-	data, _ := json.Marshal(input.Todos)
-	if err := os.WriteFile(filepath.Join(dir, threadID+".json"), data, 0o644); err != nil {
-		return errResult(call, fmt.Sprintf("failed to write todos: %v", err)), nil
 	}
 
 	return textResult(call, renderTodoWriteSummary(input.Todos)), nil

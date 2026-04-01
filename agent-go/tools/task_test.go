@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"iter"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -278,10 +276,8 @@ func isErrorOutput(res message.ToolResultPart) bool {
 	return ok
 }
 
-func TestTodoWriteReturnsMarkdownSummaryAndPersistsTodos(t *testing.T) {
-	cwd := t.TempDir()
-	dataDir := t.TempDir()
-	e := New(cwd, dataDir, "default-thread")
+func TestTodoWriteReturnsMarkdownSummary(t *testing.T) {
+	e := New(t.TempDir(), t.TempDir(), "default-thread")
 
 	raw, err := json.Marshal(map[string]any{
 		"todos": []map[string]string{
@@ -331,14 +327,6 @@ func TestTodoWriteReturnsMarkdownSummaryAndPersistsTodos(t *testing.T) {
 		if !strings.Contains(out.Value, want) {
 			t.Errorf("output %q missing %q", out.Value, want)
 		}
-	}
-
-	persisted, err := os.ReadFile(filepath.Join(dataDir, "todos", "thread-123.json"))
-	if err != nil {
-		t.Fatalf("read persisted todos: %v", err)
-	}
-	if string(persisted) != `[{"content":"Ship the first task","status":"completed","activeForm":"Shipping the first task"},{"content":"Investigate the second task","status":"in_progress","activeForm":"Investigating the second task"},{"content":"Queue the third task","status":"pending","activeForm":"Queueing the third task"}]` {
-		t.Fatalf("unexpected persisted todos: %s", persisted)
 	}
 }
 

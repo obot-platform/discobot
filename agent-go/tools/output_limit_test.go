@@ -135,7 +135,7 @@ func TestLimitOutput_SpillFileContainsFullOutput(t *testing.T) {
 }
 
 // TestLimitOutput_SpillPathUnderDataDir verifies spill files land in
-// output/{threadID}/ under the configured data directory.
+// threads/{threadID}/output/ under the configured data directory.
 func TestLimitOutput_SpillPathUnderDataDir(t *testing.T) {
 	cwd := t.TempDir()
 	bigFile(t, filepath.Join(cwd, "big.txt"), 3_000)
@@ -148,7 +148,7 @@ func TestLimitOutput_SpillPathUnderDataDir(t *testing.T) {
 		t.Fatalf("unexpected error: %s", out)
 	}
 
-	expectedDir := filepath.Join(dataDir, "output", threadID)
+	expectedDir := filepath.Join(dataDir, "threads", threadID, "output")
 	if !strings.Contains(out, expectedDir) {
 		t.Errorf("spill path should be under %s; got:\n%s", expectedDir, out)
 	}

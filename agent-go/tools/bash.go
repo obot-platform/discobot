@@ -53,13 +53,13 @@ func (e *Executor) executeBash(ctx context.Context, toolCtx *thread.ToolContext,
 // All bash output (foreground and background) is persisted here so the LLM
 // can reference or tail the file later.
 //
-// Path: {dataDir}/bash/{threadID}/{toolCallID}.log
+// Path: {threadsDir}/{threadID}/bash/{toolCallID}.log
 func (e *Executor) bashLogPath(toolCtx *thread.ToolContext, toolCallID string) string {
-	return filepath.Join(e.dataDir, "bash", contextThreadID(toolCtx, e.defaultThreadID), toolCallID+".log")
+	return filepath.Join(e.threadDataDir(toolCtx), "bash", toolCallID+".log")
 }
 
 // runBashSync runs a bash command synchronously, returns the combined output,
-// and saves it to a log file in {dataDir}/bash/{threadID}/.
+// and saves it to a log file in {threadsDir}/{threadID}/bash/.
 func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext, call message.ToolCallPart, command string, timeout time.Duration) (thread.ToolExecuteResult, error) {
 	cwd := e.getCwd()
 	logPath := e.bashLogPath(toolCtx, call.ToolCallID)

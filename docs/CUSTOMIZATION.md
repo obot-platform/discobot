@@ -290,7 +290,7 @@ Files: internal/server/handler.go, internal/server/service.go
 Exit code: 1
 
 Output is large (847 lines). Full output saved to:
-  ~/.discobot/abc123/hooks/output/go-format-check.log
+  ~/.discobot/threads/abc123/hooks/output/go-format-check.log
 
 Please read the file to see the full output and address the issues. (Attempt 1/3)
 ```

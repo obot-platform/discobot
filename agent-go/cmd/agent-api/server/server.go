@@ -50,6 +50,7 @@ func Run(cfg *config.Config) {
 	// threadID is empty here; the executor's threadID is only used for naming
 	// output spill files and is set per-turn by tools that need it.
 	exec := tools.New(cfg.AgentCwd, cfg.DataDir, "")
+	exec.SetThreadsDir(cfg.ThreadsDir)
 	exec.SetBashEnvAllowlist(cfg.BashEnvAllowlist)
 	exec.SetEnvLookup(func(key string) string {
 		if cred := credMgr.Get(key); cred != nil {

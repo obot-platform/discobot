@@ -23,7 +23,7 @@ func setTempHome(t *testing.T) string {
 
 func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	dataDir := t.TempDir()
-	home := setTempHome(t)
+	setTempHome(t)
 	store := thread.NewStore(t.TempDir())
 	agent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
 	e := New(t.TempDir(), dataDir, "thread-1")
@@ -68,7 +68,7 @@ func TestExecuteEnterPlanMode_SetsPlanMode(t *testing.T) {
 	if filepath.Ext(planFile) != ".md" {
 		t.Fatalf("expected markdown plan file, got %q", planFile)
 	}
-	expectedPrefix := filepath.Join(home, ".discobot", "plans", "thread-1") + string(filepath.Separator)
+	expectedPrefix := filepath.Join(dataDir, "threads", "thread-1", "plans") + string(filepath.Separator)
 	if !strings.HasPrefix(planFile, expectedPrefix) {
 		t.Fatalf("expected plan file under %q, got %q", expectedPrefix, planFile)
 	}
@@ -190,9 +190,9 @@ func TestExecuteExitPlanMode_RequiresApprovalWhenUserEnteredPlanMode(t *testing.
 
 func TestExecutePlanModeApplyPatch_AllowsPlanFileOnly(t *testing.T) {
 	dataDir := t.TempDir()
-	home := setTempHome(t)
+	setTempHome(t)
 	e := New(t.TempDir(), dataDir, "thread-1")
-	planFile := filepath.Join(home, ".discobot", "plans", "thread-1", "plan.md")
+	planFile := filepath.Join(dataDir, "threads", "thread-1", "plans", "plan.md")
 	toolCtx := &thread.ToolContext{
 		ThreadID:     "thread-1",
 		PlanMode:     true,
@@ -233,10 +233,10 @@ func TestExecutePlanModeApplyPatch_AllowsPlanFileOnly(t *testing.T) {
 
 func TestExecutePlanModeApplyPatch_RejectsNonPlanFile(t *testing.T) {
 	dataDir := t.TempDir()
-	home := setTempHome(t)
+	setTempHome(t)
 	cwd := t.TempDir()
 	e := New(cwd, dataDir, "thread-1")
-	planFile := filepath.Join(home, ".discobot", "plans", "thread-1", "plan.md")
+	planFile := filepath.Join(dataDir, "threads", "thread-1", "plans", "plan.md")
 	toolCtx := &thread.ToolContext{
 		ThreadID:     "thread-1",
 		PlanMode:     true,
@@ -272,9 +272,9 @@ func TestExecutePlanModeApplyPatch_RejectsNonPlanFile(t *testing.T) {
 
 func TestExecutePlanModeBlockedToolMessageMentionsApplyPatch(t *testing.T) {
 	dataDir := t.TempDir()
-	home := setTempHome(t)
+	setTempHome(t)
 	e := New(t.TempDir(), dataDir, "thread-1")
-	planFile := filepath.Join(home, ".discobot", "plans", "thread-1", "plan.md")
+	planFile := filepath.Join(dataDir, "threads", "thread-1", "plans", "plan.md")
 	toolCtx := &thread.ToolContext{
 		ThreadID:     "thread-1",
 		PlanMode:     true,

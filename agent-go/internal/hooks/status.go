@@ -32,7 +32,7 @@ type StatusFile struct {
 // GetHooksDataDir returns the hooks data directory for a session.
 func GetHooksDataDir(sessionID string) string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".discobot", "hooks", sessionID)
+	return filepath.Join(home, ".discobot", "threads", sessionID, "hooks")
 }
 
 func statusFilePath(hooksDataDir string) string {

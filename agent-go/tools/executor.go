@@ -48,6 +48,7 @@ var planModeBlockedTools = map[string]bool{
 type Executor struct {
 	cwd             string // workspace root for file and shell operations
 	dataDir         string // root for persistent data (bash logs, spill files, etc.); separate from cwd
+	threadsDir      string // root for per-thread runtime data; defaults to {dataDir}/threads
 	defaultThreadID string
 
 	// cwdMu guards currentCwd, which tracks the shell working directory
@@ -87,10 +88,20 @@ func New(cwd, dataDir, threadID string) *Executor {
 	return &Executor{
 		cwd:             cwd,
 		dataDir:         dataDir,
+		threadsDir:      filepath.Join(dataDir, "threads"),
 		defaultThreadID: threadID,
 		currentCwd:      cwd,
 		fileReads:       make(map[string]fileRecord),
 	}
+}
+
+// SetThreadsDir overrides the default per-thread runtime root.
+func (e *Executor) SetThreadsDir(dir string) {
+	if strings.TrimSpace(dir) == "" {
+		e.threadsDir = filepath.Join(e.dataDir, "threads")
+		return
+	}
+	e.threadsDir = dir
 }
 
 // recordFileRead saves the mtime and size of a file after a successful Read.
@@ -270,7 +281,15 @@ func (e *Executor) discobotDataDir() string {
 	return e.dataDir
 }
 
+func (e *Executor) threadDataDir(toolCtx *thread.ToolContext) string {
+	return filepath.Join(e.threadsDir, contextThreadID(toolCtx, e.defaultThreadID))
+}
+
 func (e *Executor) threadPlansDir(toolCtx *thread.ToolContext) string {
+	return filepath.Join(e.threadDataDir(toolCtx), "plans")
+}
+
+func (e *Executor) legacyThreadPlansDir(toolCtx *thread.ToolContext) string {
 	return filepath.Join(e.discobotDataDir(), "plans", contextThreadID(toolCtx, e.defaultThreadID))
 }
 
@@ -328,6 +347,15 @@ func (e *Executor) newPlanFilePath(toolCtx *thread.ToolContext) string {
 
 func (e *Executor) latestThreadPlanFile(toolCtx *thread.ToolContext) string {
 	dir := e.threadPlansDir(toolCtx)
+	return latestPlanFileInDir(dir)
+}
+
+func (e *Executor) latestLegacyThreadPlanFile(toolCtx *thread.ToolContext) string {
+	dir := e.legacyThreadPlansDir(toolCtx)
+	return latestPlanFileInDir(dir)
+}
+
+func latestPlanFileInDir(dir string) string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return ""
@@ -361,6 +389,12 @@ func (e *Executor) resolveActivePlanFile(toolCtx *thread.ToolContext) string {
 			toolCtx.PlanFilePath = latest
 		}
 		return latest
+	}
+	if legacyThreadPlan := e.latestLegacyThreadPlanFile(toolCtx); legacyThreadPlan != "" {
+		if toolCtx != nil {
+			toolCtx.PlanFilePath = legacyThreadPlan
+		}
+		return legacyThreadPlan
 	}
 	legacy := e.legacyPlanFilePath(toolCtx)
 	if _, err := os.Stat(legacy); err == nil {
@@ -462,10 +496,10 @@ func (e *Executor) limitOutput(toolCtx *thread.ToolContext, call message.ToolCal
 	return result
 }
 
-// spillToFile writes text to {dataDir}/output/{threadID}/{toolCallID}.txt
+// spillToFile writes text to {threadsDir}/{threadID}/output/{toolCallID}.txt
 // and returns the absolute path.
 func (e *Executor) spillToFile(toolCtx *thread.ToolContext, call message.ToolCallPart, text string) (string, error) {
-	dir := filepath.Join(e.dataDir, "output", contextThreadID(toolCtx, e.defaultThreadID))
+	dir := filepath.Join(e.threadDataDir(toolCtx), "output")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

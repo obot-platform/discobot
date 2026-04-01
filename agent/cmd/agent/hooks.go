@@ -56,9 +56,9 @@ type hookStatusFile struct {
 	LastEvaluatedAt string                   `json:"lastEvaluatedAt"`
 }
 
-// hooksDataDir returns the hooks data directory for a session: ~/.discobot/{sessionId}/hooks/
+// hooksDataDir returns the hooks data directory for a session: ~/.discobot/threads/{sessionId}/hooks/
 func hooksDataDir(homeDir, sessionID string) string {
-	return filepath.Join(homeDir, ".discobot", sessionID, "hooks")
+	return filepath.Join(homeDir, ".discobot", "threads", sessionID, "hooks")
 }
 
 // hookOutputPath returns the output log path for a hook: {hooksDataDir}/output/{hookId}.log
@@ -447,7 +447,7 @@ func runSessionHook(hookPath string, config hookConfig, workspacePath, sessionID
 // By default, hooks are non-blocking: they run in a background goroutine sequentially
 // but do not block the agent from starting. Hooks with blocking: true in their front
 // matter run synchronously before the agent starts.
-// Failures are logged and persisted to ~/.discobot/{sessionId}/hooks/status.json.
+// Failures are logged and persisted to ~/.discobot/threads/{sessionId}/hooks/status.json.
 //
 // Returns a wait function that blocks until all background (non-blocking) hooks
 // have completed. Callers that exit shortly after (e.g. oneshot systemd services)
@@ -474,7 +474,8 @@ func runSessionHooks(workspacePath string, u *userInfo) func() {
 		// Chown the entire tree to discobot user
 		for _, dir := range []string{
 			filepath.Join(u.homeDir, ".discobot"),
-			filepath.Join(u.homeDir, ".discobot", sessionID),
+			filepath.Join(u.homeDir, ".discobot", "threads"),
+			filepath.Join(u.homeDir, ".discobot", "threads", sessionID),
 			dataDir,
 			outputDir,
 		} {

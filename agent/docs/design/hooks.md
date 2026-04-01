@@ -64,6 +64,8 @@ Hooks receive the agent's environment plus:
 
 Session hook failures are logged but do not prevent the agent-api from starting. This ensures that a broken hook doesn't make the session permanently unusable.
 
+Runtime hook state is persisted under `~/.discobot/threads/{sessionId}/hooks/`, including `status.json` and per-hook output logs in the `output/` subdirectory.
+
 ## Example
 
 ```bash

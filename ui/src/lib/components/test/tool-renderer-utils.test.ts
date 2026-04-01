@@ -30,7 +30,7 @@ test("parseNumberedToolOutput parses numbered lines", () => {
 test("parseNumberedToolOutput parses truncated numbered output", () => {
 	const parsed = parseNumberedToolOutput(
 		[
-			"[Output too long (78308 chars). Full output written to: /home/discobot/.discobot/output/q5umIkXNz0uXeUOx/call_Cxv9colwxGehRIajegv4Pf8e.txt]",
+			"[Output too long (78308 chars). Full output written to: /home/discobot/.discobot/threads/q5umIkXNz0uXeUOx/output/call_Cxv9colwxGehRIajegv4Pf8e.txt]",
 			"",
 			"     1→",
 			"     2→> discobot@0.0.0-dev check:fix /home/discobot/workspace",
@@ -41,7 +41,7 @@ test("parseNumberedToolOutput parses truncated numbered output", () => {
 	assert.equal(parsed.isTruncated, true);
 	assert.equal(
 		parsed.truncationFilePath,
-		"/home/discobot/.discobot/output/q5umIkXNz0uXeUOx/call_Cxv9colwxGehRIajegv4Pf8e.txt",
+		"/home/discobot/.discobot/threads/q5umIkXNz0uXeUOx/output/call_Cxv9colwxGehRIajegv4Pf8e.txt",
 	);
 	assert.deepEqual(parsed.lines, [
 		{ lineNumber: "1", text: "" },
