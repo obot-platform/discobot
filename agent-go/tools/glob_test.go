@@ -79,7 +79,7 @@ func TestGlob_DoubleStarMatchesRecursively(t *testing.T) {
 	if !strings.Contains(out, "sandbox-root.txt") {
 		t.Fatalf("expected top-level sandbox file to match, got: %q", out)
 	}
-	if !strings.Contains(out, filepath.Join("level1", "level2", "sandbox-nested.txt")) {
+	if !strings.Contains(out, "level1/level2/sandbox-nested.txt") {
 		t.Fatalf("expected nested sandbox file to match recursively, got: %q", out)
 	}
 	if strings.Contains(out, "regular.txt") {

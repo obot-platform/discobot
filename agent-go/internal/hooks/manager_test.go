@@ -109,7 +109,11 @@ func TestBuildHookFailureMessageMetadata_IncludesHookPath(t *testing.T) {
 }
 
 func TestBuildHookFailureMessageMetadata_RelativizesAbsoluteHookPath(t *testing.T) {
-	workspaceRoot := "/workspace"
+	// Use t.TempDir() so workspaceRoot is a real absolute path on all platforms
+	// (e.g. C:\... on Windows, /tmp/... on Unix). A hardcoded Unix path like
+	// "/workspace" is not considered absolute on Windows (no drive letter), which
+	// causes filepath.IsAbs to return false and the relativization to be skipped.
+	workspaceRoot := t.TempDir()
 	meta := buildHookFailureMessageMetadata(HookResult{
 		Hook: Hook{
 			Name:    "Go Check",
