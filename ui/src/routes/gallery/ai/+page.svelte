@@ -626,6 +626,7 @@
 						<MoonIcon class="size-4" />
 					{/if}
 				</Button>
+				<Button href="/gallery" variant="outline">Back to gallery</Button>
 				<Button href="/">Back home</Button>
 			</div>
 		</header>
@@ -1494,7 +1495,7 @@
 										<CommitFileStatus status="modified" />
 										<CommitFileIcon />
 										<CommitFilePath
-											>ui/src/routes/ai-gallery/+page.svelte</CommitFilePath
+											>ui/src/routes/gallery/ai/+page.svelte</CommitFilePath
 										>
 									</CommitFileInfo>
 									<CommitFileChanges>

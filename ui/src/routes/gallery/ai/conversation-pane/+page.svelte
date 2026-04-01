@@ -156,7 +156,7 @@
 				state: "output-available",
 				input: {
 					file_path:
-						"/home/discobot/workspace/ui/src/routes/ai-gallery/conversation-pane/+page.svelte",
+						"/home/discobot/workspace/ui/src/routes/gallery/ai/conversation-pane/+page.svelte",
 					content:
 						'<script lang="ts">\n\t// mocked route scaffold\n<\\/script>\n',
 				},
@@ -214,12 +214,12 @@
 				state: "input-available",
 				input: {
 					path: "/home/discobot/workspace/ui/src/routes",
-					pattern: "ai-gallery/**/*",
+					pattern: "gallery/ai/**/*",
 				},
 				output: {
 					files: [
-						"/home/discobot/workspace/ui/src/routes/ai-gallery/+page.svelte",
-						"/home/discobot/workspace/ui/src/routes/ai-gallery/conversation-pane/+page.svelte",
+						"/home/discobot/workspace/ui/src/routes/gallery/ai/+page.svelte",
+						"/home/discobot/workspace/ui/src/routes/gallery/ai/conversation-pane/+page.svelte",
 					],
 				},
 			}),
@@ -406,7 +406,7 @@
 				state: "output-error",
 				input: {
 					file_path:
-						"/home/discobot/workspace/ui/src/routes/ai-gallery/conversation-pane/+page.svelte",
+						"/home/discobot/workspace/ui/src/routes/gallery/ai/conversation-pane/+page.svelte",
 					content: "<broken />",
 				},
 				errorText:
@@ -500,7 +500,7 @@
 				</div>
 
 				<div class="flex flex-wrap items-center gap-2">
-					<Button href="/ai-gallery" variant="outline">
+					<Button href="/gallery/ai" variant="outline">
 						<ArrowLeftIcon class="size-4" />
 						Back to AI gallery
 					</Button>
@@ -664,7 +664,7 @@
 						<p
 							class="rounded-lg border bg-muted/30 p-3 font-mono text-xs text-foreground"
 						>
-							Current mock route: <code>/ai-gallery/conversation-pane</code>
+							Current mock route: <code>/gallery/ai/conversation-pane</code>
 						</p>
 					</CardContent>
 				</Card>

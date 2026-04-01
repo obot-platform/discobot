@@ -131,6 +131,14 @@
 				</div>
 
 				<div class="flex flex-wrap items-center gap-3 self-start lg:self-auto">
+					<Button variant="outline" href="/gallery/brand">Brand preview</Button>
+					<Button variant="outline" href="/gallery/ai">AI gallery</Button>
+					<Button variant="outline" href="/gallery/ai/conversation-pane">
+						Conversation pane sandbox
+					</Button>
+					<Button variant="outline" href="/gallery/startup">
+						Startup preview
+					</Button>
 					<Button variant="outline" href="/">Back to home</Button>
 					<Button variant="outline" onclick={handleThemeToggle}>
 						Theme: {theme}

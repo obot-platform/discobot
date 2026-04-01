@@ -279,10 +279,9 @@ function defaultDescription(category: UiComponentCategory): string {
 }
 
 export const uiComponentCatalog: UiComponentCatalogEntry[] = componentNames
-	.map((path) => {
-		const name = path.split("/").at(-2);
+	.map((name) => {
 		if (!name) {
-			throw new Error(`Unable to derive component name from path: ${path}`);
+			throw new Error(`Unable to derive component name from path: ${name}`);
 		}
 
 		const category = categorizeComponent(name);
