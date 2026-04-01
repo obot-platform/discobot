@@ -1,8 +1,53 @@
-<div class="tauri-no-drag flex h-full items-stretch -mr-2">
+<script lang="ts">
+	import { isTauriShell } from "$lib/environment";
+
+	async function withCurrentWindow<T>(
+		callback: (
+			window: Awaited<
+				ReturnType<
+					(typeof import("@tauri-apps/api/window"))["getCurrentWindow"]
+				>
+			>,
+		) => Promise<T>,
+	) {
+		if (!isTauriShell()) {
+			return;
+		}
+
+		const { getCurrentWindow } = await import("@tauri-apps/api/window");
+		return callback(getCurrentWindow());
+	}
+
+	function minimizeWindow() {
+		void withCurrentWindow(async (window) => {
+			await window.minimize();
+		});
+	}
+
+	function toggleMaximizeWindow() {
+		void withCurrentWindow(async (window) => {
+			const maximized = await window.isMaximized();
+			if (maximized) {
+				await window.unmaximize();
+				return;
+			}
+			await window.maximize();
+		});
+	}
+
+	function closeWindow() {
+		void withCurrentWindow(async (window) => {
+			await window.close();
+		});
+	}
+</script>
+
+<div class="tauri-no-drag flex h-full items-stretch pr-1">
 	<button
 		type="button"
 		class="tauri-no-drag flex h-full w-11.5 items-center justify-center bg-transparent text-foreground transition-colors duration-150 hover:bg-foreground/10"
 		aria-label="Minimize"
+		onclick={minimizeWindow}
 	>
 		<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
 			<path d="M0 5H10" stroke="currentColor" stroke-width="1" />
@@ -12,6 +57,7 @@
 		type="button"
 		class="tauri-no-drag flex h-full w-11.5 items-center justify-center bg-transparent text-foreground transition-colors duration-150 hover:bg-foreground/10"
 		aria-label="Maximize"
+		onclick={toggleMaximizeWindow}
 	>
 		<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
 			<rect
@@ -28,6 +74,7 @@
 		type="button"
 		class="tauri-no-drag flex h-full w-11.5 items-center justify-center bg-transparent text-foreground transition-colors duration-150 hover:bg-[#e81123] hover:text-white"
 		aria-label="Close"
+		onclick={closeWindow}
 	>
 		<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
 			<path d="M0 0L10 10M10 0L0 10" stroke="currentColor" stroke-width="1" />

@@ -32,7 +32,7 @@
 </script>
 
 <header
-	class="relative z-[60] grid h-12 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-background"
+	class="relative z-[60] grid h-10 pt-2 pl-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-background"
 	data-tauri-drag-region
 >
 	<div
@@ -45,7 +45,7 @@
 			<LeftWindowControls />
 		{/if}
 
-		<DiscobotBrand textSizeClass="text-sm" />
+		<DiscobotBrand heightClass="h-5" />
 	</div>
 
 	{#if showSessionToolbar}
@@ -57,39 +57,41 @@
 	{/if}
 
 	<div
-		class="relative z-20 flex min-w-0 items-center justify-self-end gap-1 pr-2"
+		class="relative z-20 flex h-full min-w-0 items-stretch justify-self-end pr-0"
 	>
-		<Button
-			variant="ghost"
-			size="icon-sm"
-			onclick={preferences.toggleTheme}
-			aria-label={preferences.resolvedTheme === "dark"
-				? "Switch to light theme"
-				: "Switch to dark theme"}
-			title={preferences.resolvedTheme === "dark"
-				? "Switch to light theme"
-				: "Switch to dark theme"}
-		>
-			{#if preferences.resolvedTheme === "dark"}
-				<SunIcon class="size-4" />
-			{:else}
-				<MoonIcon class="size-4" />
-			{/if}
-		</Button>
-		<Button
-			variant="ghost"
-			size="icon-sm"
-			onclick={() => ui.openSettings()}
-			aria-label="Settings"
-			title="Settings"
-			class="relative"
-		>
-			<SettingsIcon class="size-4" />
-			{#if updates.showBadge}
-				<span class="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500"
-				></span>
-			{/if}
-		</Button>
+		<div class="flex min-w-0 items-center gap-1 pr-2">
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				onclick={preferences.toggleTheme}
+				aria-label={preferences.resolvedTheme === "dark"
+					? "Switch to light theme"
+					: "Switch to dark theme"}
+				title={preferences.resolvedTheme === "dark"
+					? "Switch to light theme"
+					: "Switch to dark theme"}
+			>
+				{#if preferences.resolvedTheme === "dark"}
+					<SunIcon class="size-4" />
+				{:else}
+					<MoonIcon class="size-4" />
+				{/if}
+			</Button>
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				onclick={() => ui.openSettings()}
+				aria-label="Settings"
+				title="Settings"
+				class="relative"
+			>
+				<SettingsIcon class="size-4" />
+				{#if updates.showBadge}
+					<span class="absolute right-1 top-1 h-2 w-2 rounded-full bg-blue-500"
+					></span>
+				{/if}
+			</Button>
+		</div>
 
 		{#if showWindowsLinuxControls()}
 			<RightWindowControls />
