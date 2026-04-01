@@ -60,6 +60,12 @@ server/ssh_host_key
 # Test DB script
 /test.db.sql
 
+# Generated OpenAI overlay probe artifacts
+/modelsdev/model-overlay.openai-probed*.json
+
+# Generated Anthropic overlay probe artifacts
+/modelsdev/model-overlay.anthropic-probed*.json
+
 # misc
 /TODO
 /dev.log
