@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -123,8 +124,9 @@ func main() {
 
 	// Shared resolver: looks up project ID for a session from the database.
 	// Used by Docker (for cache volumes) and VZ (for project VM routing).
+	// Includes soft-deleted sessions so deferred sandbox cleanup can still route correctly.
 	sessionProjectResolver := func(ctx context.Context, sessionID string) (string, error) {
-		session, err := s.GetSessionByID(ctx, sessionID)
+		session, err := s.GetSessionByIDIncludingDeleted(ctx, sessionID)
 		if err != nil {
 			return "", err
 		}
@@ -152,16 +154,25 @@ func main() {
 		// Create a sandbox service for the provider getter function
 		// This is a bit of a chicken-and-egg problem, so we'll pass the store directly
 		providerGetter := func(ctx context.Context, sessionID string) (string, error) {
-			// Get session to retrieve workspace ID
-			session, err := s.GetSessionByID(ctx, sessionID)
+			// Include soft-deleted sessions so deferred sandbox cleanup can still route to
+			// the right provider after the session has been removed from the database.
+			session, err := s.GetSessionByIDIncludingDeleted(ctx, sessionID)
 			if err != nil {
-				return "", fmt.Errorf("failed to get session: %w", err)
+				if !errors.Is(err, store.ErrNotFound) {
+					return "", fmt.Errorf("failed to get session: %w", err)
+				}
+				// Session is completely gone (not even soft-deleted) — fall back to the
+				// default provider for best-effort sandbox cleanup.
+				return sandboxManager.DefaultProviderName(), nil
 			}
 
 			// Get workspace to retrieve provider
 			workspace, err := s.GetWorkspaceByID(ctx, session.WorkspaceID)
 			if err != nil {
-				return "", fmt.Errorf("failed to get workspace: %w", err)
+				if !errors.Is(err, store.ErrNotFound) {
+					return "", fmt.Errorf("failed to get workspace: %w", err)
+				}
+				return sandboxManager.DefaultProviderName(), nil
 			}
 
 			// Use platform default if workspace has no provider set

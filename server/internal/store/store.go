@@ -144,7 +144,7 @@ func (s *Store) DeleteProject(ctx context.Context, id string) error {
 				return err
 			}
 			// Delete sessions
-			if err := tx.Where("workspace_id = ?", ws.ID).Delete(&model.Session{}).Error; err != nil {
+			if err := tx.Unscoped().Where("workspace_id = ?", ws.ID).Delete(&model.Session{}).Error; err != nil {
 				return err
 			}
 		}
@@ -266,7 +266,7 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 		}
 
 		// Delete sessions
-		if err := tx.Where("workspace_id = ?", id).Delete(&model.Session{}).Error; err != nil {
+		if err := tx.Unscoped().Where("workspace_id = ?", id).Delete(&model.Session{}).Error; err != nil {
 			return err
 		}
 
@@ -280,6 +280,20 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 func (s *Store) GetSessionByID(ctx context.Context, id string) (*model.Session, error) {
 	var session model.Session
 	if err := s.readDB.WithContext(ctx).First(&session, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &session, nil
+}
+
+// GetSessionByIDIncludingDeleted returns a session by ID, including soft-deleted sessions.
+// Use this when you need to look up a session that may have been deleted (e.g. to resolve
+// its provider/workspace for deferred sandbox cleanup).
+func (s *Store) GetSessionByIDIncludingDeleted(ctx context.Context, id string) (*model.Session, error) {
+	var session model.Session
+	if err := s.readDB.WithContext(ctx).Unscoped().First(&session, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
@@ -375,10 +389,12 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 			return err
 		}
 
-		// Delete the session
+		// Soft-delete the session (sets deleted_at); the sandbox container is cleaned up
+		// asynchronously by the session_sandbox_delete job after the retention window.
 		return tx.Delete(&model.Session{}, "id = ?", id).Error
 	})
 }
+
 
 func (s *Store) CreateMessage(ctx context.Context, message *model.Message) error {
 	return s.writeDB.WithContext(ctx).Create(message).Error

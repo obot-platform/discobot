@@ -322,6 +322,7 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 
 		// Skip GORM metadata fields and relationship fields
 		if modelFieldName == "SSHKeyEncryptedData" || modelFieldName == "UpdatedAt" ||
+			modelFieldName == "DeletedAt" ||
 			modelFieldName == "Project" || modelFieldName == "Workspace" ||
 			modelFieldName == "Messages" {
 			continue
