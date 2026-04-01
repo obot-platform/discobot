@@ -1,94 +1,21 @@
-<svg
-  viewBox="0 0 48 48"
-  fill="none"
-  xmlns="http://www.w3.org/2000/svg"
->
-  <!-- Disco ball sphere -->
-  <circle
-    cx="24"
-    cy="26"
-    r="18"
-    stroke="#a855f7"
-    stroke-width="1.5"
-    fill="none"
-    opacity="0.6"
-  />
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .st1 {
+        fill: #9e4aa7;
+        fill-rule: evenodd;
+      }
 
-  <!-- Disco ball mirror tiles - horizontal lines -->
-  <path d="M6 26 H42" stroke="#a855f7" stroke-width="1" opacity="0.5"/>
-  <path d="M8 18 H40" stroke="#a855f7" stroke-width="1" opacity="0.5"/>
-  <path d="M8 34 H40" stroke="#a855f7" stroke-width="1" opacity="0.5"/>
-
-  <!-- Disco ball mirror tiles - vertical curves -->
-  <path
-    d="M14 8.5 Q14 26 14 43.5"
-    stroke="#a855f7"
-    stroke-width="1"
-    opacity="0.5"
-    fill="none"
-  />
-  <path d="M24 8 V44" stroke="#a855f7" stroke-width="1" opacity="0.5"/>
-  <path
-    d="M34 8.5 Q34 26 34 43.5"
-    stroke="#a855f7"
-    stroke-width="1"
-    opacity="0.5"
-    fill="none"
-  />
-
-  <!-- Sparkle highlights -->
-  <circle cx="30" cy="18" r="2" fill="#a855f7" opacity="0.8"/>
-  <circle cx="16" cy="30" r="1.5" fill="#a855f7" opacity="0.7"/>
-  <circle cx="34" cy="32" r="1.2" fill="#a855f7" opacity="0.6"/>
-
-  <!-- Twinkle stars -->
-  <!-- Top right star -->
-  <path
-    d="M40 12 L41 14 L43 15 L41 16 L40 18 L39 16 L37 15 L39 14 Z"
-    fill="#a855f7"
-    opacity="0.7"
-  />
-  <!-- Left star -->
-  <path
-    d="M4 26 L5 27.5 L6.5 28.5 L5 29.5 L4 31 L3 29.5 L1.5 28.5 L3 27.5 Z"
-    fill="#a855f7"
-    opacity="0.6"
-  />
-  <!-- Bottom right star -->
-  <path
-    d="M42 38 L42.8 39.2 L44 40 L42.8 40.8 L42 42 L41.2 40.8 L40 40 L41.2 39.2 Z"
-    fill="#a855f7"
-    opacity="0.65"
-  />
-  <!-- Small top left star -->
-  <path
-    d="M8 10 L8.6 11 L9.5 11.5 L8.6 12 L8 13 L7.4 12 L6.5 11.5 L7.4 11 Z"
-    fill="#a855f7"
-    opacity="0.5"
-  />
-
-  <!-- Robot antenna/mount on top -->
-  <line
-    x1="24"
-    y1="8"
-    x2="24"
-    y2="4"
-    stroke="#a855f7"
-    stroke-width="2"
-    stroke-linecap="round"
-  />
-  <rect x="22" y="2" width="4" height="3" rx="1" fill="#a855f7"/>
-
-  <!-- Robot eyes - visor style -->
-  <rect
-    x="17"
-    y="24"
-    width="14"
-    height="4"
-    rx="2"
-    fill="#a855f7"
-    opacity="0.3"
-  />
-  <circle cx="20" cy="26" r="1.5" fill="#a855f7"/>
-  <circle cx="28" cy="26" r="1.5" fill="#a855f7"/>
+      .st2 {
+        fill: #9e4aa7;
+      }
+    </style>
+  </defs>
+  <g transform="translate(-197.89711701526286 -356.46806105144145) scale(2.17071791972866)">
+    <path class="st1" d="M281.6,334.3c0-.8.3-1.9.5-2.4,3.1-6.7.5-14.7-6-18.3l-3.1-1.7c-3.6,5-7.9,9.4-12.8,13.2l29.7,36.1c1.4,1.7,1.7,4.1.7,6-.9,2-2.9,3.3-5.1,3.3h-52c-1.9,0-3.8-1-4.8-2.6l-18.7-29.6h-.2c-.4.2-.8.3-1.2.4l-23,6,7.1,18.1c.7,1.8.5,3.7-.6,5.3-1.1,1.6-2.8,2.5-4.7,2.5h-47.7c-1.5,0-3-.6-4-1.7-1.1-1.1-1.7-2.5-1.7-4v-23.7c0-9.8,5.9-18.6,14.9-22.3l9.4-3.9c-14.9-15.6-21.7-38.2-16.4-60.5l-4.3-3.7c-9-7.7-14.2-18.9-14.2-30.7v-20.8c0-3.1,2.5-5.6,5.6-5.6s5.6,2.5,5.6,5.6v20.8c0,8.5,3.8,16.7,10.3,22.2l1.9,1.6c2-2.6,4.5-4.8,7.4-6.5h0c5.7-3.3,12.6-4.2,19-2.5l92.6,24.8c6.4,1.7,11.9,5.9,15.2,11.6q2.2,3.8,0,0c3.3,5.7,4.2,12.6,2.5,19-1.1,4.2-2.7,8.2-4.6,12.1l2.7,1.5c11.7,6.4,16.4,20.7,10.8,32.8-1.7,3.6-5.1,3.2-5.1,3.2-3.1,0-5.4-2.5-5.6-5.6h-.1ZM262.7,270.6c3.5.9,6.5,3.2,8.3,6.3s2.3,6.8,1.4,10.3c-3.7,13.9-12.9,25.8-25.4,33h0c-12.5,7.2-27.4,9.2-41.3,5.4l-13.7-3.7c-29-7.8-46.3-37.6-38.5-66.6.9-3.5,3.2-6.5,6.3-8.3s6.8-2.3,10.3-1.4l92.6,24.8v.2Z"/>
+    <path class="st2" d="M243.8,279.3c-6-1.6-12.3,2-13.9,8-1.6,6,2,12.3,8,13.9s12.3-2,13.9-8-2-12.3-8-13.9Z"/>
+    <path class="st2" d="M196,287.4c-.4,1.4-.2,2.9.5,4.1.7,1.3,1.9,2.2,3.3,2.5l4.4,1.2c3.8,1,7.8.5,11.2-1.5s5.9-5.2,6.9-8.9c.3-1.2.2-2.6-.5-3.7-.6-1.1-1.7-1.9-2.9-2.3l-13.8-3.7c-3-.8-6,1-6.8,3.9-.7,2.6-1.5,5.7-2.2,8.3h0Z"/>
+    <path class="st2" d="M182.6,262.9c6,1.6,9.6,7.9,8,13.9s-7.9,9.6-13.9,8h0c-6-1.6-9.6-7.9-8-13.9s7.9-9.6,13.9-8h0Z"/>
+  </g>
 </svg>

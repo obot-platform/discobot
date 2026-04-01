@@ -1,30 +1,23 @@
 <script lang="ts">
+	import brandAssetUrl from "./branding-assets/discobot-brand-gradient.svg";
 	import { cn } from "$lib/utils";
-	import DiscobotLogo from "$lib/components/app/parts/DiscobotLogo.svelte";
 
 	type Props = {
 		class?: string;
-		logoClass?: string;
-		logoSize?: number;
-		textSizeClass?: string;
+		heightClass?: string;
+		title?: string;
 	};
 
 	let {
 		class: className,
-		logoClass,
-		logoSize = 22,
-		textSizeClass = "text-base",
+		heightClass = "h-5",
+		title = "Discobot brand",
 	}: Props = $props();
 </script>
 
-<div class={cn("flex items-center gap-1 shrink-0", className)}>
-	<DiscobotLogo size={logoSize} class={cn("text-purple-500", logoClass)} />
-	<span
-		class={cn(
-			"bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text font-bold text-transparent",
-			textSizeClass,
-		)}
-	>
-		DISCOBOT
-	</span>
-</div>
+<img
+	src={brandAssetUrl}
+	alt={title}
+	{title}
+	class={cn("block w-auto shrink-0", heightClass, className)}
+/>

@@ -333,6 +333,12 @@ importers:
 
   ui:
     dependencies:
+      '@fontsource/geist-sans':
+        specifier: ^5.2.5
+        version: 5.2.5
+      '@fontsource/jetbrains-mono':
+        specifier: ^5.2.8
+        version: 5.2.8
       '@novnc/novnc':
         specifier: ^1.6.0
         version: 1.6.0
@@ -1045,6 +1051,12 @@ packages:
 
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
+
+  '@fontsource/geist-sans@5.2.5':
+    resolution: {integrity: sha512-anllOHyJbElRs9fV15TeDRqAeb1IKm4bSknPl6ZMoyPTx1BBy7logudcUwpNjmQLkzn4Q0JGQLRCUKJYoyST6A==}
+
+  '@fontsource/jetbrains-mono@5.2.8':
+    resolution: {integrity: sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==}
 
   '@hapi/hoek@9.3.0':
     resolution: {integrity: sha512-/c6rf4UJlmHlC9b5BaNvzAcFv7HZ2QHaV0D4/HNlBdvFnvQq8RI4kYdhyPCl7Xj+oWvTWQ8ujhqS53LIgAe6KQ==}
@@ -5942,6 +5954,10 @@ snapshots:
       react-dom: 19.2.4(react@19.2.4)
 
   '@floating-ui/utils@0.2.10': {}
+
+  '@fontsource/geist-sans@5.2.5': {}
+
+  '@fontsource/jetbrains-mono@5.2.8': {}
 
   '@hapi/hoek@9.3.0':
     optional: true
