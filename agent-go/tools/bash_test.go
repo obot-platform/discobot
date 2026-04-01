@@ -20,6 +20,13 @@ func skipOnWindows(t *testing.T) {
 	}
 }
 
+func skipIfBashUnavailable(t *testing.T) {
+	t.Helper()
+	if _, err := resolveBashCommand(); err != nil {
+		t.Skipf("bash unavailable: %v", err)
+	}
+}
+
 // runBash is a test helper that executes a Bash tool call and returns the output text.
 // It accepts an arbitrary input map so callers can set timeout, run_in_background, etc.
 func runBash(t *testing.T, e *Executor, input map[string]any) (string, bool) {
@@ -380,6 +387,92 @@ func TestBash_RequestScopedEnvOverridesProcessEnv(t *testing.T) {
 	}
 	if !strings.Contains(out, "→from-request") {
 		t.Errorf("expected request-scoped env var to override process env, got: %q", out)
+	}
+}
+
+func TestBash_InvalidWorkingDirReturnsError(t *testing.T) {
+	skipIfBashUnavailable(t)
+
+	e := New(t.TempDir(), t.TempDir(), t.Name())
+	e.setCwd(filepath.Join(t.TempDir(), "missing"))
+
+	out, ok := runBash(t, e, map[string]any{"command": "pwd"})
+	if ok {
+		t.Fatalf("expected ErrorTextOutput for invalid cwd, got: %s", out)
+	}
+	if !strings.Contains(out, "failed to run command") {
+		t.Fatalf("expected startup error in output, got: %q", out)
+	}
+}
+
+func TestBash_WindowsSecondCommandStillRunsAfterPwd(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only test")
+	}
+	skipIfBashUnavailable(t)
+
+	cwd := t.TempDir()
+	e := New(cwd, t.TempDir(), t.Name())
+
+	out, ok := runBash(t, e, map[string]any{"command": "pwd"})
+	if !ok {
+		t.Fatalf("unexpected error from first pwd: %s", out)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("expected first pwd output to be non-empty")
+	}
+	if !sameResolvedPath(e.getCwd(), cwd) {
+		t.Fatalf("executor cwd = %q, want native path matching %q", e.getCwd(), cwd)
+	}
+
+	out, ok = runBash(t, e, map[string]any{"command": "pwd"})
+	if !ok {
+		t.Fatalf("unexpected error from second pwd: %s", out)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("expected second pwd output to be non-empty")
+	}
+}
+
+func TestNormalizeBashWorkingDirForOS(t *testing.T) {
+	tests := []struct {
+		name string
+		goos string
+		cwd  string
+		want string
+	}{
+		{
+			name: "non-windows unchanged",
+			goos: "linux",
+			cwd:  "/tmp/discobot",
+			want: "/tmp/discobot",
+		},
+		{
+			name: "msys drive path converted",
+			goos: "windows",
+			cwd:  "/e/src/discobot",
+			want: `E:\src\discobot`,
+		},
+		{
+			name: "wsl drive path converted",
+			goos: "windows",
+			cwd:  "/mnt/c/Users/tester/project",
+			want: `C:\Users\tester\project`,
+		},
+		{
+			name: "non-drive path left alone",
+			goos: "windows",
+			cwd:  "/home/tester",
+			want: "/home/tester",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeBashWorkingDirForOS(tc.goos, tc.cwd); got != tc.want {
+				t.Fatalf("normalizeBashWorkingDirForOS() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

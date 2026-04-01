@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -82,7 +83,7 @@ func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext,
 
 	// Wrap command to capture the new working directory after execution.
 	const sentinel = "__DISCOBOT_PWD_SENTINEL__"
-	wrapped := fmt.Sprintf("%s\n__exit=$?\nprintf '%%s\\n' '%s'\npwd\nexit $__exit", command, sentinel)
+	wrapped := fmt.Sprintf("%s\n__exit=$?\nprintf '%%s\\n' '%s'\n%s\nexit $__exit", command, sentinel, bashPwdCaptureCommand())
 
 	cmd := exec.CommandContext(cmdCtx, bashPath, "-c", wrapped)
 	cmd.Dir = cwd
@@ -105,10 +106,11 @@ func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext,
 	cmd.Stdout = io.MultiWriter(&stdoutBuf, logFile)
 	cmd.Stderr = io.MultiWriter(&stderrBuf, logFile)
 
-	_ = cmd.Run()
+	runErr := cmd.Run()
 
 	// Parse the sentinel and cwd from stdout only, then append stderr.
 	stdoutUser, newCwd := extractCwdFromOutput(stdoutBuf.String(), sentinel)
+	newCwd = normalizeBashWorkingDir(newCwd)
 	output := stdoutUser + stderrBuf.String()
 
 	if newCwd != "" && newCwd != cwd {
@@ -118,6 +120,15 @@ func (e *Executor) runBashSync(ctx context.Context, toolCtx *thread.ToolContext,
 	if cmdCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		output = strings.TrimRight(output, "\n") + fmt.Sprintf("\n[Command timed out after %s and was killed]", timeout)
 		fmt.Fprintf(logFile, "[Command timed out after %s and was killed]\n", timeout)
+	} else if runErr != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(runErr, &exitErr) {
+			msg := fmt.Sprintf("failed to run command: %v", runErr)
+			if trimmed := strings.TrimSpace(output); trimmed != "" {
+				msg = trimmed + "\n" + msg
+			}
+			return errResult(call, msg), nil
+		}
 	}
 
 	return textResult(call, addLineNumbers(output, 1)), nil
@@ -235,6 +246,82 @@ func extractCwdFromOutput(raw, sentinel string) (string, string) {
 	lines := strings.SplitN(after, "\n", 2)
 	newCwd := strings.TrimSpace(lines[0])
 	return userOutput, newCwd
+}
+
+func bashPwdCaptureCommand() string {
+	if runtime.GOOS != "windows" {
+		return "pwd"
+	}
+	return `(pwd -W 2>/dev/null || cygpath -w "$PWD" 2>/dev/null || pwd)`
+}
+
+func normalizeBashWorkingDir(cwd string) string {
+	return normalizeBashWorkingDirForOS(runtime.GOOS, cwd)
+}
+
+func normalizeBashWorkingDirForOS(goos, cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" || goos != "windows" {
+		return cwd
+	}
+	if isWindowsAbsolutePath(cwd) {
+		return filepath.Clean(strings.ReplaceAll(cwd, "/", `\`))
+	}
+	if converted, ok := convertWindowsBashPwd(cwd); ok {
+		return converted
+	}
+	return cwd
+}
+
+func isWindowsAbsolutePath(path string) bool {
+	if len(path) >= 3 && isASCIIAlpha(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/') {
+		return true
+	}
+	return strings.HasPrefix(path, `\\`) || strings.HasPrefix(path, `//`)
+}
+
+func convertWindowsBashPwd(cwd string) (string, bool) {
+	if drive, rest, ok := splitBashDrivePath(cwd, "/"); ok {
+		return buildWindowsDrivePath(drive, rest), true
+	}
+	if drive, rest, ok := splitBashDrivePath(cwd, "/mnt/"); ok {
+		return buildWindowsDrivePath(drive, rest), true
+	}
+	return "", false
+}
+
+func isASCIIAlpha(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+}
+
+func splitBashDrivePath(cwd, prefix string) (byte, string, bool) {
+	if !strings.HasPrefix(cwd, prefix) {
+		return 0, "", false
+	}
+	idx := len(prefix)
+	if len(cwd) < idx+1 {
+		return 0, "", false
+	}
+	drive := cwd[idx]
+	if !isASCIIAlpha(drive) {
+		return 0, "", false
+	}
+	if len(cwd) > idx+1 && cwd[idx+1] != '/' {
+		return 0, "", false
+	}
+	rest := ""
+	if len(cwd) > idx+2 {
+		rest = cwd[idx+2:]
+	}
+	return drive, rest, true
+}
+
+func buildWindowsDrivePath(drive byte, rest string) string {
+	base := strings.ToUpper(string(drive)) + `:\`
+	if rest == "" {
+		return filepath.Clean(base)
+	}
+	return filepath.Clean(base + strings.ReplaceAll(rest, "/", `\`))
 }
 
 // getCwd returns the current persisted working directory.
