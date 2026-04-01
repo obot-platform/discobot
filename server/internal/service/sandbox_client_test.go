@@ -20,6 +20,7 @@ import (
 // Only Get, GetSecret, and HTTPClient are used by SandboxChatClient.
 type mockSandboxProvider struct {
 	secret  string
+	client  *http.Client
 	handler http.Handler           // Handler for HTTPClient to use
 	onStop  func(sessionID string) // Callback when Stop is called
 }
@@ -78,6 +79,9 @@ func (m *mockSandboxProvider) GetSecret(_ context.Context, _ string) (string, er
 }
 
 func (m *mockSandboxProvider) HTTPClient(_ context.Context, _ string) (*http.Client, error) {
+	if m.client != nil {
+		return m.client, nil
+	}
 	if m.handler != nil {
 		return &http.Client{Transport: &testRoundTripper{handler: m.handler}}, nil
 	}
@@ -93,6 +97,35 @@ func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	rec := httptest.NewRecorder()
 	t.handler.ServeHTTP(rec, req)
 	return rec.Result(), nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type errorReadCloser struct {
+	chunks [][]byte
+	err    error
+}
+
+func (r *errorReadCloser) Read(p []byte) (int, error) {
+	if len(r.chunks) == 0 {
+		return 0, r.err
+	}
+
+	chunk := r.chunks[0]
+	r.chunks = r.chunks[1:]
+	n := copy(p, chunk)
+	if n < len(chunk) {
+		r.chunks = append([][]byte{chunk[n:]}, r.chunks...)
+	}
+	return n, nil
+}
+
+func (r *errorReadCloser) Close() error {
+	return nil
 }
 
 func (m *mockSandboxProvider) Watch(_ context.Context) (<-chan sandbox.StateEvent, error) {
@@ -430,14 +463,15 @@ func TestSandboxChatClient_GetStream_PreservesEventAndID(t *testing.T) {
 	}
 }
 
-func TestSandboxChatClient_GetStream_AllowsLargeSSEDataLine(t *testing.T) {
-	largeDelta := strings.Repeat("x", 70*1024)
+func TestSandboxChatClient_GetStream_AllowsLargeHistoryMessage(t *testing.T) {
+	largeMessageJSON := `{"id":"msg-1","parts":[{"type":"text","text":"` + strings.Repeat("x", 2*1024*1024) + `"}]}`
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/chat/stream") {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("data: " + largeDelta + "\n\n"))
+			_, _ = w.Write([]byte("event: history-message\n"))
+			_, _ = w.Write([]byte("data: " + largeMessageJSON + "\n\n"))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -465,8 +499,11 @@ func TestSandboxChatClient_GetStream_AllowsLargeSSEDataLine(t *testing.T) {
 	if events[0].Done {
 		t.Fatal("Expected data event, got done signal")
 	}
-	if events[0].Data != largeDelta {
-		t.Fatalf("Expected large delta to pass through unchanged, got %d bytes", len(events[0].Data))
+	if events[0].Event != "history-message" {
+		t.Fatalf("Expected history-message event, got %+v", events[0])
+	}
+	if events[0].Data != largeMessageJSON {
+		t.Fatalf("Expected large history message to pass through unchanged, got %d bytes", len(events[0].Data))
 	}
 }
 
@@ -507,6 +544,66 @@ func TestSandboxChatClient_GetStream_AllowsVeryLargeSSEDataLine(t *testing.T) {
 	}
 	if events[0].Data != largeDelta {
 		t.Fatalf("Expected very large delta to pass through unchanged, got %d bytes", len(events[0].Data))
+	}
+}
+
+func TestSandboxChatClient_GetStream_ReadErrorEmitsErrorEvent(t *testing.T) {
+	provider := &mockSandboxProvider{
+		client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method != "GET" || !strings.HasSuffix(req.URL.Path, "/chat/stream") {
+					return &http.Response{
+						StatusCode: http.StatusNotFound,
+						Body:       io.NopCloser(strings.NewReader("")),
+						Header:     make(http.Header),
+					}, nil
+				}
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header: http.Header{
+						"Content-Type": []string{"text/event-stream"},
+					},
+					Body: &errorReadCloser{
+						chunks: [][]byte{[]byte("data: {}\n\n")},
+						err:    errors.New("boom"),
+					},
+				}, nil
+			}),
+		},
+	}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ch, err := client.GetStream(ctx, "test-session", "test-session", nil)
+	if err != nil {
+		t.Fatalf("GetStream failed: %v", err)
+	}
+
+	var events []SSELine
+	for line := range ch {
+		events = append(events, line)
+	}
+
+	if len(events) != 2 {
+		t.Fatalf("Expected data and error events, got %d", len(events))
+	}
+
+	if events[0].Done || events[0].Data != "{}" {
+		t.Fatalf("Expected first event to be the streamed data, got %+v", events[0])
+	}
+
+	var payload struct {
+		Type      string `json:"type"`
+		ErrorText string `json:"errorText"`
+	}
+	if err := json.Unmarshal([]byte(events[1].Data), &payload); err != nil {
+		t.Fatalf("Expected JSON error payload, got %q: %v", events[1].Data, err)
+	}
+	if payload.Type != "error" || !strings.Contains(payload.ErrorText, "boom") {
+		t.Fatalf("Expected error payload to mention boom, got %+v", payload)
 	}
 }
 
@@ -577,7 +674,7 @@ func TestSandboxChatClient_SendMessages_WithCredentials(t *testing.T) {
 	// Create client with credential fetcher that returns test credentials
 	fetcher := func(_ context.Context, _ string) ([]CredentialEnvVar, error) {
 		return []CredentialEnvVar{
-			{EnvVar: "API_KEY", Value: "secret123"},
+			{EnvVar: "API_KEY", Value: "secret123", AgentVisible: true},
 		}, nil
 	}
 	client := NewSandboxChatClient(provider, fetcher, nil)

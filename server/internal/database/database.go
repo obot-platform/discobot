@@ -1,10 +1,12 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/obot-platform/discobot/server/internal/config"
+	"github.com/obot-platform/discobot/server/internal/encryption"
 	"github.com/obot-platform/discobot/server/internal/model"
 )
 
@@ -22,9 +25,10 @@ import (
 // the write pool has a single connection (SQLite only supports one writer),
 // while the read pool has multiple connections for concurrent reads via WAL mode.
 type DB struct {
-	*gorm.DB // write pool (also used for Migrate/Seed)
-	ReadDB   *gorm.DB
-	Driver   string
+	*gorm.DB      // write pool (also used for Migrate/Seed)
+	ReadDB        *gorm.DB
+	Driver        string
+	EncryptionKey []byte
 }
 
 // New creates a new database connection based on configuration.
@@ -57,10 +61,15 @@ func New(cfg *config.Config) (*DB, error) {
 		}
 		sqlDB.SetMaxOpenConns(25)
 		sqlDB.SetMaxIdleConns(5)
-		return &DB{DB: db, Driver: driver}, nil
+		return &DB{DB: db, Driver: driver, EncryptionKey: cfg.EncryptionKey}, nil
 
 	case "sqlite":
-		return newSQLite(dsn, slowLogger)
+		db, err := newSQLite(dsn, slowLogger)
+		if err != nil {
+			return nil, err
+		}
+		db.EncryptionKey = cfg.EncryptionKey
+		return db, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
@@ -192,6 +201,10 @@ func (db *DB) Migrate() error {
 		return err
 	}
 
+	if err := db.migrateLegacyEnvSets(); err != nil {
+		return err
+	}
+
 	// Drop obsolete columns that are no longer in the model
 	// Note: AutoMigrate only adds columns, it never removes them.
 	//
@@ -237,6 +250,174 @@ func (db *DB) Migrate() error {
 		}
 	}
 
+	if migrator.HasColumn(&legacySessionEnvSetRow{}, "active_env_set_ids") {
+		log.Println("Dropping obsolete Session.active_env_set_ids column...")
+		if err := migrator.DropColumn(&legacySessionEnvSetRow{}, "active_env_set_ids"); err != nil {
+			return fmt.Errorf("failed to drop Session.active_env_set_ids: %w", err)
+		}
+	}
+	if migrator.HasTable(&legacyEnvSetRow{}) {
+		log.Println("Dropping obsolete env_sets table...")
+		if err := migrator.DropTable(&legacyEnvSetRow{}); err != nil {
+			return fmt.Errorf("failed to drop env_sets: %w", err)
+		}
+	}
+
+	return nil
+}
+
+type legacyEnvSetRow struct {
+	ID            string
+	ProjectID     string
+	Name          string
+	EncryptedData []byte
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (legacyEnvSetRow) TableName() string { return "env_sets" }
+
+type legacySessionEnvSetRow struct {
+	ID              string
+	ActiveEnvSetIDs []string `gorm:"column:active_env_set_ids;serializer:json;type:text"`
+}
+
+func (legacySessionEnvSetRow) TableName() string { return "sessions" }
+
+type secretEnvVar struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type secretCredentialData struct {
+	EnvVars []secretEnvVar `json:"envVars"`
+}
+
+func (db *DB) migrateLegacyEnvSets() error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&legacyEnvSetRow{}) {
+		return nil
+	}
+
+	encryptor, err := encryption.NewEncryptor(db.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("failed to create encryptor for env set migration: %w", err)
+	}
+
+	var envSets []legacyEnvSetRow
+	if err := db.Order("created_at ASC").Find(&envSets).Error; err != nil {
+		return fmt.Errorf("failed to load env sets for migration: %w", err)
+	}
+	if len(envSets) == 0 {
+		return nil
+	}
+
+	envSetCredentialIDs := make(map[string]string, len(envSets))
+	for _, envSet := range envSets {
+		provider := "custom:env-set:" + envSet.ID
+
+		var existing model.Credential
+		if err := db.Where("project_id = ? AND provider = ?", envSet.ProjectID, provider).First(&existing).Error; err == nil {
+			envSetCredentialIDs[envSet.ID] = existing.ID
+			continue
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("failed to check migrated credential for env set %s: %w", envSet.ID, err)
+		}
+
+		envVars := map[string]string{}
+		if len(envSet.EncryptedData) > 0 {
+			if err := encryptor.DecryptJSON(envSet.EncryptedData, &envVars); err != nil {
+				return fmt.Errorf("failed to decrypt env set %s: %w", envSet.ID, err)
+			}
+		}
+
+		keys := make([]string, 0, len(envVars))
+		for key := range envVars {
+			if strings.TrimSpace(key) == "" {
+				continue
+			}
+			keys = append(keys, strings.TrimSpace(key))
+		}
+		sort.Strings(keys)
+
+		secretData := secretCredentialData{
+			EnvVars: make([]secretEnvVar, 0, len(keys)),
+		}
+		for _, key := range keys {
+			secretData.EnvVars = append(secretData.EnvVars, secretEnvVar{
+				Key:   key,
+				Value: envVars[key],
+			})
+		}
+
+		encrypted, err := encryptor.EncryptJSON(secretData)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt migrated credential for env set %s: %w", envSet.ID, err)
+		}
+
+		name := strings.TrimSpace(envSet.Name)
+		if name == "" {
+			name = "Migrated env vars"
+		}
+
+		credential := model.Credential{
+			ProjectID:     envSet.ProjectID,
+			Provider:      provider,
+			Name:          name,
+			AuthType:      "api_key",
+			EncryptedData: encrypted,
+			IsConfigured:  true,
+			AgentVisible:  false,
+			CreatedAt:     envSet.CreatedAt,
+			UpdatedAt:     envSet.UpdatedAt,
+		}
+		if err := db.Create(&credential).Error; err != nil {
+			return fmt.Errorf("failed to create migrated credential for env set %s: %w", envSet.ID, err)
+		}
+		envSetCredentialIDs[envSet.ID] = credential.ID
+	}
+
+	if !migrator.HasColumn(&legacySessionEnvSetRow{}, "active_env_set_ids") {
+		return nil
+	}
+
+	var sessions []legacySessionEnvSetRow
+	if err := db.Select("id", "active_env_set_ids").Find(&sessions).Error; err != nil {
+		return fmt.Errorf("failed to load session env set state for migration: %w", err)
+	}
+
+	for _, session := range sessions {
+		for _, envSetID := range session.ActiveEnvSetIDs {
+			credentialID := envSetCredentialIDs[envSetID]
+			if credentialID == "" {
+				continue
+			}
+
+			var existing model.SessionCredentialAssignment
+			if err := db.Where("session_id = ? AND credential_id = ?", session.ID, credentialID).First(&existing).Error; err == nil {
+				if !existing.AgentVisible {
+					existing.AgentVisible = true
+					if err := db.Save(&existing).Error; err != nil {
+						return fmt.Errorf("failed to update session credential override for env set %s: %w", envSetID, err)
+					}
+				}
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("failed to load session credential override for env set %s: %w", envSetID, err)
+			}
+
+			assignment := model.SessionCredentialAssignment{
+				SessionID:    session.ID,
+				CredentialID: credentialID,
+				AgentVisible: true,
+			}
+			if err := db.Create(&assignment).Error; err != nil {
+				return fmt.Errorf("failed to create session credential override for env set %s: %w", envSetID, err)
+			}
+		}
+	}
+
+	log.Printf("Migrated %d legacy env set(s) into hidden custom credentials", len(envSets))
 	return nil
 }
 

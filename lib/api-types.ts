@@ -79,8 +79,6 @@ export interface Session {
 	reasoning?: string;
 	/** Permission mode: "plan" for planning mode, or empty/undefined for default (build mode) */
 	mode?: string;
-	/** IDs of the active env sets for this session (in order; later sets override earlier on key conflicts) */
-	activeEnvSetIds?: string[];
 }
 
 // Workspace status values representing the lifecycle of a workspace
@@ -319,24 +317,6 @@ export interface OAuthRefreshResponse {
 	success: boolean;
 	expiresAt?: string;
 	expiresIn?: number;
-}
-
-// ============================================================================
-// Env Set Types
-// ============================================================================
-
-/** Env set metadata (no secrets) — returned by list endpoint */
-export interface EnvSetInfo {
-	id: string;
-	projectId: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-}
-
-/** Env set with decrypted env vars — returned by get/create/update endpoints */
-export interface EnvSetWithVars extends EnvSetInfo {
-	envVars: Record<string, string>;
 }
 
 // GitHub Copilot OAuth types

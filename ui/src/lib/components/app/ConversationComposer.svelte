@@ -14,7 +14,7 @@
 	import ConversationComposerSessionSetupStatus from "$lib/components/app/ConversationComposerSessionSetupStatus.svelte";
 	import ConversationComposerSubmitButton from "$lib/components/app/parts/ConversationComposerSubmitButton.svelte";
 	import ConversationComposerTextarea from "$lib/components/app/parts/ConversationComposerTextarea.svelte";
-	import ConversationEnvSetsControl from "$lib/components/app/ConversationEnvSetsControl.svelte";
+	import ConversationCredentialsControl from "$lib/components/app/ConversationCredentialsControl.svelte";
 	import ConversationHooksPanel from "$lib/components/app/ConversationHooksPanel.svelte";
 	import ConversationQueuePanel from "$lib/components/app/parts/ConversationQueuePanel.svelte";
 	import ConversationWorkspaceSelector from "$lib/components/app/ConversationWorkspaceSelector.svelte";
@@ -549,10 +549,7 @@
 								onSelect={handleModeSelect}
 							/>
 							{#if !session.isPending}
-								<ConversationEnvSetsControl
-									sessionEnvSets={session.envSets}
-									threadEnvSets={thread.envSets}
-								/>
+								<ConversationCredentialsControl />
 							{/if}
 							<ConversationComposerModelControl
 								value={thread.nextModelId !== undefined

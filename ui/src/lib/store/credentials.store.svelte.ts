@@ -1,6 +1,7 @@
 import { api } from "$lib/api-client";
 import type {
 	CredentialAuthType,
+	CredentialEnvVar,
 	CredentialInfo,
 	CredentialType,
 } from "$lib/api-types";
@@ -55,18 +56,49 @@ export class CredentialStore {
 		});
 	}
 
-	async save(
-		provider: string,
-		authType: CredentialAuthType,
-		apiKey: string,
-	): Promise<CredentialInfo> {
-		await api.createCredential({ provider, authType, apiKey });
+	async save(data: {
+		provider?: string;
+		credentialId?: string;
+		name: string;
+		description?: string;
+		authType: CredentialAuthType;
+		apiKey?: string;
+		envVars?: CredentialEnvVar[];
+		agentVisible?: boolean;
+	}): Promise<CredentialInfo> {
+		await api.createCredential(data);
 		await this.fetch();
-		return this.#items.find((c) => c.provider === provider)!;
+		return (
+			(data.credentialId
+				? this.#items.find((c) => c.id === data.credentialId)
+				: null) ??
+			(data.provider
+				? this.#items.find((c) => c.provider === data.provider)
+				: null) ??
+			this.#items[this.#items.length - 1]!
+		);
 	}
 
-	async remove(provider: string): Promise<void> {
-		await api.deleteCredential(provider);
-		this.#items = this.#items.filter((c) => c.provider !== provider);
+	async getOne(identifier: string): Promise<CredentialInfo> {
+		return api.getCredential(identifier);
+	}
+
+	async remove(identifier: string): Promise<void> {
+		try {
+			await api.deleteCredential(identifier);
+			this.#items = this.#items.filter(
+				(c) => c.id !== identifier && c.provider !== identifier,
+			);
+			return;
+		} catch (error) {
+			await this.fetch();
+			const stillExists = this.#items.some(
+				(c) => c.id === identifier || c.provider === identifier,
+			);
+			if (!stillExists) {
+				return;
+			}
+			throw error;
+		}
 	}
 }

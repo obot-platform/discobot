@@ -25,12 +25,17 @@ export function createAppCredentialsDomain(
 ): AppCredentials {
 	const { store } = args;
 
-	const saveCredential = async (
-		provider: string,
-		authType: CredentialAuthType,
-		apiKey: string,
-	): Promise<CredentialInfo> => {
-		const credential = await store.save(provider, authType, apiKey);
+	const saveCredential = async (data: {
+		provider?: string;
+		credentialId?: string;
+		name: string;
+		description?: string;
+		authType: CredentialAuthType;
+		apiKey?: string;
+		envVars?: { key: string; value: string }[];
+		agentVisible?: boolean;
+	}): Promise<CredentialInfo> => {
+		const credential = await store.save(data);
 		void args.refreshModels();
 		return credential;
 	};

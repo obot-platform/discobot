@@ -1,8 +1,5 @@
 import type { WorkspaceValidationResult } from "$lib/api-types";
-import type {
-	EnvSetEditorMode,
-	SessionActiveView,
-} from "$lib/session/session-view.types";
+import type { SessionActiveView } from "$lib/session/session-view.types";
 import {
 	getDefaultActiveView,
 	getSelectedFileFromView,
@@ -50,9 +47,6 @@ export type SessionViewState = {
 	queueExpanded: boolean;
 	hookDialogOpen: boolean;
 	selectedHookId: string | null;
-	envSetDialogOpen: boolean;
-	envSetEditorMode: EnvSetEditorMode;
-	editingEnvSetId: string | null;
 	pendingWorkspaceOption: string;
 	pendingWorkspaceBranch: string;
 	pendingWorkspaceSourceInput: string;
@@ -89,10 +83,6 @@ export type SessionViewState = {
 	setQueueExpanded: (value: boolean) => void;
 	openHookDialog: (hookId: string) => void;
 	closeHookDialog: () => void;
-	openEnvSetManager: () => void;
-	startEnvSetCreate: () => void;
-	startEnvSetEdit: (envSetId: string) => void;
-	closeEnvSetManager: () => void;
 	resetForSession: (
 		selectedThreadId: string | null,
 		selectedFile: string,
@@ -117,9 +107,6 @@ export function createSessionViewState(
 	let queueExpanded = $state(false);
 	let hookDialogOpen = $state(false);
 	let selectedHookId = $state<string | null>(null);
-	let envSetDialogOpen = $state(false);
-	let envSetEditorMode = $state<EnvSetEditorMode>("list");
-	let editingEnvSetId = $state<string | null>(null);
 	let pendingWorkspaceOption = $state("new-workspace");
 	let pendingWorkspaceBranch = $state("");
 	let pendingWorkspaceSourceInput = $state("");
@@ -169,12 +156,6 @@ export function createSessionViewState(
 	const closeHookDialog = () => {
 		hookDialogOpen = false;
 		selectedHookId = null;
-	};
-
-	const closeEnvSetManager = () => {
-		envSetDialogOpen = false;
-		envSetEditorMode = "list";
-		editingEnvSetId = null;
 	};
 
 	const resetPendingWorkspaceSetup = () => {
@@ -246,22 +227,6 @@ export function createSessionViewState(
 		},
 		get selectedHookId() {
 			return selectedHookId;
-		},
-		get envSetDialogOpen() {
-			return envSetDialogOpen;
-		},
-		set envSetDialogOpen(value: boolean) {
-			envSetDialogOpen = value;
-			if (!value) {
-				envSetEditorMode = "list";
-				editingEnvSetId = null;
-			}
-		},
-		get envSetEditorMode() {
-			return envSetEditorMode;
-		},
-		get editingEnvSetId() {
-			return editingEnvSetId;
 		},
 		get pendingWorkspaceOption() {
 			return pendingWorkspaceOption;
@@ -405,22 +370,6 @@ export function createSessionViewState(
 			hookDialogOpen = true;
 		},
 		closeHookDialog,
-		openEnvSetManager: () => {
-			envSetDialogOpen = true;
-			envSetEditorMode = "list";
-			editingEnvSetId = null;
-		},
-		startEnvSetCreate: () => {
-			envSetDialogOpen = true;
-			envSetEditorMode = "create";
-			editingEnvSetId = null;
-		},
-		startEnvSetEdit: (envSetId) => {
-			envSetDialogOpen = true;
-			envSetEditorMode = "edit";
-			editingEnvSetId = envSetId;
-		},
-		closeEnvSetManager,
 		resetForSession: (nextSelectedThreadId, nextSelectedFile) => {
 			selectedThreadId = nextSelectedThreadId;
 			selectedFile = nextSelectedFile;
@@ -434,7 +383,6 @@ export function createSessionViewState(
 			hooksExpanded = false;
 			queueExpanded = false;
 			closeHookDialog();
-			closeEnvSetManager();
 			resetPendingWorkspaceSetup();
 		},
 	};

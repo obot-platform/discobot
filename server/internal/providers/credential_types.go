@@ -124,14 +124,6 @@ var credentialTypeSpecs = []credentialTypeSpec{
 		},
 	},
 	{
-		ID:                "discobot:id",
-		DisplayProviderID: "discobot",
-		BackendProviderID: "discobot",
-		Group:             CredentialTypeGroupTools,
-		GroupName:         "Tools",
-		AuthType:          "id",
-	},
-	{
 		ID:                "tavily:api_key",
 		DisplayProviderID: "tavily",
 		BackendProviderID: "tavily",

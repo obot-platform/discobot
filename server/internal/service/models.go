@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/obot-platform/discobot/server/internal/providers"
 	"github.com/obot-platform/discobot/server/internal/store"
@@ -46,6 +47,9 @@ func (s *ModelsService) GetModelsForProject(ctx context.Context, projectID strin
 	providerSet := make(map[string]bool)
 	for _, cred := range credentials {
 		if !cred.IsConfigured {
+			continue
+		}
+		if strings.HasPrefix(cred.Provider, customProviderPrefix) || strings.HasPrefix(cred.Provider, mcpProviderPrefix) {
 			continue
 		}
 		if providerSet[cred.Provider] {

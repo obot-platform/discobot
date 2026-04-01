@@ -20,6 +20,7 @@ import type {
 	OAuthExchangeResponse,
 	OAuthRefreshResponse,
 	CredentialAuthType,
+	CredentialEnvVar,
 	Session,
 	StartChatRequest,
 	StartChatResponse,
@@ -194,17 +195,27 @@ export type AppCredentials = {
 	credentialTypes: CredentialType[];
 	get: (idOrProvider: string) => CredentialInfo | null;
 	refresh: () => Promise<void>;
-	create: (
-		provider: string,
-		authType: CredentialAuthType,
-		apiKey: string,
-	) => Promise<CredentialInfo>;
-	update: (
-		provider: string,
-		authType: CredentialAuthType,
-		apiKey: string,
-	) => Promise<CredentialInfo>;
-	remove: (provider: string) => Promise<void>;
+	create: (data: {
+		provider?: string;
+		credentialId?: string;
+		name: string;
+		description?: string;
+		authType: CredentialAuthType;
+		apiKey?: string;
+		envVars?: CredentialEnvVar[];
+		agentVisible?: boolean;
+	}) => Promise<CredentialInfo>;
+	update: (data: {
+		provider?: string;
+		credentialId?: string;
+		name: string;
+		description?: string;
+		authType: CredentialAuthType;
+		apiKey?: string;
+		envVars?: CredentialEnvVar[];
+		agentVisible?: boolean;
+	}) => Promise<CredentialInfo>;
+	remove: (identifier: string) => Promise<void>;
 	refreshCredential: (provider: string) => Promise<OAuthRefreshResponse>;
 	anthropicAuthorize: () => Promise<OAuthAuthorizeResponse>;
 	anthropicExchange: (

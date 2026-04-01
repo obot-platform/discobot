@@ -8,12 +8,10 @@ import type {
 	SessionDiffStats,
 	Thread,
 } from "$lib/api-types";
-import type { EnvSetStore } from "$lib/store/env-sets.store.svelte";
 import type { ThreadStore } from "$lib/store/threads.store.svelte";
 import type { SessionViewState } from "$lib/session/view/create-session-view-state.svelte";
 import type {
 	AsyncStatus,
-	EnvSetWithVars,
 	HooksStatus,
 	PlanEntry,
 	ServiceItem,
@@ -22,24 +20,6 @@ import type {
 
 export type SessionStores = {
 	threads: ThreadStore;
-	envSets: EnvSetStore;
-};
-
-export type SessionEnvSetsService = {
-	list: EnvSetWithVars[];
-	create: (name: string, envVars: Record<string, string>) => void;
-	update: (
-		envSetId: string,
-		name: string,
-		envVars: Record<string, string>,
-	) => void;
-	remove: (envSetId: string) => void;
-};
-
-export type ThreadEnvSetsService = {
-	activeIds: string[];
-	active: EnvSetWithVars[];
-	toggle: (envSetId: string) => void;
 };
 
 export type SessionHooksService = {
@@ -139,13 +119,6 @@ export type SessionServicesDomain = {
 	refresh: () => Promise<void>;
 };
 
-export type SessionEnvSetsDomain = SessionEnvSetsService & {
-	activeIds: string[];
-	active: EnvSetWithVars[];
-	toggle: (envSetId: string) => void;
-	refresh: () => Promise<void>;
-};
-
 export type SessionConversationDomain = {
 	messages: ChatMessage[];
 	status: AsyncStatus | "streaming";
@@ -203,9 +176,6 @@ export type ThreadContextValue = {
 	dispose: () => void;
 	editorFiles: string[];
 	fileContents: Record<string, string>;
-	activeEnvSetIds: string[];
-	activeEnvSets: EnvSetWithVars[];
-	envSets: ThreadEnvSetsService;
 };
 
 export type SessionContextValue = {
@@ -217,7 +187,6 @@ export type SessionContextValue = {
 	stores: SessionStores;
 	ui: SessionViewState;
 	threads: SessionThreadsService;
-	envSets: SessionEnvSetsDomain;
 	hooks: SessionHooksService;
 	files: SessionFilesDomain;
 	services: SessionServicesDomain;

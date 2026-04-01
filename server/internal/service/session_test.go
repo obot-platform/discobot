@@ -273,7 +273,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		ErrorMessage:    strPtr("error message"),
 		WorkspacePath:   strPtr("/path/to/workspace"),
 		WorkspaceCommit: strPtr("commit789"),
-		ActiveEnvSetIDs: []string{"test-env-set-id"},
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 	}
@@ -302,7 +301,6 @@ func TestMapSessionFieldCoverage(t *testing.T) {
 		"ErrorMessage":    "ErrorMessage",
 		"WorkspacePath":   "WorkspacePath",
 		"WorkspaceCommit": "WorkspaceCommit",
-		"ActiveEnvSetIDs": "ActiveEnvSetIDs",
 		"CreatedAt":       "CreatedAt",
 		// Excluded fields (not part of API response):
 		// - SSHKeyEncryptedData: encrypted secret material, never exposed

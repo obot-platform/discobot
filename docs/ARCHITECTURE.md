@@ -94,20 +94,23 @@ One agent per project can be marked as `isDefault`.
 
 ### Credential
 
-Encrypted storage for AI provider authentication:
+Encrypted storage for provider authentication and custom thread-assigned environment bundles:
 
 - API keys (e.g., `ANTHROPIC_API_KEY`)
 - OAuth tokens:
   - Anthropic OAuth: `CLAUDE_CODE_OAUTH_TOKEN`
   - GitHub Copilot: `GITHUB_TOKEN`
   - OpenAI Codex: `CODEX_TOKEN`
+- Custom credentials containing one or more arbitrary environment variable entries
 - Project-scoped credential UI metadata is served by `GET /api/projects/{projectId}/credentials/types`
+- Threads store only selected credential IDs; secret material remains encrypted in server storage
+- Credentials can be marked `agentVisible=false` so they remain available to server/agent-go internals without being exposed to the agent tool environment
 
 Credentials are encrypted with AES-256-GCM before storage.
 
 ### Sandbox Secret Provisioning
 
-Sandbox secrets follow the same encrypted-at-rest pattern as credentials and env sets.
+Sandbox secrets follow the same encrypted-at-rest pattern as credentials.
 
 - The server generates per-session SSH identities for sandbox use.
 - Private/public key material is encrypted in the database before being stored on the session record.
@@ -347,7 +350,7 @@ See [agent/docs/design/proxy-integration.md](../agent/docs/design/proxy-integrat
 
 ### Credential Encryption
 
-AI provider credentials (API keys, OAuth tokens) are encrypted using AES-256-GCM before storage. The encryption key is configured via `ENCRYPTION_KEY` environment variable. At session startup, decrypted credential values are injected into the sandbox environment for the active project, including tool credentials such as `TAVILY_API_KEY` and `DISCOBOT_TOKEN`.
+AI provider credentials (API keys, OAuth tokens, and custom environment-variable bundles) are encrypted using AES-256-GCM before storage. The encryption key is configured via `ENCRYPTION_KEY` environment variable. When a thread runs, the server resolves that thread’s selected credential IDs, sends the assigned credentials to agent-go, and agent-go only exposes entries marked `agentVisible=true` to the tool environment while still keeping internal-only credentials available to Go-side provider logic.
 
 ### Multi-tenancy
 

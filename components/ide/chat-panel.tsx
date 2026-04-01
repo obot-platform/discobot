@@ -15,8 +15,6 @@ import {
 	QueueButton,
 	QueuePanel,
 } from "@/components/ide/chat-plan-queue";
-import { EnvSetDialog } from "@/components/ide/dialogs/env-set-dialog";
-import { EnvSetSelector } from "@/components/ide/env-set-selector";
 import { ModeSelector } from "@/components/ide/mode-selector";
 import { ModelSelector } from "@/components/ide/model-selector";
 import { PromptInputWithHistory } from "@/components/ide/prompt-input-with-history";
@@ -28,7 +26,6 @@ import {
 } from "@/lib/api-constants";
 import { useMainContentContext } from "@/lib/contexts/main-content-context";
 import { useSessionViewContext } from "@/lib/contexts/session-view-context";
-import { useEnvSets } from "@/lib/hooks/use-env-sets";
 import { useHooksStatus } from "@/lib/hooks/use-hooks-status";
 import { useAgentModels, useSessionModels } from "@/lib/hooks/use-models";
 import { PREFERENCE_KEYS, usePreferences } from "@/lib/hooks/use-preferences";
@@ -220,14 +217,6 @@ export function ChatPanel({
 		string | null | undefined
 	>(undefined);
 
-	// Env set state
-	const { envSets } = useEnvSets();
-	const [envSetDialogOpen, setEnvSetDialogOpen] = React.useState(false);
-	// For new sessions: holds locally selected env set IDs (applied on session creation)
-	const [localActiveEnvSetIds, setLocalActiveEnvSetIds] = React.useState<
-		string[]
-	>([]);
-
 	// Ref for textarea to enable focusing
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -271,7 +260,6 @@ export function ChatPanel({
 		agentId: localSelectedAgentId,
 		modelId: localSelectedModelId,
 		mode: normalizeSelectedMode(localSelectedMode),
-		envSetIds: localActiveEnvSetIds,
 		resume,
 	});
 
@@ -311,7 +299,6 @@ export function ChatPanel({
 			agentId: localSelectedAgentId,
 			modelId: localSelectedModelId,
 			mode: normalizeSelectedMode(localSelectedMode),
-			envSetIds: localActiveEnvSetIds,
 			resume,
 		};
 	}, [
@@ -319,7 +306,6 @@ export function ChatPanel({
 		localSelectedAgentId,
 		localSelectedModelId,
 		localSelectedMode,
-		localActiveEnvSetIds,
 		resume,
 	]);
 
@@ -330,7 +316,7 @@ export function ChatPanel({
 				api: `${getApiBase()}/chat`,
 				// Use custom fetch to inject latest workspace/agent IDs for new sessions
 				fetch: (async (url, options) => {
-					const { resume, workspaceId, agentId, modelId, mode, envSetIds } =
+					const { resume, workspaceId, agentId, modelId, mode } =
 						selectionRef.current;
 					const requestOptions = getChatRequestOptions(modelId, mode);
 
@@ -357,17 +343,6 @@ export function ChatPanel({
 							// Call the callback to notify that the session was created
 							if (onSessionCreated && workspaceId && agentId) {
 								onSessionCreated(sessionId, workspaceId, agentId);
-							}
-							// Apply selected env sets to the newly created session
-							if (envSetIds.length > 0) {
-								api
-									.setSessionActiveEnvSets(sessionId, envSetIds)
-									.catch((err) =>
-										console.error(
-											"Failed to apply env sets to new session:",
-											err,
-										),
-									);
 							}
 						}
 
@@ -626,13 +601,6 @@ export function ChatPanel({
 				localSelectedWorkspaceId,
 				localSelectedAgentId,
 			);
-			if (localActiveEnvSetIds.length > 0) {
-				api
-					.setSessionActiveEnvSets(sessionId, localActiveEnvSetIds)
-					.catch((err) =>
-						console.error("Failed to apply env sets to new session:", err),
-					);
-			}
 		} catch (err) {
 			console.error("Failed to create empty session:", err);
 			throw err;
@@ -644,7 +612,6 @@ export function ChatPanel({
 		localSelectedAgentId,
 		localSelectedModelId,
 		localSelectedMode,
-		localActiveEnvSetIds,
 		onSessionCreated,
 	]);
 
@@ -803,44 +770,11 @@ export function ChatPanel({
 										/>
 									) : undefined
 								}
-								envSetSelector={
-									<EnvSetSelector
-										activeEnvSetIds={
-											resume
-												? (session?.activeEnvSetIds ?? [])
-												: localActiveEnvSetIds
-										}
-										envSets={envSets}
-										onToggleEnvSet={async (id) => {
-											if (resume) {
-												const current = session?.activeEnvSetIds ?? [];
-												const next = current.includes(id)
-													? current.filter((x) => x !== id)
-													: [...current, id];
-												await api.setSessionActiveEnvSets(sessionId, next);
-												mutateSession();
-											} else {
-												setLocalActiveEnvSetIds((prev) =>
-													prev.includes(id)
-														? prev.filter((x) => x !== id)
-														: [...prev, id],
-												);
-											}
-										}}
-										onManage={() => setEnvSetDialogOpen(true)}
-									/>
-								}
 							/>
 						</div>
 					</ChatHookStatus>
 				</ChatPlanQueue>
 			)}
-
-			{/* Env set management dialog */}
-			<EnvSetDialog
-				open={envSetDialogOpen}
-				onOpenChange={setEnvSetDialogOpen}
-			/>
 
 			{/* Session ID - subtle display in lower right */}
 			<div className="absolute bottom-2 right-2 select-text">

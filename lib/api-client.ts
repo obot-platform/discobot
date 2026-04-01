@@ -27,8 +27,6 @@ import type {
 	CredentialInfo,
 	DeleteSessionFileRequest,
 	DeleteSessionFileResponse,
-	EnvSetInfo,
-	EnvSetWithVars,
 	GitHubCopilotDeviceCodeRequest,
 	GitHubCopilotDeviceCodeResponse,
 	GitHubCopilotPollRequest,
@@ -706,57 +704,6 @@ class ApiClient {
 			`/sessions/${sessionId}/hooks/${hookId}/rerun`,
 			{ method: "POST" },
 		);
-	}
-
-	// Env Sets
-
-	/** List all env sets for the project (metadata only, no secrets). */
-	async listEnvSets(): Promise<{ envSets: EnvSetInfo[] }> {
-		return this.fetch<{ envSets: EnvSetInfo[] }>("/env-sets");
-	}
-
-	/** Get a single env set with decrypted env vars (for editing). */
-	async getEnvSet(id: string): Promise<EnvSetWithVars> {
-		return this.fetch<EnvSetWithVars>(`/env-sets/${id}`);
-	}
-
-	/** Create a new env set. */
-	async createEnvSet(
-		name: string,
-		envVars: Record<string, string>,
-	): Promise<EnvSetWithVars> {
-		return this.fetch<EnvSetWithVars>("/env-sets", {
-			method: "POST",
-			body: JSON.stringify({ name, envVars }),
-		});
-	}
-
-	/** Update an existing env set's name and/or env vars. */
-	async updateEnvSet(
-		id: string,
-		name: string,
-		envVars: Record<string, string>,
-	): Promise<EnvSetWithVars> {
-		return this.fetch<EnvSetWithVars>(`/env-sets/${id}`, {
-			method: "PUT",
-			body: JSON.stringify({ name, envVars }),
-		});
-	}
-
-	/** Delete an env set. */
-	async deleteEnvSet(id: string): Promise<void> {
-		await this.fetch(`/env-sets/${id}`, { method: "DELETE" });
-	}
-
-	/** Set the active env sets for a session. Pass an empty array to clear all. */
-	async setSessionActiveEnvSets(
-		sessionId: string,
-		envSetIds: string[],
-	): Promise<void> {
-		await this.fetch(`/sessions/${sessionId}/env-set`, {
-			method: "PUT",
-			body: JSON.stringify({ envSetIds }),
-		});
 	}
 
 	// User Preferences (user-scoped, not project-scoped)

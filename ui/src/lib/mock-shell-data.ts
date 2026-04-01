@@ -6,7 +6,6 @@ import type {
 	SupportInfoResponse,
 } from "$lib/api-types";
 import type {
-	EnvSetWithVars,
 	HookRunStatus,
 	IdeOption,
 	PlanEntry,
@@ -124,42 +123,6 @@ export const services: ServiceItem[] = [
 	},
 ];
 
-export const envSets: EnvSetWithVars[] = [
-	{
-		id: "env-core",
-		projectId: "local",
-		name: "Core",
-		createdAt: new Date(Date.UTC(2026, 1, 24, 14, 15)).toISOString(),
-		updatedAt: new Date(Date.UTC(2026, 2, 3, 9, 40)).toISOString(),
-		envVars: {
-			NODE_ENV: "development",
-			LOG_LEVEL: "debug",
-		},
-	},
-	{
-		id: "env-ui",
-		projectId: "local",
-		name: "UI Preview",
-		createdAt: new Date(Date.UTC(2026, 1, 26, 10, 5)).toISOString(),
-		updatedAt: new Date(Date.UTC(2026, 2, 5, 11, 20)).toISOString(),
-		envVars: {
-			VITE_FEATURE_FLAGS: "new-shell,chat-input",
-			VITE_API_BASE: "http://localhost:3001",
-		},
-	},
-	{
-		id: "env-ci",
-		projectId: "local",
-		name: "CI Mirror",
-		createdAt: new Date(Date.UTC(2026, 2, 1, 8, 30)).toISOString(),
-		updatedAt: new Date(Date.UTC(2026, 2, 7, 13, 10)).toISOString(),
-		envVars: {
-			CI: "true",
-			PNPM_CACHE_DIR: "/tmp/pnpm-cache",
-		},
-	},
-];
-
 export const settingsModels: ModelInfo[] = [
 	{
 		id: "claude-sonnet-4.5",
@@ -240,6 +203,7 @@ export const credentialFixtures: CredentialInfo[] = [
 		provider: "anthropic",
 		authType: "api_key",
 		isConfigured: true,
+		agentVisible: true,
 		updatedAt: new Date(Date.UTC(2026, 2, 9, 11, 45)).toISOString(),
 	},
 	{
@@ -248,6 +212,7 @@ export const credentialFixtures: CredentialInfo[] = [
 		provider: "discobot",
 		authType: "id",
 		isConfigured: true,
+		agentVisible: true,
 		updatedAt: new Date(Date.UTC(2026, 2, 10, 14, 20)).toISOString(),
 	},
 	{
@@ -256,6 +221,7 @@ export const credentialFixtures: CredentialInfo[] = [
 		provider: "github",
 		authType: "oauth",
 		isConfigured: true,
+		agentVisible: true,
 		expiresAt: new Date(Date.UTC(2026, 5, 1, 8, 0)).toISOString(),
 		updatedAt: new Date(Date.UTC(2026, 2, 8, 9, 30)).toISOString(),
 	},
@@ -447,7 +413,6 @@ const sessionFixtures: SessionData[] = allSessionStatuses.map(
 			model: "claude-sonnet-4.5",
 			reasoning: index % 2 === 0 ? "high" : undefined,
 			mode: index % 3 === 0 ? "plan" : undefined,
-			activeEnvSetIds: ["env-core", "env-ui"],
 			baseBranch: index % 2 === 0 ? "discobot-session" : "feature/ui-shell",
 			baseCommit: `${(index + 10).toString(16)}${(index + 11).toString(16)}${(index + 12).toString(16)}${(index + 13).toString(16)}${(index + 14).toString(16)}${(index + 15).toString(16)}${(index + 16).toString(16)}`,
 			references: {

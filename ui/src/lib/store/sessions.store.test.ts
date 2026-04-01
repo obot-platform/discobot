@@ -39,15 +39,6 @@ test("WorkspaceStore.fetchOne mutates the existing array for updates", () => {
 	});
 });
 
-test("EnvSetStore.fetchOne mutates the existing array for updates", () => {
-	assertStoreUsesInPlaceFetchOneUpdates({
-		fileName: "env-sets.store.svelte.ts",
-		pushPattern: /this\.#items\.push\(envSet\)/,
-		assignPattern: /this\.#items\[idx\] = envSet/,
-		spreadPattern: /this\.#items = \[\.\.\.this\.#items, envSet\]/,
-	});
-});
-
 test("ThreadStore.fetchOne mutates the existing array for updates", () => {
 	assertStoreUsesInPlaceFetchOneUpdates({
 		fileName: "threads.store.svelte.ts",

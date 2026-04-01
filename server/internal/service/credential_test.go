@@ -524,6 +524,60 @@ func TestGetAllDecrypted_WithExpiredToken_AttemptsRefresh(t *testing.T) {
 	}
 }
 
+func TestSetCustomCredential_BlankValuesPreserveExistingSecrets(t *testing.T) {
+	st := setupTestStore(t)
+	cfg := &config.Config{
+		EncryptionKey: []byte("test-key-32-bytes-long-123456789"),
+	}
+
+	credSvc, err := NewCredentialService(st, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create credential service: %v", err)
+	}
+
+	ctx := context.Background()
+	projectID := "test-project"
+
+	created, err := credSvc.SetCustomCredential(ctx, projectID, "", "", "", []SecretEnvVar{
+		{Key: "FOO_TOKEN", Value: "foo-secret"},
+		{Key: "BAR_TOKEN", Value: "bar-secret"},
+	}, false)
+	if err != nil {
+		t.Fatalf("Failed to create custom credential: %v", err)
+	}
+
+	updated, err := credSvc.SetCustomCredential(ctx, projectID, created.ID, "", "", []SecretEnvVar{
+		{Key: "FOO_TOKEN", Value: ""},
+		{Key: "BAR_TOKEN", Value: "updated-bar-secret"},
+		{Key: "BAZ_TOKEN", Value: ""},
+	}, false)
+	if err != nil {
+		t.Fatalf("Failed to update custom credential: %v", err)
+	}
+
+	if len(updated.EnvKeys) != 2 || updated.EnvKeys[0] != "FOO_TOKEN" || updated.EnvKeys[1] != "BAR_TOKEN" {
+		t.Fatalf("expected updated env keys to preserve populated keys, got %#v", updated.EnvKeys)
+	}
+
+	stored, err := st.GetCredentialByIDForProject(ctx, projectID, created.ID)
+	if err != nil {
+		t.Fatalf("Failed to load stored credential: %v", err)
+	}
+	data, err := credSvc.getSecretData(stored)
+	if err != nil {
+		t.Fatalf("Failed to decrypt stored credential: %v", err)
+	}
+	if len(data.EnvVars) != 2 {
+		t.Fatalf("expected 2 stored env vars, got %d", len(data.EnvVars))
+	}
+	if data.EnvVars[0].Key != "FOO_TOKEN" || data.EnvVars[0].Value != "foo-secret" {
+		t.Fatalf("expected FOO_TOKEN secret to be preserved, got %#v", data.EnvVars[0])
+	}
+	if data.EnvVars[1].Key != "BAR_TOKEN" || data.EnvVars[1].Value != "updated-bar-secret" {
+		t.Fatalf("expected BAR_TOKEN secret to be updated, got %#v", data.EnvVars[1])
+	}
+}
+
 func TestDirectToken_NoRefreshAttemptWhenExpired(t *testing.T) {
 	// Create in-memory store
 	st := setupTestStore(t)

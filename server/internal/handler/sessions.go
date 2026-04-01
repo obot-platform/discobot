@@ -33,7 +33,6 @@ type sessionResponse struct {
 	WorkspaceID     string             `json:"workspaceId,omitempty"`
 	WorkspacePath   string             `json:"workspacePath,omitempty"`
 	WorkspaceCommit string             `json:"workspaceCommit,omitempty"`
-	ActiveEnvSetIDs []string           `json:"activeEnvSetIds,omitempty"`
 }
 
 type workspaceResponse struct {
@@ -99,7 +98,6 @@ func mapSessionResponse(sess *service.Session) *sessionResponse {
 		WorkspaceID:     sess.WorkspaceID,
 		WorkspacePath:   sess.WorkspacePath,
 		WorkspaceCommit: sess.WorkspaceCommit,
-		ActiveEnvSetIDs: sess.ActiveEnvSetIDs,
 	}
 }
 

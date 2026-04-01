@@ -261,10 +261,11 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			if (source.readyState === EventSource.CLOSED) {
 				completionRunning = false;
 				const error = new Error("Lost chat stream connection");
-				streamError = error.message;
+				const resolvedErrorMessage = streamError ?? error.message;
+				streamError = resolvedErrorMessage;
 				disconnectStream();
 				if (loadStatus === "loading") {
-					rejectLoad(error, "Lost chat stream connection");
+					rejectLoad(new Error(resolvedErrorMessage), resolvedErrorMessage);
 					return;
 				}
 				if (args.hasSession() && !fatalStreamError) {

@@ -54,8 +54,6 @@ interface PromptInputWithHistoryProps {
 	modelSelector?: React.ReactNode;
 	/** Optional mode selector to render in tools (next to model selector) */
 	modeSelector?: React.ReactNode;
-	/** Optional env set selector to render in tools */
-	envSetSelector?: React.ReactNode;
 	/** Handler to create a session without sending a message (shown as "+" on hover when input is empty) */
 	onCreateSession?: () => void;
 	/** Handler to trigger session creation when @ is typed in a new session */
@@ -113,7 +111,6 @@ export const PromptInputWithHistory = React.memo(
 				queueButton,
 				modelSelector,
 				modeSelector,
-				envSetSelector,
 				onCreateSession,
 				onTriggerSessionCreate,
 				isSessionReady,
@@ -236,8 +233,6 @@ export const PromptInputWithHistory = React.memo(
 								{modeSelector}
 								{/* Model selector (if provided) */}
 								{modelSelector}
-								{/* Env set selector (if provided) */}
-								{envSetSelector}
 							</PromptInputTools>
 							<div className="flex items-center gap-2">
 								{/* Hook status button (if provided) */}

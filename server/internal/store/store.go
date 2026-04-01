@@ -401,9 +401,31 @@ func (s *Store) CreateMessage(ctx context.Context, message *model.Message) error
 
 // --- Credentials ---
 
+func (s *Store) GetCredentialByID(ctx context.Context, id string) (*model.Credential, error) {
+	var credential model.Credential
+	if err := s.readDB.WithContext(ctx).First(&credential, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &credential, nil
+}
+
 func (s *Store) GetCredentialByProvider(ctx context.Context, projectID, provider string) (*model.Credential, error) {
 	var credential model.Credential
 	if err := s.readDB.WithContext(ctx).First(&credential, "project_id = ? AND provider = ?", projectID, provider).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &credential, nil
+}
+
+func (s *Store) GetCredentialByIDForProject(ctx context.Context, projectID, id string) (*model.Credential, error) {
+	var credential model.Credential
+	if err := s.readDB.WithContext(ctx).First(&credential, "project_id = ? AND id = ?", projectID, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
@@ -426,46 +448,41 @@ func (s *Store) UpdateCredential(ctx context.Context, credential *model.Credenti
 	return s.writeDB.WithContext(ctx).Save(credential).Error
 }
 
+func (s *Store) DeleteCredentialByID(ctx context.Context, id string) error {
+	return s.writeDB.WithContext(ctx).Delete(&model.Credential{}, "id = ?", id).Error
+}
+
 func (s *Store) DeleteCredential(ctx context.Context, projectID, provider string) error {
 	return s.writeDB.WithContext(ctx).Delete(&model.Credential{}, "project_id = ? AND provider = ?", projectID, provider).Error
 }
 
-// --- Env Sets ---
-
-func (s *Store) CreateEnvSet(ctx context.Context, envSet *model.EnvSet) error {
-	return s.writeDB.WithContext(ctx).Create(envSet).Error
+func (s *Store) ListSessionCredentialAssignments(ctx context.Context, sessionID string) ([]*model.SessionCredentialAssignment, error) {
+	var assignments []*model.SessionCredentialAssignment
+	err := s.readDB.WithContext(ctx).Where("session_id = ?", sessionID).Order("created_at ASC").Find(&assignments).Error
+	return assignments, err
 }
 
-func (s *Store) GetEnvSetByID(ctx context.Context, id string) (*model.EnvSet, error) {
-	var envSet model.EnvSet
-	if err := s.readDB.WithContext(ctx).First(&envSet, "id = ?", id).Error; err != nil {
+func (s *Store) UpsertSessionCredentialAssignment(ctx context.Context, assignment *model.SessionCredentialAssignment) error {
+	return s.writeDB.WithContext(ctx).Save(assignment).Error
+}
+
+func (s *Store) DeleteSessionCredentialAssignments(ctx context.Context, sessionID string) error {
+	return s.writeDB.WithContext(ctx).Delete(&model.SessionCredentialAssignment{}, "session_id = ?", sessionID).Error
+}
+
+func (s *Store) DeleteSessionCredentialAssignmentsForCredential(ctx context.Context, credentialID string) error {
+	return s.writeDB.WithContext(ctx).Delete(&model.SessionCredentialAssignment{}, "credential_id = ?", credentialID).Error
+}
+
+func (s *Store) GetSessionCredentialAssignment(ctx context.Context, sessionID, credentialID string) (*model.SessionCredentialAssignment, error) {
+	var assignment model.SessionCredentialAssignment
+	if err := s.readDB.WithContext(ctx).First(&assignment, "session_id = ? AND credential_id = ?", sessionID, credentialID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
-	return &envSet, nil
-}
-
-func (s *Store) ListEnvSetsByProject(ctx context.Context, projectID string) ([]*model.EnvSet, error) {
-	var envSets []*model.EnvSet
-	err := s.readDB.WithContext(ctx).Where("project_id = ?", projectID).Order("created_at ASC").Find(&envSets).Error
-	return envSets, err
-}
-
-func (s *Store) UpdateEnvSet(ctx context.Context, envSet *model.EnvSet) error {
-	return s.writeDB.WithContext(ctx).Save(envSet).Error
-}
-
-func (s *Store) DeleteEnvSet(ctx context.Context, id string) error {
-	return s.writeDB.WithContext(ctx).Delete(&model.EnvSet{}, "id = ?", id).Error
-}
-
-func (s *Store) UpdateSessionActiveEnvSets(ctx context.Context, sessionID string, envSetIDs []string) error {
-	if envSetIDs == nil {
-		envSetIDs = []string{}
-	}
-	return s.writeDB.WithContext(ctx).Model(&model.Session{}).Where("id = ?", sessionID).Select("ActiveEnvSetIDs").Updates(&model.Session{ActiveEnvSetIDs: envSetIDs}).Error
+	return &assignment, nil
 }
 
 // --- Terminal History ---

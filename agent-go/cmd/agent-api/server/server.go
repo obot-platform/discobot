@@ -53,7 +53,7 @@ func Run(cfg *config.Config) {
 	exec.SetThreadsDir(cfg.ThreadsDir)
 	exec.SetBashEnvAllowlist(cfg.BashEnvAllowlist)
 	exec.SetEnvLookup(func(key string) string {
-		if cred := credMgr.Get(key); cred != nil {
+		if cred := credMgr.VisibleGet(key); cred != nil {
 			return cred.Value
 		}
 		return ""

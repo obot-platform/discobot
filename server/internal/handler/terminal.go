@@ -100,13 +100,19 @@ func (h *Handler) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fetch environment variables from the session's active env sets.
-	// These are injected into the terminal process environment on creation.
-	// Failures are non-fatal; the terminal still opens without the env vars.
-	envVars, err := h.envSetService.GetEnvVarsForSession(ctx, sessionID)
-	if err != nil {
-		log.Printf("failed to get env vars for session %s: %v", sessionID, err)
-		envVars = map[string]string{}
+	// Fetch environment variables for the terminal session.
+	// Visible credentials are exposed to the terminal. Failures are non-fatal;
+	// the terminal still opens without them.
+	envVars := map[string]string{}
+	if h.credentialService != nil {
+		credentialVars, err := h.credentialService.GetVisibleEnvVarsForSession(ctx, sessionID)
+		if err != nil {
+			log.Printf("failed to get visible credential env vars for session %s: %v", sessionID, err)
+		} else {
+			for k, v := range credentialVars {
+				envVars[k] = v
+			}
+		}
 	}
 
 	// Get or create the persistent terminal session for this (sandbox, user) pair.

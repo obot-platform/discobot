@@ -6,8 +6,6 @@ export type SessionActiveView =
 	| { kind: "file"; path: string }
 	| { kind: "services" };
 
-export type EnvSetEditorMode = "list" | "create" | "edit";
-
 export function getDefaultActiveView(files: string[]): SessionActiveView {
 	if (files.length > 0) {
 		return {

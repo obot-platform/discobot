@@ -145,7 +145,7 @@ Three contexts flow top-down, each set by a single provider:
 | Context | Provider | Provides |
 |---------|----------|---------|
 | `AppContext` | `routes/+layout.svelte` | Sessions, workspaces, models, credentials, preferences |
-| `SessionContext` | `app/SessionWorkspace.svelte` | Threads, files, hooks, services, env sets |
+| `SessionContext` | `app/SessionWorkspace.svelte` | Threads, files, hooks, services, session credentials |
 | `ThreadContext` | `app/ThreadWorkspace.svelte` | Conversation, messages, plan entries |
 
 Access via `useAppContext()`, `useSessionContext()`, `useThreadContext()` from `$lib/context/`.

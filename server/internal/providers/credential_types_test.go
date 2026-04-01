@@ -35,24 +35,24 @@ func TestGetCredentialTypesIncludesOpenAIOAuthBackedByCodex(t *testing.T) {
 }
 
 func TestGetCredentialTypesPreservesConfiguredToolCredentialMetadata(t *testing.T) {
-	var discobotID *CredentialType
+	var tavilyAPIKey *CredentialType
 	for _, credentialType := range GetCredentialTypes() {
-		if credentialType.ID == "discobot:id" {
-			discobotID = &credentialType
+		if credentialType.ID == "tavily:api_key" {
+			tavilyAPIKey = &credentialType
 			break
 		}
 	}
-	if discobotID == nil {
-		t.Fatal("expected discobot:id credential type")
+	if tavilyAPIKey == nil {
+		t.Fatal("expected tavily:api_key credential type")
 	}
 
-	if got, want := discobotID.AuthType, "id"; got != want {
+	if got, want := tavilyAPIKey.AuthType, "api_key"; got != want {
 		t.Fatalf("expected auth type %q, got %q", want, got)
 	}
-	if !discobotID.AutoGenerateSecret {
-		t.Fatal("expected auto-generated secret support")
-	}
-	if got, want := discobotID.Group, CredentialTypeGroupTools; got != want {
+	if got, want := tavilyAPIKey.Group, CredentialTypeGroupTools; got != want {
 		t.Fatalf("expected group %q, got %q", want, got)
+	}
+	if len(tavilyAPIKey.Env) == 0 {
+		t.Fatal("expected tavily env metadata")
 	}
 }

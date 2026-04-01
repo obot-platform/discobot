@@ -15,11 +15,20 @@ import (
 )
 
 // CreateCredentialRequest is the request body for creating/updating a credential
+type createCredentialEnvVarRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type CreateCredentialRequest struct {
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	AuthType string `json:"authType"` // "api_key", "id", or "oauth"
-	APIKey   string `json:"apiKey,omitempty"`
+	Provider     string                          `json:"provider,omitempty"`
+	CredentialID string                          `json:"credentialId,omitempty"`
+	Name         string                          `json:"name"`
+	Description  string                          `json:"description,omitempty"`
+	AuthType     string                          `json:"authType"` // "api_key", "id", or "oauth"
+	APIKey       string                          `json:"apiKey,omitempty"`
+	EnvVars      []createCredentialEnvVarRequest `json:"envVars,omitempty"`
+	AgentVisible *bool                           `json:"agentVisible,omitempty"`
 }
 
 // GetCredentialTypes returns the credential choices used by the current UI.
@@ -50,24 +59,84 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Name != "" {
+		req.Name = strings.TrimSpace(req.Name)
+	}
+
+	agentVisible := false
+	if req.AgentVisible != nil {
+		agentVisible = *req.AgentVisible
+	}
+
+	var existingCredential *service.CredentialInfo
+	if req.CredentialID != "" {
+		info, err := h.credentialService.GetByID(r.Context(), projectID, req.CredentialID)
+		if err != nil {
+			if errors.Is(err, service.ErrCredentialNotFound) {
+				h.Error(w, http.StatusNotFound, "Credential not found")
+				return
+			}
+			h.Error(w, http.StatusInternalServerError, "Failed to load credential")
+			return
+		}
+		existingCredential = info
+		if req.Provider == "custom" && !strings.HasPrefix(existingCredential.Provider, "custom:") {
+			h.Error(w, http.StatusBadRequest, "Credential provider mismatch")
+			return
+		}
+		if req.Provider != "" && req.Provider != "custom" && req.Provider != existingCredential.Provider {
+			h.Error(w, http.StatusBadRequest, "Credential provider mismatch")
+			return
+		}
+		if req.Provider == "" {
+			req.Provider = existingCredential.Provider
+		}
+	}
+
+	envVars := make([]service.SecretEnvVar, 0, len(req.EnvVars))
+	for _, envVar := range req.EnvVars {
+		envVars = append(envVars, service.SecretEnvVar{Key: envVar.Key, Value: envVar.Value})
+	}
+
+	if len(envVars) > 0 || req.Provider == "custom" || req.Provider == "" {
+		info, err := h.credentialService.SetCustomCredential(r.Context(), projectID, req.CredentialID, req.Name, req.Description, envVars, agentVisible)
+		if err != nil {
+			if errors.Is(err, service.ErrCredentialNotFound) {
+				h.Error(w, http.StatusNotFound, "Credential not found")
+				return
+			}
+			h.Error(w, http.StatusInternalServerError, "Failed to create credential")
+			return
+		}
+		h.JSON(w, http.StatusOK, info)
+		return
+	}
+
 	if req.Provider == "" {
 		h.Error(w, http.StatusBadRequest, "provider is required")
 		return
 	}
 
-	if req.Name == "" {
-		req.Name = req.Provider // Default name to provider
-	}
-
-	// Currently only support secret-style credential creation via this endpoint.
-	// OAuth tokens are set via the OAuth flow endpoints.
 	if req.AuthType == "" || req.AuthType == service.AuthTypeAPIKey {
 		if req.APIKey == "" {
+			if req.CredentialID != "" {
+				info, err := h.credentialService.UpdateMetadata(r.Context(), projectID, req.CredentialID, req.Name, req.Description, agentVisible)
+				if err != nil {
+					if errors.Is(err, service.ErrCredentialNotFound) {
+						h.Error(w, http.StatusNotFound, "Credential not found")
+						return
+					}
+					h.Error(w, http.StatusInternalServerError, "Failed to update credential")
+					return
+				}
+				h.JSON(w, http.StatusOK, info)
+				return
+			}
 			h.Error(w, http.StatusBadRequest, "api_key is required for api_key auth type")
 			return
 		}
 
-		info, err := h.credentialService.SetAPIKey(r.Context(), projectID, req.Provider, req.Name, req.APIKey)
+		info, err := h.credentialService.SetAPIKeyWithMetadata(r.Context(), projectID, req.Provider, req.Name, req.Description, req.APIKey, agentVisible)
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidProvider) {
 				h.Error(w, http.StatusBadRequest, "Invalid provider")
@@ -83,11 +152,24 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 
 	if req.AuthType == service.AuthTypeID {
 		if req.APIKey == "" {
+			if req.CredentialID != "" {
+				info, err := h.credentialService.UpdateMetadata(r.Context(), projectID, req.CredentialID, req.Name, req.Description, agentVisible)
+				if err != nil {
+					if errors.Is(err, service.ErrCredentialNotFound) {
+						h.Error(w, http.StatusNotFound, "Credential not found")
+						return
+					}
+					h.Error(w, http.StatusInternalServerError, "Failed to update credential")
+					return
+				}
+				h.JSON(w, http.StatusOK, info)
+				return
+			}
 			h.Error(w, http.StatusBadRequest, "api_key is required for id auth type")
 			return
 		}
 
-		info, err := h.credentialService.SetID(r.Context(), projectID, req.Provider, req.Name, req.APIKey)
+		info, err := h.credentialService.SetIDWithMetadata(r.Context(), projectID, req.Provider, req.Name, req.Description, req.APIKey, agentVisible)
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidProvider) {
 				h.Error(w, http.StatusBadRequest, "Invalid provider")
@@ -104,12 +186,15 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 	h.Error(w, http.StatusBadRequest, "OAuth credentials must be set via OAuth flow endpoints")
 }
 
-// GetCredential returns a single credential (safe info only)
+// GetCredential returns a single credential.
 func (h *Handler) GetCredential(w http.ResponseWriter, r *http.Request) {
 	projectID := middleware.GetProjectID(r.Context())
-	provider := chi.URLParam(r, "provider")
+	identifier := chi.URLParam(r, "provider")
 
-	info, err := h.credentialService.Get(r.Context(), projectID, provider)
+	info, err := h.credentialService.Get(r.Context(), projectID, identifier)
+	if err != nil {
+		info, err = h.credentialService.GetByID(r.Context(), projectID, identifier)
+	}
 	if err != nil {
 		if errors.Is(err, service.ErrCredentialNotFound) {
 			h.Error(w, http.StatusNotFound, "Credential not found")
@@ -122,17 +207,87 @@ func (h *Handler) GetCredential(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, info)
 }
 
-// DeleteCredential deletes a credential
+// DeleteCredential deletes a credential.
 func (h *Handler) DeleteCredential(w http.ResponseWriter, r *http.Request) {
 	projectID := middleware.GetProjectID(r.Context())
-	provider := chi.URLParam(r, "provider")
+	identifier := chi.URLParam(r, "provider")
 
-	if err := h.credentialService.Delete(r.Context(), projectID, provider); err != nil {
+	credential, err := h.credentialService.Get(r.Context(), projectID, identifier)
+	if err != nil {
+		credential, err = h.credentialService.GetByID(r.Context(), projectID, identifier)
+	}
+	if err != nil {
+		if errors.Is(err, service.ErrCredentialNotFound) {
+			h.Error(w, http.StatusNotFound, "Credential not found")
+			return
+		}
+		h.Error(w, http.StatusInternalServerError, "Failed to delete credential")
+		return
+	}
+
+	if err := h.credentialService.Delete(r.Context(), projectID, credential.ID); err != nil {
+		if errors.Is(err, service.ErrCredentialNotFound) {
+			h.Error(w, http.StatusNotFound, "Credential not found")
+			return
+		}
 		h.Error(w, http.StatusInternalServerError, "Failed to delete credential")
 		return
 	}
 
 	h.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+type setSessionCredentialAssignmentRequest struct {
+	CredentialID string `json:"credentialId"`
+	AgentVisible bool   `json:"agentVisible"`
+}
+
+// ListSessionCredentialAssignments returns credentials assigned to a session.
+func (h *Handler) ListSessionCredentialAssignments(w http.ResponseWriter, r *http.Request) {
+	projectID := middleware.GetProjectID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+
+	assignments, err := h.credentialService.ListSessionAssignments(r.Context(), projectID, sessionID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, "Failed to list session credentials")
+		return
+	}
+
+	h.JSON(w, http.StatusOK, map[string]any{"credentials": assignments})
+}
+
+// SetSessionCredentialAssignments replaces credentials assigned to a session.
+func (h *Handler) SetSessionCredentialAssignments(w http.ResponseWriter, r *http.Request) {
+	projectID := middleware.GetProjectID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+
+	var req struct {
+		Credentials []setSessionCredentialAssignmentRequest `json:"credentials"`
+	}
+	if err := h.DecodeJSON(r, &req); err != nil {
+		h.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	assignments := make([]service.SessionCredentialAssignmentInfo, 0, len(req.Credentials))
+	for _, credential := range req.Credentials {
+		assignments = append(assignments, service.SessionCredentialAssignmentInfo{
+			CredentialID: credential.CredentialID,
+			AgentVisible: credential.AgentVisible,
+		})
+	}
+
+	updated, err := h.credentialService.SetSessionAssignments(r.Context(), projectID, sessionID, assignments)
+	if err != nil {
+		if errors.Is(err, service.ErrCredentialNotFound) {
+			h.Error(w, http.StatusNotFound, "Credential not found")
+			return
+		}
+		h.Error(w, http.StatusInternalServerError, "Failed to set session credentials")
+		return
+	}
+
+	h.JSON(w, http.StatusOK, map[string]any{"credentials": updated})
 }
 
 // RefreshCredential manually refreshes OAuth tokens for a credential

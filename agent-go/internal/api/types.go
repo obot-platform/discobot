@@ -106,7 +106,7 @@ type CreateThreadRequest struct {
 
 // UpdateThreadRequest is the PUT /threads/{id} request body.
 type UpdateThreadRequest struct {
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 }
 
 // DeleteThreadResponse is the DELETE /threads/{id} response body.

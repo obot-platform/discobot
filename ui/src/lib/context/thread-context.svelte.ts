@@ -168,7 +168,6 @@ function createThreadContext(
 		await Promise.all([
 			session.files.refresh(),
 			session.services.refresh(),
-			session.envSets.refresh(),
 			session.hooks.refresh(),
 		]);
 		await app.sessions.reloadSession(session.sessionId);
@@ -425,21 +424,6 @@ function createThreadContext(
 		},
 		get fileContents() {
 			return session.files.contents;
-		},
-		get activeEnvSetIds() {
-			return session.envSets.activeIds;
-		},
-		get activeEnvSets() {
-			return session.envSets.active;
-		},
-		envSets: {
-			get activeIds() {
-				return session.envSets.activeIds;
-			},
-			get active() {
-				return session.envSets.active;
-			},
-			toggle: session.envSets.toggle,
 		},
 	};
 }

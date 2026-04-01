@@ -96,7 +96,6 @@ type Session struct {
 	WorkspaceID     string     `json:"workspaceId,omitempty"`
 	WorkspacePath   string     `json:"workspacePath,omitempty"`
 	WorkspaceCommit string     `json:"workspaceCommit,omitempty"`
-	ActiveEnvSetIDs []string   `json:"activeEnvSetIds,omitempty"`
 }
 
 // FileNode represents a file in a session
@@ -620,11 +619,6 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 		workspaceCommit = *sess.WorkspaceCommit
 	}
 
-	activeEnvSetIDs := sess.ActiveEnvSetIDs
-	if activeEnvSetIDs == nil {
-		activeEnvSetIDs = []string{}
-	}
-
 	timestamp := sess.UpdatedAt.Format(time.RFC3339)
 	if sess.UpdatedAt.IsZero() {
 		timestamp = time.Now().Format(time.RFC3339)
@@ -654,7 +648,6 @@ func (s *SessionService) mapSession(sess *model.Session) *Session {
 		WorkspaceID:     sess.WorkspaceID,
 		WorkspacePath:   workspacePath,
 		WorkspaceCommit: workspaceCommit,
-		ActiveEnvSetIDs: activeEnvSetIDs,
 	}
 }
 

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -29,14 +28,13 @@ const (
 	retryMultiplier   = 2.0                   // Double each time
 )
 
-// CredentialFetcher is a function that retrieves credentials for a session.
-// It looks up the session to get the project ID, then fetches decrypted credentials.
+// CredentialFetcher is a function that retrieves session credentials with effective visibility for a sandbox request.
 type CredentialFetcher func(ctx context.Context, sessionID string) ([]CredentialEnvVar, error)
 
-// MakeCredentialFetcher creates a CredentialFetcher that looks up credentials for a session.
-// Also injects env vars from the session's active env set, if envSetSvc is provided.
+// MakeCredentialFetcher creates a CredentialFetcher that looks up all project credentials for a session.
+// Each credential includes the effective AgentVisible value for that session.
 // Returns nil if credSvc is nil (credentials will not be fetched).
-func MakeCredentialFetcher(s *store.Store, credSvc *CredentialService, envSetSvc *EnvSetService) CredentialFetcher {
+func MakeCredentialFetcher(s *store.Store, credSvc *CredentialService) CredentialFetcher {
 	if credSvc == nil {
 		return nil
 	}
@@ -45,30 +43,7 @@ func MakeCredentialFetcher(s *store.Store, credSvc *CredentialService, envSetSvc
 		if err != nil {
 			return nil, fmt.Errorf("failed to get session: %w", err)
 		}
-		creds, err := credSvc.GetAllDecrypted(ctx, sess.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Append active env set vars if configured
-		if envSetSvc != nil {
-			envVars, err := envSetSvc.GetEnvVarsForSession(ctx, sessionID)
-			if err != nil {
-				// Log and skip rather than failing the entire credential fetch
-				log.Printf("Warning: failed to get env set vars for session %s: %v", sessionID, err)
-			} else {
-				for k, v := range envVars {
-					creds = append(creds, CredentialEnvVar{
-						EnvVar:   k,
-						Value:    v,
-						Provider: "env-set",
-						AuthType: "env_set",
-					})
-				}
-			}
-		}
-
-		return creds, nil
+		return credSvc.GetAllForSession(ctx, sess.ProjectID, sessionID)
 	}
 }
 
@@ -225,29 +200,6 @@ type SSELine struct {
 	// Agent-go no longer sends this, but the field is kept so the client can
 	// tolerate older stream sources during the transition.
 	Done bool
-}
-
-func readSSELines(r io.Reader, handleLine func(string) bool) error {
-	reader := bufio.NewReader(r)
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
-		}
-		if line == "" && errors.Is(err, io.EOF) {
-			return nil
-		}
-
-		line = strings.TrimRight(line, "\r\n")
-		if !handleLine(line) {
-			return nil
-		}
-
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-	}
 }
 
 // getHTTPClient returns an HTTP client configured for the sandbox.
@@ -471,54 +423,7 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 		defer close(lineCh)
 		defer func() { _ = resp.Body.Close() }()
 
-		current := SSELine{}
-		hasCurrent := false
-		emitCurrent := func() bool {
-			if !hasCurrent {
-				return true
-			}
-			if current.Event == "done" {
-				current.Done = true
-			}
-			if current.Data == "[DONE]" {
-				current.Event = "done"
-				current.Data = `{}`
-				current.Done = true
-			}
-			select {
-			case lineCh <- current:
-				current = SSELine{}
-				hasCurrent = false
-				return true
-			case <-ctx.Done():
-				return false
-			}
-		}
-
-		if err := readSSELines(resp.Body, func(line string) bool {
-			if strings.HasPrefix(line, ":") {
-				return true
-			}
-			if line == "" {
-				return emitCurrent()
-			}
-
-			hasCurrent = true
-			switch {
-			case strings.HasPrefix(line, "id: "):
-				current.ID = line[4:]
-			case strings.HasPrefix(line, "event: "):
-				current.Event = line[7:]
-			case strings.HasPrefix(line, "data: "):
-				data := line[6:]
-				if current.Data == "" {
-					current.Data = data
-				} else {
-					current.Data += "\n" + data
-				}
-			}
-			return true
-		}); err != nil && ctx.Err() == nil {
+		if err := streamSSELines(ctx, resp.Body, lineCh); err != nil && ctx.Err() == nil {
 			log.Printf("[SandboxChatClient] Error reading chat stream for session %s: %v", sessionID, err)
 			errorData, marshalErr := json.Marshal(struct {
 				Type      string `json:"type"`
@@ -535,13 +440,119 @@ func (c *SandboxChatClient) GetStream(ctx context.Context, sessionID, threadID s
 			}
 			return
 		}
-
-		if hasCurrent {
-			_ = emitCurrent()
-		}
 	}()
 
 	return lineCh, nil
+}
+
+func streamSSELines(ctx context.Context, body io.Reader, lineCh chan<- SSELine) error {
+	reader := newChunkedLineReader(body)
+	current := SSELine{}
+	hasCurrent := false
+
+	emitCurrent := func() bool {
+		if !hasCurrent {
+			return true
+		}
+		if current.Event == "done" {
+			current.Done = true
+		}
+		if current.Data == "[DONE]" {
+			current.Event = "done"
+			current.Data = `{}`
+			current.Done = true
+		}
+		select {
+		case lineCh <- current:
+			current = SSELine{}
+			hasCurrent = false
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	for {
+		line, err := reader.ReadLine()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		if line == "" {
+			if !emitCurrent() {
+				return ctx.Err()
+			}
+			continue
+		}
+
+		hasCurrent = true
+		field, value, hasColon := strings.Cut(line, ":")
+		if hasColon && strings.HasPrefix(value, " ") {
+			value = value[1:]
+		}
+
+		switch field {
+		case "id":
+			current.ID = value
+		case "event":
+			current.Event = value
+		case "data":
+			if current.Data == "" {
+				current.Data = value
+			} else {
+				current.Data += "\n" + value
+			}
+		}
+	}
+
+	if hasCurrent {
+		if !emitCurrent() {
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
+type chunkedLineReader struct {
+	reader *bytes.Buffer
+	source io.Reader
+}
+
+func newChunkedLineReader(source io.Reader) *chunkedLineReader {
+	return &chunkedLineReader{
+		reader: &bytes.Buffer{},
+		source: source,
+	}
+}
+
+func (r *chunkedLineReader) ReadLine() (string, error) {
+	for {
+		if idx := bytes.IndexByte(r.reader.Bytes(), '\n'); idx >= 0 {
+			line := r.reader.Next(idx + 1)
+			return strings.TrimRight(string(line), "\r\n"), nil
+		}
+
+		buf := make([]byte, 32*1024)
+		n, err := r.source.Read(buf)
+		if n > 0 {
+			_, _ = r.reader.Write(buf[:n])
+			continue
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) && r.reader.Len() > 0 {
+				line := r.reader.Next(r.reader.Len())
+				return strings.TrimRight(string(line), "\r\n"), nil
+			}
+			return "", err
+		}
+	}
 }
 
 // ListThreads retrieves all threads from the sandbox agent.
@@ -1825,34 +1836,27 @@ func (c *SandboxChatClient) GetServiceOutput(ctx context.Context, sessionID stri
 		defer close(lineCh)
 		defer func() { _ = resp.Body.Close() }()
 
-		_ = readSSELines(resp.Body, func(line string) bool {
-			// Skip empty lines and comments
-			if line == "" || strings.HasPrefix(line, ":") {
-				return true
+		serviceCh := make(chan SSELine, 100)
+		doneCh := make(chan error, 1)
+		go func() {
+			doneCh <- streamSSELines(ctx, resp.Body, serviceCh)
+			close(serviceCh)
+		}()
+
+		for line := range serviceCh {
+			if line.Data == "" && !line.Done {
+				continue
 			}
-
-			// Pass through SSE data lines
-			if strings.HasPrefix(line, "data: ") {
-				data := line[6:]
-
-				// Check for [DONE] signal
-				if data == "[DONE]" {
-					select {
-					case lineCh <- SSELine{Done: true}:
-					case <-ctx.Done():
-					}
-					return false
-				}
-
-				// Pass through raw data without parsing
-				select {
-				case lineCh <- SSELine{Data: data}:
-				case <-ctx.Done():
-					return false
-				}
+			select {
+			case lineCh <- line:
+			case <-ctx.Done():
+				return
 			}
-			return true
-		})
+		}
+
+		if err := <-doneCh; err != nil && ctx.Err() == nil {
+			log.Printf("[SandboxChatClient] Error reading service output stream for session %s: %v", sessionID, err)
+		}
 	}()
 
 	return lineCh, nil

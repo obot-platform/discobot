@@ -231,7 +231,6 @@ type Session struct {
 	WorkspacePath       *string        `gorm:"column:workspace_path;type:text" json:"workspacePath,omitempty"`
 	WorkspaceCommit     *string        `gorm:"column:workspace_commit;type:text" json:"workspaceCommit,omitempty"`
 	SSHKeyEncryptedData []byte         `gorm:"column:ssh_key_encrypted_data" json:"-"`
-	ActiveEnvSetIDs     []string       `gorm:"column:active_env_set_ids;serializer:json;type:text" json:"activeEnvSetIds,omitempty"`
 	CreatedAt           time.Time      `gorm:"autoCreateTime" json:"createdAt"`
 	UpdatedAt           time.Time      `gorm:"autoUpdateTime" json:"updatedAt"`
 	DeletedAt           gorm.DeletedAt `gorm:"index" json:"-"`
@@ -284,37 +283,17 @@ func NewTextParts(text string) json.RawMessage {
 	return data
 }
 
-// EnvSet represents a named collection of environment variable key-value pairs.
-// The env var values are encrypted at rest using AES encryption.
-type EnvSet struct {
-	ID            string    `gorm:"primaryKey;type:text" json:"id"`
-	ProjectID     string    `gorm:"column:project_id;not null;type:text;index" json:"projectId"`
-	Name          string    `gorm:"not null;type:text" json:"name"`
-	EncryptedData []byte    `gorm:"column:encrypted_data" json:"-"`
-	CreatedAt     time.Time `gorm:"autoCreateTime" json:"createdAt"`
-	UpdatedAt     time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
-
-	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
-}
-
-func (EnvSet) TableName() string { return "env_sets" }
-
-func (e *EnvSet) BeforeCreate(_ *gorm.DB) error {
-	if e.ID == "" {
-		e.ID = uuid.New().String()
-	}
-	return nil
-}
-
-// Credential represents stored credentials for AI providers.
+// Credential represents stored credentials for AI providers and custom env bundles.
 type Credential struct {
 	ID            string    `gorm:"primaryKey;type:text" json:"id"`
 	ProjectID     string    `gorm:"column:project_id;not null;type:text;uniqueIndex:idx_project_provider" json:"project_id"`
 	Provider      string    `gorm:"not null;type:text;uniqueIndex:idx_project_provider" json:"provider"`
 	Name          string    `gorm:"not null;type:text" json:"name"`
+	Description   *string   `gorm:"type:text" json:"description,omitempty"`
 	AuthType      string    `gorm:"column:auth_type;not null;type:text" json:"auth_type"`
 	EncryptedData []byte    `gorm:"column:encrypted_data" json:"-"`
 	IsConfigured  bool      `gorm:"column:is_configured;default:false" json:"is_configured"`
+	AgentVisible  bool      `gorm:"column:agent_visible;not null;default:false" json:"agent_visible"`
 	CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt     time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
@@ -326,6 +305,29 @@ func (Credential) TableName() string { return "credentials" }
 func (c *Credential) BeforeCreate(_ *gorm.DB) error {
 	if c.ID == "" {
 		c.ID = uuid.New().String()
+	}
+	return nil
+}
+
+// SessionCredentialAssignment stores which credentials are assigned to a session
+// and whether each assignment is visible to the agent/LLM environment.
+type SessionCredentialAssignment struct {
+	ID           string    `gorm:"primaryKey;type:text" json:"id"`
+	SessionID    string    `gorm:"column:session_id;not null;type:text;index;uniqueIndex:idx_session_credential_assignment" json:"sessionId"`
+	CredentialID string    `gorm:"column:credential_id;not null;type:text;index;uniqueIndex:idx_session_credential_assignment" json:"credentialId"`
+	AgentVisible bool      `gorm:"column:agent_visible;not null;default:false" json:"agentVisible"`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
+
+	Session    *Session    `gorm:"foreignKey:SessionID" json:"-"`
+	Credential *Credential `gorm:"foreignKey:CredentialID" json:"-"`
+}
+
+func (SessionCredentialAssignment) TableName() string { return "session_credential_assignments" }
+
+func (a *SessionCredentialAssignment) BeforeCreate(_ *gorm.DB) error {
+	if a.ID == "" {
+		a.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -412,7 +414,7 @@ func AllModels() []interface{} {
 		&Session{},
 		&Message{},
 		&Credential{},
-		&EnvSet{},
+		&SessionCredentialAssignment{},
 		&TerminalHistory{},
 		&ProjectEvent{},
 		&Job{},

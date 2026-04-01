@@ -315,6 +315,8 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 					r.Get("/files/read", h.ReadSessionFile)
 					r.Put("/files/write", h.WriteSessionFile)
 					r.Get("/diff", h.GetSessionDiff)
+					r.Get("/credentials", h.ListSessionCredentialAssignments)
+					r.Put("/credentials", h.SetSessionCredentialAssignments)
 					r.Get("/threads", h.ListThreads)
 					r.Post("/threads", h.CreateThread)
 					r.Get("/threads/{threadId}", h.GetThread)

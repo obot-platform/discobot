@@ -40,8 +40,6 @@ import type {
 	DeleteQueuedPromptResponse,
 	DeleteSessionFileRequest,
 	DeleteSessionFileResponse,
-	EnvSetInfo,
-	EnvSetWithVars,
 	ValidateWorkspaceRequest,
 	GitHubCopilotDeviceCodeRequest,
 	GitHubCopilotDeviceCodeResponse,
@@ -71,6 +69,7 @@ import type {
 	SearchSessionFilesResponse,
 	ServerConfig,
 	Session,
+	SessionCredentialAssignment,
 	SessionDiffFilesResponse,
 	SessionDiffResponse,
 	SessionSingleFileDiffResponse,
@@ -611,6 +610,12 @@ class ApiClient {
 		);
 	}
 
+	async getCredential(identifier: string): Promise<CredentialInfo> {
+		return this.fetch<CredentialInfo>(
+			`/credentials/${encodeURIComponent(identifier)}`,
+		);
+	}
+
 	async createCredential(
 		data: CreateCredentialRequest,
 	): Promise<CredentialInfo> {
@@ -620,8 +625,31 @@ class ApiClient {
 		});
 	}
 
-	async deleteCredential(providerId: string): Promise<void> {
-		await this.fetch(`/credentials/${providerId}`, { method: "DELETE" });
+	async deleteCredential(identifier: string): Promise<void> {
+		await this.fetch(`/credentials/${encodeURIComponent(identifier)}`, {
+			method: "DELETE",
+		});
+	}
+
+	async getSessionCredentials(sessionId: string): Promise<{
+		credentials: SessionCredentialAssignment[];
+	}> {
+		return this.fetch<{ credentials: SessionCredentialAssignment[] }>(
+			`/sessions/${sessionId}/credentials`,
+		);
+	}
+
+	async setSessionCredentials(
+		sessionId: string,
+		credentials: Array<{ credentialId: string; agentVisible: boolean }>,
+	): Promise<{ credentials: SessionCredentialAssignment[] }> {
+		return this.fetch<{ credentials: SessionCredentialAssignment[] }>(
+			`/sessions/${sessionId}/credentials`,
+			{
+				method: "PUT",
+				body: JSON.stringify({ credentials }),
+			},
+		);
 	}
 
 	async refreshCredential(providerId: string): Promise<OAuthRefreshResponse> {
@@ -805,57 +833,6 @@ class ApiClient {
 			`/sessions/${sessionId}/hooks/${hookId}/rerun`,
 			{ method: "POST" },
 		);
-	}
-
-	// Env Sets
-
-	/** List all env sets for the project (metadata only, no secrets). */
-	async listEnvSets(): Promise<{ envSets: EnvSetInfo[] }> {
-		return this.fetch<{ envSets: EnvSetInfo[] }>("/env-sets");
-	}
-
-	/** Get a single env set with decrypted env vars (for editing). */
-	async getEnvSet(id: string): Promise<EnvSetWithVars> {
-		return this.fetch<EnvSetWithVars>(`/env-sets/${id}`);
-	}
-
-	/** Create a new env set. */
-	async createEnvSet(
-		name: string,
-		envVars: Record<string, string>,
-	): Promise<EnvSetWithVars> {
-		return this.fetch<EnvSetWithVars>("/env-sets", {
-			method: "POST",
-			body: JSON.stringify({ name, envVars }),
-		});
-	}
-
-	/** Update an existing env set's name and/or env vars. */
-	async updateEnvSet(
-		id: string,
-		name: string,
-		envVars: Record<string, string>,
-	): Promise<EnvSetWithVars> {
-		return this.fetch<EnvSetWithVars>(`/env-sets/${id}`, {
-			method: "PUT",
-			body: JSON.stringify({ name, envVars }),
-		});
-	}
-
-	/** Delete an env set. */
-	async deleteEnvSet(id: string): Promise<void> {
-		await this.fetch(`/env-sets/${id}`, { method: "DELETE" });
-	}
-
-	/** Set the active env sets for a session. Pass an empty array to clear all. */
-	async setSessionActiveEnvSets(
-		sessionId: string,
-		envSetIds: string[],
-	): Promise<void> {
-		await this.fetch(`/sessions/${sessionId}/env-set`, {
-			method: "PUT",
-			body: JSON.stringify({ envSetIds }),
-		});
 	}
 
 	// User Preferences (user-scoped, not project-scoped)

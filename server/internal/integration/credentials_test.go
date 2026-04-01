@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+type credentialResponse struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Name     string `json:"name"`
+}
+
 func TestListCredentials_Empty(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
@@ -95,7 +101,7 @@ func TestCreateCredential_ID(t *testing.T) {
 	}
 }
 
-func TestCreateCredential_MissingProvider(t *testing.T) {
+func TestCreateCredential_BlankNameRemainsEmptyForBuiltInProvider(t *testing.T) {
 	t.Parallel()
 	ts := NewTestServer(t)
 	user := ts.CreateTestUser("cred@test.com")
@@ -103,9 +109,44 @@ func TestCreateCredential_MissingProvider(t *testing.T) {
 
 	client := ts.AuthenticatedClient(user)
 	resp := client.Post("/api/projects/"+project.ID+"/credentials", map[string]string{
-		"apiKey": "sk-test-123",
+		"provider": "anthropic",
+		"apiKey":   "sk-ant-test-123456",
 	})
-	AssertStatus(t, resp, http.StatusBadRequest)
+	AssertStatus(t, resp, http.StatusOK)
+
+	var cred credentialResponse
+	ParseJSON(t, resp, &cred)
+	if cred.Name != "" {
+		t.Fatalf("expected blank credential name, got %q", cred.Name)
+	}
+}
+
+func TestCreateCredential_BlankNameRemainsEmptyForCustomEnvVars(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("cred@test.com")
+	project := ts.CreateTestProject(user, "cred-project")
+
+	client := ts.AuthenticatedClient(user)
+	resp := client.Post("/api/projects/"+project.ID+"/credentials", map[string]any{
+		"envVars": []map[string]string{{
+			"key":   "FOO_TOKEN",
+			"value": "foo-secret",
+		}, {
+			"key":   "BAR_TOKEN",
+			"value": "bar-secret",
+		}},
+	})
+	AssertStatus(t, resp, http.StatusOK)
+
+	var cred credentialResponse
+	ParseJSON(t, resp, &cred)
+	if cred.Name != "" {
+		t.Fatalf("expected blank credential name, got %q", cred.Name)
+	}
+	if cred.Provider == "" {
+		t.Fatal("expected generated custom credential provider")
+	}
 }
 
 func TestCreateCredential_MissingAPIKey(t *testing.T) {
@@ -175,6 +216,42 @@ func TestGetCredential_NotFound(t *testing.T) {
 	client := ts.AuthenticatedClient(user)
 	resp := client.Get("/api/projects/" + project.ID + "/credentials/anthropic")
 	AssertStatus(t, resp, http.StatusNotFound)
+}
+
+func TestGetCredentialByID_DoesNotReturnSecretValues(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("cred@test.com")
+	project := ts.CreateTestProject(user, "cred-project")
+
+	client := ts.AuthenticatedClient(user)
+	createResp := client.Post("/api/projects/"+project.ID+"/credentials", map[string]any{
+		"provider": "custom",
+		"name":     "Secrets",
+		"envVars": []map[string]string{{
+			"key":   "FOO_TOKEN",
+			"value": "foo-secret",
+		}, {
+			"key":   "BAR_TOKEN",
+			"value": "bar-secret",
+		}},
+	})
+	AssertStatus(t, createResp, http.StatusOK)
+
+	var created credentialResponse
+	ParseJSON(t, createResp, &created)
+
+	resp := client.Get("/api/projects/" + project.ID + "/credentials/" + created.ID)
+	AssertStatus(t, resp, http.StatusOK)
+
+	var credential map[string]any
+	ParseJSON(t, resp, &credential)
+	if _, ok := credential["envVars"]; ok {
+		t.Fatal("expected envVars to be omitted from credential response")
+	}
+	if credential["envKeys"] == nil {
+		t.Fatal("expected envKeys to remain available in credential response")
+	}
 }
 
 func TestDeleteCredential(t *testing.T) {
@@ -276,4 +353,136 @@ func TestListCredentials_WithData(t *testing.T) {
 	if len(result.Credentials) != 3 {
 		t.Errorf("Expected 3 credentials, got %d", len(result.Credentials))
 	}
+}
+
+func TestUpdateCredentialByForeignIDReturnsNotFound(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("cred@test.com")
+	projectA := ts.CreateTestProject(user, "cred-project-a")
+	projectB := ts.CreateTestProject(user, "cred-project-b")
+
+	client := ts.AuthenticatedClient(user)
+	createResp := client.Post("/api/projects/"+projectB.ID+"/credentials", map[string]string{
+		"provider": "anthropic",
+		"name":     "Project B credential",
+		"apiKey":   "sk-project-b",
+	})
+	AssertStatus(t, createResp, http.StatusOK)
+
+	var created credentialResponse
+	ParseJSON(t, createResp, &created)
+
+	resp := client.Post("/api/projects/"+projectA.ID+"/credentials", map[string]string{
+		"credentialId": created.ID,
+		"provider":     "anthropic",
+		"name":         "Cross-project overwrite",
+		"apiKey":       "sk-project-a",
+	})
+	AssertStatus(t, resp, http.StatusNotFound)
+
+	resp = client.Get("/api/projects/" + projectA.ID + "/credentials/anthropic")
+	AssertStatus(t, resp, http.StatusNotFound)
+
+	resp = client.Get("/api/projects/" + projectB.ID + "/credentials/" + created.ID)
+	AssertStatus(t, resp, http.StatusOK)
+	ParseJSON(t, resp, &created)
+	if created.Name != "Project B credential" {
+		t.Fatalf("expected project B credential to remain unchanged, got %q", created.Name)
+	}
+}
+
+func TestUpdateCustomCredentialByForeignIDReturnsNotFound(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("cred@test.com")
+	projectA := ts.CreateTestProject(user, "cred-project-a")
+	projectB := ts.CreateTestProject(user, "cred-project-b")
+
+	client := ts.AuthenticatedClient(user)
+	createResp := client.Post("/api/projects/"+projectB.ID+"/credentials", map[string]any{
+		"provider": "custom",
+		"name":     "Project B custom credential",
+		"envVars": []map[string]string{{
+			"key":   "PROJECT_B_TOKEN",
+			"value": "secret-b",
+		}},
+	})
+	AssertStatus(t, createResp, http.StatusOK)
+
+	var created credentialResponse
+	ParseJSON(t, createResp, &created)
+
+	resp := client.Post("/api/projects/"+projectA.ID+"/credentials", map[string]any{
+		"credentialId": created.ID,
+		"provider":     "custom",
+		"name":         "Cross-project custom overwrite",
+		"envVars": []map[string]string{{
+			"key":   "PROJECT_A_TOKEN",
+			"value": "secret-a",
+		}},
+	})
+	AssertStatus(t, resp, http.StatusNotFound)
+
+	resp = client.Get("/api/projects/" + projectB.ID + "/credentials/" + created.ID)
+	AssertStatus(t, resp, http.StatusOK)
+	ParseJSON(t, resp, &created)
+	if created.Name != "Project B custom credential" {
+		t.Fatalf("expected project B custom credential to remain unchanged, got %q", created.Name)
+	}
+}
+
+func TestDeleteCredentialByForeignIDReturnsNotFound(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("cred@test.com")
+	projectA := ts.CreateTestProject(user, "cred-project-a")
+	projectB := ts.CreateTestProject(user, "cred-project-b")
+
+	client := ts.AuthenticatedClient(user)
+	createResp := client.Post("/api/projects/"+projectB.ID+"/credentials", map[string]string{
+		"provider": "openai",
+		"name":     "Project B OpenAI",
+		"apiKey":   "sk-project-b-openai",
+	})
+	AssertStatus(t, createResp, http.StatusOK)
+
+	var created credentialResponse
+	ParseJSON(t, createResp, &created)
+
+	resp := client.Delete("/api/projects/" + projectA.ID + "/credentials/" + created.ID)
+	AssertStatus(t, resp, http.StatusNotFound)
+
+	resp = client.Get("/api/projects/" + projectB.ID + "/credentials/" + created.ID)
+	AssertStatus(t, resp, http.StatusOK)
+}
+
+func TestSetSessionCredentialsRejectsForeignCredentialID(t *testing.T) {
+	t.Parallel()
+	ts := NewTestServer(t)
+	user := ts.CreateTestUser("cred@test.com")
+	projectA := ts.CreateTestProject(user, "cred-project-a")
+	projectB := ts.CreateTestProject(user, "cred-project-b")
+
+	workspace := ts.CreateTestWorkspace(projectA, "/tmp/project-a")
+	session := ts.CreateTestSession(workspace, "project-a-session")
+	client := ts.AuthenticatedClient(user)
+
+	createResp := client.Post("/api/projects/"+projectB.ID+"/credentials", map[string]string{
+		"provider": "anthropic",
+		"name":     "Project B Anthropic",
+		"apiKey":   "sk-project-b-anthropic",
+	})
+	AssertStatus(t, createResp, http.StatusOK)
+
+	var created credentialResponse
+	ParseJSON(t, createResp, &created)
+
+	resp := client.Put("/api/projects/"+projectA.ID+"/sessions/"+session.ID+"/credentials", map[string]any{
+		"credentials": []map[string]any{{
+			"credentialId": created.ID,
+			"agentVisible": true,
+		}},
+	})
+	AssertStatus(t, resp, http.StatusNotFound)
 }

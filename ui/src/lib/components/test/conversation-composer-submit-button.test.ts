@@ -13,9 +13,9 @@ const CONVERSATION_COMPOSER_COMPONENT = path.resolve(
 	"../app/ConversationComposer.svelte",
 );
 
-const CONVERSATION_ENV_SETS_CONTROL_COMPONENT = path.resolve(
+const CONVERSATION_CREDENTIALS_CONTROL_COMPONENT = path.resolve(
 	import.meta.dirname,
-	"../app/ConversationEnvSetsControl.svelte",
+	"../app/ConversationCredentialsControl.svelte",
 );
 
 function readSubmitButtonSource() {
@@ -26,8 +26,8 @@ function readConversationComposerSource() {
 	return readFileSync(CONVERSATION_COMPOSER_COMPONENT, "utf-8");
 }
 
-function readConversationEnvSetsControlSource() {
-	return readFileSync(CONVERSATION_ENV_SETS_CONTROL_COMPONENT, "utf-8");
+function readConversationCredentialsControlSource() {
+	return readFileSync(CONVERSATION_CREDENTIALS_CONTROL_COMPONENT, "utf-8");
 }
 
 test("composer submit button only shows the plus icon for pending empty sessions", () => {
@@ -67,13 +67,10 @@ test("conversation composer disables input when no models are available", () => 
 	);
 });
 
-test("env sets control only shows a numeric badge when multiple env sets are active", () => {
-	const source = readConversationEnvSetsControlSource();
+test("session credentials control only shows a numeric badge when multiple credentials are visible", () => {
+	const source = readConversationCredentialsControlSource();
 
-	assert.match(source, /\{#if activeEnvSetCount\(\) > 1\}/);
-	assert.match(source, /<span>\{activeEnvSetCount\(\)\}<\/span>/);
-	assert.doesNotMatch(
-		source,
-		/activeEnvSetCount\(\)\/\{totalEnvSetCount\(\)\}/,
-	);
+	assert.match(source, /\{#if visibleCount > 1\}/);
+	assert.match(source, /<span>\{visibleCount\}<\/span>/);
+	assert.doesNotMatch(source, /visibleCount\/\{availableCredentials\.length\}/);
 });

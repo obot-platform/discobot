@@ -166,14 +166,16 @@ test("conversation loader derives running state from backend lifecycle", () => {
 	assert.doesNotMatch(source, /hasStreamingAssistantMessage/);
 });
 
-test("conversation loader stops reconnecting after fatal stream parse errors", () => {
+test("conversation loader preserves streamed error text when the SSE connection closes", () => {
 	const source = readFileSync(CONVERSATION_DOMAIN_SOURCE, "utf-8");
 
-	assert.match(source, /fatalStreamError/);
 	assert.match(
 		source,
-		/onError: \(error\) => \{[\s\S]*fatalStreamError = true/,
+		/const resolvedErrorMessage =\s*streamError \?\? error\.message/,
 	);
-	assert.match(source, /onError: \(error\) => \{[\s\S]*disconnectStream\(\)/);
-	assert.match(source, /if \(args\.hasSession\(\) && !fatalStreamError\)/);
+	assert.match(source, /streamError = resolvedErrorMessage/);
+	assert.match(
+		source,
+		/rejectLoad\(new Error\(resolvedErrorMessage\), resolvedErrorMessage\)/,
+	);
 });

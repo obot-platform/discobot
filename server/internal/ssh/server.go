@@ -32,9 +32,11 @@ type UserInfoFetcher interface {
 	GetUserInfo(ctx context.Context, sessionID string) (username string, uid, gid int, err error)
 }
 
-// EnvVarFetcher fetches environment variables for a session from its active env sets.
+// EnvVarFetcher fetches environment variables for a session from runtime-managed
+// sources like visible credentials.
 type EnvVarFetcher interface {
-	// GetEnvVarsForSession returns the merged env vars from all active env sets.
+	// GetEnvVarsForSession returns the merged environment variables to inject into
+	// SSH sessions before applying client-provided env overrides.
 	GetEnvVarsForSession(ctx context.Context, sessionID string) (map[string]string, error)
 }
 
@@ -62,8 +64,8 @@ type Config struct {
 	// If nil, commands run as root.
 	UserInfoFetcher UserInfoFetcher
 
-	// EnvVarFetcher is used to get environment variables from the session's
-	// active env sets. If nil, no env set vars are applied.
+	// EnvVarFetcher is used to get environment variables from the session. If nil,
+	// no runtime-managed env vars are applied.
 	EnvVarFetcher EnvVarFetcher
 
 	// ConnectionTracker is notified when SSH connections are established and closed.
@@ -290,21 +292,21 @@ func newSessionHandler(sessionID string, provider sandbox.Provider, userInfoFetc
 	}
 }
 
-// getEnvVars fetches env vars from the session's active env sets and merges them
+// getEnvVars fetches runtime-managed env vars for the session and merges them
 // with the client-provided SSH env vars. SSH client vars take precedence.
 func (h *sessionHandler) getEnvVars(ctx context.Context, sshEnvVars map[string]string) map[string]string {
 	merged := map[string]string{}
 	if h.envVarFetcher != nil {
 		sessionVars, err := h.envVarFetcher.GetEnvVarsForSession(ctx, h.sessionID)
 		if err != nil {
-			log.Printf("SSH session %s: failed to get env vars from env sets: %v", h.sessionID, err)
+			log.Printf("SSH session %s: failed to get runtime env vars: %v", h.sessionID, err)
 		} else {
 			for k, v := range sessionVars {
 				merged[k] = v
 			}
 		}
 	}
-	// SSH client-provided env vars take precedence over env set vars
+	// SSH client-provided env vars take precedence over runtime-managed vars
 	for k, v := range sshEnvVars {
 		merged[k] = v
 	}
@@ -475,7 +477,7 @@ func (h *sessionHandler) runShell(channel ssh.Channel, ptyReq *ptyRequest, envVa
 	// Get user for this session (uid:gid format)
 	user := h.getUser(ctx)
 
-	// Merge env set vars with SSH client-provided vars (client takes precedence)
+	// Merge runtime-managed env vars with SSH client-provided vars (client takes precedence)
 	mergedEnv := h.getEnvVars(ctx, envVars)
 
 	opts := sandbox.AttachOptions{
@@ -529,7 +531,7 @@ func (h *sessionHandler) runExec(channel ssh.Channel, command string, ptyReq *pt
 	// Get user for this session (uid:gid format)
 	user := h.getUser(ctx)
 
-	// Merge env set vars with SSH client-provided vars (client takes precedence)
+	// Merge runtime-managed env vars with SSH client-provided vars (client takes precedence)
 	mergedEnv := h.getEnvVars(ctx, envVars)
 
 	// Execute command in sandbox using streaming to avoid buffering large outputs.

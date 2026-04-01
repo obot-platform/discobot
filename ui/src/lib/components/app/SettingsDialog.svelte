@@ -92,13 +92,25 @@
 
 		ui.settingsDialog.tab = value;
 	}
+
+	function handleSettingsInteractOutside(event: Event) {
+		event.preventDefault();
+	}
+
+	function handleSettingsEscapeKeydown(event: KeyboardEvent) {
+		event.preventDefault();
+	}
 </script>
 
 <Dialog.Root
 	open={ui.settingsDialog.open}
 	onOpenChange={handleSettingsOpenChange}
 >
-	<Dialog.Content class="sm:max-w-2xl">
+	<Dialog.Content
+		class="sm:max-w-2xl"
+		onInteractOutside={handleSettingsInteractOutside}
+		onEscapeKeydown={handleSettingsEscapeKeydown}
+	>
 		<Dialog.Header>
 			<Dialog.Title>Settings</Dialog.Title>
 			<Dialog.Description>

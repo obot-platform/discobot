@@ -12,11 +12,12 @@ import (
 
 // EnvVar represents a credential mapped to an environment variable.
 type EnvVar struct {
-	EnvVar    string `json:"envVar"`
-	Value     string `json:"value"`
-	Provider  string `json:"provider"`
-	AuthType  string `json:"authType"`            // "api_key" or "oauth"
-	ExpiresAt *int64 `json:"expiresAt,omitempty"` // OAuth only (unix timestamp)
+	EnvVar       string `json:"envVar"`
+	Value        string `json:"value"`
+	Provider     string `json:"provider"`
+	AuthType     string `json:"authType"` // "api_key" or "oauth"
+	AgentVisible bool   `json:"agentVisible"`
+	ExpiresAt    *int64 `json:"expiresAt,omitempty"` // OAuth only (unix timestamp)
 }
 
 // Manager holds the current set of credentials received via the request header.
@@ -40,9 +41,24 @@ func (m *Manager) Snapshot() map[string]string {
 
 	out := make(map[string]string, len(m.creds))
 	for _, cred := range m.creds {
+		if !cred.AgentVisible {
+			continue
+		}
 		out[cred.EnvVar] = cred.Value
 	}
 	return out
+}
+
+// VisibleGet returns an agent-visible credential for the given environment variable name, or nil if not found.
+func (m *Manager) VisibleGet(envVarName string) *EnvVar {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for i := range m.creds {
+		if m.creds[i].EnvVar == envVarName && m.creds[i].AgentVisible {
+			return &m.creds[i]
+		}
+	}
+	return nil
 }
 
 // Apply parses the credentials header, stores them in memory if changed,
@@ -87,10 +103,32 @@ func parseHeader(headerValue string) []EnvVar {
 		return nil
 	}
 
-	var creds []EnvVar
-	if err := json.Unmarshal([]byte(headerValue), &creds); err != nil {
+	var raw []struct {
+		EnvVar       string `json:"envVar"`
+		Value        string `json:"value"`
+		Provider     string `json:"provider"`
+		AuthType     string `json:"authType"`
+		AgentVisible *bool  `json:"agentVisible"`
+		ExpiresAt    *int64 `json:"expiresAt,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(headerValue), &raw); err != nil {
 		log.Printf("credentials: failed to parse header: %v", err)
 		return nil
+	}
+	creds := make([]EnvVar, 0, len(raw))
+	for _, entry := range raw {
+		agentVisible := true
+		if entry.AgentVisible != nil {
+			agentVisible = *entry.AgentVisible
+		}
+		creds = append(creds, EnvVar{
+			EnvVar:       entry.EnvVar,
+			Value:        entry.Value,
+			Provider:     entry.Provider,
+			AuthType:     entry.AuthType,
+			AgentVisible: agentVisible,
+			ExpiresAt:    entry.ExpiresAt,
+		})
 	}
 	return creds
 }

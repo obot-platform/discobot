@@ -2,7 +2,6 @@ import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 
 import { useAppContext } from "$lib/context/app-context.svelte";
-import { createSessionEnvSetsDomain } from "$lib/session/domains/session-env-sets.svelte";
 import { createSessionFilesDomain } from "$lib/session/domains/session-files.svelte";
 import { createSessionHooksDomain } from "$lib/session/domains/session-hooks.svelte";
 import { createSessionServicesDomain } from "$lib/session/domains/session-services.svelte";
@@ -14,7 +13,6 @@ import type {
 } from "$lib/session/session-context.types";
 import { DESKTOP_SERVICE_ID } from "$lib/shell-types";
 import { createSessionViewState } from "$lib/session/view/create-session-view-state.svelte";
-import { EnvSetStore } from "$lib/store/env-sets.store.svelte";
 import { ThreadStore } from "$lib/store/threads.store.svelte";
 
 const SESSION_CONTEXT_KEY = Symbol.for("discobot-ui-session-context");
@@ -44,7 +42,6 @@ function createSessionContext(sessionId: string): SessionContextValue {
 
 	const stores: SessionStores = {
 		threads: new ThreadStore(),
-		envSets: new EnvSetStore(),
 	};
 
 	const filesDomain = createSessionFilesDomain({
@@ -101,14 +98,6 @@ function createSessionContext(sessionId: string): SessionContextValue {
 		},
 	});
 
-	const envSets = createSessionEnvSetsDomain({
-		store: stores.envSets,
-		sessionId,
-		hasSession: () => hasSession,
-		getSession: () => current,
-		reloadSession: () => app.sessions.reloadSession(sessionId),
-	});
-
 	const hooks = createSessionHooksDomain({
 		sessionId,
 		hasSession: () => hasSession,
@@ -133,7 +122,6 @@ function createSessionContext(sessionId: string): SessionContextValue {
 			await Promise.all([
 				filesDomain.refresh(),
 				services.refresh(),
-				envSets.refresh(),
 				hooks.refresh(),
 			]);
 			loaded = true;
@@ -166,7 +154,6 @@ function createSessionContext(sessionId: string): SessionContextValue {
 		stores,
 		ui,
 		threads,
-		envSets,
 		hooks,
 		files: filesDomain,
 		services,

@@ -73,7 +73,7 @@ type Executor struct {
 	envLookup func(key string) string
 
 	// envSnapshot is an optional source of the full current request-scoped
-	// environment (e.g. credentials and active EnvSet variables). Bash uses it
+	// environment (e.g. credentials visible to subprocesses). Bash uses it
 	// to merge request-scoped variables into its process environment.
 	envSnapshot func() map[string]string
 }

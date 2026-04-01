@@ -213,14 +213,16 @@ func (h *Handler) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	cfg.Name = req.Name
-	cfg.NameSource = thread.ThreadNameSourceUser
+	if trimmedName := strings.TrimSpace(req.Name); trimmedName != "" {
+		cfg.Name = trimmedName
+		cfg.NameSource = thread.ThreadNameSourceUser
+	}
 	if err := store.SaveConfig(threadID, cfg); err != nil {
 		h.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	h.JSON(w, http.StatusOK, h.threadResponse(threadID, cfg, req.Name))
+	h.JSON(w, http.StatusOK, h.threadResponse(threadID, cfg, threadID))
 }
 
 // DeleteThread handles DELETE /threads/{id} — removes a thread.

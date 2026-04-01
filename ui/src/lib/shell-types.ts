@@ -89,18 +89,6 @@ export type ServiceItem = {
 	exitCode?: number;
 };
 
-export type EnvSetInfo = {
-	id: string;
-	projectId: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-};
-
-export type EnvSetWithVars = EnvSetInfo & {
-	envVars: Record<string, string>;
-};
-
 export type SessionSummary = {
 	id: string;
 	name: string;
@@ -213,7 +201,6 @@ export type SessionData = {
 	model?: Session["model"];
 	reasoning?: Session["reasoning"];
 	mode?: Session["mode"];
-	activeEnvSetIds?: Session["activeEnvSetIds"];
 	baseBranch: string;
 	baseCommit: string;
 	references: SessionReferences;

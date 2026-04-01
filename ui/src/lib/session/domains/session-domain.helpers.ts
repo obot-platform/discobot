@@ -9,7 +9,6 @@ import type {
 } from "$lib/api-types";
 import type { DynamicToolPart } from "$lib/components/ai/types";
 import type {
-	EnvSetWithVars,
 	HooksStatus,
 	PlanEntry,
 	ServiceItem,
@@ -517,14 +516,4 @@ export function mergeHookOutput(
 		...outputById,
 		[hookId]: response.output,
 	};
-}
-
-export function getActiveEnvSets(
-	envSets: EnvSetWithVars[],
-	activeIds: string[],
-): EnvSetWithVars[] {
-	const byId = new Map(envSets.map((envSet) => [envSet.id, envSet]));
-	return activeIds
-		.map((envSetId) => byId.get(envSetId))
-		.filter((envSet): envSet is EnvSetWithVars => !!envSet);
 }

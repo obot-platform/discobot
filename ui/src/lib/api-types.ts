@@ -142,8 +142,6 @@ export interface Session {
 	reasoning?: string;
 	/** Permission mode: "plan" for planning mode, or "build" for normal execution */
 	mode?: string;
-	/** IDs of the active env sets for this session (in order; later sets override earlier on key conflicts) */
-	activeEnvSetIds?: string[];
 }
 
 // Workspace status values representing the lifecycle of a workspace
@@ -366,6 +364,11 @@ export interface Icons {
 
 export type CredentialAuthType = "api_key" | "id" | "oauth";
 
+export interface CredentialEnvVar {
+	key: string;
+	value: string;
+}
+
 export interface OAuthData {
 	access?: string;
 	refresh?: string;
@@ -392,17 +395,39 @@ export interface CredentialInfo {
 	id: string;
 	name: string;
 	provider: string;
+	description?: string;
 	authType: CredentialAuthType;
 	isConfigured: boolean;
+	agentVisible: boolean;
+	envKeys?: string[];
+	envVars?: CredentialEnvVar[];
 	expiresAt?: string; // For OAuth credentials
 	updatedAt?: string;
 }
 
 export interface CreateCredentialRequest {
-	provider: string;
+	provider?: string;
+	credentialId?: string;
+	name: string;
+	description?: string;
 	authType: CredentialAuthType;
 	apiKey?: string;
+	envVars?: CredentialEnvVar[];
+	agentVisible?: boolean;
 	oauthData?: OAuthData;
+}
+
+export interface SessionCredentialAssignment {
+	credentialId: string;
+	agentVisible: boolean;
+	credential: CredentialInfo;
+}
+
+export interface SetSessionCredentialsRequest {
+	credentials: Array<{
+		credentialId: string;
+		agentVisible: boolean;
+	}>;
 }
 
 export interface OAuthExchangeRequest {
@@ -424,24 +449,6 @@ export interface OAuthRefreshResponse {
 	success: boolean;
 	expiresAt?: string;
 	expiresIn?: number;
-}
-
-// ============================================================================
-// Env Set Types
-// ============================================================================
-
-/** Env set metadata (no secrets) — returned by list endpoint */
-export interface EnvSetInfo {
-	id: string;
-	projectId: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-}
-
-/** Env set with decrypted env vars — returned by get/create/update endpoints */
-export interface EnvSetWithVars extends EnvSetInfo {
-	envVars: Record<string, string>;
 }
 
 // GitHub Copilot OAuth types
@@ -639,7 +646,7 @@ export interface CreateThreadRequest {
 }
 
 export interface UpdateThreadRequest {
-	name: string;
+	name?: string;
 }
 
 export interface DeleteThreadResponse {

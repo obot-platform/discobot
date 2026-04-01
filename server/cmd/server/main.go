@@ -213,12 +213,16 @@ func main() {
 	if sandboxProvider != nil && cfg.SSHEnabled {
 		// Create sandbox service for UserInfoFetcher
 		sshSandboxSvc := service.NewSandboxService(s, sandboxProvider, cfg, nil, nil, nil, nil)
-		// Create env set service for EnvVarFetcher (injects active env set vars into SSH sessions)
+		// Create env var services for SSH sessions.
 		var sshEnvVarFetcher ssh.EnvVarFetcher
-		if sshEnvSetSvc, envSetErr := service.NewEnvSetService(s, cfg); envSetErr != nil {
-			log.Printf("Warning: Failed to create env set service for SSH server: %v", envSetErr)
+		sshEnvVarAdapter := &sshEnvVarAdapter{}
+		if sshCredSvc, credErr := service.NewCredentialService(s, cfg); credErr != nil {
+			log.Printf("Warning: Failed to create credential service for SSH server: %v", credErr)
 		} else {
-			sshEnvVarFetcher = sshEnvSetSvc
+			sshEnvVarAdapter.credSvc = sshCredSvc
+		}
+		if sshEnvVarAdapter.credSvc != nil {
+			sshEnvVarFetcher = sshEnvVarAdapter
 		}
 		sshServer, err = ssh.New(&ssh.Config{
 			Address:           fmt.Sprintf(":%d", cfg.SSHPort),
@@ -259,11 +263,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create credential service for dispatcher: %v", err)
 			}
-			envSetSvc, err := service.NewEnvSetService(s, cfg)
-			if err != nil {
-				log.Fatalf("Failed to create env set service for dispatcher: %v", err)
-			}
-			credFetcher := service.MakeCredentialFetcher(s, credSvc, envSetSvc)
+			credFetcher := service.MakeCredentialFetcher(s, credSvc)
 			dispSandboxSvc = service.NewSandboxService(s, sandboxProvider, cfg, credFetcher, eventBroker, jobQueue, connTracker)
 			sessionSvc = service.NewSessionService(s, gitSvc, sandboxProvider, dispSandboxSvc, eventBroker, jobQueue)
 			dispSandboxSvc.SetSessionInitializer(sessionSvc)
@@ -994,17 +994,6 @@ func main() {
 						},
 					})
 
-					sidReg.Register(r.With(middleware.EnvSetsOwnedByProject(s)), routes.Route{
-						Method: "PUT", Pattern: "/env-set",
-						Handler: h.SetSessionActiveEnvSet,
-						Meta: routes.Meta{
-							Group:       "Sessions",
-							Description: "Set active env sets for session",
-							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}},
-							Body:        map[string]any{"envSetIds": []string{"abc123"}},
-						},
-					})
-
 					sidReg.Register(r, routes.Route{
 						Method: "GET", Pattern: "/files",
 						Handler: h.ListSessionFiles,
@@ -1216,6 +1205,27 @@ func main() {
 							Group:       "Chat",
 							Description: "Submit answers to a pending AskUserQuestion for a specific session thread",
 							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "threadId", Example: "thread-1"}, {Name: "questionId", Example: "tool-use-id"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "GET", Pattern: "/credentials",
+						Handler: h.ListSessionCredentialAssignments,
+						Meta: routes.Meta{
+							Group:       "Credentials",
+							Description: "List session credential assignments",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
+						Method: "PUT", Pattern: "/credentials",
+						Handler: h.SetSessionCredentialAssignments,
+						Meta: routes.Meta{
+							Group:       "Credentials",
+							Description: "Replace session credential assignments",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}},
+							Body:        map[string]any{"credentials": []map[string]any{{"credentialId": "cred-1", "agentVisible": false}}},
 						},
 					})
 
@@ -1526,63 +1536,6 @@ func main() {
 					},
 				})
 			})
-
-			// Env Sets
-			r.Route("/env-sets", func(r chi.Router) {
-				envSetReg := projReg.WithPrefix("/env-sets")
-
-				envSetReg.Register(r, routes.Route{
-					Method: "GET", Pattern: "/",
-					Handler: h.ListEnvSets,
-					Meta: routes.Meta{
-						Group:       "EnvSets",
-						Description: "List env sets (metadata only)",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-					},
-				})
-
-				envSetReg.Register(r, routes.Route{
-					Method: "POST", Pattern: "/",
-					Handler: h.CreateEnvSet,
-					Meta: routes.Meta{
-						Group:       "EnvSets",
-						Description: "Create env set",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"name": "Production", "envVars": map[string]string{"API_URL": "https://api.example.com"}},
-					},
-				})
-
-				envSetReg.Register(r.With(middleware.EnvSetOwnedByProject(s)), routes.Route{
-					Method: "GET", Pattern: "/{envSetId}",
-					Handler: h.GetEnvSet,
-					Meta: routes.Meta{
-						Group:       "EnvSets",
-						Description: "Get env set with decrypted vars",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "envSetId", Example: "abc123"}},
-					},
-				})
-
-				envSetReg.Register(r.With(middleware.EnvSetOwnedByProject(s)), routes.Route{
-					Method: "PUT", Pattern: "/{envSetId}",
-					Handler: h.UpdateEnvSet,
-					Meta: routes.Meta{
-						Group:       "EnvSets",
-						Description: "Update env set",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "envSetId", Example: "abc123"}},
-						Body:        map[string]any{"name": "Production", "envVars": map[string]string{"API_URL": "https://api.example.com"}},
-					},
-				})
-
-				envSetReg.Register(r.With(middleware.EnvSetOwnedByProject(s)), routes.Route{
-					Method: "DELETE", Pattern: "/{envSetId}",
-					Handler: h.DeleteEnvSet,
-					Meta: routes.Meta{
-						Group:       "EnvSets",
-						Description: "Delete env set",
-						Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "envSetId", Example: "abc123"}},
-					},
-				})
-			})
 		})
 	})
 
@@ -1713,4 +1666,16 @@ func (a *sshUserInfoAdapter) GetUserInfo(ctx context.Context, sessionID string) 
 		return "", 0, 0, err
 	}
 	return userInfo.Username, userInfo.UID, userInfo.GID, nil
+}
+
+// sshEnvVarAdapter loads visible credentials for SSH subprocesses.
+type sshEnvVarAdapter struct {
+	credSvc *service.CredentialService
+}
+
+func (a *sshEnvVarAdapter) GetEnvVarsForSession(ctx context.Context, sessionID string) (map[string]string, error) {
+	if a.credSvc == nil {
+		return map[string]string{}, nil
+	}
+	return a.credSvc.GetVisibleEnvVarsForSession(ctx, sessionID)
 }

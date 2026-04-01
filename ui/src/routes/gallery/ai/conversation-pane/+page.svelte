@@ -658,8 +658,9 @@
 						</p>
 						<p>
 							The composer is the heavy part — it pulls model selection,
-							workspace setup, files, hooks, env sets, submit/cancel behavior,
-							and pending session state from app/session/thread context.
+							workspace setup, files, hooks, session credentials, submit/cancel
+							behavior, and pending session state from app/session/thread
+							context.
 						</p>
 						<p
 							class="rounded-lg border bg-muted/30 p-3 font-mono text-xs text-foreground"
