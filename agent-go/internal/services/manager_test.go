@@ -29,7 +29,7 @@ func TestStopServiceKillsEntireProcessGroup(t *testing.T) {
 
 	serviceID := "group-stop-test"
 	scriptPath := filepath.Join(servicesDir, serviceID+".sh")
-	script := fmt.Sprintf(`#!/bin/bash
+	script := fmt.Sprintf(`#!/usr/bin/env bash
 set -eu
 pid_dir=%q
 

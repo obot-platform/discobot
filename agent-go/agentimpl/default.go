@@ -298,12 +298,33 @@ func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		}
 
 		// Start new turn.
+		startEmitted := false
 		for chunk, chunkErr := range thread.RunTurn(promptCtx, provider, env.executor, a.store, threadID, effectiveLeafID, cfg, toolCtx) {
-			if !threadNameBg.flush(false, yield) {
-				return
+			// Only flush the background thread name after the start chunk has
+			// been emitted so the name update always follows the start of
+			// streaming. Flushing before the start chunk can race on slow
+			// schedulers (e.g. Windows arm64 CI) and emit the name before the
+			// assistant even begins its response.
+			if startEmitted {
+				if !threadNameBg.flush(false, yield) {
+					return
+				}
+			}
+			// Before the response-finish chunk, block until the background
+			// name is available.  This guarantees the name update precedes the
+			// finish marker regardless of how quickly the naming completed.
+			if _, isFinish := chunk.(message.ResponseFinishChunk); isFinish {
+				if !threadNameBg.flush(true, yield) {
+					return
+				}
 			}
 			if !yield(chunk, chunkErr) {
 				return
+			}
+			if !startEmitted {
+				if _, ok := chunk.(message.StartChunk); ok {
+					startEmitted = true
+				}
 			}
 		}
 		if promptCtx.Err() != nil {

@@ -21,7 +21,12 @@ type toolCaptureProvider struct {
 func (p *toolCaptureProvider) ID() string { return "mock" }
 
 func (p *toolCaptureProvider) Complete(_ context.Context, req providers.CompleteRequest) iter.Seq2[message.ProviderMessageChunk, error] {
-	p.lastRequest = req
+	// Skip the background thread-naming request so it doesn't overwrite the
+	// main request's tools (both Complete calls race; the naming request has
+	// no user parts and doesn't carry tool definitions).
+	if !isThreadNameRequest(req) {
+		p.lastRequest = req
+	}
 	return func(yield func(message.ProviderMessageChunk, error) bool) {
 		yield(message.StreamStartChunk{}, nil)
 		yield(message.TextStartChunk{ID: "t1"}, nil)
