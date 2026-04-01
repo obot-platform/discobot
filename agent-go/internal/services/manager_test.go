@@ -29,16 +29,21 @@ func TestStopServiceKillsEntireProcessGroup(t *testing.T) {
 
 	serviceID := "group-stop-test"
 	scriptPath := filepath.Join(servicesDir, serviceID+".sh")
-	script := fmt.Sprintf(`#!/usr/bin/env bash
+	// Use #!/bin/sh and POSIX-only constructs so the test works on macOS
+	// (system bash is 3.2, which lacks $BASHPID; $PPID is POSIX-standard).
+	// For the top-level script $$ is the PID.  For subshells we can't use $$
+	// (it gives the parent's PID), so we spawn a child sh whose $PPID is the
+	// bash subshell's PID.
+	script := fmt.Sprintf(`#!/bin/sh
 set -eu
 pid_dir=%q
 
-printf '%%s\n' "$BASHPID" > "$pid_dir/parent.pid"
+printf '%%s\n' "$$" > "$pid_dir/parent.pid"
 
 (
-  printf '%%s\n' "$BASHPID" > "$pid_dir/child.pid"
+  sh -c 'printf "%%s\n" "$PPID"' > "$pid_dir/child.pid"
   (
-    printf '%%s\n' "$BASHPID" > "$pid_dir/grandchild.pid"
+    sh -c 'printf "%%s\n" "$PPID"' > "$pid_dir/grandchild.pid"
     exec tail -f /dev/null
   ) &
   wait
