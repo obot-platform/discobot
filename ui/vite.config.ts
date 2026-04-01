@@ -32,6 +32,8 @@ export default defineConfig({
 		// Increase chunk size warning limit for the Svelte UI bundle.
 		chunkSizeWarningLimit: 4000,
 		rollupOptions: {
+			// Limit parallel file reads to reduce peak memory during the build.
+			maxParallelFileOps: 20,
 			onwarn(warning, defaultHandler) {
 				defaultHandler(warning);
 			},
@@ -39,6 +41,15 @@ export default defineConfig({
 				manualChunks(id) {
 					if (!id.includes("node_modules")) {
 						return;
+					}
+
+					// Isolate Monaco into its own chunk so Rollup can GC the rest
+					// of the module graph before processing it. Monaco's source is
+					// ~75 MB and includes 5 large worker bundles (including the full
+					// TypeScript compiler), making it the primary driver of OOM
+					// failures during CI builds.
+					if (id.includes("/monaco-editor/")) {
+						return "monaco-editor";
 					}
 
 					if (
