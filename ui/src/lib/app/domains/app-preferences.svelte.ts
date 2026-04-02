@@ -1,6 +1,7 @@
 import {
 	CHAT_WIDTH_MODE_STORAGE_KEY,
 	DEFAULT_MODEL_STORAGE_KEY,
+	DEFAULT_PREFERRED_IDE,
 	PINNED_PROMPTS_STORAGE_KEY,
 	PROMPT_HISTORY_STORAGE_KEY,
 	PREFERRED_IDE_STORAGE_KEY,
@@ -49,9 +50,7 @@ export function createAppPreferencesDomain(
 	let theme = $state<ThemeMode>("system");
 	let resolvedTheme = $state<ResolvedTheme>("dark");
 	let colorScheme = $state<ThemeColorScheme>("default");
-	let preferredIde = $state<PreferredIde>(
-		args.bootstrap.ideOptions[0]?.id ?? "cursor",
-	);
+	let preferredIde = $state<PreferredIde>(DEFAULT_PREFERRED_IDE);
 	let chatWidthMode = $state<ChatWidthMode>("constrained");
 	let defaultModel = $state("");
 	let sidebarRecentOpen = $state(true);

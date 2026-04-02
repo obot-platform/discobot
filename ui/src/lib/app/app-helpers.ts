@@ -23,6 +23,7 @@ export const RECENT_THREADS_STORAGE_KEY = "recent.threads";
 export const PROMPT_HISTORY_STORAGE_KEY = "discobot:composer-history";
 export const PINNED_PROMPTS_STORAGE_KEY = "discobot:composer-history:pinned";
 export const RECENT_SESSIONS_LIMIT = 4;
+export const DEFAULT_PREFERRED_IDE: PreferredIde = "zed";
 
 export type RecentThreadEntry = {
 	sessionId: string;
@@ -50,11 +51,11 @@ export function detectWindowControlsSide(): WindowControlsSide {
 
 export function readPreferredIde(): PreferredIde {
 	if (typeof window === "undefined") {
-		return "cursor";
+		return DEFAULT_PREFERRED_IDE;
 	}
 
 	const stored = window.localStorage.getItem(PREFERRED_IDE_STORAGE_KEY);
-	return isPreferredIde(stored) ? stored : "cursor";
+	return isPreferredIde(stored) ? stored : DEFAULT_PREFERRED_IDE;
 }
 
 export function readChatWidthMode(): ChatWidthMode {

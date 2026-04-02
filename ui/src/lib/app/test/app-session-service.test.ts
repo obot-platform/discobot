@@ -4,7 +4,9 @@ import test from "node:test";
 import type { Session } from "$lib/api-types";
 import type { SessionSummary } from "$lib/shell-types";
 import {
+	PREFERRED_IDE_STORAGE_KEY,
 	RECENT_THREADS_STORAGE_KEY,
+	readPreferredIde,
 	reconcileRecentThreadsForSession,
 	reconcileRecentThreadsWithSessions,
 	readRecentThreadEntries,
@@ -77,6 +79,19 @@ function withLocalStorage(run: (storage: StorageLike) => void) {
 		windowWithStorage.window = previousWindow;
 	}
 }
+
+test("readPreferredIde defaults to Zed when nothing is stored", () => {
+	withLocalStorage(() => {
+		assert.equal(readPreferredIde(), "zed");
+	});
+});
+
+test("readPreferredIde returns the stored IDE when present", () => {
+	withLocalStorage((storage) => {
+		storage.setItem(PREFERRED_IDE_STORAGE_KEY, "cursor");
+		assert.equal(readPreferredIde(), "cursor");
+	});
+});
 
 test("getNextSelectedSessionId keeps the current selection when another session is deleted", () => {
 	assert.equal(
