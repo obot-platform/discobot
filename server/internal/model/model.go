@@ -293,6 +293,7 @@ type Credential struct {
 	AuthType      string    `gorm:"column:auth_type;not null;type:text" json:"auth_type"`
 	EncryptedData []byte    `gorm:"column:encrypted_data" json:"-"`
 	IsConfigured  bool      `gorm:"column:is_configured;default:false" json:"is_configured"`
+	Inactive      bool      `gorm:"column:inactive;not null;default:false" json:"inactive"`
 	AgentVisible  bool      `gorm:"column:agent_visible;not null;default:false" json:"agent_visible"`
 	CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt     time.Time `gorm:"autoUpdateTime" json:"updated_at"`

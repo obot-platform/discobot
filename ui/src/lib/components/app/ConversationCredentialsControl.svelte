@@ -28,7 +28,11 @@
 	let loadedSessionId = $state<string | null>(null);
 
 	const visibleCount = $derived.by(
-		() => assignments.filter((assignment) => assignment.agentVisible).length,
+		() =>
+			assignments.filter(
+				(assignment) =>
+					assignment.agentVisible && !assignment.credential.inactive,
+			).length,
 	);
 
 	async function loadAssignments() {
@@ -95,7 +99,9 @@
 	async function toggleVisibility(credentialId: string) {
 		const nextAssignments = assignments.map((assignment) =>
 			assignment.credentialId === credentialId
-				? { ...assignment, agentVisible: !assignment.agentVisible }
+				? assignment.credential.inactive
+					? assignment
+					: { ...assignment, agentVisible: !assignment.agentVisible }
 				: assignment,
 		);
 		await saveAssignments(nextAssignments);
@@ -159,10 +165,14 @@
 					<div class="min-w-0 flex-1">
 						<div class="truncate">{credentialDisplayName(assignment)}</div>
 						<div class="truncate text-[11px] text-muted-foreground">
-							{assignment.agentVisible ? "Visible to LLM" : "Internal only"}
+							{credential.inactive
+								? "Inactive"
+								: assignment.agentVisible
+									? "Visible to LLM"
+									: "Internal only"}
 						</div>
 					</div>
-					{#if assignment.agentVisible}
+					{#if assignment.agentVisible && !credential.inactive}
 						<CheckIcon class="size-3.5 text-primary" />
 					{/if}
 				</DropdownMenuItem>
@@ -210,8 +220,12 @@
 									onclick={() => {
 										void toggleVisibility(credential.id);
 									}}
+									disabled={credential.inactive}
 								>
-									{#if assignment.agentVisible}
+									{#if credential.inactive}
+										<EyeOffIcon class="size-3.5" />
+										Inactive
+									{:else if assignment.agentVisible}
 										<EyeIcon class="size-3.5" />
 										Visible
 									{:else}

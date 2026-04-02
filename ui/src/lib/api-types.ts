@@ -398,6 +398,7 @@ export interface CredentialInfo {
 	description?: string;
 	authType: CredentialAuthType;
 	isConfigured: boolean;
+	inactive: boolean;
 	agentVisible: boolean;
 	envKeys?: string[];
 	envVars?: CredentialEnvVar[];
@@ -414,6 +415,7 @@ export interface CreateCredentialRequest {
 	apiKey?: string;
 	envVars?: CredentialEnvVar[];
 	agentVisible?: boolean;
+	inactive?: boolean;
 	oauthData?: OAuthData;
 }
 
@@ -501,19 +503,20 @@ export interface GitHubPollResponse {
 }
 
 // Codex (ChatGPT) OAuth types
-export interface CodexAuthorizeResponse {
-	url: string;
-	verifier: string;
-	state: string;
+export interface CodexDeviceCodeResponse {
+	deviceAuthId: string;
+	userCode: string;
+	verificationUri: string;
+	interval: number;
 }
 
-export interface CodexExchangeRequest {
-	code: string;
-	verifier: string;
+export interface CodexPollRequest {
+	deviceAuthId: string;
+	userCode: string;
 }
 
-export interface CodexExchangeResponse {
-	success: boolean;
+export interface CodexPollResponse {
+	status: "pending" | "success" | "error";
 	error?: string;
 	accountId?: string;
 }

@@ -29,7 +29,7 @@ func TestGetCredentialTypesIncludesOpenAIOAuthBackedByCodex(t *testing.T) {
 	if got, want := openAIOAuth.OAuth.Provider, "codex"; got != want {
 		t.Fatalf("expected oauth provider %q, got %q", want, got)
 	}
-	if got, want := openAIOAuth.OAuth.Kind, OAuthKindAuthorizationCode; got != want {
+	if got, want := openAIOAuth.OAuth.Kind, OAuthKindDeviceCode; got != want {
 		t.Fatalf("expected oauth kind %q, got %q", want, got)
 	}
 }

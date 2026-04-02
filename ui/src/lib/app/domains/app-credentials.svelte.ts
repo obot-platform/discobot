@@ -1,8 +1,9 @@
 import { api } from "$lib/api-client";
 import type { AppCredentials } from "$lib/app/app-context.types";
 import type {
-	CodexAuthorizeResponse,
-	CodexExchangeRequest,
+	CodexDeviceCodeResponse,
+	CodexPollRequest,
+	CodexPollResponse,
 	CredentialAuthType,
 	CredentialInfo,
 	GitHubDeviceCodeRequest,
@@ -34,6 +35,7 @@ export function createAppCredentialsDomain(
 		apiKey?: string;
 		envVars?: { key: string; value: string }[];
 		agentVisible?: boolean;
+		inactive?: boolean;
 	}): Promise<CredentialInfo> => {
 		const credential = await store.save(data);
 		void args.refreshModels();
@@ -82,11 +84,14 @@ export function createAppCredentialsDomain(
 			}
 			return response;
 		},
-		codexAuthorize: (): Promise<CodexAuthorizeResponse> => api.codexAuthorize(),
-		codexExchange: async (data: CodexExchangeRequest) => {
-			const response = await api.codexExchange(data);
-			await store.fetch();
-			void args.refreshModels();
+		codexDeviceCode: (): Promise<CodexDeviceCodeResponse> =>
+			api.codexDeviceCode(),
+		codexPoll: async (data: CodexPollRequest): Promise<CodexPollResponse> => {
+			const response = await api.codexPoll(data);
+			if (response.status === "success") {
+				await store.fetch();
+				void args.refreshModels();
+			}
 			return response;
 		},
 	};

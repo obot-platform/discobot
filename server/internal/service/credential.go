@@ -95,6 +95,7 @@ type CredentialInfo struct {
 	Description  string         `json:"description,omitempty"`
 	AuthType     string         `json:"authType"`
 	IsConfigured bool           `json:"isConfigured"`
+	Inactive     bool           `json:"inactive"`
 	AgentVisible bool           `json:"agentVisible"`
 	EnvKeys      []string       `json:"envKeys,omitempty"`
 	EnvVars      []SecretEnvVar `json:"envVars,omitempty"`
@@ -177,7 +178,7 @@ func (s *CredentialService) GetByID(ctx context.Context, projectID, credentialID
 }
 
 // UpdateMetadata updates non-secret credential fields without changing stored secret values.
-func (s *CredentialService) UpdateMetadata(ctx context.Context, projectID, credentialID, name, description string, agentVisible bool) (*CredentialInfo, error) {
+func (s *CredentialService) UpdateMetadata(ctx context.Context, projectID, credentialID, name, description string, agentVisible bool, inactive bool) (*CredentialInfo, error) {
 	cred, err := s.store.GetCredentialByIDForProject(ctx, projectID, credentialID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -196,6 +197,7 @@ func (s *CredentialService) UpdateMetadata(ctx context.Context, projectID, crede
 		cred.Description = &description
 	}
 	cred.AgentVisible = agentVisible
+	cred.Inactive = inactive
 	if err := s.store.UpdateCredential(ctx, cred); err != nil {
 		return nil, err
 	}
@@ -236,6 +238,9 @@ func (s *CredentialService) ListSessionAssignments(ctx context.Context, projectI
 			agentVisible = assignment.AgentVisible
 		}
 		info := s.toCredentialInfo(cred)
+		if info.Inactive {
+			agentVisible = false
+		}
 		info.AgentVisible = agentVisible
 		result = append(result, SessionCredentialAssignmentInfo{
 			CredentialID: cred.ID,
@@ -282,32 +287,32 @@ func (s *CredentialService) SetSessionAssignments(ctx context.Context, projectID
 
 // SetAPIKey creates or updates an API key credential.
 func (s *CredentialService) SetAPIKey(ctx context.Context, projectID, provider, name, apiKey string) (*CredentialInfo, error) {
-	return s.SetAPIKeyWithMetadata(ctx, projectID, provider, name, "", apiKey, defaultCredentialAgentVisible(provider))
+	return s.SetAPIKeyWithMetadata(ctx, projectID, provider, name, "", apiKey, defaultCredentialAgentVisible(provider), false)
 }
 
 // SetAPIKeyWithMetadata creates or updates an API key credential with explicit metadata.
-func (s *CredentialService) SetAPIKeyWithMetadata(ctx context.Context, projectID, provider, name, description, apiKey string, agentVisible bool) (*CredentialInfo, error) {
+func (s *CredentialService) SetAPIKeyWithMetadata(ctx context.Context, projectID, provider, name, description, apiKey string, agentVisible bool, inactive bool) (*CredentialInfo, error) {
 	return s.setSecretCredential(ctx, projectID, provider, name, description, AuthTypeAPIKey, []SecretEnvVar{{
 		Key:   firstProviderEnvVar(provider),
 		Value: apiKey,
-	}}, agentVisible)
+	}}, agentVisible, inactive)
 }
 
 // SetID creates or updates an ID credential.
 func (s *CredentialService) SetID(ctx context.Context, projectID, provider, name, value string) (*CredentialInfo, error) {
-	return s.SetIDWithMetadata(ctx, projectID, provider, name, "", value, defaultCredentialAgentVisible(provider))
+	return s.SetIDWithMetadata(ctx, projectID, provider, name, "", value, defaultCredentialAgentVisible(provider), false)
 }
 
 // SetIDWithMetadata creates or updates an ID credential with explicit metadata.
-func (s *CredentialService) SetIDWithMetadata(ctx context.Context, projectID, provider, name, description, value string, agentVisible bool) (*CredentialInfo, error) {
+func (s *CredentialService) SetIDWithMetadata(ctx context.Context, projectID, provider, name, description, value string, agentVisible bool, inactive bool) (*CredentialInfo, error) {
 	return s.setSecretCredential(ctx, projectID, provider, name, description, AuthTypeID, []SecretEnvVar{{
 		Key:   firstProviderEnvVar(provider),
 		Value: value,
-	}}, agentVisible)
+	}}, agentVisible, inactive)
 }
 
 // SetCustomCredential creates or updates a custom env bundle credential.
-func (s *CredentialService) SetCustomCredential(ctx context.Context, projectID, credentialID, name, description string, envVars []SecretEnvVar, agentVisible bool) (*CredentialInfo, error) {
+func (s *CredentialService) SetCustomCredential(ctx context.Context, projectID, credentialID, name, description string, envVars []SecretEnvVar, agentVisible bool, inactive bool) (*CredentialInfo, error) {
 	provider := customProviderPrefix + uuid.NewString()
 	if credentialID != "" {
 		existing, err := s.store.GetCredentialByIDForProject(ctx, projectID, credentialID)
@@ -318,10 +323,10 @@ func (s *CredentialService) SetCustomCredential(ctx context.Context, projectID, 
 			provider = existing.Provider
 		}
 	}
-	return s.setSecretCredential(ctx, projectID, provider, name, description, AuthTypeAPIKey, envVars, agentVisible)
+	return s.setSecretCredential(ctx, projectID, provider, name, description, AuthTypeAPIKey, envVars, agentVisible, inactive)
 }
 
-func (s *CredentialService) setSecretCredential(ctx context.Context, projectID, provider, name, description, authType string, envVars []SecretEnvVar, agentVisible bool) (*CredentialInfo, error) {
+func (s *CredentialService) setSecretCredential(ctx context.Context, projectID, provider, name, description, authType string, envVars []SecretEnvVar, agentVisible bool, inactive bool) (*CredentialInfo, error) {
 	if !isValidProvider(provider) {
 		return nil, ErrInvalidProvider
 	}
@@ -360,6 +365,7 @@ func (s *CredentialService) setSecretCredential(ctx context.Context, projectID, 
 		existing.AuthType = authType
 		existing.EncryptedData = encrypted
 		existing.IsConfigured = true
+		existing.Inactive = inactive
 		existing.AgentVisible = agentVisible
 		if err := s.store.UpdateCredential(ctx, existing); err != nil {
 			return nil, err
@@ -377,6 +383,7 @@ func (s *CredentialService) setSecretCredential(ctx context.Context, projectID, 
 		AuthType:      authType,
 		EncryptedData: encrypted,
 		IsConfigured:  true,
+		Inactive:      inactive,
 		AgentVisible:  agentVisible,
 	}
 	if err := s.store.CreateCredential(ctx, cred); err != nil {
@@ -435,6 +442,7 @@ func (s *CredentialService) SetOAuthTokens(ctx context.Context, projectID, provi
 		AuthType:      AuthTypeOAuth,
 		EncryptedData: encrypted,
 		IsConfigured:  true,
+		Inactive:      false,
 		AgentVisible:  defaultCredentialAgentVisible(provider),
 	}
 	if err := s.store.CreateCredential(ctx, cred); err != nil {
@@ -564,6 +572,12 @@ func (s *CredentialService) RefreshOAuthTokens(ctx context.Context, projectID, p
 		if err != nil {
 			return nil, fmt.Errorf("failed to refresh %s token: %w", provider, err)
 		}
+	case ProviderCodex:
+		p := oauth.NewCodexProvider(s.cfg.CodexClientID)
+		newTokenResp, err = p.Refresh(ctx, tokens.RefreshToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to refresh %s token: %w", provider, err)
+		}
 	default:
 		return nil, fmt.Errorf("token refresh not implemented for provider: %s", provider)
 	}
@@ -673,6 +687,9 @@ func (s *CredentialService) mapCredentialsToEnvVars(ctx context.Context, project
 
 	for _, c := range creds {
 		if !c.IsConfigured {
+			continue
+		}
+		if c.Inactive {
 			continue
 		}
 
@@ -910,6 +927,7 @@ func (s *CredentialService) toCredentialInfo(c *model.Credential) CredentialInfo
 		Name:         strings.TrimSpace(c.Name),
 		AuthType:     c.AuthType,
 		IsConfigured: c.IsConfigured,
+		Inactive:     c.Inactive,
 		AgentVisible: c.AgentVisible,
 		CreatedAt:    c.CreatedAt,
 		UpdatedAt:    c.UpdatedAt,

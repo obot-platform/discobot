@@ -49,6 +49,9 @@ func (s *ModelsService) GetModelsForProject(ctx context.Context, projectID strin
 		if !cred.IsConfigured {
 			continue
 		}
+		if cred.Inactive {
+			continue
+		}
 		if strings.HasPrefix(cred.Provider, customProviderPrefix) || strings.HasPrefix(cred.Provider, mcpProviderPrefix) {
 			continue
 		}

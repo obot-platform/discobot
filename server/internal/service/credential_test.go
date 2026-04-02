@@ -55,6 +55,46 @@ func TestGetAllDecrypted_DiscobotID_UsesCorrectEnvVar(t *testing.T) {
 	}
 }
 
+func TestGetAllDecrypted_SkipsInactiveCredentials(t *testing.T) {
+	st := setupTestStore(t)
+	cfg := &config.Config{
+		EncryptionKey: []byte("test-key-32-bytes-long-123456789"),
+	}
+
+	credSvc, err := NewCredentialService(st, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create credential service: %v", err)
+	}
+
+	ctx := context.Background()
+	projectID := "test-project"
+
+	info, err := credSvc.SetAPIKeyWithMetadata(
+		ctx,
+		projectID,
+		ProviderAnthropic,
+		"Anthropic",
+		"",
+		"sk-ant-test-123",
+		true,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("Failed to set API key: %v", err)
+	}
+	if !info.Inactive {
+		t.Fatal("expected credential to be inactive")
+	}
+
+	envVarMappings, err := credSvc.GetAllDecrypted(ctx, projectID)
+	if err != nil {
+		t.Fatalf("Failed to get all decrypted: %v", err)
+	}
+	if len(envVarMappings) != 0 {
+		t.Fatalf("expected inactive credential to be skipped, got %d env vars", len(envVarMappings))
+	}
+}
+
 func TestGetAllDecrypted_AnthropicOAuth_UsesCorrectEnvVar(t *testing.T) {
 	// Create in-memory store
 	st := setupTestStore(t)
@@ -541,7 +581,7 @@ func TestSetCustomCredential_BlankValuesPreserveExistingSecrets(t *testing.T) {
 	created, err := credSvc.SetCustomCredential(ctx, projectID, "", "", "", []SecretEnvVar{
 		{Key: "FOO_TOKEN", Value: "foo-secret"},
 		{Key: "BAR_TOKEN", Value: "bar-secret"},
-	}, false)
+	}, false, false)
 	if err != nil {
 		t.Fatalf("Failed to create custom credential: %v", err)
 	}
@@ -550,7 +590,7 @@ func TestSetCustomCredential_BlankValuesPreserveExistingSecrets(t *testing.T) {
 		{Key: "FOO_TOKEN", Value: ""},
 		{Key: "BAR_TOKEN", Value: "updated-bar-secret"},
 		{Key: "BAZ_TOKEN", Value: ""},
-	}, false)
+	}, false, false)
 	if err != nil {
 		t.Fatalf("Failed to update custom credential: %v", err)
 	}

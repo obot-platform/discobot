@@ -1503,24 +1503,23 @@ func main() {
 
 				// Codex OAuth
 				credReg.Register(r, routes.Route{
-					Method: "POST", Pattern: "/codex/authorize",
-					Handler: h.CodexAuthorize,
+					Method: "POST", Pattern: "/codex/device-code",
+					Handler: h.CodexDeviceCode,
 					Meta: routes.Meta{
 						Group:       "Credentials",
-						Description: "Codex OAuth authorize",
+						Description: "Codex device code",
 						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"redirect_uri": "http://localhost:3000/callback"},
 					},
 				})
 
 				credReg.Register(r, routes.Route{
-					Method: "POST", Pattern: "/codex/exchange",
-					Handler: h.CodexExchange,
+					Method: "POST", Pattern: "/codex/poll",
+					Handler: h.CodexPoll,
 					Meta: routes.Meta{
 						Group:       "Credentials",
-						Description: "Codex OAuth exchange",
+						Description: "Codex device-code poll",
 						Params:      []routes.Param{{Name: "projectId", Example: "local"}},
-						Body:        map[string]any{"code": "", "redirect_uri": "", "code_verifier": ""},
+						Body:        map[string]any{"deviceAuthId": "", "userCode": ""},
 					},
 				})
 

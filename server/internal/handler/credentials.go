@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type CreateCredentialRequest struct {
 	APIKey       string                          `json:"apiKey,omitempty"`
 	EnvVars      []createCredentialEnvVarRequest `json:"envVars,omitempty"`
 	AgentVisible *bool                           `json:"agentVisible,omitempty"`
+	Inactive     *bool                           `json:"inactive,omitempty"`
 }
 
 // GetCredentialTypes returns the credential choices used by the current UI.
@@ -67,6 +69,7 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 	if req.AgentVisible != nil {
 		agentVisible = *req.AgentVisible
 	}
+	inactive := false
 
 	var existingCredential *service.CredentialInfo
 	if req.CredentialID != "" {
@@ -91,6 +94,10 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 		if req.Provider == "" {
 			req.Provider = existingCredential.Provider
 		}
+		inactive = existingCredential.Inactive
+	}
+	if req.Inactive != nil {
+		inactive = *req.Inactive
 	}
 
 	envVars := make([]service.SecretEnvVar, 0, len(req.EnvVars))
@@ -99,7 +106,7 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(envVars) > 0 || req.Provider == "custom" || req.Provider == "" {
-		info, err := h.credentialService.SetCustomCredential(r.Context(), projectID, req.CredentialID, req.Name, req.Description, envVars, agentVisible)
+		info, err := h.credentialService.SetCustomCredential(r.Context(), projectID, req.CredentialID, req.Name, req.Description, envVars, agentVisible, inactive)
 		if err != nil {
 			if errors.Is(err, service.ErrCredentialNotFound) {
 				h.Error(w, http.StatusNotFound, "Credential not found")
@@ -120,7 +127,7 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 	if req.AuthType == "" || req.AuthType == service.AuthTypeAPIKey {
 		if req.APIKey == "" {
 			if req.CredentialID != "" {
-				info, err := h.credentialService.UpdateMetadata(r.Context(), projectID, req.CredentialID, req.Name, req.Description, agentVisible)
+				info, err := h.credentialService.UpdateMetadata(r.Context(), projectID, req.CredentialID, req.Name, req.Description, agentVisible, inactive)
 				if err != nil {
 					if errors.Is(err, service.ErrCredentialNotFound) {
 						h.Error(w, http.StatusNotFound, "Credential not found")
@@ -136,7 +143,7 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		info, err := h.credentialService.SetAPIKeyWithMetadata(r.Context(), projectID, req.Provider, req.Name, req.Description, req.APIKey, agentVisible)
+		info, err := h.credentialService.SetAPIKeyWithMetadata(r.Context(), projectID, req.Provider, req.Name, req.Description, req.APIKey, agentVisible, inactive)
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidProvider) {
 				h.Error(w, http.StatusBadRequest, "Invalid provider")
@@ -153,7 +160,7 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 	if req.AuthType == service.AuthTypeID {
 		if req.APIKey == "" {
 			if req.CredentialID != "" {
-				info, err := h.credentialService.UpdateMetadata(r.Context(), projectID, req.CredentialID, req.Name, req.Description, agentVisible)
+				info, err := h.credentialService.UpdateMetadata(r.Context(), projectID, req.CredentialID, req.Name, req.Description, agentVisible, inactive)
 				if err != nil {
 					if errors.Is(err, service.ErrCredentialNotFound) {
 						h.Error(w, http.StatusNotFound, "Credential not found")
@@ -169,7 +176,7 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		info, err := h.credentialService.SetIDWithMetadata(r.Context(), projectID, req.Provider, req.Name, req.Description, req.APIKey, agentVisible)
+		info, err := h.credentialService.SetIDWithMetadata(r.Context(), projectID, req.Provider, req.Name, req.Description, req.APIKey, agentVisible, inactive)
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidProvider) {
 				h.Error(w, http.StatusBadRequest, "Invalid provider")
@@ -179,6 +186,20 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		h.JSON(w, http.StatusOK, info)
+		return
+	}
+
+	if req.AuthType == service.AuthTypeOAuth && req.CredentialID != "" {
+		info, err := h.credentialService.UpdateMetadata(r.Context(), projectID, req.CredentialID, req.Name, req.Description, agentVisible, inactive)
+		if err != nil {
+			if errors.Is(err, service.ErrCredentialNotFound) {
+				h.Error(w, http.StatusNotFound, "Credential not found")
+				return
+			}
+			h.Error(w, http.StatusInternalServerError, "Failed to update credential")
+			return
+		}
 		h.JSON(w, http.StatusOK, info)
 		return
 	}
@@ -695,46 +716,16 @@ func (h *Handler) GitHubPoll(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CodexAuthorizeRequest is the request for starting Codex OAuth
-type CodexAuthorizeRequest struct {
-	RedirectURI string `json:"redirectUri"`
+type CodexDeviceCodeResponse struct {
+	DeviceAuthID    string `json:"deviceAuthId"`
+	UserCode        string `json:"userCode"`
+	VerificationURI string `json:"verificationUri"`
+	Interval        int    `json:"interval"`
 }
 
-// CodexExchangeRequest is the request for exchanging code for tokens
-type CodexExchangeRequest struct {
-	Code         string `json:"code"`
-	RedirectURI  string `json:"redirectUri"`
-	CodeVerifier string `json:"verifier"`
-}
-
-// CodexAuthorize generates PKCE and returns OAuth URL
-func (h *Handler) CodexAuthorize(w http.ResponseWriter, r *http.Request) {
-	projectID := middleware.GetProjectID(r.Context())
-
-	var req CodexAuthorizeRequest
-	// Allow empty body - use default redirect URI
-	_ = h.DecodeJSON(r, &req)
-
-	// Use default redirect URI if not provided (matches opencode implementation)
-	redirectURI := req.RedirectURI
-	if redirectURI == "" {
-		redirectURI = "http://localhost:1455/auth/callback"
-	}
-
-	provider := oauth.NewCodexProvider(h.cfg.CodexClientID)
-	authResp, err := provider.Authorize(redirectURI)
-	if err != nil {
-		h.Error(w, http.StatusInternalServerError, "Failed to generate authorization URL")
-		return
-	}
-
-	// Try to start the callback server and register this pending auth
-	if h.codexCallbackServer != nil {
-		h.codexCallbackServer.Start() // Optimistically try to start, ignore if fails
-		h.codexCallbackServer.RegisterPending(authResp.State, authResp.Verifier, projectID, redirectURI)
-	}
-
-	h.JSON(w, http.StatusOK, authResp)
+type CodexPollRequest struct {
+	DeviceAuthID string `json:"deviceAuthId"`
+	UserCode     string `json:"userCode"`
 }
 
 // PostMCPToken stores an MCP OAuth token posted by the agent after completing
@@ -768,33 +759,72 @@ func (h *Handler) PostMCPToken(w http.ResponseWriter, r *http.Request) {
 	h.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// CodexExchange exchanges code for tokens
-func (h *Handler) CodexExchange(w http.ResponseWriter, r *http.Request) {
+// CodexDeviceCode initiates the device-code flow for Codex/OpenAI OAuth.
+func (h *Handler) CodexDeviceCode(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.CodexClientID == "" {
+		h.Error(w, http.StatusServiceUnavailable, "Codex OAuth not configured")
+		return
+	}
+
+	provider := oauth.NewCodexProvider(h.cfg.CodexClientID)
+	deviceResp, err := provider.RequestDeviceCode(r.Context())
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, "Failed to request device code: "+err.Error())
+		return
+	}
+
+	interval, err := strconv.Atoi(deviceResp.Interval)
+	if err != nil || interval < 1 {
+		interval = 5
+	}
+
+	h.JSON(w, http.StatusOK, CodexDeviceCodeResponse{
+		DeviceAuthID:    deviceResp.DeviceAuthID,
+		UserCode:        deviceResp.UserCode,
+		VerificationURI: oauth.CodexDevicePageURL,
+		Interval:        interval,
+	})
+}
+
+// CodexPoll polls the device-code flow for completion and stores the resulting credential.
+func (h *Handler) CodexPoll(w http.ResponseWriter, r *http.Request) {
 	projectID := middleware.GetProjectID(r.Context())
 
-	var req CodexExchangeRequest
+	var req CodexPollRequest
 	if err := h.DecodeJSON(r, &req); err != nil {
 		h.Error(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	if req.Code == "" {
-		h.Error(w, http.StatusBadRequest, "code is required")
+	if req.DeviceAuthID == "" {
+		h.Error(w, http.StatusBadRequest, "deviceAuthId is required")
 		return
 	}
-
-	// Use default redirect URI if not provided
-	redirectURI := req.RedirectURI
-	if redirectURI == "" {
-		redirectURI = "http://localhost:1455/auth/callback"
-	}
-	if req.CodeVerifier == "" {
-		h.Error(w, http.StatusBadRequest, "verifier is required")
+	if req.UserCode == "" {
+		h.Error(w, http.StatusBadRequest, "userCode is required")
 		return
 	}
 
 	provider := oauth.NewCodexProvider(h.cfg.CodexClientID)
-	tokenResp, err := provider.Exchange(r.Context(), req.Code, redirectURI, req.CodeVerifier)
+	pollResp, statusCode, err := provider.PollDeviceCode(r.Context(), req.DeviceAuthID, req.UserCode)
+	if err != nil {
+		h.Error(w, http.StatusBadRequest, "Poll request failed: "+err.Error())
+		return
+	}
+	if statusCode == http.StatusForbidden || statusCode == http.StatusNotFound {
+		h.JSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+		return
+	}
+	if pollResp.AuthorizationCode == "" {
+		h.Error(w, http.StatusInternalServerError, "Unexpected response: no authorization code received")
+		return
+	}
+	if pollResp.CodeVerifier == "" {
+		h.Error(w, http.StatusInternalServerError, "Unexpected response: no code verifier received")
+		return
+	}
+
+	tokenResp, err := provider.Exchange(r.Context(), pollResp.AuthorizationCode, oauth.CodexDeviceCallbackURI, pollResp.CodeVerifier)
 	if err != nil {
 		h.Error(w, http.StatusBadRequest, "Token exchange failed: "+err.Error())
 		return
@@ -817,7 +847,7 @@ func (h *Handler) CodexExchange(w http.ResponseWriter, r *http.Request) {
 
 	// Return credential info with token expiration
 	response := map[string]any{
-		"success":    true,
+		"status":     "success",
 		"credential": info,
 		"expiresAt":  tokenResp.ExpiresAt,
 	}

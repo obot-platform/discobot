@@ -354,8 +354,8 @@ func setupRouter(s *store.Store, cfg *config.Config, h *handler.Handler) *chi.Mu
 				r.Post("/github-git/device-code", h.GitHubDeviceCode)
 				r.Post("/github-git/poll", h.GitHubPoll)
 
-				r.Post("/codex/authorize", h.CodexAuthorize)
-				r.Post("/codex/exchange", h.CodexExchange)
+				r.Post("/codex/device-code", h.CodexDeviceCode)
+				r.Post("/codex/poll", h.CodexPoll)
 			})
 		})
 	})
