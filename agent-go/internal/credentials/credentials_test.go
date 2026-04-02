@@ -1,7 +1,10 @@
 package credentials
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestParseHeader(t *testing.T) {
@@ -92,5 +95,81 @@ func TestManagerForProvider(t *testing.T) {
 
 	if mgr.ForProvider("unknown") != nil {
 		t.Error("expected nil for unknown provider")
+	}
+}
+
+func TestApplyGitUserCachesLastValues(t *testing.T) {
+	mgr := NewManager()
+
+	var calls []struct {
+		key   string
+		value string
+	}
+	mgr.setGitConfig = func(key, value string) error {
+		calls = append(calls, struct {
+			key   string
+			value string
+		}{key: key, value: value})
+		return nil
+	}
+
+	mgr.applyGitUser("Test User", "test@example.com")
+	mgr.applyGitUser("Test User", "test@example.com")
+	mgr.applyGitUser("", "test@example.com")
+	mgr.applyGitUser("Test User", "")
+	mgr.applyGitUser("", "next@example.com")
+
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 git config writes, got %d", len(calls))
+	}
+
+	if calls[0].key != "user.name" || calls[0].value != "Test User" {
+		t.Fatalf("unexpected first call: %+v", calls[0])
+	}
+	if calls[1].key != "user.email" || calls[1].value != "test@example.com" {
+		t.Fatalf("unexpected second call: %+v", calls[1])
+	}
+	if calls[2].key != "user.email" || calls[2].value != "next@example.com" {
+		t.Fatalf("unexpected third call: %+v", calls[2])
+	}
+}
+
+func TestApplyGitUserSerializesConcurrentWrites(t *testing.T) {
+	mgr := NewManager()
+
+	var calls atomic.Int32
+	var inFlight atomic.Int32
+	var maxInFlight atomic.Int32
+
+	mgr.setGitConfig = func(_ string, _ string) error {
+		calls.Add(1)
+		current := inFlight.Add(1)
+		for {
+			seen := maxInFlight.Load()
+			if current <= seen || maxInFlight.CompareAndSwap(seen, current) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		inFlight.Add(-1)
+		return nil
+	}
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			mgr.applyGitUser("", "test@example.com")
+		}()
+	}
+	wg.Wait()
+
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 git config write, got %d", calls.Load())
+	}
+	if maxInFlight.Load() != 1 {
+		t.Fatalf("expected serialized git config writes, max in flight = %d", maxInFlight.Load())
 	}
 }

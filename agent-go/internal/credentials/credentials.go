@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os/exec"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -20,6 +22,8 @@ type EnvVar struct {
 	ExpiresAt    *int64 `json:"expiresAt,omitempty"` // OAuth only (unix timestamp)
 }
 
+type gitConfigSetter func(key, value string) error
+
 // Manager holds the current set of credentials received via the request header.
 // Credentials are stored in memory and queried by the provider registry;
 // the manager never writes to OS environment variables.
@@ -27,11 +31,16 @@ type Manager struct {
 	mu    sync.RWMutex
 	hash  string
 	creds []EnvVar
+
+	gitMu        sync.Mutex
+	gitUserName  string
+	gitUserEmail string
+	setGitConfig gitConfigSetter
 }
 
 // NewManager creates a new credential Manager.
 func NewManager() *Manager {
-	return &Manager{}
+	return &Manager{setGitConfig: setGlobalGitConfig}
 }
 
 // Snapshot returns a copy of the currently applied env vars keyed by name.
@@ -69,7 +78,7 @@ func (m *Manager) Apply(credentialsHeader, gitUserName, gitUserEmail string) {
 		m.update(creds)
 	}
 
-	configureGitUser(gitUserName, gitUserEmail)
+	m.applyGitUser(gitUserName, gitUserEmail)
 }
 
 // ForProvider returns all credentials for the given provider ID.
@@ -166,16 +175,41 @@ func computeHash(creds []EnvVar) string {
 	return hex.EncodeToString(h[:])
 }
 
-// configureGitUser sets git global user.name and user.email if provided.
-func configureGitUser(name, email string) {
-	if name != "" {
-		if err := exec.Command("git", "config", "--global", "user.name", name).Run(); err != nil {
+// applyGitUser sets git global user.name and user.email if provided.
+// It serializes writes in-process and skips values that were already set.
+func (m *Manager) applyGitUser(name, email string) {
+	if name == "" && email == "" {
+		return
+	}
+
+	m.gitMu.Lock()
+	defer m.gitMu.Unlock()
+
+	if name != "" && name != m.gitUserName {
+		if err := m.setGitConfig("user.name", name); err != nil {
 			log.Printf("credentials: failed to set git user.name: %v", err)
+		} else {
+			m.gitUserName = name
 		}
 	}
-	if email != "" {
-		if err := exec.Command("git", "config", "--global", "user.email", email).Run(); err != nil {
+	if email != "" && email != m.gitUserEmail {
+		if err := m.setGitConfig("user.email", email); err != nil {
 			log.Printf("credentials: failed to set git user.email: %v", err)
+		} else {
+			m.gitUserEmail = email
 		}
 	}
+}
+
+func setGlobalGitConfig(key, value string) error {
+	cmd := exec.Command("git", "config", "--global", key, value)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		trimmedOutput := strings.TrimSpace(string(output))
+		if trimmedOutput != "" {
+			return fmt.Errorf("%w: %s", err, trimmedOutput)
+		}
+		return err
+	}
+	return nil
 }
