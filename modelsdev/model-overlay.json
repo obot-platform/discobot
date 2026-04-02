@@ -1,286 +1,447 @@
 {
 	"anthropic": {
-		"claude-3-7-sonnet-20250219": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
-		},
-		"claude-3-7-sonnet-latest": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
-		},
-		"claude-haiku-4-5": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
-		},
 		"claude-haiku-4-5-20251001": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
-		},
-		"claude-opus-4-0": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
-		},
-		"claude-opus-4-1": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"none"
+			]
 		},
 		"claude-opus-4-1-20250805": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"none"
+			]
 		},
 		"claude-opus-4-20250514": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
-		},
-		"claude-opus-4-5": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"none"
+			]
 		},
 		"claude-opus-4-5-20251101": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"low",
+				"medium",
+				"high",
+				"none"
+			]
 		},
 		"claude-opus-4-6": {
-			"reasoningLevels": ["auto", "none"],
-			"defaultReasonLevel": "auto"
-		},
-		"claude-sonnet-4-0": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"low",
+				"medium",
+				"high",
+				"xhigh",
+				"none"
+			]
 		},
 		"claude-sonnet-4-20250514": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
-		},
-		"claude-sonnet-4-5": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"none"
+			]
 		},
 		"claude-sonnet-4-5-20250929": {
-			"reasoningLevels": ["auto", "low", "medium", "high", "xhigh", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"none"
+			]
 		},
 		"claude-sonnet-4-6": {
-			"reasoningLevels": ["auto", "none"],
-			"defaultReasonLevel": "auto"
-		}
-	},
-	"openai": {
-		"codex-mini-latest": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5-chat-latest": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5-codex": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5-mini": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5-nano": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5-pro": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.1": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.1-chat-latest": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.1-codex": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.1-codex-max": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.1-codex-mini": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.2": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.2-chat-latest": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.2-codex": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.2-pro": {
-			"customTools": true,
-			"reasoningLevels": ["medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.3-codex": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.3-codex-spark": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.4": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.4-pro": {
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
-		},
-		"o1": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o1-mini": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o1-preview": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o1-pro": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o3": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o3-deep-research": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o3-mini": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o3-pro": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o4-mini": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"o4-mini-deep-research": {
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		}
-	},
-	"deepseek": {
-		"deepseek-reasoner": {
-			"reasoningLevels": ["auto", "none"],
-			"defaultReasonLevel": "auto"
+			"defaultReasonLevel": "auto",
+			"reasoning": true,
+			"reasoningLevels": [
+				"auto",
+				"low",
+				"medium",
+				"high",
+				"xhigh",
+				"none"
+			]
 		}
 	},
 	"codex": {
 		"$provider": {
-			"name": "ChatGPT Codex",
 			"api": "https://chatgpt.com/backend-api/codex",
-			"env": ["CODEX_TOKEN"],
-			"doc": "https://chatgpt.com"
-		},
-		"gpt-5.1-codex-max": {
-			"name": "GPT-5.1 Codex Max",
-			"family": "gpt-codex",
-			"reasoning": true,
-			"tool_call": true,
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
-		},
-		"gpt-5.1-codex-mini": {
-			"name": "GPT-5.1 Codex Mini",
-			"family": "gpt-codex",
-			"reasoning": true,
-			"tool_call": true,
-			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
+			"doc": "https://chatgpt.com",
+			"env": [
+				"CODEX_TOKEN"
+			],
+			"name": "ChatGPT Codex"
 		},
 		"gpt-5.1-codex": {
-			"name": "GPT-5.1 Codex",
-			"family": "gpt-codex",
-			"reasoning": true,
-			"tool_call": true,
 			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high"],
-			"defaultReasonLevel": "medium"
+			"defaultReasonLevel": "medium",
+			"family": "gpt-codex",
+			"name": "GPT-5.1 Codex",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			],
+			"tool_call": true
+		},
+		"gpt-5.1-codex-max": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"family": "gpt-codex",
+			"name": "GPT-5.1 Codex Max",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			],
+			"tool_call": true
+		},
+		"gpt-5.1-codex-mini": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"family": "gpt-codex",
+			"name": "GPT-5.1 Codex Mini",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			],
+			"tool_call": true
 		},
 		"gpt-5.2": {
-			"name": "GPT-5.2",
-			"family": "gpt",
-			"reasoning": true,
-			"tool_call": true,
 			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
+			"defaultReasonLevel": "medium",
+			"family": "gpt",
+			"name": "GPT-5.2",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			],
+			"tool_call": true
 		},
 		"gpt-5.2-codex": {
-			"name": "GPT-5.2 Codex",
-			"family": "gpt-codex",
-			"reasoning": true,
-			"tool_call": true,
 			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
+			"defaultReasonLevel": "medium",
+			"family": "gpt-codex",
+			"name": "GPT-5.2 Codex",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			],
+			"tool_call": true
 		},
 		"gpt-5.3-codex": {
-			"name": "GPT-5.3 Codex",
-			"family": "gpt-codex",
-			"reasoning": true,
-			"tool_call": true,
 			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
+			"defaultReasonLevel": "medium",
+			"family": "gpt-codex",
+			"name": "GPT-5.3 Codex",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			],
+			"tool_call": true
 		},
 		"gpt-5.4": {
-			"name": "GPT-5.4",
-			"family": "gpt",
-			"reasoning": true,
-			"tool_call": true,
 			"customTools": true,
-			"reasoningLevels": ["low", "medium", "high", "xhigh"],
-			"defaultReasonLevel": "medium"
+			"defaultReasonLevel": "medium",
+			"family": "gpt",
+			"name": "GPT-5.4",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			],
+			"tool_call": true
+		}
+	},
+	"deepseek": {
+		"deepseek-reasoner": {
+			"defaultReasonLevel": "auto",
+			"reasoningLevels": [
+				"auto",
+				"none"
+			]
+		}
+	},
+	"openai": {
+		"gpt-5": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"minimal",
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"gpt-5-chat-latest": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": false,
+			"reasoningLevels": []
+		},
+		"gpt-5-codex": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"gpt-5-mini": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"minimal",
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"gpt-5-nano": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"minimal",
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"gpt-5-pro": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"high"
+			]
+		},
+		"gpt-5.1": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"none",
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"gpt-5.1-chat-latest": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"medium"
+			]
+		},
+		"gpt-5.1-codex": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"gpt-5.1-codex-max": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			]
+		},
+		"gpt-5.1-codex-mini": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"gpt-5.2": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"none",
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			]
+		},
+		"gpt-5.2-chat-latest": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"medium"
+			]
+		},
+		"gpt-5.2-codex": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			]
+		},
+		"gpt-5.2-pro": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"medium",
+				"high",
+				"xhigh"
+			]
+		},
+		"gpt-5.3-codex": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"none",
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			]
+		},
+		"gpt-5.4": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"none",
+				"low",
+				"medium",
+				"high",
+				"xhigh"
+			]
+		},
+		"gpt-5.4-pro": {
+			"customTools": true,
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"medium",
+				"high",
+				"xhigh"
+			]
+		},
+		"o1": {
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"o1-pro": {
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"o3": {
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"o3-deep-research": {
+			"defaultReasonLevel": "medium",
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"o3-mini": {
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"o3-pro": {
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"o4-mini": {
+			"defaultReasonLevel": "medium",
+			"reasoning": true,
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"o4-mini-deep-research": {
+			"defaultReasonLevel": "medium",
+			"reasoningLevels": [
+				"low",
+				"medium",
+				"high"
+			]
 		}
 	}
 }
