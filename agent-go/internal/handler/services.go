@@ -268,6 +268,7 @@ func toAPIService(s services.ServiceInfo) api.Service {
 		ID:          s.ID,
 		Name:        s.Name,
 		Description: s.Description,
+		Order:       s.Order,
 		HTTP:        s.HTTP,
 		HTTPS:       s.HTTPS,
 		Path:        s.Path,

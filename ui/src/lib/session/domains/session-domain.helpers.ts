@@ -475,6 +475,7 @@ export function toServiceItem(service: Service): ServiceItem {
 		label: service.name,
 		target,
 		description: service.description,
+		order: service.order,
 		http: service.http,
 		https: service.https,
 		urlPath: service.urlPath,
@@ -482,6 +483,36 @@ export function toServiceItem(service: Service): ServiceItem {
 		passive: service.passive,
 		exitCode: service.exitCode,
 	};
+}
+
+export function sortServiceItems(
+	services: readonly ServiceItem[],
+): ServiceItem[] {
+	return [...services].sort((left, right) => {
+		const leftOrder = left.order;
+		const rightOrder = right.order;
+
+		if (leftOrder !== undefined && rightOrder === undefined) {
+			return -1;
+		}
+		if (leftOrder === undefined && rightOrder !== undefined) {
+			return 1;
+		}
+		if (
+			leftOrder !== undefined &&
+			rightOrder !== undefined &&
+			leftOrder !== rightOrder
+		) {
+			return leftOrder - rightOrder;
+		}
+
+		const labelCompare = left.label.localeCompare(right.label);
+		if (labelCompare !== 0) {
+			return labelCompare;
+		}
+
+		return left.id.localeCompare(right.id);
+	});
 }
 
 export function toHooksStatus(

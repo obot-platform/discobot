@@ -81,6 +81,7 @@ export type ServiceItem = {
 	label: string;
 	target: string;
 	description?: string;
+	order?: number;
 	http?: number;
 	https?: number;
 	urlPath?: string;

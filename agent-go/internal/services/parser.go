@@ -19,6 +19,7 @@ type ServiceInfo struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	Order       *int   `json:"order,omitempty"`
 	HTTP        int    `json:"http,omitempty"`
 	HTTPS       int    `json:"https,omitempty"`
 	Path        string `json:"path"`
@@ -42,6 +43,8 @@ func (s *ServiceInfo) Port() int {
 type serviceConfig struct {
 	Name        string
 	Description string
+	Order       int
+	HasOrder    bool
 	HTTP        int
 	HTTPS       int
 	URLPath     string
@@ -191,6 +194,11 @@ func parseServiceFrontMatter(content string) (cfg serviceConfig, bodyStart int, 
 			cfg.Name = value
 		case "description":
 			cfg.Description = value
+		case "order":
+			if order, err := strconv.Atoi(value); err == nil {
+				cfg.Order = order
+				cfg.HasOrder = true
+			}
 		case "http":
 			if port, err := strconv.Atoi(value); err == nil && port > 0 && port < 65536 {
 				cfg.HTTP = port
@@ -268,10 +276,17 @@ func DiscoverServices(servicesDir string) ([]ServiceInfo, error) {
 			name = id
 		}
 
+		var order *int
+		if cfg.HasOrder {
+			orderValue := cfg.Order
+			order = &orderValue
+		}
+
 		svc := ServiceInfo{
 			ID:          id,
 			Name:        name,
 			Description: cfg.Description,
+			Order:       order,
 			HTTP:        cfg.HTTP,
 			HTTPS:       cfg.HTTPS,
 			Path:        filePath,
@@ -284,7 +299,25 @@ func DiscoverServices(servicesDir string) ([]ServiceInfo, error) {
 	}
 
 	sort.Slice(services, func(i, j int) bool {
-		return services[i].Name < services[j].Name
+		leftOrder, rightOrder := services[i].Order, services[j].Order
+		switch {
+		case leftOrder != nil && rightOrder == nil:
+			return true
+		case leftOrder == nil && rightOrder != nil:
+			return false
+		case leftOrder != nil && rightOrder != nil && *leftOrder != *rightOrder:
+			return *leftOrder < *rightOrder
+		}
+
+		if services[i].Name != services[j].Name {
+			return services[i].Name < services[j].Name
+		}
+
+		if services[i].ID != services[j].ID {
+			return services[i].ID < services[j].ID
+		}
+
+		return false
 	})
 
 	return services, nil

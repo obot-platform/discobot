@@ -346,6 +346,7 @@ type Service struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	Order       *int   `json:"order,omitempty"`
 	HTTP        int    `json:"http,omitempty"`
 	HTTPS       int    `json:"https,omitempty"`
 	Path        string `json:"path"`

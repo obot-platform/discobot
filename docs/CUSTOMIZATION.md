@@ -322,6 +322,7 @@ There are two types of services:
 |-------|------|----------|-------------|
 | `name` | string | No | Display name (defaults to filename) |
 | `description` | string | No | Human-readable description |
+| `order` | number | No | Optional UI sort order for service buttons and panels (lower numbers appear first) |
 | `http` | number | No | HTTP port the service listens on |
 | `https` | number | No | HTTPS port the service listens on |
 | `path` | string | No | Default URL path for web preview (e.g., `"/app"`, `"/api/docs"`) |
@@ -337,6 +338,16 @@ The service ID is derived from the filename:
 
 For example: `ui.sh` becomes `ui`, `api-server.sh` becomes `api-server`.
 
+### Service Ordering
+
+You can control the order of services in the Discobot UI with the optional `order` field.
+
+- Lower numbers appear first
+- Services with the same `order` fall back to alphabetical ordering by name
+- Services without an `order` appear after all ordered services, also alphabetically
+
+This applies to the services shown in the active UI, including the service panel buttons.
+
 ### Executable Services
 
 Executable services are scripts that Discobot starts and stops as child processes. They must be executable files with a shebang line and a script body.
@@ -348,6 +359,7 @@ Executable services are scripts that Discobot starts and stops as child processe
 #---
 # name: Discobot UI
 # description: Vite + React Router UI development server
+# order: 10
 # http: 3000
 #---
 pnpm install && pnpm dev
@@ -395,6 +407,7 @@ Passive services declare an HTTP endpoint without providing a script to run. The
 ---
 name: Web App
 description: Frontend dev server (started by devcontainer)
+order: 10
 http: 3000
 ---
 ```
@@ -520,6 +533,7 @@ pnpm run ci
 #---
 # name: Dev UI
 # description: Vite development server
+# order: 10
 # http: 3000
 #---
 pnpm install && pnpm dev
@@ -531,6 +545,7 @@ pnpm install && pnpm dev
 #---
 # name: SQLite GUI
 # description: Database browser
+# order: 20
 # http: 8080
 #---
 exec uvx --from sqlite-web sqlite_web "$HOME/.local/share/app/app.db" \

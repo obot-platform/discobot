@@ -845,6 +845,8 @@ export interface Service {
 	name: string;
 	/** Description from config */
 	description?: string;
+	/** Optional UI ordering hint (lower first) */
+	order?: number;
 	/** HTTP port if http service */
 	http?: number;
 	/** HTTPS port if https service */

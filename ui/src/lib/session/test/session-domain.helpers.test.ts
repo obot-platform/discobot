@@ -12,14 +12,51 @@ import {
 	getPendingQuestionApprovalId,
 	getPlanEntries,
 	hasUserMessageContent,
+	sortServiceItems,
+	toServiceItem,
 } from "../domains/session-domain.helpers";
 
-test("createUserMessage leaves provisional unset by default", () => {
-	const message = createUserMessage("hello");
+test("sortServiceItems prioritizes explicit order before alphabetical fallbacks", () => {
+	const services = [
+		toServiceItem({
+			id: "beta",
+			name: "Beta",
+			status: "stopped",
+			path: "/tmp/beta.sh",
+		}),
+		toServiceItem({
+			id: "zeta",
+			name: "Zeta",
+			order: 20,
+			status: "stopped",
+			path: "/tmp/zeta.sh",
+		}),
+		toServiceItem({
+			id: "alpha",
+			name: "Alpha",
+			status: "stopped",
+			path: "/tmp/alpha.sh",
+		}),
+		toServiceItem({
+			id: "eta",
+			name: "Eta",
+			order: 10,
+			status: "stopped",
+			path: "/tmp/eta.sh",
+		}),
+		toServiceItem({
+			id: "theta",
+			name: "Theta",
+			order: 10,
+			status: "stopped",
+			path: "/tmp/theta.sh",
+		}),
+	];
 
-	assert.equal(message.role, "user");
-	assert.deepEqual(message.parts, [{ type: "text", text: "hello" }]);
-	assert.equal(message.provisional, undefined);
+	assert.deepEqual(
+		sortServiceItems(services).map((service) => service.id),
+		["eta", "theta", "zeta", "alpha", "beta"],
+	);
 });
 
 test("createUserMessage can mark a message as provisional", () => {

@@ -2,6 +2,7 @@
 #---
 # name: Discobot UI
 # description: Vite + React Router UI development server
+# order: 1
 # http: 3100
 #---
 

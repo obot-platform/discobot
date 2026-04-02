@@ -367,6 +367,7 @@ type Service struct {
 	ID          string `json:"id"`                    // Filename in .discobot/services/
 	Name        string `json:"name"`                  // Display name (from config or id)
 	Description string `json:"description,omitempty"` // Description from config
+	Order       *int   `json:"order,omitempty"`       // Optional UI ordering hint (lower first)
 	HTTP        int    `json:"http,omitempty"`        // HTTP port if http service
 	HTTPS       int    `json:"https,omitempty"`       // HTTPS port if https service
 	Path        string `json:"path"`                  // Absolute path to service file

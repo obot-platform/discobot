@@ -1,6 +1,9 @@
 import { api } from "$lib/api-client";
 import type { Service } from "$lib/api-types";
-import { toServiceItem } from "$lib/session/domains/session-domain.helpers";
+import {
+	sortServiceItems,
+	toServiceItem,
+} from "$lib/session/domains/session-domain.helpers";
 import type { SessionServicesDomain } from "$lib/session/session-context.types";
 
 type CreateSessionServicesDomainArgs = {
@@ -44,7 +47,7 @@ export function createSessionServicesDomain(
 		rawServices = services;
 	}
 
-	const list = $derived(rawServices.map(toServiceItem));
+	const list = $derived(sortServiceItems(rawServices.map(toServiceItem)));
 	const active = $derived(
 		list.find((service) => service.id === args.getActiveServiceId()) ?? null,
 	);
