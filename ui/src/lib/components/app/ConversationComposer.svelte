@@ -421,12 +421,16 @@
 		}
 
 		try {
+			if (wasPending) {
+				sessions.setAwaitingInitialStatus(session.sessionId);
+			}
 			const result = await thread.submit({
 				parts: nextMessageParts,
 				allowEmptyPendingMessage: shouldAllowEmptyPendingMessage,
 				...pendingSubmitOptions,
 			});
 			if (wasPending && result?.materialized) {
+				sessions.setAwaitingInitialStatus(result.sessionId);
 				if (preserveDraft) {
 					movePendingDraftToThread(result.threadId, currentDraft);
 				}
@@ -442,6 +446,7 @@
 			return true;
 		} catch (err) {
 			if (wasPending) {
+				sessions.setAwaitingInitialStatus(null);
 				pendingSubmitError =
 					err instanceof Error ? err.message : "Failed to start chat";
 			}
@@ -478,14 +483,16 @@
 			/>
 		{/if}
 
-		{#if session.isPending}
+		{#if session.isPending || session.current?.status !== "ready"}
 			<ConversationComposerSessionSetupStatus />
-			<div class="mb-2 flex w-full items-center gap-2 px-1 md:hidden">
-				<ConversationWorkspaceSelector
-					bind:this={sessionSetupRef}
-					fullWidth={true}
-				/>
-			</div>
+			{#if session.isPending}
+				<div class="mb-2 flex w-full items-center gap-2 px-1 md:hidden">
+					<ConversationWorkspaceSelector
+						bind:this={sessionSetupRef}
+						fullWidth={true}
+					/>
+				</div>
+			{/if}
 		{/if}
 
 		{#if pendingSubmitError}

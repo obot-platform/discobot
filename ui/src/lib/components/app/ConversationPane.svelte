@@ -747,10 +747,16 @@
 					</div>
 				{/if}
 			</div>
-		{:else if isLoading}
+		{:else if isLoading && !canShowComposer}
 			<div
 				class="flex min-h-0 flex-1 items-center justify-center p-4 text-muted-foreground text-sm"
 			>
+				Loading conversation...
+			</div>
+		{/if}
+
+		{#if !hasMessages && isLoading && canShowComposer}
+			<div class="px-4 pb-4 text-center text-muted-foreground text-sm">
 				Loading conversation...
 			</div>
 		{/if}

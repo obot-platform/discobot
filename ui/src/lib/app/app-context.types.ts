@@ -124,11 +124,13 @@ export type AppSessions = {
 	recentThreads: RecentThreadSummary[];
 	selectedId: string | null;
 	pendingId: string;
+	awaitingInitialStatusId: string | null;
 	selected: SessionSummary | null;
 	sessionContexts: Map<string, SessionContextValue>;
 	select: (sessionId: string) => void;
 	openThread: (sessionId: string, threadId: string) => void;
 	startNew: () => void;
+	setAwaitingInitialStatus: (sessionId: string | null) => void;
 	refresh: () => Promise<void>;
 	reloadSession: (sessionId: string) => Promise<void>;
 	create: (workspaceId?: string) => Promise<string | null>;

@@ -31,6 +31,7 @@ export function createAppSessionsDomain(
 		args.initialSelectedSessionId ?? null,
 	);
 	let pendingSessionId = $state<string>(generateId());
+	let awaitingInitialStatusId = $state<string | null>(null);
 	let recentThreadEntries = $state(readRecentThreadEntries());
 	const requestedThreadIdBySession = new SvelteMap<string, string>();
 
@@ -132,6 +133,10 @@ export function createAppSessionsDomain(
 			pendingSessionId = generateId();
 		}
 
+		if (sessionId === awaitingInitialStatusId) {
+			awaitingInitialStatusId = null;
+		}
+
 		if (!store.list.some((session) => session.id === sessionId)) {
 			return false;
 		}
@@ -149,6 +154,12 @@ export function createAppSessionsDomain(
 
 	const reloadSession = async (sessionId: string) => {
 		await store.fetchOne(sessionId);
+		if (awaitingInitialStatusId === sessionId) {
+			const session = store.list.find((item) => item.id === sessionId) ?? null;
+			if (session?.status) {
+				awaitingInitialStatusId = null;
+			}
+		}
 		void sessionContexts.get(sessionId)?.load();
 	};
 
@@ -168,6 +179,9 @@ export function createAppSessionsDomain(
 		get pendingId() {
 			return pendingSessionId;
 		},
+		get awaitingInitialStatusId() {
+			return awaitingInitialStatusId;
+		},
 		get selected() {
 			return selected;
 		},
@@ -186,6 +200,10 @@ export function createAppSessionsDomain(
 		startNew: () => {
 			pendingSessionId = generateId();
 			currentSelectedSessionId = null;
+			awaitingInitialStatusId = null;
+		},
+		setAwaitingInitialStatus: (sessionId) => {
+			awaitingInitialStatusId = sessionId;
 		},
 		refresh,
 		reloadSession,
