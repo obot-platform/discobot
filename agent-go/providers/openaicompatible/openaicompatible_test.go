@@ -11,6 +11,7 @@ import (
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
+	"github.com/obot-platform/discobot/modelsdev"
 )
 
 // --- Helpers ---
@@ -1350,20 +1351,27 @@ func TestListModels(t *testing.T) {
 // --- TestFactoryRegistration ---
 
 func TestFactoryRegistration(t *testing.T) {
-	// All 66 @ai-sdk/openai-compatible providers should be registered by init().
-	// Use well-known providers as canaries.
-	for _, id := range []string{"deepseek", "fireworks-ai", "aihubmix"} {
-		if !providers.Has(id) {
-			t.Errorf("expected provider %q to be registered via init()", id)
+	registeredProviders := modelsdev.ProvidersByNPM("@ai-sdk/openai-compatible")
+	if len(registeredProviders) == 0 {
+		t.Fatal("expected modelsdev to return openai-compatible providers")
+	}
+
+	for _, info := range registeredProviders {
+		if !providers.Has(info.ID) {
+			t.Errorf("expected provider %q to be registered via init()", info.ID)
 		}
 	}
 
-	// Verify a registered provider can be constructed and returns the correct ID.
-	p, err := providers.New("deepseek", providers.Config{"api_key": "test"})
+	providerID := "deepseek"
+	if !providers.Has(providerID) {
+		providerID = registeredProviders[0].ID
+	}
+
+	p, err := providers.New(providerID, providers.Config{"api_key": "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.ID() != "deepseek" {
-		t.Errorf("expected ID 'deepseek', got %q", p.ID())
+	if p.ID() != providerID {
+		t.Errorf("expected ID %q, got %q", providerID, p.ID())
 	}
 }
