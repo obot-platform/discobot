@@ -161,8 +161,15 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		errMsg := err.Error()
+		if _, updateErr := h.sessionService.UpdateErrorMessage(ctx, projectID, sessionID, &errMsg); updateErr != nil {
+			log.Printf("[Chat] Failed to persist chat start error for session %s: %v", sessionID, updateErr)
+		}
 		h.Error(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	if _, err := h.sessionService.UpdateErrorMessage(ctx, projectID, sessionID, nil); err != nil {
+		log.Printf("[Chat] Failed to clear chat start error for session %s: %v", sessionID, err)
 	}
 	response.CompletionID = started.CompletionID
 	response.Status = started.Status

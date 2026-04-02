@@ -274,6 +274,26 @@ func (s *SessionService) UpdateStatus(ctx context.Context, projectID, sessionID,
 	return s.mapSession(sess), nil
 }
 
+// UpdateErrorMessage updates only the session error message and publishes an SSE event.
+func (s *SessionService) UpdateErrorMessage(ctx context.Context, projectID, sessionID string, errorMsg *string) (*Session, error) {
+	if err := s.store.UpdateSessionErrorMessage(ctx, sessionID, errorMsg); err != nil {
+		return nil, fmt.Errorf("failed to update session error message: %w", err)
+	}
+
+	sess, err := s.store.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+
+	if s.eventBroker != nil {
+		if err := s.eventBroker.PublishSessionUpdated(ctx, projectID, sessionID, normalizeSessionStatus(sess.Status), ""); err != nil {
+			log.Printf("Failed to publish session update event: %v", err)
+		}
+	}
+
+	return s.mapSession(sess), nil
+}
+
 // UpdateSession updates a session and publishes an SSE event.
 func (s *SessionService) UpdateSession(ctx context.Context, sessionID, name string, displayName *string, status string) (*Session, error) {
 	sess, err := s.store.GetSessionByID(ctx, sessionID)

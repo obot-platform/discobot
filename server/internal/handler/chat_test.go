@@ -384,6 +384,131 @@ func TestChat_StartsCompletion_StatusBecomesRunning(t *testing.T) {
 	}
 }
 
+func TestChat_PersistsChatStartErrorsOnTheSession(t *testing.T) {
+	s := setupChatTestStore(t)
+	provider := mocksandbox.NewProvider()
+	sessionID := "session-chat-error-test"
+
+	seedSession(t, s, sessionID)
+
+	ctx := context.Background()
+	_, err := provider.Create(ctx, sessionID, sandbox.CreateOptions{
+		SharedSecret:  "test-secret",
+		WorkspacePath: "/workspace",
+	})
+	if err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+	if err := provider.Start(ctx, sessionID); err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+
+	provider.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/chat") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_api_key"}`))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	h := newChatTestHandler(t, s, provider)
+	req := makeChatRequest(context.Background(), t, sessionID, "", ChatRequest{
+		Messages: parseMessages(t, `[{"id":"msg-error","role":"user","parts":[{"type":"text","text":"hello"}]}]`),
+	})
+	w := httptest.NewRecorder()
+
+	h.Chat(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected status %d, got %d; body: %s", http.StatusBadGateway, w.Code, w.Body.String())
+	}
+
+	session, err := s.GetSessionByID(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("failed to get session: %v", err)
+	}
+	if session.ErrorMessage == nil {
+		t.Fatal("expected chat start error to be persisted on the session")
+	}
+	if got := *session.ErrorMessage; got != "sandbox returned status 400: invalid_api_key" {
+		t.Fatalf("expected persisted session error %q, got %q", "sandbox returned status 400: invalid_api_key", got)
+	}
+
+	serviceSession, err := h.sessionService.GetSession(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("failed to load session through the service: %v", err)
+	}
+	response := mapSessionResponse(serviceSession)
+	if response.Status != model.SessionStatusReady {
+		t.Fatalf("expected session status %q, got %q", model.SessionStatusReady, response.Status)
+	}
+	if response.ErrorMessage != "sandbox returned status 400: invalid_api_key" {
+		t.Fatalf("expected response error message %q, got %q", "sandbox returned status 400: invalid_api_key", response.ErrorMessage)
+	}
+}
+
+func TestChat_ClearsPersistedChatStartErrorsAfterSuccessfulRetry(t *testing.T) {
+	s := setupChatTestStore(t)
+	provider := mocksandbox.NewProvider()
+	sessionID := "session-chat-error-clear-test"
+
+	seedSession(t, s, sessionID)
+
+	ctx := context.Background()
+	_, err := provider.Create(ctx, sessionID, sandbox.CreateOptions{
+		SharedSecret:  "test-secret",
+		WorkspacePath: "/workspace",
+	})
+	if err != nil {
+		t.Fatalf("failed to create sandbox: %v", err)
+	}
+	if err := provider.Start(ctx, sessionID); err != nil {
+		t.Fatalf("failed to start sandbox: %v", err)
+	}
+
+	session, err := s.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("failed to get seeded session: %v", err)
+	}
+	staleError := "sandbox returned status 400: invalid_api_key"
+	session.ErrorMessage = &staleError
+	if err := s.UpdateSession(ctx, session); err != nil {
+		t.Fatalf("failed to seed session error: %v", err)
+	}
+
+	provider.HTTPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/chat") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"status":"started"}`))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	h := newChatTestHandler(t, s, provider)
+	req := makeChatRequest(context.Background(), t, sessionID, "", ChatRequest{
+		Messages: parseMessages(t, `[{"id":"msg-retry","role":"user","parts":[{"type":"text","text":"retry"}]}]`),
+	})
+	w := httptest.NewRecorder()
+
+	h.Chat(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d; body: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+
+	updatedSession, err := s.GetSessionByID(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("failed to reload session: %v", err)
+	}
+	if updatedSession.ErrorMessage != nil {
+		t.Fatalf("expected persisted session error to be cleared, got %q", *updatedSession.ErrorMessage)
+	}
+}
+
 func TestChat_UsesExplicitThreadID(t *testing.T) {
 	s := setupChatTestStore(t)
 	provider := mocksandbox.NewProvider()

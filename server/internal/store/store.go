@@ -351,6 +351,17 @@ func (s *Store) UpdateSessionStatus(ctx context.Context, id, status string, erro
 	return s.writeDB.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// UpdateSessionErrorMessage updates only the error message field for a session.
+func (s *Store) UpdateSessionErrorMessage(ctx context.Context, id string, errorMessage *string) error {
+	updates := map[string]interface{}{}
+	if errorMessage != nil {
+		updates["error_message"] = *errorMessage
+	} else {
+		updates["error_message"] = nil
+	}
+	return s.writeDB.WithContext(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(updates).Error
+}
+
 func (s *Store) CreateSession(ctx context.Context, session *model.Session) error {
 	return s.writeDB.WithContext(ctx).Create(session).Error
 }

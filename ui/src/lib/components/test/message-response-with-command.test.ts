@@ -41,6 +41,16 @@ test("conversation pane delegates user text rendering to MessageResponseWithComm
 	assert.doesNotMatch(source, /Command: \{originalCommand\.command\}/);
 });
 
+test("conversation pane reads the session error directly from the active session", () => {
+	const source = readComponentSource(CONVERSATION_PANE_COMPONENT);
+
+	assert.match(
+		source,
+		/const sessionError = \$derived\.by\(\s*\(\) => sessionErrorOverride \?\? session\?\.current\?\.errorMessage \?\? null,/,
+	);
+	assert.doesNotMatch(source, /session\?\.current\?\.status === "error"/);
+});
+
 test("conversation pane renders expandable top-level error banners", () => {
 	const source = readComponentSource(CONVERSATION_PANE_COMPONENT);
 
