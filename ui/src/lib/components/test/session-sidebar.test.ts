@@ -42,3 +42,26 @@ test("session sidebar keys session and recent thread rows", () => {
 		/\{#each sessions\.recentThreads as threadObj \(`\$\{threadObj\.sessionId\}:\$\{threadObj\.threadId\}`\)\}/,
 	);
 });
+
+test("session sidebar supports dropdown reuse and closes after creating a session", () => {
+	const source = readSessionSidebarSource();
+
+	assert.match(source, /mode\?: "panel" \| "dropdown" \| "floating"/);
+	assert.match(source, /const dropdownMode = \$derived\(mode === "dropdown"\)/);
+	assert.match(source, /const floatingMode = \$derived\(mode === "floating"\)/);
+	assert.match(source, /function handleStartNewSession\(\)/);
+	assert.match(source, /onclick=\{handleStartNewSession\}/);
+});
+
+test("session sidebar owns the collapsed floating overlay state", () => {
+	const source = readSessionSidebarSource();
+
+	assert.match(source, /collapsed\?: boolean/);
+	assert.match(source, /let floatingOpen = \$state\(false\)/);
+	assert.match(source, /function toggleFloatingSidebar\(\)/);
+	assert.match(
+		source,
+		/const showSidebarBody = \$derived\(!floatingCollapsed \|\| floatingOpen\)/,
+	);
+	assert.match(source, /aria-expanded=\{floatingOpen\}/);
+});

@@ -10,7 +10,8 @@
 
 	type Props = {
 		mainClass: string;
-		sidebarOpen?: boolean;
+		showSidebarToggle?: boolean;
+		reserveSidebarSpace?: boolean;
 		onToggleSidebar?: () => void;
 		mode?: "full" | "conversation-only";
 	};
@@ -51,7 +52,8 @@
 			<Resizable.Pane defaultSize={35} minSize={25} class="min-h-0">
 				<div class="flex min-h-0 h-full flex-col overflow-hidden">
 					<ThreadWorkspaceHeader
-						sidebarOpen={props.sidebarOpen ?? false}
+						showSidebarToggle={props.showSidebarToggle ?? false}
+						reserveSidebarSpace={props.reserveSidebarSpace ?? false}
 						onToggleSidebar={props.onToggleSidebar ?? noop}
 						title={session.threads.selected?.name ??
 							(session.isPending ? "" : "No thread selected")}
@@ -71,7 +73,8 @@
 		</Resizable.PaneGroup>
 	{:else}
 		<ThreadWorkspaceHeader
-			sidebarOpen={props.sidebarOpen ?? false}
+			showSidebarToggle={props.showSidebarToggle ?? false}
+			reserveSidebarSpace={props.reserveSidebarSpace ?? false}
 			onToggleSidebar={props.onToggleSidebar ?? noop}
 			title={session.threads.selected?.name ??
 				(session.isPending ? "" : "No thread selected")}

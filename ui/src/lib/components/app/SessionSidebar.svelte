@@ -31,9 +31,20 @@
 	type Props = {
 		onThreadSelect?: () => void;
 		onToggleSidebar?: () => void;
+		mode?: "panel" | "dropdown" | "floating";
+		collapsed?: boolean;
 	};
 
-	let { onThreadSelect, onToggleSidebar }: Props = $props();
+	let {
+		onThreadSelect,
+		onToggleSidebar,
+		mode = "panel",
+		collapsed = false,
+	}: Props = $props();
+
+	const dropdownMode = $derived(mode === "dropdown");
+	const floatingMode = $derived(mode === "floating");
+	const floatingCollapsed = $derived(floatingMode && collapsed);
 
 	const app = useAppContext();
 	const sessions = app.sessions;
@@ -47,6 +58,55 @@
 	let deleteDialogOpen = $state(false);
 	let deleteSessionId = $state<string | null>(null);
 	let deletingSession = $state(false);
+	let floatingOpen = $state(false);
+	let shellRef = $state<HTMLElement | null>(null);
+	const showSidebarBody = $derived(!floatingCollapsed || floatingOpen);
+
+	function closeFloatingSidebar() {
+		if (!floatingMode) {
+			return;
+		}
+		floatingOpen = false;
+	}
+
+	function toggleFloatingSidebar() {
+		if (!floatingCollapsed) {
+			return;
+		}
+		floatingOpen = !floatingOpen;
+	}
+
+	$effect(() => {
+		if (!floatingCollapsed) {
+			floatingOpen = false;
+		}
+	});
+
+	$effect(() => {
+		if (
+			!floatingCollapsed ||
+			!floatingOpen ||
+			typeof document === "undefined"
+		) {
+			return;
+		}
+
+		function handlePointerDown(event: PointerEvent) {
+			const target = event.target;
+			if (!(target instanceof Node)) {
+				return;
+			}
+			if (shellRef?.contains(target)) {
+				return;
+			}
+			floatingOpen = false;
+		}
+
+		document.addEventListener("pointerdown", handlePointerDown);
+		return () => {
+			document.removeEventListener("pointerdown", handlePointerDown);
+		};
+	});
 
 	function sessionById(sessionId: string) {
 		return sessions.list.find((s) => s.id === sessionId) ?? null;
@@ -54,11 +114,19 @@
 
 	function handleSelectSession(sessionId: string) {
 		sessions.select(sessionId);
+		closeFloatingSidebar();
 		onThreadSelect?.();
 	}
 
 	function handleSelectRecentThread(sessionId: string, threadId: string) {
 		sessions.openThread(sessionId, threadId);
+		closeFloatingSidebar();
+		onThreadSelect?.();
+	}
+
+	function handleStartNewSession() {
+		sessions.startNew();
+		closeFloatingSidebar();
 		onThreadSelect?.();
 	}
 
@@ -256,34 +324,53 @@
 {/snippet}
 
 <aside
-	class="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm"
+	bind:this={shellRef}
+	class={`flex min-h-0 flex-col overflow-hidden text-sidebar-foreground ${dropdownMode ? "max-h-[min(70vh,32rem)] min-w-[22rem] bg-sidebar" : floatingMode ? `${showSidebarBody ? "max-h-[calc(100vh-7rem)] w-[22rem] rounded-md border border-sidebar-border bg-sidebar shadow-sm" : "w-fit bg-transparent shadow-none border-transparent"} pointer-events-auto` : "h-full w-full rounded-md border border-sidebar-border bg-sidebar shadow-sm"}`}
 >
 	<div
-		class="flex h-10 items-center justify-between border-b border-sidebar-border px-3"
+		class={`flex h-10 items-center justify-between px-3 ${showSidebarBody ? "border-b border-sidebar-border" : ""}`}
 	>
 		<div class="flex min-w-0 items-center gap-1">
-			{#if onToggleSidebar}
+			{#if onToggleSidebar && !dropdownMode}
 				<Button
 					variant="ghost"
 					size="icon-xs"
 					onclick={onToggleSidebar}
-					aria-label="Collapse sessions panel"
-					title="Collapse sessions panel"
+					aria-label={floatingMode
+						? "Expand sessions panel"
+						: "Collapse sessions panel"}
+					title={floatingMode
+						? "Expand sessions panel"
+						: "Collapse sessions panel"}
 					class="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 				>
 					<PanelLeftIcon class="size-3.5" />
 				</Button>
 			{/if}
-			<p
-				class="text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70"
-			>
-				Sessions
-			</p>
+			{#if floatingCollapsed}
+				<button
+					type="button"
+					onclick={toggleFloatingSidebar}
+					aria-expanded={floatingOpen}
+					class="inline-flex items-center gap-1 rounded-md py-0 pr-0.5 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+				>
+					<span>Sessions</span>
+					<ChevronDownIcon
+						class={`size-3 shrink-0 transition-transform ${floatingOpen ? "rotate-180" : ""}`}
+					/>
+				</button>
+			{:else}
+				<p
+					class="text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70"
+				>
+					Sessions
+				</p>
+			{/if}
 		</div>
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			onclick={() => sessions.startNew()}
+			onclick={handleStartNewSession}
 			aria-label="New session"
 			title="New session"
 			class="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -292,68 +379,70 @@
 		</Button>
 	</div>
 
-	<div class="flex-1 overflow-y-auto p-2">
-		<div class="space-y-0.5">
-			{#if sessions.list.length === 0}
-				<p class="px-2 text-xs text-sidebar-foreground/50">No sessions</p>
-			{:else}
-				{#if sessions.recentThreads.length > 0}
-					<Collapsible.Root
-						open={preferences.sidebarRecentOpen}
-						onOpenChange={(v) => preferences.setSidebarRecentOpen(v)}
-					>
-						<Collapsible.Trigger
-							class="flex w-full items-center gap-1 px-2 pb-1 pt-1 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+	{#if showSidebarBody}
+		<div class="flex-1 overflow-y-auto p-2">
+			<div class="space-y-0.5">
+				{#if sessions.list.length === 0}
+					<p class="px-2 text-xs text-sidebar-foreground/50">No sessions</p>
+				{:else}
+					{#if sessions.recentThreads.length > 0}
+						<Collapsible.Root
+							open={preferences.sidebarRecentOpen}
+							onOpenChange={(v) => preferences.setSidebarRecentOpen(v)}
 						>
-							{#if preferences.sidebarRecentOpen}
-								<ChevronDownIcon class="size-3 shrink-0" />
-							{:else}
-								<ChevronRightIcon class="size-3 shrink-0" />
-							{/if}
-							Recent
-						</Collapsible.Trigger>
-						<Collapsible.Content class="space-y-0.5">
-							{#each sessions.recentThreads as threadObj (`${threadObj.sessionId}:${threadObj.threadId}`)}
-								{@render recentThreadItem(
-									threadObj,
-									isRecentThreadSelected(
-										threadObj.sessionId,
-										threadObj.threadId,
-									),
-								)}
-							{/each}
-						</Collapsible.Content>
-					</Collapsible.Root>
-				{/if}
+							<Collapsible.Trigger
+								class="flex w-full items-center gap-1 px-2 pb-1 pt-1 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+							>
+								{#if preferences.sidebarRecentOpen}
+									<ChevronDownIcon class="size-3 shrink-0" />
+								{:else}
+									<ChevronRightIcon class="size-3 shrink-0" />
+								{/if}
+								Recent
+							</Collapsible.Trigger>
+							<Collapsible.Content class="space-y-0.5">
+								{#each sessions.recentThreads as threadObj (`${threadObj.sessionId}:${threadObj.threadId}`)}
+									{@render recentThreadItem(
+										threadObj,
+										isRecentThreadSelected(
+											threadObj.sessionId,
+											threadObj.threadId,
+										),
+									)}
+								{/each}
+							</Collapsible.Content>
+						</Collapsible.Root>
+					{/if}
 
-				{#if sessions.list.length > 0}
-					<Collapsible.Root
-						open={preferences.sidebarAllOpen}
-						onOpenChange={(v) => preferences.setSidebarAllOpen(v)}
-					>
-						<Collapsible.Trigger
-							class="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+					{#if sessions.list.length > 0}
+						<Collapsible.Root
+							open={preferences.sidebarAllOpen}
+							onOpenChange={(v) => preferences.setSidebarAllOpen(v)}
 						>
-							{#if preferences.sidebarAllOpen}
-								<ChevronDownIcon class="size-3 shrink-0" />
-							{:else}
-								<ChevronRightIcon class="size-3 shrink-0" />
-							{/if}
-							All sessions
-						</Collapsible.Trigger>
-						<Collapsible.Content class="space-y-0.5">
-							{#each sessions.list as sessionObj (sessionObj.id)}
-								{@render sessionItem(
-									sessionObj,
-									sessions.selectedId === sessionObj.id,
-								)}
-							{/each}
-						</Collapsible.Content>
-					</Collapsible.Root>
+							<Collapsible.Trigger
+								class="flex w-full items-center gap-1 px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+							>
+								{#if preferences.sidebarAllOpen}
+									<ChevronDownIcon class="size-3 shrink-0" />
+								{:else}
+									<ChevronRightIcon class="size-3 shrink-0" />
+								{/if}
+								All sessions
+							</Collapsible.Trigger>
+							<Collapsible.Content class="space-y-0.5">
+								{#each sessions.list as sessionObj (sessionObj.id)}
+									{@render sessionItem(
+										sessionObj,
+										sessions.selectedId === sessionObj.id,
+									)}
+								{/each}
+							</Collapsible.Content>
+						</Collapsible.Root>
+					{/if}
 				{/if}
-			{/if}
+			</div>
 		</div>
-	</div>
+	{/if}
 
 	<Dialog.Root bind:open={renameDialogOpen}>
 		<Dialog.Content class="sm:max-w-md">

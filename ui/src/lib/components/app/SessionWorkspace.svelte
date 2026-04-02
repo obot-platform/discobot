@@ -111,47 +111,63 @@
 			{#key session.threads.selectedId ?? session.sessionId}
 				<ThreadWorkspace
 					mainClass="flex min-h-0 flex-1 flex-col overflow-hidden"
-					sidebarOpen={sidebarOpen()}
+					showSidebarToggle={!sidebarOpen()}
+					reserveSidebarSpace={false}
 					onToggleSidebar={toggleSidebar}
 					mode={session.isPending ? "conversation-only" : undefined}
 				/>
 			{/key}
 		{:else}
-			<Resizable.PaneGroup
-				direction="horizontal"
-				autoSaveId="discobot-ui-sidebar-layout"
-				class="min-h-0 flex-1"
-			>
-				<Resizable.Pane
-					bind:this={desktopSidebarPane}
-					defaultSize={16}
-					minSize={10}
-					maxSize={35}
-					collapsible
-					collapsedSize={0}
-					onCollapse={() => {
-						sessionView.desktopSidebarOpen = false;
-					}}
-					onExpand={() => {
-						sessionView.desktopSidebarOpen = true;
-					}}
+			<div class="relative min-h-0 flex-1">
+				<Resizable.PaneGroup
+					direction="horizontal"
+					autoSaveId="discobot-ui-sidebar-layout"
+					class="min-h-0 flex-1"
 				>
-					<div class="box-border h-full min-h-0 py-3 pl-3 pr-2">
-						<SessionSidebar onToggleSidebar={toggleSidebar} />
+					<Resizable.Pane
+						bind:this={desktopSidebarPane}
+						defaultSize={16}
+						minSize={10}
+						maxSize={35}
+						collapsible
+						collapsedSize={0}
+						onCollapse={() => {
+							sessionView.desktopSidebarOpen = false;
+						}}
+						onExpand={() => {
+							sessionView.desktopSidebarOpen = true;
+						}}
+					>
+						<div class="box-border h-full min-h-0 py-3 pl-3 pr-2">
+							<SessionSidebar onToggleSidebar={toggleSidebar} />
+						</div>
+					</Resizable.Pane>
+					<Resizable.Handle class="bg-transparent after:w-3" />
+					<Resizable.Pane minSize={45} class="min-h-0">
+						{#key session.threads.selectedId ?? session.sessionId}
+							<ThreadWorkspace
+								mainClass="flex h-full min-h-0 flex-col overflow-hidden"
+								reserveSidebarSpace={!sessionView.desktopSidebarOpen}
+								mode={session.isPending ? "conversation-only" : undefined}
+							/>
+						{/key}
+					</Resizable.Pane>
+				</Resizable.PaneGroup>
+
+				{#if !sessionView.desktopSidebarOpen}
+					<div
+						class="pointer-events-none absolute inset-y-0 left-0 z-20 box-border py-3 pl-3 pr-2"
+					>
+						<div class="pointer-events-auto">
+							<SessionSidebar
+								mode="floating"
+								collapsed
+								onToggleSidebar={toggleSidebar}
+							/>
+						</div>
 					</div>
-				</Resizable.Pane>
-				<Resizable.Handle class="bg-transparent after:w-3" />
-				<Resizable.Pane minSize={45} class="min-h-0">
-					{#key session.threads.selectedId ?? session.sessionId}
-						<ThreadWorkspace
-							mainClass="flex h-full min-h-0 flex-col overflow-hidden"
-							sidebarOpen={sidebarOpen()}
-							onToggleSidebar={toggleSidebar}
-							mode={session.isPending ? "conversation-only" : undefined}
-						/>
-					{/key}
-				</Resizable.Pane>
-			</Resizable.PaneGroup>
+				{/if}
+			</div>
 		{/if}
 	</div>
 </div>

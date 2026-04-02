@@ -4,13 +4,20 @@
 	import type { ThreadState } from "$lib/api-types";
 
 	type Props = {
-		sidebarOpen: boolean;
-		onToggleSidebar: () => void;
+		showSidebarToggle?: boolean;
+		reserveSidebarSpace?: boolean;
+		onToggleSidebar?: () => void;
 		title: string;
 		state?: ThreadState;
 	};
 
-	let { sidebarOpen, onToggleSidebar, title, state }: Props = $props();
+	let {
+		showSidebarToggle = false,
+		reserveSidebarSpace = false,
+		onToggleSidebar,
+		title,
+		state,
+	}: Props = $props();
 
 	function threadStateLabel(value: ThreadState | undefined) {
 		if (value === "interrupted") {
@@ -41,18 +48,22 @@
 		class="absolute inset-0 pointer-events-auto"
 		data-tauri-drag-region
 	></div>
-	{#if !sidebarOpen}
+	{#if showSidebarToggle}
 		<div class="relative z-10 tauri-no-drag">
-			<Button
-				variant="ghost"
-				size="icon-xs"
-				onclick={onToggleSidebar}
-				aria-label="Expand sessions panel"
-				title="Expand sessions panel"
-			>
-				<PanelLeftIcon class="size-3.5" />
-			</Button>
+			{#if onToggleSidebar}
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					onclick={onToggleSidebar}
+					aria-label="Expand sessions panel"
+					title="Expand sessions panel"
+				>
+					<PanelLeftIcon class="size-3.5" />
+				</Button>
+			{/if}
 		</div>
+	{:else if reserveSidebarSpace}
+		<div class="relative z-10 w-[10.75rem] shrink-0" aria-hidden="true"></div>
 	{/if}
 	<div
 		class="relative z-10 flex min-w-0 items-center gap-2"
