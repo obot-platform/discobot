@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -61,12 +62,15 @@ func LoadStatus(hooksDataDir string) StatusFile {
 	if status.PendingHooks == nil {
 		status.PendingHooks = []string{}
 	}
+	sort.Strings(status.PendingHooks)
 	return status
 }
 
 // SaveStatus atomically writes the status file.
 func SaveStatus(hooksDataDir string, status StatusFile) error {
 	_ = os.MkdirAll(hooksDataDir, 0o755)
+
+	sort.Strings(status.PendingHooks)
 
 	data, err := json.MarshalIndent(status, "", "\t")
 	if err != nil {

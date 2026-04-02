@@ -171,3 +171,17 @@ exit 0
 		t.Fatalf("pendingHooks mismatch: got %v want %v", got.PendingHooks, []string{"go-check"})
 	}
 }
+
+func TestAddPendingHooks_SortsHookIDsAlphaNumerically(t *testing.T) {
+	hooksDataDir := t.TempDir()
+
+	if err := AddPendingHooks(hooksDataDir, []string{"hook-2", "hook-10", "hook-1", "hook-2"}); err != nil {
+		t.Fatalf("AddPendingHooks() failed: %v", err)
+	}
+
+	got := GetPendingHookIDs(hooksDataDir)
+	want := []string{"hook-1", "hook-10", "hook-2"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("pendingHooks mismatch: got %v want %v", got, want)
+	}
+}

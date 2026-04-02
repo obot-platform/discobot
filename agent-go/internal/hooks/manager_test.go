@@ -3,6 +3,7 @@ package hooks
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -231,5 +232,85 @@ func TestEmitCurrentStatusChunk_EmitsHooksStatusDataChunk(t *testing.T) {
 	}
 	if gotStatus.Hooks["go-check"].LastResult != "pending" {
 		t.Fatalf("hook result = %q, want pending", gotStatus.Hooks["go-check"].LastResult)
+	}
+}
+
+func TestEvaluateFileHooks_RunsLowestPendingHookIDFirst(t *testing.T) {
+	homeDir := t.TempDir()
+	workspaceRoot := t.TempDir()
+	t.Setenv("HOME", homeDir)        // Unix
+	t.Setenv("USERPROFILE", homeDir) // Windows
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = workspaceRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	hooksDir := filepath.Join(workspaceRoot, HooksDir)
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() failed: %v", err)
+	}
+
+	orderLog := filepath.Join(workspaceRoot, "hook-order.log")
+	firstHookPath := filepath.Join(hooksDir, "01-first.sh")
+	firstHook := `#!/bin/bash
+#---
+# name: Zulu First
+# type: file
+# pattern: "*.txt"
+#---
+echo "01-first" >> "` + orderLog + `"
+exit 1
+`
+	if err := os.WriteFile(firstHookPath, []byte(firstHook), 0o755); err != nil {
+		t.Fatalf("WriteFile(firstHook) failed: %v", err)
+	}
+
+	secondHookPath := filepath.Join(hooksDir, "02-second.sh")
+	secondHook := `#!/bin/bash
+#---
+# name: Alpha Second
+# type: file
+# pattern: "*.txt"
+#---
+echo "02-second" >> "` + orderLog + `"
+exit 0
+`
+	if err := os.WriteFile(secondHookPath, []byte(secondHook), 0o755); err != nil {
+		t.Fatalf("WriteFile(secondHook) failed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "pending.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(pending.txt) failed: %v", err)
+	}
+
+	mgr := NewManager(workspaceRoot, "session-123")
+	if err := mgr.Init(); err != nil {
+		t.Fatalf("Init() failed: %v", err)
+	}
+
+	eval := mgr.EvaluateFileHooks()
+	if !eval.ShouldReprompt {
+		t.Fatal("expected first pending hook failure to request reprompt")
+	}
+	if eval.HookFailure == nil {
+		t.Fatal("expected hook failure metadata")
+	}
+	if eval.HookFailure.HookName != "Zulu First" {
+		t.Fatalf("hook failure name = %q, want %q", eval.HookFailure.HookName, "Zulu First")
+	}
+
+	orderData, err := os.ReadFile(orderLog)
+	if err != nil {
+		t.Fatalf("ReadFile(orderLog) failed: %v", err)
+	}
+	if string(orderData) != "01-first\n" {
+		t.Fatalf("hook execution order = %q, want only first hook", string(orderData))
+	}
+
+	status := LoadStatus(mgr.hooksDataDir)
+	if strings.Join(status.PendingHooks, ",") != "01-first,02-second" {
+		t.Fatalf("pendingHooks = %v, want [01-first 02-second]", status.PendingHooks)
 	}
 }

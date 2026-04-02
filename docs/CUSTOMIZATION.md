@@ -297,6 +297,8 @@ Please read the file to see the full output and address the issues. (Attempt 1/3
 
 After 3 consecutive hook-triggered retries, Discobot stops re-prompting. The pending hooks will re-evaluate on the next user-initiated message.
 
+When multiple file hooks are pending, Discobot re-runs them in alphanumeric order by hook ID. If the earliest pending hook keeps failing, later pending hooks will wait until that earlier hook passes or is no longer pending.
+
 ### Hook Reloading
 
 Hooks are automatically reloaded when files in `.discobot/hooks/` change. Adding, removing, or editing hook files takes effect on the next evaluation cycle without restarting the session.

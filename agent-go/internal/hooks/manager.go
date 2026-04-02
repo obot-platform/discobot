@@ -350,16 +350,17 @@ func (m *Manager) EvaluateFileHooks() FileHookEvalResult {
 		return noAction
 	}
 
-	pendingSet := make(map[string]bool, len(pendingIDs))
-	for _, id := range pendingIDs {
-		pendingSet[id] = true
+	hooksByID := make(map[string]Hook, len(fileHooks))
+	for _, hook := range fileHooks {
+		hooksByID[hook.ID] = hook
 	}
 
 	// Get all dirty files for pattern matching
 	allDirty := getAllDirtyFiles(m.workspaceRoot)
 
-	for _, hook := range fileHooks {
-		if !pendingSet[hook.ID] {
+	for _, hookID := range pendingIDs {
+		hook, ok := hooksByID[hookID]
+		if !ok {
 			continue
 		}
 
