@@ -96,15 +96,17 @@ Background processes with optional HTTP proxying.
 Executable scripts that Discobot starts/stops as child processes.
 Requirements: executable bit, shebang line, script body.
 
-Fields: name, description, http (port number), https (port number), path (URL path for preview)
+Fields: name, description, order (lower numbers appear first in the UI), http (port number), https (port number), path (URL path for preview)
 
 Service ID is derived from filename: extensions stripped (.sh,.py,.js,etc), lowercase, non-alphanumeric removed.
+Services with `order` sort before unordered services. Ties fall back to alphabetical name order.
 
 ```bash
 #!/bin/bash
 #---
 # name: Dev Server
 # description: Vite development server
+# order: 10
 # http: 3000
 #---
 pnpm dev
@@ -129,6 +131,7 @@ Does not need executable bit or shebang. Must have http or https and empty body.
 ---
 name: Web App
 description: Started by devcontainer
+order: 10
 http: 3000
 ---
 ```
