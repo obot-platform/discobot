@@ -132,6 +132,23 @@ func yieldChunksAndBlock(chunks ...message.MessageChunk) func(context.Context, s
 	}
 }
 
+func cleanupCompletion(t *testing.T, cm *agent.CompletionManager, threadID string) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		cm.Cancel(threadID)
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			result := cm.PollChunks(threadID, 0)
+			if result == nil || result.Done {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("timed out waiting for completion %q to stop", threadID)
+	})
+}
+
 func yieldChunksAndFinish(chunks ...message.MessageChunk) func(context.Context, string, agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	return func(_ context.Context, _ string, _ agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 		return func(yield func(message.MessageChunk, error) bool) {
@@ -385,7 +402,7 @@ func TestPostChat_QueuesPromptWhileCompletionIsActive(t *testing.T) {
 	if _, err := cm.Chat("thread-1", agent.PromptRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	defer cm.Cancel("thread-1")
+	cleanupCompletion(t, cm, "thread-1")
 
 	body, err := json.Marshal(api.ChatRequest{Messages: []message.UIMessage{{
 		ID:    "msg-1",
@@ -903,7 +920,7 @@ func TestRegisterRoutes_ActiveCompletionDoesNotMarkThreadInterrupted(t *testing.
 	if completionID == "" {
 		t.Fatal("expected active completion id")
 	}
-	defer cm.Cancel("thread-1")
+	cleanupCompletion(t, cm, "thread-1")
 
 	resp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
 	if err != nil {

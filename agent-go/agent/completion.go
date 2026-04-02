@@ -132,13 +132,16 @@ func (cm *CompletionManager) runCompletion(ctx context.Context, comp *activeComp
 		comp.mu.Unlock()
 	}
 	comp.mu.Lock()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		comp.err = ctxErr
+	}
 	comp.done = true
 	comp.cond.Broadcast()
 	comp.mu.Unlock()
 	cm.mu.Lock()
 	cm.cond.Broadcast()
 	cm.mu.Unlock()
-	cm.notifyTurnComplete(threadID, nil)
+	cm.notifyTurnComplete(threadID, ctx.Err())
 }
 
 // PollResult holds the chunks returned by PollChunks or WaitChunks.

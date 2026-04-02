@@ -66,12 +66,14 @@ func (h *Handler) OnTurnStart(_ string) {
 }
 
 // OnTurnComplete is called when a completion finishes. It schedules hook evaluation.
-func (h *Handler) OnTurnComplete(threadID string, _ error) {
+func (h *Handler) OnTurnComplete(threadID string, err error) {
 	if h.hookManager != nil && h.hookManager.HasFileHooks() {
 		// Fire-and-forget goroutine matching the TS scheduleHookEvaluation pattern.
 		go h.scheduleHookEvaluation(threadID)
 	}
-	go h.startNextQueuedPrompt(threadID)
+	if err == nil {
+		go h.startNextQueuedPrompt(threadID)
+	}
 }
 
 func (h *Handler) startNextQueuedPrompt(threadID string) {

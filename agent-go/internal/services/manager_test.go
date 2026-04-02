@@ -117,7 +117,12 @@ func waitForPIDFile(t *testing.T, path string) int {
 			return false, "", err
 		}
 
-		parsed, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		text := strings.TrimSpace(string(data))
+		if text == "" {
+			return false, "waiting for pid file contents", nil
+		}
+
+		parsed, err := strconv.Atoi(text)
 		if err != nil {
 			return false, "", err
 		}
