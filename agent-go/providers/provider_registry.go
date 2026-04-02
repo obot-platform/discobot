@@ -144,7 +144,7 @@ func (r *ProviderRegistry) ResolveModelInProvider(currentProviderID, ref string,
 	if ref == "" {
 		ids := r.IDs()
 		if len(ids) == 0 {
-			return ModelRef{}, fmt.Errorf("no model providers are available; configure a provider, set MODEL, or pass --model")
+			return ModelRef{}, fmt.Errorf("no model providers are available; configure a provider, set DISCOBOT_MODEL, or pass --model")
 		}
 
 		// Find the first available provider with a default for this task type.
@@ -158,7 +158,7 @@ func (r *ProviderRegistry) ResolveModelInProvider(currentProviderID, ref string,
 			}
 		}
 		return ModelRef{}, fmt.Errorf(
-			"no provider available with a default %q model; available providers: %s; set MODEL or pass --model",
+			"no provider available with a default %q model; available providers: %s; set DISCOBOT_MODEL or pass --model",
 			taskType,
 			strings.Join(ids, ", "),
 		)

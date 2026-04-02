@@ -254,7 +254,7 @@ type CreateOptions struct {
 	ProjectID string
 
 	// MCPOAuthRedirectBase is the base URL for MCP OAuth callbacks.
-	// Set as MCP_OAUTH_REDIRECT_BASE environment variable.
+	// Set as DISCOBOT_MCP_OAUTH_REDIRECT_BASE environment variable.
 	MCPOAuthRedirectBase string
 
 	// AgentServerURL is the URL the agent uses to reach the Discobot server

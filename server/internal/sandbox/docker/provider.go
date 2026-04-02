@@ -361,6 +361,7 @@ func (p *Provider) Create(ctx context.Context, sessionID string, opts sandbox.Cr
 
 	// Add session ID (required by discobot-agent for filesystem setup)
 	env = append(env, fmt.Sprintf("SESSION_ID=%s", sessionID))
+	env = append(env, fmt.Sprintf("DISCOBOT_SESSION_ID=%s", sessionID))
 
 	// Add hashed secret as DISCOBOT_SECRET env var
 	if opts.SharedSecret != "" {
@@ -388,7 +389,7 @@ func (p *Provider) Create(ctx context.Context, sessionID string, opts sandbox.Cr
 		env = append(env, fmt.Sprintf("DISCOBOT_PROJECT_ID=%s", opts.ProjectID))
 	}
 	if opts.MCPOAuthRedirectBase != "" {
-		env = append(env, fmt.Sprintf("MCP_OAUTH_REDIRECT_BASE=%s", opts.MCPOAuthRedirectBase))
+		env = append(env, fmt.Sprintf("DISCOBOT_MCP_OAUTH_REDIRECT_BASE=%s", opts.MCPOAuthRedirectBase))
 	}
 	if opts.AgentServerURL != "" {
 		env = append(env, fmt.Sprintf("DISCOBOT_SERVER_URL=%s", opts.AgentServerURL))

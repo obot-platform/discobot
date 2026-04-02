@@ -90,7 +90,7 @@ func selectInitialThreadID(_ *thread.Store, cfg *config.Config, forceNew bool, r
 		return resumeID
 	}
 
-	// Respect explicit SESSION_ID so advanced workflows remain deterministic.
+	// Respect explicit DISCOBOT_SESSION_ID so advanced workflows remain deterministic.
 	if cfg.SessionID != "" && cfg.SessionID != "default" {
 		return cfg.SessionID
 	}

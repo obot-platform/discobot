@@ -157,7 +157,7 @@ func TestProviderRegistry_ResolveModel_NoProvidersAvailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no providers are available")
 	}
-	if got := err.Error(); got != "no model providers are available; configure a provider, set MODEL, or pass --model" {
+	if got := err.Error(); got != "no model providers are available; configure a provider, set DISCOBOT_MODEL, or pass --model" {
 		t.Fatalf("unexpected error: %q", got)
 	}
 }
@@ -171,7 +171,7 @@ func TestProviderRegistry_ResolveModel_NoDefaultIncludesAvailableProviders(t *te
 	if err == nil {
 		t.Fatal("expected error when no provider has a default model")
 	}
-	if got := err.Error(); got != `no provider available with a default "chat" model; available providers: anthropic, openai; set MODEL or pass --model` {
+	if got := err.Error(); got != `no provider available with a default "chat" model; available providers: anthropic, openai; set DISCOBOT_MODEL or pass --model` {
 		t.Fatalf("unexpected error: %q", got)
 	}
 }

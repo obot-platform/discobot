@@ -44,7 +44,7 @@ type Flags struct {
 // Must be called before flag.Parse().
 func AddFlags() *Flags {
 	model := new(string)
-	flag.StringVar(model, "model", "", "Model to use, e.g. anthropic/claude-opus-4-6 (overrides MODEL env var)")
+	flag.StringVar(model, "model", "", "Model to use, e.g. anthropic/claude-opus-4-6 (overrides DISCOBOT_MODEL env var)")
 	flag.StringVar(model, "m", "", "Alias for --model")
 
 	plan := new(bool)

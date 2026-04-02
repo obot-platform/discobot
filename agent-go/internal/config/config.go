@@ -11,27 +11,27 @@ import (
 // Config holds all configuration for the agent-go process.
 type Config struct {
 	// Server settings (HTTP API mode)
-	Port       int    // HTTP server port (default: 3002)
+	Port       int    // HTTP server port (DISCOBOT_PORT, default: 3002)
 	SecretHash string // Auth secret for API access (DISCOBOT_SECRET)
 
 	// Agent settings
-	AgentCwd         string   // Working directory for the agent (default: cwd)
-	Model            string   // Default model in "providerId/modelId" format
-	BashEnvAllowlist []string // Optional CSV allowlist of env var names passed to Bash (default: pass all env)
+	AgentCwd         string   // Working directory for the agent (DISCOBOT_AGENT_CWD, default: cwd)
+	Model            string   // Default model in "providerId/modelId" format (DISCOBOT_MODEL)
+	BashEnvAllowlist []string // Optional CSV allowlist of env var names passed to Bash (DISCOBOT_BASH_ENV_ALLOWLIST, default: pass all env)
 
 	// Storage
-	DataDir    string // Root data directory (default: ~/.discobot)
-	ThreadsDir string // Thread persistence directory
+	DataDir    string // Root data directory (DISCOBOT_DATA_DIR, default: ~/.discobot)
+	ThreadsDir string // Thread persistence directory (DISCOBOT_THREADS_DIR)
 
 	// Hooks
 	HooksEnabled bool   // Enable file hooks (DISCOBOT_HOOKS_ENABLED)
-	SessionID    string // Session ID for hooks (default: "default")
+	SessionID    string // Session ID for hooks (DISCOBOT_SESSION_ID, default: "default")
 
 	// Idle timeout
-	IdleTimeout time.Duration // Exit after idle period with no active completions (0 = disabled)
+	IdleTimeout time.Duration // Exit after idle period with no active completions (DISCOBOT_IDLE_TIMEOUT, 0 = disabled)
 
 	// MCP OAuth settings
-	MCPOAuthRedirectBase string // Base URL for OAuth callbacks (MCP_OAUTH_REDIRECT_BASE)
+	MCPOAuthRedirectBase string // Base URL for OAuth callbacks (DISCOBOT_MCP_OAUTH_REDIRECT_BASE)
 	DiscobotServerURL    string // Discobot server URL for posting tokens (DISCOBOT_SERVER_URL)
 	DiscobotProjectID    string // Project ID for the token POST path (DISCOBOT_PROJECT_ID)
 }
@@ -44,35 +44,31 @@ func Load() *Config {
 	cfg := &Config{}
 
 	// Server
-	cfg.Port = getEnvInt("PORT", 3002)
+	cfg.Port = getEnvInt("DISCOBOT_PORT", 3002)
 	cfg.SecretHash = getEnv("DISCOBOT_SECRET", "")
 
 	// Agent
-	cfg.AgentCwd = getEnv("AGENT_CWD", cwd)
-	cfg.Model = getEnv("MODEL", "")
-	cfg.BashEnvAllowlist = getEnvCSV("BASH_ENV_ALLOWLIST")
-	if len(cfg.BashEnvAllowlist) == 0 {
-		// Backwards-compatible alias.
-		cfg.BashEnvAllowlist = getEnvCSV("BASH_ENV_WHITELIST")
-	}
+	cfg.AgentCwd = getEnv("DISCOBOT_AGENT_CWD", cwd)
+	cfg.Model = getEnv("DISCOBOT_MODEL", "")
+	cfg.BashEnvAllowlist = getEnvCSV("DISCOBOT_BASH_ENV_ALLOWLIST")
 
 	// Storage — default to ~/.discobot
 	home, _ := os.UserHomeDir()
 	if home == "" {
 		home = cwd
 	}
-	cfg.DataDir = getEnv("DATA_DIR", filepath.Join(home, ".discobot"))
-	cfg.ThreadsDir = getEnv("THREADS_DIR", filepath.Join(cfg.DataDir, "threads"))
+	cfg.DataDir = getEnv("DISCOBOT_DATA_DIR", filepath.Join(home, ".discobot"))
+	cfg.ThreadsDir = getEnv("DISCOBOT_THREADS_DIR", filepath.Join(cfg.DataDir, "threads"))
 
 	// Hooks
 	cfg.HooksEnabled = getEnvBool("DISCOBOT_HOOKS_ENABLED", false)
-	cfg.SessionID = getEnv("SESSION_ID", "default")
+	cfg.SessionID = getEnv("DISCOBOT_SESSION_ID", "default")
 
 	// Idle timeout
-	cfg.IdleTimeout = getEnvDuration("IDLE_TIMEOUT", 0)
+	cfg.IdleTimeout = getEnvDuration("DISCOBOT_IDLE_TIMEOUT", 0)
 
 	// MCP OAuth
-	cfg.MCPOAuthRedirectBase = getEnv("MCP_OAUTH_REDIRECT_BASE", "")
+	cfg.MCPOAuthRedirectBase = getEnv("DISCOBOT_MCP_OAUTH_REDIRECT_BASE", "")
 	cfg.DiscobotServerURL = getEnv("DISCOBOT_SERVER_URL", "")
 	cfg.DiscobotProjectID = getEnv("DISCOBOT_PROJECT_ID", "")
 

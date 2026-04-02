@@ -133,7 +133,7 @@ func (p *Provider) Create(_ context.Context, sessionID string, opts sandbox.Crea
 
 	// Build environment variables
 	env := map[string]string{
-		"SESSION_ID":            sessionID,
+		"DISCOBOT_SESSION_ID":   sessionID,
 		"WORKSPACE_ORIGIN_PATH": workspacePath,
 	}
 
@@ -156,7 +156,7 @@ func (p *Provider) Create(_ context.Context, sessionID string, opts sandbox.Crea
 		env["DISCOBOT_PROJECT_ID"] = opts.ProjectID
 	}
 	if opts.MCPOAuthRedirectBase != "" {
-		env["MCP_OAUTH_REDIRECT_BASE"] = opts.MCPOAuthRedirectBase
+		env["DISCOBOT_MCP_OAUTH_REDIRECT_BASE"] = opts.MCPOAuthRedirectBase
 	}
 	if opts.AgentServerURL != "" {
 		env["DISCOBOT_SERVER_URL"] = opts.AgentServerURL
@@ -236,7 +236,7 @@ func (p *Provider) Start(_ context.Context, sessionID string) error {
 
 	// Set environment variables
 	cmd.Env = os.Environ() // Start with current environment
-	cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", port))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("DISCOBOT_PORT=%d", port))
 	for k, v := range info.env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
