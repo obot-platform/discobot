@@ -20,6 +20,7 @@
 	import DockWindowChrome from "$lib/components/app/parts/DockWindowChrome.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
+	import { renderServiceOutputText } from "$lib/service-output";
 	import {
 		ToggleGroup,
 		ToggleGroupItem,
@@ -42,6 +43,9 @@
 
 	type ViewMode = "preview" | "logs";
 	type Viewport = "desktop" | "tablet" | "mobile";
+	type RenderedServiceOutputEvent = ServiceOutputEvent & {
+		displayText: string;
+	};
 
 	const VIEWPORT_WIDTHS: Record<Viewport, string | null> = {
 		desktop: null,
@@ -75,7 +79,7 @@
 	let inputPath = $state("/");
 	let viewport = $state<Viewport>("desktop");
 	let viewMode = $state<ViewMode>("logs");
-	let logEvents = $state<ServiceOutputEvent[]>([]);
+	let logEvents = $state<RenderedServiceOutputEvent[]>([]);
 	let logsConnected = $state(false);
 	let logsContainer = $state<HTMLDivElement | null>(null);
 	let isLogsNearBottom = $state(true);
@@ -272,6 +276,20 @@
 		hasUnreadLogs = false;
 	}
 
+	function getRenderedLogEvent(
+		event: ServiceOutputEvent,
+	): RenderedServiceOutputEvent {
+		return {
+			...event,
+			displayText:
+				typeof event.data === "string"
+					? renderServiceOutputText(event.data)
+					: event.type === "exit"
+						? `Process exited with code ${event.exitCode ?? "unknown"}`
+						: (event.error ?? ""),
+		};
+	}
+
 	async function handleServiceAction() {
 		if (isMutatingService || !isRunnable || !service) {
 			return;
@@ -401,7 +419,7 @@
 				if (!isLogsNearBottom) {
 					hasUnreadLogs = true;
 				}
-				logEvents = [...logEvents, parsed];
+				logEvents = [...logEvents, getRenderedLogEvent(parsed)];
 			} catch (nextError) {
 				console.error("Failed to parse service output event:", nextError);
 			}
@@ -721,10 +739,7 @@
 								event.type === "error" && "font-semibold text-red-500",
 							)}
 						>
-							{event.data ??
-								(event.type === "exit"
-									? `Process exited with code ${event.exitCode ?? "unknown"}`
-									: (event.error ?? ""))}
+							{event.displayText}
 						</div>
 					{/each}
 				</div>
