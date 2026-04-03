@@ -326,7 +326,7 @@ func (cm *CompletionManager) Cancel(threadID string) (string, bool) {
 	comp, ok := cm.active[threadID]
 	cm.mu.Unlock()
 	if !ok {
-		return "", false
+		return "", cm.agent.Cancel(threadID)
 	}
 
 	comp.mu.Lock()
@@ -334,7 +334,7 @@ func (cm *CompletionManager) Cancel(threadID string) (string, bool) {
 	comp.mu.Unlock()
 
 	if done {
-		return "", false
+		return comp.id, cm.agent.Cancel(threadID)
 	}
 
 	comp.cancel()

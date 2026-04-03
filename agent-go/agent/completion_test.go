@@ -19,6 +19,7 @@ type mockAgent struct {
 	promptFn   func(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
 	resumeFn   func(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error]
 	messagesFn func(threadID, leafID string) ([]message.UIMessage, error)
+	cancelFn   func(threadID string) bool
 
 	interruptedThreads []string
 	models             []providers.ModelInfo
@@ -39,7 +40,10 @@ func (m *mockAgent) Resume(ctx context.Context, threadID string) iter.Seq2[messa
 	return func(_ func(message.MessageChunk, error) bool) {}
 }
 
-func (m *mockAgent) Cancel(_ string) bool {
+func (m *mockAgent) Cancel(threadID string) bool {
+	if m.cancelFn != nil {
+		return m.cancelFn(threadID)
+	}
 	return false
 }
 
@@ -317,6 +321,34 @@ func TestCompletionManager_Cancel_NoActive(t *testing.T) {
 	_, ok := cm.Cancel("thread1")
 	if ok {
 		t.Error("expected no active completion to cancel")
+	}
+}
+
+func TestCompletionManager_Cancel_DelegatesForPausedTurn(t *testing.T) {
+	agent := &mockAgent{
+		promptFn: simplePromptFn([]message.MessageChunk{
+			message.TextDeltaChunk{ID: "t1", Delta: "paused"},
+		}),
+		cancelFn: func(threadID string) bool {
+			return threadID == "thread1"
+		},
+	}
+	cm := NewCompletionManager(agent)
+
+	completionID, err := cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForDone(t, cm, "thread1")
+
+	cancelledID, ok := cm.Cancel("thread1")
+	if !ok {
+		t.Fatal("expected paused turn cancellation to succeed")
+	}
+	if cancelledID != completionID {
+		t.Fatalf("expected completion ID %q, got %q", completionID, cancelledID)
 	}
 }
 

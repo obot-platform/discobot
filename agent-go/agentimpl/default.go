@@ -1002,6 +1002,8 @@ func (a *DefaultAgent) handleCompactCommand(ctx context.Context, threadID string
 }
 
 // Cancel cancels the active prompt for a thread.
+// If the turn is paused waiting for AskUserQuestion answers, it finalizes that
+// turn as cancelled so the thread can accept new prompts again.
 func (a *DefaultAgent) Cancel(threadID string) bool {
 	a.mu.Lock()
 	cancel, ok := a.cancels[threadID]
@@ -1010,7 +1012,15 @@ func (a *DefaultAgent) Cancel(threadID string) bool {
 		cancel()
 		return true
 	}
-	return false
+	if a.store == nil {
+		return false
+	}
+	cancelled, err := thread.CancelWaitingTurn(a.store, threadID, "cancelled by user")
+	if err != nil {
+		log.Printf("agent: cancel paused turn for %s: %v", threadID, err)
+		return false
+	}
+	return cancelled
 }
 
 // Messages returns the conversation history as UI-projected messages.

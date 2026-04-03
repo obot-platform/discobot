@@ -74,7 +74,9 @@ type Agent interface {
 	Resume(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error]
 
 	// Cancel cancels the active prompt for a thread.
-	// Returns true if a prompt was active and cancelled, false otherwise.
+	// Implementations may also cancel a turn paused waiting for AskUserQuestion
+	// answers so the thread is no longer blocked.
+	// Returns true if a prompt/paused turn was cancelled, false otherwise.
 	Cancel(threadID string) bool
 
 	// Messages returns the conversation history for a thread as

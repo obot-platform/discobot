@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"iter"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/obot-platform/discobot/agent-go/internal/api"
@@ -141,7 +142,7 @@ func RunTurn(
 			// If context was cancelled (e.g. Ctrl+C), clean up turn state
 			// so the turn is not resumed on the next prompt or restart.
 			if ctx.Err() != nil {
-				_ = store.DeleteTurnState(threadID)
+				_ = completeTurn(store, threadID, &turnState)
 			}
 			return
 		}
@@ -151,7 +152,7 @@ func RunTurn(
 		}
 
 		// 5. Turn complete — emit finish envelope and delete turn state.
-		if err := finalizeTurnState(store, threadID, &turnState); err != nil {
+		if err := completeTurn(store, threadID, &turnState); err != nil {
 			yield(nil, fmt.Errorf("save finished turn state: %w", err))
 			return
 		}
@@ -159,7 +160,6 @@ func RunTurn(
 			FinishReason:    "stop",
 			MessageMetadata: buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt),
 		}, nil) //nolint:errcheck
-		_ = store.DeleteTurnState(threadID)
 	}
 }
 
@@ -203,7 +203,7 @@ func ResumeTurn(
 		}
 		if !executeLoop(ctx, provider, executor, execToolCtx, store, threadID, turnID, turnState, yield) {
 			if ctx.Err() != nil {
-				_ = store.DeleteTurnState(threadID)
+				_ = completeTurn(store, threadID, turnState)
 			}
 			return
 		}
@@ -212,7 +212,7 @@ func ResumeTurn(
 			return // keep turn state on disk
 		}
 
-		if err := finalizeTurnState(store, threadID, turnState); err != nil {
+		if err := completeTurn(store, threadID, turnState); err != nil {
 			yield(nil, fmt.Errorf("save finished turn state: %w", err))
 			return
 		}
@@ -220,7 +220,6 @@ func ResumeTurn(
 			FinishReason:    "stop",
 			MessageMetadata: buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt),
 		}, nil)
-		_ = store.DeleteTurnState(threadID)
 	}
 }
 
@@ -1706,6 +1705,101 @@ func finalizeTurnState(store *Store, threadID string, turnState *TurnState) erro
 		turnState.FinishedAt = &finishedAt
 	}
 	return store.SaveTurnState(threadID, *turnState)
+}
+
+func persistTurnResponseMetadata(store *Store, threadID string, turnState *TurnState) error {
+	if turnState.AssistantMsgID == "" {
+		return nil
+	}
+	stored, err := store.LoadMessage(threadID, turnState.AssistantMsgID)
+	if err != nil {
+		return nil
+	}
+	stored.Message.Metadata = buildMessageMetadata(turnState.Config, turnState.StartedAt, turnState.FinishedAt)
+	return store.SaveMessage(threadID, stored)
+}
+
+func completeTurn(store *Store, threadID string, turnState *TurnState) error {
+	if err := finalizeTurnState(store, threadID, turnState); err != nil {
+		return err
+	}
+	_ = persistTurnResponseMetadata(store, threadID, turnState)
+	_ = store.DeleteTurnState(threadID)
+	return nil
+}
+
+// CancelWaitingTurn finalizes a turn paused in PhaseWaitingForAnswer as cancelled.
+// It records a negative approval response and a denied tool result so persisted
+// UI state matches an explicit cancellation.
+func CancelWaitingTurn(store *Store, threadID, reason string) (bool, error) {
+	turnState, err := store.LoadTurnState(threadID)
+	if err != nil {
+		return false, fmt.Errorf("load turn state: %w", err)
+	}
+	if turnState == nil || turnState.Phase != PhaseWaitingForAnswer {
+		return false, nil
+	}
+
+	pendingQuestion, err := store.LoadQuestion(threadID, turnState.ID, turnState.PendingApprovalID)
+	if err != nil {
+		return false, fmt.Errorf("load pending approval: %w", err)
+	}
+	if pendingQuestion == nil {
+		return false, fmt.Errorf("pending approval %s not found", turnState.PendingApprovalID)
+	}
+
+	stepIndex := turnState.CurrentStep
+	stepResult, err := store.LoadStepResult(threadID, turnState.ID, stepIndex)
+	if err != nil || stepResult == nil {
+		return false, fmt.Errorf("load step result for cancel: %w", err)
+	}
+	assistantMsg, err := loadStepAssistantMessage(store, threadID, stepResult)
+	if err != nil {
+		return false, fmt.Errorf("load assistant message for cancel: %w", err)
+	}
+
+	if strings.TrimSpace(reason) == "" {
+		reason = "cancelled"
+	}
+
+	if err := ensureLegacyStepToolResultsMaterialized(store, threadID, turnState.ID, turnState, stepIndex, extractToolCalls(assistantMsg)); err != nil {
+		return false, fmt.Errorf("materialize legacy tool results for cancel: %w", err)
+	}
+
+	approvalResponse := message.ToolApprovalResponse{
+		ToolCallID: pendingQuestion.ToolCallID,
+		ApprovalID: pendingQuestion.ApprovalID,
+		Approved:   false,
+		Reason:     reason,
+	}
+	if _, err := appendStepToolEventMessage(store, threadID, turnState.ID, turnState, stepIndex, approvalResponse); err != nil {
+		return false, fmt.Errorf("append approval response message: %w", err)
+	}
+
+	deniedResult := message.ToolResultPart{
+		ToolCallID: pendingQuestion.ToolCallID,
+		ToolName:   findToolName(stepResult.ToolCalls, pendingQuestion.ToolCallID),
+		Output:     message.ExecutionDeniedOutput{Reason: reason},
+	}
+	if _, err := appendStepToolEventMessage(store, threadID, turnState.ID, turnState, stepIndex, deniedResult); err != nil {
+		return false, fmt.Errorf("append denied tool result message: %w", err)
+	}
+
+	turnState.PendingApprovalID = ""
+	if err := completeTurn(store, threadID, turnState); err != nil {
+		return false, fmt.Errorf("complete cancelled turn: %w", err)
+	}
+
+	return true, nil
+}
+
+func findToolName(toolCalls []ToolCallInfo, toolCallID string) string {
+	for _, tc := range toolCalls {
+		if tc.ToolCallID == toolCallID {
+			return tc.ToolName
+		}
+	}
+	return ""
 }
 
 // filterContentParts returns only text and reasoning parts from a message,

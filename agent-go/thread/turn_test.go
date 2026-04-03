@@ -2766,6 +2766,80 @@ func TestResumeTurn_NestedApprovalIDsAreRemappedPerBoundary(t *testing.T) {
 	}
 }
 
+func TestCancelWaitingTurn_FinalizesPausedApproval(t *testing.T) {
+	store := NewStore(t.TempDir())
+	threadID := "thread1"
+
+	prov := &mockProvider{
+		responses: [][]message.ProviderMessageChunk{
+			{
+				message.StreamStartChunk{},
+				message.ToolCallChunk{ToolCallID: "tc1", ToolName: "dangerous_tool", Input: `{"action":"delete"}`},
+				message.FinishChunk{FinishReason: message.FinishReason{Unified: "tool-calls"}},
+			},
+		},
+	}
+	exec := &approvalMockExecutor{
+		approvalTools: map[string]json.RawMessage{
+			"tc1": json.RawMessage(`[{"question":"Are you sure?"}]`),
+		},
+	}
+
+	_ = collectChunks(t, RunTurn(
+		context.Background(), prov, exec, store,
+		threadID, "", TurnConfig{
+			Model:     "test-model",
+			UserParts: []message.Part{message.TextPart{Text: "delete it"}},
+		},
+	))
+
+	cancelled, err := CancelWaitingTurn(store, threadID, "cancelled by user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cancelled {
+		t.Fatal("expected paused turn cancellation to succeed")
+	}
+
+	state, err := store.LoadTurnState(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state != nil {
+		t.Fatalf("expected active turn state to be cleared, got %#v", state)
+	}
+
+	leaf, err := store.FindLeaf(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := store.BuildHistory(threadID, leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiMessages, err := message.ProjectUIMessages(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uiMessages) == 0 {
+		t.Fatal("expected projected UI messages")
+	}
+
+	foundDeniedTool := false
+	for _, part := range uiMessages[len(uiMessages)-1].Parts {
+		toolPart, ok := part.(message.DynamicToolPart)
+		if !ok {
+			continue
+		}
+		if toolPart.ToolCallID == "tc1" && toolPart.State == "output-denied" {
+			foundDeniedTool = true
+		}
+	}
+	if !foundDeniedTool {
+		t.Fatal("expected cancelled approval to project as output-denied")
+	}
+}
+
 // TestResumeTurn_ApprovalAnswered verifies that when an answer is available,
 // ResumeTurn resolves the approval and continues the turn.
 func TestResumeTurn_ApprovalAnswered(t *testing.T) {
