@@ -19,6 +19,7 @@ export const DEFAULT_MODEL_STORAGE_KEY = "chat.default.model";
 export const IGNORED_UPDATE_VERSION_STORAGE_KEY = "update.ignored.version";
 export const SIDEBAR_RECENT_OPEN_STORAGE_KEY = "sidebar.recent.open";
 export const SIDEBAR_ALL_OPEN_STORAGE_KEY = "sidebar.all.open";
+export const SIDEBAR_ALL_GROUPED_STORAGE_KEY = "sidebar.all.grouped";
 export const RECENT_THREADS_STORAGE_KEY = "recent.threads";
 export const PROMPT_HISTORY_STORAGE_KEY = "discobot:composer-history";
 export const PINNED_PROMPTS_STORAGE_KEY = "discobot:composer-history:pinned";
@@ -96,6 +97,14 @@ export function readSidebarAllOpen(): boolean {
 		return true;
 	}
 	const stored = window.localStorage.getItem(SIDEBAR_ALL_OPEN_STORAGE_KEY);
+	return stored === null ? true : stored === "true";
+}
+
+export function readSidebarAllGrouped(): boolean {
+	if (typeof window === "undefined") {
+		return true;
+	}
+	const stored = window.localStorage.getItem(SIDEBAR_ALL_GROUPED_STORAGE_KEY);
 	return stored === null ? true : stored === "true";
 }
 
@@ -361,6 +370,7 @@ export function toSessionSummaries(sessions: Session[]): SessionSummary[] {
 			name: session.displayName || session.name,
 			status: session.status,
 			isRecent: false,
+			workspaceId: session.workspaceId,
 		}));
 }
 

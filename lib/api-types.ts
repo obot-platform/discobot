@@ -102,7 +102,7 @@ export interface Workspace {
 	path: string;
 	/** Optional display name for the workspace (if not set, path is used) */
 	displayName?: string;
-	sourceType: "local" | "git";
+	sourceType: "local" | "git" | "managed";
 	/** Sandbox provider (empty string = use platform default) */
 	provider?: string;
 	status: WorkspaceStatus;

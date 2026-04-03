@@ -65,3 +65,22 @@ test("session sidebar owns the collapsed floating overlay state", () => {
 	);
 	assert.match(source, /aria-expanded=\{floatingOpen\}/);
 });
+
+test("session sidebar can group all sessions by workspace type", () => {
+	const source = readSessionSidebarSource();
+
+	assert.match(source, /sidebarAllGroupedByWorkspace/);
+	assert.match(
+		source,
+		/const workspaceSessionGroups = \$derived\.by\(\(\) => \{/,
+	);
+	assert.match(source, /workspace\.sourceType === "managed"/);
+	assert.match(source, /function trimWorkspacePrefix/);
+	assert.match(source, /<GitBranchIcon class="size-3 shrink-0" \/>/);
+	assert.match(source, /<FolderIcon class="size-3 shrink-0" \/>/);
+	assert.match(source, /<PackageIcon class="size-3 shrink-0" \/>/);
+	assert.match(source, /New Workspace/);
+	assert.match(source, /Rename workspace/);
+	assert.match(source, /Delete workspace\?/);
+	assert.match(source, /<Switch/);
+});

@@ -96,6 +96,7 @@ export type AppPreferences = {
 	defaultModel: string;
 	sidebarRecentOpen: boolean;
 	sidebarAllOpen: boolean;
+	sidebarAllGroupedByWorkspace: boolean;
 	setTheme: (theme: ThemeMode) => void;
 	setColorScheme: (scheme: ThemeColorScheme) => void;
 	toggleTheme: () => void;
@@ -109,6 +110,7 @@ export type AppPreferences = {
 	setDefaultModel: (modelId: string) => void;
 	setSidebarRecentOpen: (value: boolean) => void;
 	setSidebarAllOpen: (value: boolean) => void;
+	setSidebarAllGroupedByWorkspace: (value: boolean) => void;
 };
 
 export type AppEnvironment = {
@@ -172,6 +174,11 @@ export type AppWorkspaces = {
 		sourceType: "local" | "git",
 	) => Promise<WorkspaceValidationResult>;
 	create: (data: CreateWorkspaceRequest) => Promise<Workspace>;
+	update: (
+		workspaceId: string,
+		data: { path?: string; displayName?: string | null },
+	) => Promise<Workspace>;
+	remove: (workspaceId: string, deleteFiles?: boolean) => Promise<void>;
 };
 
 export type AppStartupStatus = {

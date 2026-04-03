@@ -8,11 +8,13 @@ import {
 	readPinnedPrompts,
 	readPromptHistory,
 	SIDEBAR_ALL_OPEN_STORAGE_KEY,
+	SIDEBAR_ALL_GROUPED_STORAGE_KEY,
 	SIDEBAR_RECENT_OPEN_STORAGE_KEY,
 	readChatWidthMode,
 	readDefaultModel,
 	readPreferredIde,
 	readSidebarAllOpen,
+	readSidebarAllGrouped,
 	readSidebarRecentOpen,
 	writeStorage,
 } from "$lib/app/app-helpers";
@@ -55,6 +57,7 @@ export function createAppPreferencesDomain(
 	let defaultModel = $state("");
 	let sidebarRecentOpen = $state(true);
 	let sidebarAllOpen = $state(true);
+	let sidebarAllGroupedByWorkspace = $state(true);
 	let promptHistory = $state<string[]>([]);
 	let pinnedPrompts = $state<string[]>([]);
 
@@ -87,6 +90,7 @@ export function createAppPreferencesDomain(
 		defaultModel = readDefaultModel();
 		sidebarRecentOpen = readSidebarRecentOpen();
 		sidebarAllOpen = readSidebarAllOpen();
+		sidebarAllGroupedByWorkspace = readSidebarAllGrouped();
 		promptHistory = readPromptHistory();
 		pinnedPrompts = readPinnedPrompts();
 	};
@@ -137,6 +141,9 @@ export function createAppPreferencesDomain(
 		get sidebarAllOpen() {
 			return sidebarAllOpen;
 		},
+		get sidebarAllGroupedByWorkspace() {
+			return sidebarAllGroupedByWorkspace;
+		},
 		setTheme: (mode) => applyThemeState(mode),
 		setColorScheme: (scheme) => {
 			if (!availableThemes.some((t) => t.id === scheme)) return;
@@ -180,6 +187,10 @@ export function createAppPreferencesDomain(
 		setSidebarAllOpen: (value) => {
 			sidebarAllOpen = value;
 			writeStorage(SIDEBAR_ALL_OPEN_STORAGE_KEY, String(value));
+		},
+		setSidebarAllGroupedByWorkspace: (value) => {
+			sidebarAllGroupedByWorkspace = value;
+			writeStorage(SIDEBAR_ALL_GROUPED_STORAGE_KEY, String(value));
 		},
 	};
 }

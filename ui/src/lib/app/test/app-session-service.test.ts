@@ -142,6 +142,19 @@ test("toSessionSummaries sorts all sessions by createdAt descending", () => {
 		["session-2", "session-3", "session-1"],
 	);
 	assert.ok(summaries.every((session) => session.isRecent === false));
+	assert.equal(summaries[0]?.workspaceId, undefined);
+});
+
+test("toSessionSummaries preserves workspace ids", () => {
+	const summaries = toSessionSummaries([
+		makeSession({
+			id: "session-1",
+			name: "Workspace session",
+			workspaceId: "workspace-1",
+		}),
+	]);
+
+	assert.equal(summaries[0]?.workspaceId, "workspace-1");
 });
 
 test("upsertSession replaces an existing session in place", () => {

@@ -2,8 +2,13 @@
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 	import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
+	import FolderIcon from "@lucide/svelte/icons/folder";
+	import GitBranchIcon from "@lucide/svelte/icons/git-branch";
+	import PackageIcon from "@lucide/svelte/icons/package";
 	import PanelLeftIcon from "@lucide/svelte/icons/panel-left";
 	import PlusIcon from "@lucide/svelte/icons/plus";
+	import { Switch } from "$lib/components/ui/switch";
+	import type { Workspace } from "$lib/api-types";
 	import * as Collapsible from "$lib/components/ui/collapsible";
 	import SessionStatus from "$lib/components/app/parts/SessionStatus.svelte";
 	import {
@@ -50,6 +55,13 @@
 	const sessions = app.sessions;
 	const preferences = app.preferences;
 	const session = useSessionContext();
+	type SessionGroup = {
+		key: string;
+		workspaceId: string | null;
+		label: string;
+		sourceType: "local" | "git" | "managed";
+		sessions: (typeof sessions.list)[number][];
+	};
 
 	let renameDialogOpen = $state(false);
 	let renameSessionId = $state<string | null>(null);
@@ -58,6 +70,13 @@
 	let deleteDialogOpen = $state(false);
 	let deleteSessionId = $state<string | null>(null);
 	let deletingSession = $state(false);
+	let renameWorkspaceDialogOpen = $state(false);
+	let renameWorkspaceId = $state<string | null>(null);
+	let renameWorkspaceDraft = $state("");
+	let renamingWorkspace = $state(false);
+	let deleteWorkspaceDialogOpen = $state(false);
+	let deleteWorkspaceId = $state<string | null>(null);
+	let deletingWorkspace = $state(false);
 	let floatingOpen = $state(false);
 	let shellRef = $state<HTMLElement | null>(null);
 	const showSidebarBody = $derived(!floatingCollapsed || floatingOpen);
@@ -110,6 +129,13 @@
 
 	function sessionById(sessionId: string) {
 		return sessions.list.find((s) => s.id === sessionId) ?? null;
+	}
+
+	function workspaceById(workspaceId: string | null) {
+		if (!workspaceId) {
+			return null;
+		}
+		return app.workspaces.get(workspaceId);
 	}
 
 	function handleSelectSession(sessionId: string) {
@@ -235,6 +261,123 @@
 			(session.threads.selectedId ?? session.sessionId) === threadId
 		);
 	}
+
+	function shortenHomePath(path: string) {
+		return path.replace(/\\/g, "/").replace(/^\/home\/[^/]+/, "~");
+	}
+
+	function trimWorkspacePrefix(
+		path: string,
+		sourceType: Workspace["sourceType"],
+	) {
+		const normalizedPath = shortenHomePath(path).replace(/\/+$/, "");
+		if (sourceType === "git") {
+			return normalizedPath
+				.replace(/^https?:\/\/github\.com\//i, "")
+				.replace(/^ssh:\/\/git@github\.com\//i, "")
+				.replace(/^git@github\.com:/i, "")
+				.replace(/\.git$/i, "");
+		}
+		return normalizedPath;
+	}
+
+	function workspaceGroupLabel(workspace: Workspace | null) {
+		if (!workspace || workspace.sourceType === "managed") {
+			return workspace?.displayName?.trim() || "New Workspace";
+		}
+
+		return trimWorkspacePrefix(workspace.path, workspace.sourceType);
+	}
+
+	function openRenameWorkspaceDialog(workspaceId: string) {
+		const workspace = workspaceById(workspaceId);
+		if (!workspace) {
+			return;
+		}
+		renameWorkspaceId = workspaceId;
+		renameWorkspaceDraft = workspace.displayName ?? "";
+		renameWorkspaceDialogOpen = true;
+	}
+
+	function closeRenameWorkspaceDialog() {
+		renameWorkspaceDialogOpen = false;
+		renameWorkspaceId = null;
+		renameWorkspaceDraft = "";
+		renamingWorkspace = false;
+	}
+
+	async function handleRenameWorkspace() {
+		if (!renameWorkspaceId || renamingWorkspace) {
+			return;
+		}
+		renamingWorkspace = true;
+		await app.workspaces.update(renameWorkspaceId, {
+			displayName: renameWorkspaceDraft.trim() || null,
+		});
+		renamingWorkspace = false;
+		closeRenameWorkspaceDialog();
+	}
+
+	function openDeleteWorkspaceDialog(workspaceId: string) {
+		if (!workspaceById(workspaceId)) {
+			return;
+		}
+		deleteWorkspaceId = workspaceId;
+		deleteWorkspaceDialogOpen = true;
+	}
+
+	function closeDeleteWorkspaceDialog() {
+		deleteWorkspaceDialogOpen = false;
+		deleteWorkspaceId = null;
+		deletingWorkspace = false;
+	}
+
+	async function handleDeleteWorkspace() {
+		if (!deleteWorkspaceId || deletingWorkspace) {
+			return;
+		}
+		deletingWorkspace = true;
+		await app.workspaces.remove(deleteWorkspaceId);
+		deletingWorkspace = false;
+		closeDeleteWorkspaceDialog();
+	}
+
+	function deleteDialogWorkspaceName() {
+		const workspace = workspaceById(deleteWorkspaceId);
+		if (!workspace) {
+			return "this workspace";
+		}
+		return workspaceGroupLabel(workspace);
+	}
+
+	const workspaceSessionGroups = $derived.by(() => {
+		const groups: SessionGroup[] = [];
+
+		for (const sessionObj of sessions.list) {
+			const workspace = sessionObj.workspaceId
+				? app.workspaces.get(sessionObj.workspaceId)
+				: null;
+			const sourceType = workspace?.sourceType ?? "managed";
+			const key =
+				workspace?.id ?? `managed:${sessionObj.workspaceId ?? "none"}`;
+			const existingGroup = groups.find((group) => group.key === key);
+
+			if (existingGroup) {
+				existingGroup.sessions.push(sessionObj);
+				continue;
+			}
+
+			groups.push({
+				key,
+				workspaceId: workspace?.id ?? null,
+				label: workspaceGroupLabel(workspace),
+				sourceType,
+				sessions: [sessionObj],
+			});
+		}
+
+		return groups;
+	});
 </script>
 
 {#snippet sessionItem(
@@ -325,7 +468,7 @@
 
 <aside
 	bind:this={shellRef}
-	class={`flex min-h-0 flex-col overflow-hidden text-sidebar-foreground ${dropdownMode ? "max-h-[min(70vh,32rem)] min-w-[22rem] bg-sidebar" : floatingMode ? `${showSidebarBody ? "max-h-[calc(100vh-7rem)] w-[22rem] rounded-md border border-sidebar-border bg-sidebar shadow-sm" : "w-fit bg-transparent shadow-none border-transparent"} pointer-events-auto` : "h-full w-full rounded-md border border-sidebar-border bg-sidebar shadow-sm"}`}
+	class={`flex min-h-0 flex-col overflow-hidden text-sidebar-foreground ${dropdownMode ? "max-h-[min(70vh,32rem)] min-w-64 bg-sidebar" : floatingMode ? `${showSidebarBody ? "max-h-[calc(100vh-7rem)] w-[min(16rem,calc(100vw-1.5rem))] rounded-md border border-sidebar-border bg-sidebar shadow-sm" : "w-fit bg-transparent shadow-none border-transparent"} pointer-events-auto` : "h-full min-w-64 w-full rounded-md border border-sidebar-border bg-sidebar shadow-sm"}`}
 >
 	<div
 		class={`flex h-10 items-center justify-between px-3 ${showSidebarBody ? "border-b border-sidebar-border" : ""}`}
@@ -367,16 +510,31 @@
 				</p>
 			{/if}
 		</div>
-		<Button
-			variant="ghost"
-			size="icon-xs"
-			onclick={handleStartNewSession}
-			aria-label="New session"
-			title="New session"
-			class="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-		>
-			<PlusIcon class="size-3.5" />
-		</Button>
+		<div class="flex items-center gap-2">
+			{#if !dropdownMode && !floatingCollapsed && sessions.list.length > 0}
+				<label
+					class="flex items-center gap-2 text-xs text-sidebar-foreground/70"
+				>
+					<span>workspace</span>
+					<Switch
+						checked={preferences.sidebarAllGroupedByWorkspace}
+						class="data-[state=checked]:bg-muted data-[state=unchecked]:bg-muted/70 [&_[data-slot=switch-thumb]]:bg-foreground dark:[&_[data-slot=switch-thumb]]:bg-foreground focus-visible:ring-muted-foreground/20"
+						onCheckedChange={(checked) =>
+							preferences.setSidebarAllGroupedByWorkspace(checked === true)}
+					/>
+				</label>
+			{/if}
+			<Button
+				variant="ghost"
+				size="icon-xs"
+				onclick={handleStartNewSession}
+				aria-label="New session"
+				title="New session"
+				class="text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+			>
+				<PlusIcon class="size-3.5" />
+			</Button>
+		</div>
 	</div>
 
 	{#if showSidebarBody}
@@ -429,13 +587,78 @@
 								{/if}
 								All sessions
 							</Collapsible.Trigger>
-							<Collapsible.Content class="space-y-0.5">
-								{#each sessions.list as sessionObj (sessionObj.id)}
-									{@render sessionItem(
-										sessionObj,
-										sessions.selectedId === sessionObj.id,
-									)}
-								{/each}
+							<Collapsible.Content
+								class={preferences.sidebarAllGroupedByWorkspace
+									? "space-y-3"
+									: "space-y-0.5"}
+							>
+								{#if preferences.sidebarAllGroupedByWorkspace}
+									{#each workspaceSessionGroups as group (group.key)}
+										<div class="space-y-1.5">
+											<div
+												class="group flex items-center gap-1.5 px-2 pt-1 text-xs font-medium uppercase tracking-[0.16em] text-sidebar-foreground/60"
+											>
+												{#if group.sourceType === "git"}
+													<GitBranchIcon class="size-3 shrink-0" />
+												{:else if group.sourceType === "local"}
+													<FolderIcon class="size-3 shrink-0" />
+												{:else}
+													<PackageIcon class="size-3 shrink-0" />
+												{/if}
+												<span class="min-w-0 flex-1 truncate"
+													>{group.label}</span
+												>
+												{#if group.workspaceId}
+													<DropdownMenu>
+														<DropdownMenuTrigger>
+															<Button
+																variant="ghost"
+																size="icon-xs"
+																class="h-6 w-6 rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+																aria-label={`Workspace actions for ${group.label}`}
+																onclick={(event) => event.stopPropagation()}
+															>
+																<EllipsisIcon
+																	class="size-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+																/>
+															</Button>
+														</DropdownMenuTrigger>
+														<DropdownMenuContent align="end" class="w-32">
+															<DropdownMenuItem
+																onclick={() =>
+																	openRenameWorkspaceDialog(group.workspaceId!)}
+															>
+																Rename
+															</DropdownMenuItem>
+															<DropdownMenuItem
+																variant="destructive"
+																onclick={() =>
+																	openDeleteWorkspaceDialog(group.workspaceId!)}
+															>
+																Delete
+															</DropdownMenuItem>
+														</DropdownMenuContent>
+													</DropdownMenu>
+												{/if}
+											</div>
+											<div class="space-y-0.5">
+												{#each group.sessions as sessionObj (sessionObj.id)}
+													{@render sessionItem(
+														sessionObj,
+														sessions.selectedId === sessionObj.id,
+													)}
+												{/each}
+											</div>
+										</div>
+									{/each}
+								{:else}
+									{#each sessions.list as sessionObj (sessionObj.id)}
+										{@render sessionItem(
+											sessionObj,
+											sessions.selectedId === sessionObj.id,
+										)}
+									{/each}
+								{/if}
 							</Collapsible.Content>
 						</Collapsible.Root>
 					{/if}
@@ -484,6 +707,46 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
+	<Dialog.Root bind:open={renameWorkspaceDialogOpen}>
+		<Dialog.Content class="sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>Rename workspace</Dialog.Title>
+				<Dialog.Description
+					>Choose a new name for this workspace.</Dialog.Description
+				>
+			</Dialog.Header>
+			<Input
+				value={renameWorkspaceDraft}
+				oninput={(event) => {
+					renameWorkspaceDraft = (event.currentTarget as HTMLInputElement)
+						.value;
+				}}
+				maxlength={120}
+				placeholder="Workspace name"
+			/>
+			<Dialog.Footer>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={closeRenameWorkspaceDialog}
+					disabled={renamingWorkspace}
+				>
+					Cancel
+				</Button>
+				<Button
+					variant="default"
+					size="sm"
+					onclick={() => {
+						void handleRenameWorkspace();
+					}}
+					disabled={renamingWorkspace}
+				>
+					Save
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
 	<AlertDialog bind:open={deleteDialogOpen}>
 		<AlertDialogContent>
 			<AlertDialogHeader>
@@ -504,6 +767,33 @@
 						void handleDeleteSession();
 					}}
 					disabled={deletingSession}
+				>
+					Delete
+				</AlertDialogAction>
+			</AlertDialogFooter>
+		</AlertDialogContent>
+	</AlertDialog>
+
+	<AlertDialog bind:open={deleteWorkspaceDialogOpen}>
+		<AlertDialogContent>
+			<AlertDialogHeader>
+				<AlertDialogTitle>Delete workspace?</AlertDialogTitle>
+				<AlertDialogDescription>
+					Delete "{deleteDialogWorkspaceName()}"? This action cannot be undone.
+				</AlertDialogDescription>
+			</AlertDialogHeader>
+			<AlertDialogFooter>
+				<AlertDialogCancel
+					onclick={closeDeleteWorkspaceDialog}
+					disabled={deletingWorkspace}
+				>
+					Cancel
+				</AlertDialogCancel>
+				<AlertDialogAction
+					onclick={() => {
+						void handleDeleteWorkspace();
+					}}
+					disabled={deletingWorkspace}
 				>
 					Delete
 				</AlertDialogAction>

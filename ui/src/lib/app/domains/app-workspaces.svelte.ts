@@ -22,5 +22,8 @@ export function createAppWorkspacesDomain(
 		reloadWorkspace: (workspaceId) => store.fetchOne(workspaceId),
 		validate: (path, sourceType) => store.validate(path, sourceType),
 		create: (data) => store.create(data),
+		update: (workspaceId, data) => store.update(workspaceId, data),
+		remove: (workspaceId, deleteFiles) =>
+			store.remove(workspaceId, deleteFiles),
 	};
 }

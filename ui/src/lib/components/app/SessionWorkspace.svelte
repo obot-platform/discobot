@@ -126,9 +126,9 @@
 				>
 					<Resizable.Pane
 						bind:this={desktopSidebarPane}
-						defaultSize={16}
-						minSize={10}
-						maxSize={35}
+						defaultSize={24}
+						minSize={24}
+						maxSize={48}
 						collapsible
 						collapsedSize={0}
 						onCollapse={() => {

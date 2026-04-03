@@ -177,6 +177,12 @@ type Workspace struct {
 
 func (Workspace) TableName() string { return "workspaces" }
 
+const (
+	WorkspaceSourceTypeLocal   = "local"
+	WorkspaceSourceTypeGit     = "git"
+	WorkspaceSourceTypeManaged = "managed"
+)
+
 func (w *Workspace) BeforeCreate(_ *gorm.DB) error {
 	if w.ID == "" {
 		w.ID = uuid.New().String()

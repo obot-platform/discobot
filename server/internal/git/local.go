@@ -23,6 +23,8 @@ import (
 	mindex "github.com/go-git/go-git/v5/utils/merkletrie/index"
 	"github.com/go-git/go-git/v5/utils/merkletrie/noder"
 	"github.com/pmezard/go-difflib/difflib"
+
+	"github.com/obot-platform/discobot/server/internal/model"
 )
 
 // LocalProvider implements Provider using go-git against local repositories.
@@ -194,7 +196,7 @@ func (p *LocalProvider) EnsureWorkspaceByID(ctx context.Context, workspaceID str
 	}
 
 	isRemote := IsGitURL(wsInfo.Path)
-	if !isRemote && wsInfo.SourceType == "local" {
+	if !isRemote && (wsInfo.SourceType == model.WorkspaceSourceTypeLocal || wsInfo.SourceType == model.WorkspaceSourceTypeManaged) {
 		return p.registerLocalWorkspace(ctx, workspaceID, wsInfo.ProjectID, wsInfo.Path)
 	}
 

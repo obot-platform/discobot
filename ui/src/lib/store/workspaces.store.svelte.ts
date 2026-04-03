@@ -79,4 +79,23 @@ export class WorkspaceStore {
 		await this.fetchOne(created.id);
 		return this.#items.find((w) => w.id === created.id)!;
 	}
+
+	async update(
+		id: string,
+		data: { path?: string; displayName?: string | null },
+	): Promise<Workspace> {
+		const updated = await api.updateWorkspace(id, data);
+		const idx = this.#items.findIndex((workspace) => workspace.id === id);
+		if (idx === -1) {
+			this.#items.push(updated);
+		} else {
+			this.#items[idx] = updated;
+		}
+		return updated;
+	}
+
+	async remove(id: string, deleteFiles = false): Promise<void> {
+		await api.deleteWorkspace(id, deleteFiles);
+		this.#items = this.#items.filter((workspace) => workspace.id !== id);
+	}
 }

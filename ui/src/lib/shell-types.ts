@@ -44,7 +44,7 @@ export type JetBrainsProductCode =
 export type WindowControlsSide = "left" | "right";
 
 export type AsyncStatus = "idle" | "loading" | "ready" | "error";
-export type WorkspaceSourceType = "local" | "git";
+export type WorkspaceSourceType = "local" | "git" | "managed";
 export type WorkspaceStatus = "ready" | "loading" | "error";
 export type SessionStatusValue = SessionStatus;
 export type ConversationRole = "user" | "assistant";
@@ -95,6 +95,7 @@ export type SessionSummary = {
 	name: string;
 	isRecent: boolean;
 	status: SessionStatusValue;
+	workspaceId?: string;
 };
 
 export type RecentThreadSummary = {

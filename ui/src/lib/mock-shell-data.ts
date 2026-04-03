@@ -458,6 +458,7 @@ export const sessionSummaries: SessionSummary[] = sessionFixtures.map(
 		name: session.name,
 		isRecent: recentSessionIds.has(session.id),
 		status: session.status,
+		workspaceId: session.workspaceId,
 	}),
 );
 

@@ -146,12 +146,17 @@ func (s *WorkspaceService) GetWorkspace(ctx context.Context, workspaceID string)
 	return s.mapWorkspace(ctx, ws), nil
 }
 
+func isLocalWorkspaceSourceType(sourceType string) bool {
+	return sourceType == model.WorkspaceSourceTypeLocal ||
+		sourceType == model.WorkspaceSourceTypeManaged
+}
+
 // CreateWorkspace creates a new workspace with initializing status.
 // For local paths: if the directory does not exist or is empty, it will be
 // created and initialized as a new git repository automatically.
 func (s *WorkspaceService) CreateWorkspace(ctx context.Context, projectID, path, sourceType, provider string) (*Workspace, error) {
 	// Expand and validate local paths.
-	if sourceType == "local" {
+	if isLocalWorkspaceSourceType(sourceType) {
 		normalizedPath, classification, err := classifyLocalWorkspacePath(path)
 		if err != nil {
 			return nil, err
@@ -247,7 +252,7 @@ func (s *WorkspaceService) UpdateWorkspace(ctx context.Context, workspaceID, pat
 	}
 
 	// Expand ~ to home directory for local paths
-	if ws.SourceType == "local" {
+	if isLocalWorkspaceSourceType(ws.SourceType) {
 		expandedPath, err := expandPath(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand path: %w", err)

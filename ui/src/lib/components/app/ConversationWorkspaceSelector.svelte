@@ -4,6 +4,7 @@
 	import GitBranchIcon from "@lucide/svelte/icons/git-branch";
 	import GitCommitIcon from "@lucide/svelte/icons/git-commit";
 	import GithubIcon from "@lucide/svelte/icons/github";
+	import PackageIcon from "@lucide/svelte/icons/package";
 	import { onDestroy, onMount, tick } from "svelte";
 	import type { Workspace } from "$lib/api-types";
 	import type { WorkspaceSelectionResult } from "$lib/components/app/conversation-composer.types";
@@ -101,6 +102,9 @@
 	}
 
 	function getWorkspaceOptionLabel(workspace: Workspace): string {
+		if (workspace.sourceType === "managed") {
+			return workspace.displayName || "New Workspace";
+		}
 		return workspace.displayName || shortenHomePath(workspace.path);
 	}
 
@@ -589,7 +593,9 @@
 	{:else if sessionView.pendingWorkspaceOption === "git-repo"}
 		<GithubIcon class="size-4 text-muted-foreground" />
 	{:else if sessionView.pendingWorkspaceOption.startsWith("existing:")}
-		{#if selectedExistingWorkspace?.sourceType === "local"}
+		{#if selectedExistingWorkspace?.sourceType === "managed"}
+			<PackageIcon class="size-4 text-muted-foreground" />
+		{:else if selectedExistingWorkspace?.sourceType === "local"}
 			<FolderIcon class="size-4 text-muted-foreground" />
 		{:else if existingWorkspaceIsGithub}
 			<GithubIcon class="size-4 text-muted-foreground" />

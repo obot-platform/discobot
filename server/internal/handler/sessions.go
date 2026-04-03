@@ -286,7 +286,7 @@ func (h *Handler) resolveWorkspaceIDForNewSession(
 	}
 
 	autoPath := filepath.Join(h.cfg.WorkspaceDir, fmt.Sprintf("empty-workspace-%s", uuid.NewString()))
-	workspace, err := h.workspaceService.CreateWorkspace(ctx, projectID, autoPath, "local", "")
+	workspace, err := h.workspaceService.CreateWorkspace(ctx, projectID, autoPath, model.WorkspaceSourceTypeManaged, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to create automatic workspace: %w", err)
 	}
