@@ -174,6 +174,9 @@ exit 1
 	if !runResult.Eval.ShouldReprompt {
 		t.Fatal("expected rerun failure to request reprompt")
 	}
+	if !strings.Contains(runResult.Result.Output, "lint failed") {
+		t.Fatalf("expected hook output to contain %q, got %q", "lint failed", runResult.Result.Output)
+	}
 	if runResult.Eval.HookFailure == nil {
 		t.Fatal("expected rerun failure metadata")
 	}
@@ -260,7 +263,7 @@ func TestEvaluateFileHooks_RunsLowestPendingHookIDFirst(t *testing.T) {
 # type: file
 # pattern: "*.txt"
 #---
-echo "01-first" >> "` + orderLog + `"
+echo "01-first" >> "hook-order.log"
 exit 1
 `
 	if err := os.WriteFile(firstHookPath, []byte(firstHook), 0o755); err != nil {
@@ -274,7 +277,7 @@ exit 1
 # type: file
 # pattern: "*.txt"
 #---
-echo "02-second" >> "` + orderLog + `"
+echo "02-second" >> "hook-order.log"
 exit 0
 `
 	if err := os.WriteFile(secondHookPath, []byte(secondHook), 0o755); err != nil {

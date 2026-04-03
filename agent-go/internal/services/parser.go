@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -261,8 +262,9 @@ func DiscoverServices(servicesDir string) ([]ServiceInfo, error) {
 		isPassive := (cfg.HTTP > 0 || cfg.HTTPS > 0) && hasEmptyBody
 
 		if !isPassive {
-			// Non-passive: must be executable and have shebang
-			if info.Mode()&0o111 == 0 {
+			// Non-passive: must be executable and have shebang. Windows has no
+			// Unix-style execute bits, so rely on the shebang there.
+			if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
 				continue
 			}
 			if !hasShebang {

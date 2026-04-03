@@ -86,6 +86,8 @@ Hook files must:
 - Have a shebang line (`#!/bin/bash`, `#!/usr/bin/env python`, etc.)
 - Have front matter with a valid `type` field
 
+On Windows, Discobot uses the hook's shebang to choose an interpreter. Bash-based hooks therefore require `bash` to be available on `PATH`.
+
 Files are sorted alphabetically by filename, so prefix with numbers to control execution order (e.g., `01-install.sh`, `02-lint.sh`).
 
 ### Session Hooks
@@ -353,6 +355,8 @@ This applies to the services shown in the active UI, including the service panel
 ### Executable Services
 
 Executable services are scripts that Discobot starts and stops as child processes. They must be executable files with a shebang line and a script body.
+
+On Windows, Discobot uses the service shebang to choose an interpreter. Bash-based services therefore require `bash` to be available on `PATH`.
 
 **Example — Vite development server:**
 

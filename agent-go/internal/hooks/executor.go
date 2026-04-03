@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -46,7 +47,8 @@ func ExecuteHook(hook Hook, opts ExecuteOptions) HookResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, hook.Path)
+	command, args := buildHookCommand(hook.Path)
+	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = opts.Cwd
 
 	// Build environment
@@ -132,4 +134,52 @@ func writeOutputFile(path, output string) {
 	}
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	_ = os.WriteFile(path, []byte(output), 0o644)
+}
+
+func buildHookCommand(path string) (string, []string) {
+	if runtime.GOOS != "windows" {
+		return path, nil
+	}
+
+	interpreter, args := parseScriptShebang(path)
+	switch interpreter {
+	case "bash", "sh", "zsh":
+		return "bash", append(args, path)
+	case "":
+		return path, nil
+	default:
+		return interpreter, append(args, path)
+	}
+}
+
+func parseScriptShebang(path string) (string, []string) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil
+	}
+
+	line, _, _ := strings.Cut(string(content), "\n")
+	if !strings.HasPrefix(line, "#!") {
+		return "", nil
+	}
+
+	fields := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "#!")))
+	if len(fields) == 0 {
+		return "", nil
+	}
+
+	interpreter := filepath.Base(fields[0])
+	args := fields[1:]
+	if interpreter == "env" {
+		for len(args) > 0 && args[0] == "-S" {
+			args = args[1:]
+		}
+		if len(args) == 0 {
+			return "", nil
+		}
+		interpreter = filepath.Base(args[0])
+		args = args[1:]
+	}
+
+	return strings.ToLower(interpreter), args
 }

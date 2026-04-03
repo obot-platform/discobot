@@ -71,6 +71,7 @@ func TestLoadUsesDiscobotEnvVars(t *testing.T) {
 func TestLoadIgnoresLegacyUnprefixedConfigEnvVars(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	t.Setenv("PORT", "4123")
 	t.Setenv("AGENT_CWD", "/tmp/workspace")
 	t.Setenv("MODEL", "openai/gpt-5.4")

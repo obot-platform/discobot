@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -280,7 +282,8 @@ func (mgr *Manager) spawnService(workspaceRoot string, svcTemplate ServiceInfo) 
 	svc.Status = "starting"
 	svc.StartedAt = time.Now().UTC().Format(time.RFC3339)
 
-	cmd := exec.Command(svcTemplate.Path)
+	command, args := buildServiceCommand(svcTemplate.Path)
+	cmd := exec.Command(command, args...)
 	cmd.Dir = workspaceRoot
 	cmd.Env = os.Environ()
 	setSysProcAttr(cmd)
@@ -375,4 +378,52 @@ func (mgr *Manager) spawnService(workspaceRoot string, svcTemplate ServiceInfo) 
 			mgr.mu.Unlock()
 		})
 	}()
+}
+
+func buildServiceCommand(path string) (string, []string) {
+	if runtime.GOOS != "windows" {
+		return path, nil
+	}
+
+	interpreter, args := parseServiceShebang(path)
+	switch interpreter {
+	case "bash", "sh", "zsh":
+		return "bash", append(args, path)
+	case "":
+		return path, nil
+	default:
+		return interpreter, append(args, path)
+	}
+}
+
+func parseServiceShebang(path string) (string, []string) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil
+	}
+
+	line, _, _ := strings.Cut(string(content), "\n")
+	if !strings.HasPrefix(line, "#!") {
+		return "", nil
+	}
+
+	fields := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "#!")))
+	if len(fields) == 0 {
+		return "", nil
+	}
+
+	interpreter := filepath.Base(fields[0])
+	args := fields[1:]
+	if interpreter == "env" {
+		for len(args) > 0 && args[0] == "-S" {
+			args = args[1:]
+		}
+		if len(args) == 0 {
+			return "", nil
+		}
+		interpreter = filepath.Base(args[0])
+		args = args[1:]
+	}
+
+	return strings.ToLower(interpreter), args
 }
