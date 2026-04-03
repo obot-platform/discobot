@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -783,7 +784,37 @@ func TestSandboxChatClient_SendMessages_RetriesOnEOF(t *testing.T) {
 	}
 }
 
-func TestIsRetryableError_EOF(t *testing.T) {
+func TestSandboxChatClient_SendMessages_RetriesOnBrokenPipe(t *testing.T) {
+	var attempts atomic.Int32
+
+	failingTransport := &brokenPipeThenSuccessTransport{
+		failCount: 2,
+		attempts:  &attempts,
+	}
+
+	provider := &mockSandboxProviderWithTransport{
+		transport: failingTransport,
+	}
+	client := NewSandboxChatClient(provider, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	messages := json.RawMessage(`[{"role":"user","content":"hello"}]`)
+	ch, err := client.SendMessages(ctx, "test-session", "test-session", messages, "", nil)
+	if err != nil {
+		t.Fatalf("SendMessages failed: %v", err)
+	}
+
+	for range ch { //nolint:revive // empty block intentionally drains channel
+	}
+
+	if totalAttempts := attempts.Load(); totalAttempts < 3 {
+		t.Errorf("Expected at least 3 attempts (2 broken pipe + 1 success), got %d", totalAttempts)
+	}
+}
+
+func TestIsRetryableError(t *testing.T) {
 	tests := []struct {
 		name     string
 		err      error
@@ -794,6 +825,9 @@ func TestIsRetryableError_EOF(t *testing.T) {
 		{"io.ErrUnexpectedEOF", io.ErrUnexpectedEOF, true},
 		{"wrapped EOF", fmt.Errorf("request failed: %w", io.EOF), true},
 		{"EOF in string", fmt.Errorf("connection closed: EOF"), true},
+		{"syscall.EPIPE", syscall.EPIPE, true},
+		{"wrapped EPIPE", fmt.Errorf("write failed: %w", syscall.EPIPE), true},
+		{"broken pipe in string", fmt.Errorf("write: broken pipe"), true},
 		{"unrelated error", fmt.Errorf("some other error"), false},
 	}
 
@@ -805,6 +839,31 @@ func TestIsRetryableError_EOF(t *testing.T) {
 			}
 		})
 	}
+}
+
+type brokenPipeThenSuccessTransport struct {
+	failCount int
+	attempts  *atomic.Int32
+}
+
+func (t *brokenPipeThenSuccessTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	attempt := t.attempts.Add(1)
+
+	if int(attempt) <= t.failCount {
+		return nil, syscall.EPIPE
+	}
+
+	rec := httptest.NewRecorder()
+	if req.Method == "POST" {
+		rec.Header().Set("Content-Type", "application/json")
+		rec.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(rec).Encode(map[string]string{"status": "started"})
+	} else {
+		rec.Header().Set("Content-Type", "text/event-stream")
+		rec.WriteHeader(http.StatusOK)
+		rec.Write([]byte("data: [DONE]\n\n"))
+	}
+	return rec.Result(), nil
 }
 
 // eofThenSuccessTransport returns EOF errors for the first N requests, then succeeds.

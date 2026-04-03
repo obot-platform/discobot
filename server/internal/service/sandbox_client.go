@@ -129,6 +129,12 @@ func isRetryableError(err error) bool {
 	if errors.Is(err, syscall.ECONNRESET) {
 		return true
 	}
+	// Broken pipe - peer accepted the connection and closed it while we were
+	// writing the request body, which can happen while the agent is still
+	// starting or shutting down.
+	if errors.Is(err, syscall.EPIPE) {
+		return true
+	}
 	// EOF - connection closed before response (container still starting)
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
@@ -138,6 +144,7 @@ func isRetryableError(err error) bool {
 	return strings.Contains(errStr, "connection refused") ||
 		strings.Contains(errStr, "connection reset") ||
 		strings.Contains(errStr, "Connection reset by peer") ||
+		strings.Contains(errStr, "broken pipe") ||
 		strings.Contains(errStr, "no such host") ||
 		strings.Contains(errStr, "i/o timeout") ||
 		strings.Contains(errStr, "vsock connect") ||

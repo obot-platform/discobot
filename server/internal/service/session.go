@@ -764,6 +764,7 @@ func (s *SessionService) initializeSync(
 	}
 
 	needsCreation := true
+	needsHealthCheck := false
 	if existingSandbox != nil {
 		log.Printf("Sandbox already exists for session %s (status: %s)", sessionID, existingSandbox.Status)
 
@@ -801,10 +802,12 @@ func (s *SessionService) initializeSync(
 				} else {
 					// Already running (race condition), treat as success
 					needsCreation = false
+					needsHealthCheck = true
 				}
 			} else {
 				// Successfully started
 				needsCreation = false
+				needsHealthCheck = true
 			}
 
 		default:
@@ -865,6 +868,15 @@ func (s *SessionService) initializeSync(
 			log.Printf("Sandbox start failed for session %s: %v", sessionID, err)
 			s.updateStatusWithEvent(ctx, projectID, sessionID, model.SessionStatusError, ptrString("sandbox start failed: "+err.Error()))
 			return fmt.Errorf("sandbox start failed: %w", err)
+		}
+		needsHealthCheck = true
+	}
+
+	if needsHealthCheck && s.sandboxService != nil {
+		if err := s.sandboxService.probeSandboxHealth(ctx, sessionID); err != nil {
+			log.Printf("Sandbox health check failed for session %s after start: %v", sessionID, err)
+			s.updateStatusWithEvent(ctx, projectID, sessionID, model.SessionStatusError, ptrString("sandbox health check failed: "+err.Error()))
+			return fmt.Errorf("sandbox health check failed: %w", err)
 		}
 	}
 

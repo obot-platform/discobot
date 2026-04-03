@@ -127,24 +127,7 @@ func (s *SandboxService) ensureSandboxReady(ctx context.Context, sessionID strin
 
 	switch sess.Status {
 	case model.SessionStatusReady, legacySessionStatusRunning:
-		// Session status looks good — verify the container is actually running.
-		// This fast-path check avoids expensive reconciliation when everything is healthy.
-		sb, err := s.provider.Get(ctx, sessionID)
-		if errors.Is(err, sandbox.ErrNotFound) || (err == nil && sb.Status != sandbox.StatusRunning) {
-			log.Printf("Session %s status is %s but container not running, reconciling", sessionID, sess.Status)
-			return s.ReconcileSandbox(ctx, sessionID)
-		}
-		if err != nil {
-			return fmt.Errorf("failed to check sandbox status: %w", err)
-		}
-		// Container is running per Docker — verify services are actually responsive.
-		// This catches cases where the container is mid-shutdown (SIGTERM received,
-		// Docker still reports "running", but internal services are dead).
-		if err := s.probeSandboxHealth(ctx, sessionID); err != nil {
-			log.Printf("Session %s container running but health check failed (%v), reconciling", sessionID, err)
-			return s.ReconcileSandbox(ctx, sessionID)
-		}
-		return nil
+		return s.ensureSandboxRunningAndHealthy(ctx, sessionID, sess.Status)
 	case model.SessionStatusStopped, model.SessionStatusError:
 		return s.ReconcileSandbox(ctx, sessionID)
 	case model.SessionStatusInitializing, model.SessionStatusReinitializing,
@@ -153,10 +136,31 @@ func (s *SandboxService) ensureSandboxReady(ctx context.Context, sessionID strin
 			log.Printf("Session %s wait failed (%v), attempting reconciliation", sessionID, err)
 			return s.ReconcileSandbox(ctx, sessionID)
 		}
-		return nil
+		return s.ensureSandboxRunningAndHealthy(ctx, sessionID, model.SessionStatusReady)
 	default:
 		return s.ReconcileSandbox(ctx, sessionID)
 	}
+}
+
+func (s *SandboxService) ensureSandboxRunningAndHealthy(ctx context.Context, sessionID string, sessionStatus string) error {
+	// Session status looks good — verify the container is actually running.
+	// This fast-path check avoids expensive reconciliation when everything is healthy.
+	sb, err := s.provider.Get(ctx, sessionID)
+	if errors.Is(err, sandbox.ErrNotFound) || (err == nil && sb.Status != sandbox.StatusRunning) {
+		log.Printf("Session %s status is %s but container not running, reconciling", sessionID, sessionStatus)
+		return s.ReconcileSandbox(ctx, sessionID)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check sandbox status: %w", err)
+	}
+	// Container is running per Docker — verify services are actually responsive.
+	// This catches cases where the container is mid-shutdown (SIGTERM received,
+	// Docker still reports "running", but internal services are dead).
+	if err := s.probeSandboxHealth(ctx, sessionID); err != nil {
+		log.Printf("Session %s container running but health check failed (%v), reconciling", sessionID, err)
+		return s.ReconcileSandbox(ctx, sessionID)
+	}
+	return nil
 }
 
 // waitForSessionReady polls the session status until it reaches a terminal state.

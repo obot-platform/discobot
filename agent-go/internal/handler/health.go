@@ -18,10 +18,12 @@ func (h *Handler) Root(w http.ResponseWriter, _ *http.Request) {
 
 // Health handles GET /health — detailed health status.
 func (h *Handler) Health(w http.ResponseWriter, _ *http.Request) {
-	// TODO: check actual agent connection status
+	healthy := h.completions != nil && h.serviceManager != nil
+	connected := healthy && h.defaultAgent != nil
+
 	h.JSON(w, http.StatusOK, api.HealthResponse{
-		Healthy:   true,
-		Connected: false,
+		Healthy:   healthy,
+		Connected: connected,
 	})
 }
 
