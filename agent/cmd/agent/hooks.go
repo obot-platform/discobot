@@ -23,6 +23,10 @@ const (
 
 	// sessionHookTimeout is the maximum execution time per session hook
 	sessionHookTimeout = 5 * time.Minute
+
+	// sessionHookMaxAttempts is the maximum number of times a session hook is retried
+	// before its overall run is recorded as a failure.
+	sessionHookMaxAttempts = 10
 )
 
 // hookConfig represents parsed hook front matter
@@ -377,7 +381,69 @@ func runSessionHook(hookPath string, config hookConfig, workspacePath, sessionID
 		runAs = "user"
 	}
 
-	fmt.Printf("discobot-agent: running session hook %q (run_as: %s)\n", name, runAs)
+	result := runSessionHookWithRetry(name, func(attempt int) sessionHookAttemptResult {
+		return runSessionHookAttempt(hookPath, name, runAs, workspacePath, sessionID, u, attempt)
+	})
+
+	outPath := hookOutputPath(dataDir, hookID)
+	if err := os.WriteFile(outPath, result.output, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "discobot-agent: failed to save hook output: %v\n", err)
+	} else {
+		_ = os.Chown(outPath, u.uid, u.gid)
+	}
+
+	// Update status.json
+	updateSessionHookStatus(dataDir, hookID, name, result.success, result.exitCode, outPath)
+	// Chown status file so agent-api can update it later
+	_ = os.Chown(filepath.Join(dataDir, "status.json"), u.uid, u.gid)
+
+	return result.success
+}
+
+type sessionHookAttemptResult struct {
+	success  bool
+	exitCode int
+	output   []byte
+}
+
+func runSessionHookWithRetry(name string, runner func(attempt int) sessionHookAttemptResult) sessionHookAttemptResult {
+	var finalResult sessionHookAttemptResult
+	var combinedOutput bytes.Buffer
+
+	for attempt := 1; attempt <= sessionHookMaxAttempts; attempt++ {
+		attemptResult := runner(attempt)
+		finalResult = attemptResult
+
+		if !attemptResult.success || attempt > 1 {
+			if combinedOutput.Len() > 0 {
+				combinedOutput.WriteByte('\n')
+			}
+			fmt.Fprintf(&combinedOutput, "=== Attempt %d/%d ===\n", attempt, sessionHookMaxAttempts)
+			combinedOutput.Write(attemptResult.output)
+			if len(attemptResult.output) > 0 && attemptResult.output[len(attemptResult.output)-1] != '\n' {
+				combinedOutput.WriteByte('\n')
+			}
+		} else {
+			combinedOutput.Write(attemptResult.output)
+		}
+
+		if attemptResult.success {
+			finalResult.output = combinedOutput.Bytes()
+			return finalResult
+		}
+
+		if attempt < sessionHookMaxAttempts {
+			fmt.Fprintf(os.Stderr, "discobot-agent: retrying session hook %q (attempt %d/%d)\n", name, attempt+1, sessionHookMaxAttempts)
+		}
+	}
+
+	finalResult.output = combinedOutput.Bytes()
+	fmt.Fprintf(os.Stderr, "discobot-agent: session hook %q failed after %d attempts\n", name, sessionHookMaxAttempts)
+	return finalResult
+}
+
+func runSessionHookAttempt(hookPath, name, runAs, workspacePath, sessionID string, u *userInfo, attempt int) sessionHookAttemptResult {
+	fmt.Printf("discobot-agent: running session hook %q (run_as: %s, attempt %d/%d)\n", name, runAs, attempt, sessionHookMaxAttempts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), sessionHookTimeout)
 	defer cancel()
@@ -407,39 +473,36 @@ func runSessionHook(hookPath string, config hookConfig, workspacePath, sessionID
 	runErr := cmd.Run()
 	duration := time.Since(startTime)
 
-	// Determine exit code
-	exitCode := 0
-	hookSuccess := true
 	if runErr != nil {
-		hookSuccess = false
+		exitCode := 1
 		if ctx.Err() == context.DeadlineExceeded {
 			exitCode = 124
-			fmt.Fprintf(os.Stderr, "discobot-agent: session hook %q timed out after %s\n", name, sessionHookTimeout)
+			fmt.Fprintf(os.Stderr, "discobot-agent: session hook %q attempt %d/%d timed out after %s\n", name, attempt, sessionHookMaxAttempts, sessionHookTimeout)
 		} else if exitErr, ok := runErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
-			fmt.Fprintf(os.Stderr, "discobot-agent: session hook %q failed (%.1fs): %v\n", name, duration.Seconds(), runErr)
+			fmt.Fprintf(os.Stderr, "discobot-agent: session hook %q attempt %d/%d failed (%.1fs): %v\n", name, attempt, sessionHookMaxAttempts, duration.Seconds(), runErr)
 		} else {
-			exitCode = 1
-			fmt.Fprintf(os.Stderr, "discobot-agent: session hook %q failed (%.1fs): %v\n", name, duration.Seconds(), runErr)
+			fmt.Fprintf(os.Stderr, "discobot-agent: session hook %q attempt %d/%d failed (%.1fs): %v\n", name, attempt, sessionHookMaxAttempts, duration.Seconds(), runErr)
 		}
-	} else {
+
+		return sessionHookAttemptResult{
+			success:  false,
+			exitCode: exitCode,
+			output:   outputBuf.Bytes(),
+		}
+	}
+
+	if attempt == 1 {
 		fmt.Printf("discobot-agent: session hook %q completed (%.1fs)\n", name, duration.Seconds())
-	}
-
-	// Save output to log file
-	outPath := hookOutputPath(dataDir, hookID)
-	if err := os.WriteFile(outPath, outputBuf.Bytes(), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "discobot-agent: failed to save hook output: %v\n", err)
 	} else {
-		_ = os.Chown(outPath, u.uid, u.gid)
+		fmt.Printf("discobot-agent: session hook %q completed on attempt %d/%d (%.1fs)\n", name, attempt, sessionHookMaxAttempts, duration.Seconds())
 	}
 
-	// Update status.json
-	updateSessionHookStatus(dataDir, hookID, name, hookSuccess, exitCode, outPath)
-	// Chown status file so agent-api can update it later
-	_ = os.Chown(filepath.Join(dataDir, "status.json"), u.uid, u.gid)
-
-	return hookSuccess
+	return sessionHookAttemptResult{
+		success:  true,
+		exitCode: 0,
+		output:   outputBuf.Bytes(),
+	}
 }
 
 // runSessionHooks discovers and executes session hooks from .discobot/hooks/.

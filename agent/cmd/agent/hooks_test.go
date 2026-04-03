@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -119,7 +120,7 @@ echo hello`,
 			expected: hookConfig{Name: "Single quoted", Type: "session"},
 		},
 		{
-			name: "empty content",
+			name:     "empty content",
 			content:  "",
 			expected: hookConfig{},
 		},
@@ -389,4 +390,146 @@ func TestHookStatusPersistence(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestRunSessionHookWithRetry(t *testing.T) {
+	t.Run("retries until success", func(t *testing.T) {
+		callCount := 0
+		result := runSessionHookWithRetry("Retry Hook", func(attempt int) sessionHookAttemptResult {
+			callCount++
+			if attempt < 3 {
+				return sessionHookAttemptResult{
+					success:  false,
+					exitCode: 1,
+					output:   []byte("failed attempt\n"),
+				}
+			}
+
+			return sessionHookAttemptResult{
+				success:  true,
+				exitCode: 0,
+				output:   []byte("succeeded\n"),
+			}
+		})
+
+		if callCount != 3 {
+			t.Fatalf("callCount = %d, want 3", callCount)
+		}
+		if !result.success {
+			t.Fatal("expected final result to succeed")
+		}
+		if result.exitCode != 0 {
+			t.Fatalf("exitCode = %d, want 0", result.exitCode)
+		}
+
+		output := string(result.output)
+		if !strings.Contains(output, "=== Attempt 1/10 ===") {
+			t.Fatalf("expected retry output to include first attempt header, got %q", output)
+		}
+		if !strings.Contains(output, "=== Attempt 3/10 ===") {
+			t.Fatalf("expected retry output to include successful retry header, got %q", output)
+		}
+	})
+
+	t.Run("marks failure after ten attempts", func(t *testing.T) {
+		callCount := 0
+		result := runSessionHookWithRetry("Always Fails", func(attempt int) sessionHookAttemptResult {
+			callCount++
+			return sessionHookAttemptResult{
+				success:  false,
+				exitCode: 17,
+				output:   []byte("still failing\n"),
+			}
+		})
+
+		if callCount != sessionHookMaxAttempts {
+			t.Fatalf("callCount = %d, want %d", callCount, sessionHookMaxAttempts)
+		}
+		if result.success {
+			t.Fatal("expected final result to fail")
+		}
+		if result.exitCode != 17 {
+			t.Fatalf("exitCode = %d, want 17", result.exitCode)
+		}
+
+		output := string(result.output)
+		if !strings.Contains(output, "=== Attempt 10/10 ===") {
+			t.Fatalf("expected retry output to include last attempt header, got %q", output)
+		}
+	})
+}
+
+func TestRunSessionHookPersistsAggregateStatusAfterRetries(t *testing.T) {
+	workspaceDir := t.TempDir()
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "output"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	counterPath := filepath.Join(workspaceDir, "attempt-count")
+	hookPath := filepath.Join(workspaceDir, "retry-hook.sh")
+
+	content := `#!/bin/bash
+COUNT=0
+if [ -f "$DISCOBOT_WORKSPACE/attempt-count" ]; then
+	COUNT=$(cat "$DISCOBOT_WORKSPACE/attempt-count")
+fi
+COUNT=$((COUNT + 1))
+printf "%s" "$COUNT" > "$DISCOBOT_WORKSPACE/attempt-count"
+if [ "$COUNT" -lt 3 ]; then
+	echo "failing on attempt $COUNT"
+	exit 1
+fi
+echo "succeeded on attempt $COUNT"
+`
+
+	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	u := &userInfo{
+		uid:      os.Getuid(),
+		gid:      os.Getgid(),
+		username: "discobot",
+		homeDir:  workspaceDir,
+	}
+
+	success := runSessionHook(hookPath, hookConfig{Name: "Retry Hook", Type: "session", RunAs: "root"}, workspaceDir, "session-1", dataDir, u)
+	if !success {
+		t.Fatal("expected hook to eventually succeed")
+	}
+
+	status := loadHookStatus(dataDir)
+	hook := status.Hooks["retry-hook"]
+	if hook.LastResult != "success" {
+		t.Fatalf("LastResult = %q, want %q", hook.LastResult, "success")
+	}
+	if hook.RunCount != 1 {
+		t.Fatalf("RunCount = %d, want 1", hook.RunCount)
+	}
+	if hook.FailCount != 0 {
+		t.Fatalf("FailCount = %d, want 0", hook.FailCount)
+	}
+	if hook.ConsecutiveFailures != 0 {
+		t.Fatalf("ConsecutiveFailures = %d, want 0", hook.ConsecutiveFailures)
+	}
+
+	attempts, err := os.ReadFile(counterPath)
+	if err != nil {
+		t.Fatalf("ReadFile counter: %v", err)
+	}
+	if string(attempts) != "3" {
+		t.Fatalf("attempt count = %q, want %q", string(attempts), "3")
+	}
+
+	output, err := os.ReadFile(hook.OutputPath)
+	if err != nil {
+		t.Fatalf("ReadFile output: %v", err)
+	}
+	outputText := string(output)
+	if !strings.Contains(outputText, "=== Attempt 1/10 ===") {
+		t.Fatalf("expected output log to include first attempt header, got %q", outputText)
+	}
+	if !strings.Contains(outputText, "=== Attempt 3/10 ===") {
+		t.Fatalf("expected output log to include successful retry header, got %q", outputText)
+	}
 }

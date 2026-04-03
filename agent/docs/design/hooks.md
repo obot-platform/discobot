@@ -47,8 +47,9 @@ For each hook:
 - If `run_as: user` (default) → execute as discobot user via `syscall.Credential`
 - Working directory: `/home/discobot/workspace`
 - Timeout: 5 minutes per hook
+- Retries: session hooks are retried immediately up to 10 total attempts before the overall run is marked as failed
 - stdout/stderr captured and logged
-- **On failure: log error and continue** (don't block session startup)
+- **On failure after all retries: log error and continue** (don't block session startup)
 
 ### Environment Variables
 
@@ -62,7 +63,7 @@ Hooks receive the agent's environment plus:
 
 ### Error Handling
 
-Session hook failures are logged but do not prevent the agent-api from starting. This ensures that a broken hook doesn't make the session permanently unusable.
+Session hook failures are retried up to 10 times, then logged without preventing the agent-api from starting. This ensures that transient startup issues can recover automatically while a broken hook still doesn't make the session permanently unusable.
 
 Runtime hook state is persisted under `~/.discobot/threads/{sessionId}/hooks/`, including `status.json` and per-hook output logs in the `output/` subdirectory.
 
