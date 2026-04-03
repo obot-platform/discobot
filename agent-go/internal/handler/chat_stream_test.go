@@ -260,6 +260,28 @@ func readFrames(t *testing.T, body io.ReadCloser, count int, stopAtDone bool) []
 	return readFramesFromScanner(t, bufio.NewScanner(body), count, stopAtDone)
 }
 
+func readNonPingFramesFromScanner(t *testing.T, scanner *bufio.Scanner, count int) []sseFrame {
+	t.Helper()
+
+	frames := make([]sseFrame, 0, count)
+	deadline := time.Now().Add(2 * time.Second)
+	for len(frames) < count {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d non-ping frames", count)
+		}
+		frameBatch := readFramesFromScanner(t, scanner, 1, false)
+		if len(frameBatch) == 0 {
+			continue
+		}
+		if frameBatch[0].Event == "ping" {
+			continue
+		}
+		frames = append(frames, frameBatch[0])
+	}
+
+	return frames
+}
+
 func newStreamTestServer(t *testing.T, h *Handler) *httptest.Server {
 	t.Helper()
 	r := chi.NewRouter()
@@ -2169,13 +2191,17 @@ func TestChatStream_CompletionEndDoesNotCloseStream(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+
 	time.AfterFunc(5*time.Millisecond, func() {
 		cm.Cancel("thread-5")
 	})
 
-	frames := readFrames(t, resp.Body, 6, false)
-	if len(frames) != 6 {
-		t.Fatalf("expected 6 frames, got %d", len(frames))
+	frames := readNonPingFramesFromScanner(t, scanner, 5)
+	if len(frames) != 5 {
+		t.Fatalf("expected 5 non-ping frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
@@ -2188,8 +2214,9 @@ func TestChatStream_CompletionEndDoesNotCloseStream(t *testing.T) {
 		t.Fatalf("unexpected chunk frame after history-end: %+v", frames[3])
 	}
 	assertCompletionStatusFrame(t, frames[4], "thread-5", "", false)
-	if frames[5].Event != "ping" {
-		t.Fatalf("expected ping after completion finished, got %+v", frames[5])
+	pingFrame := readFramesFromScanner(t, scanner, 1, false)
+	if len(pingFrame) != 1 || pingFrame[0].Event != "ping" {
+		t.Fatalf("expected ping after completion finished, got %+v", pingFrame)
 	}
 }
 
@@ -2215,6 +2242,10 @@ func TestChatStream_ContinuesIntoLaterCompletionOnSameConnection(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+
 	startErrCh := make(chan error, 1)
 	time.AfterFunc(5*time.Millisecond, func() {
 		_, startErr := cm.Chat("thread-6", agent.PromptRequest{
@@ -2223,9 +2254,9 @@ func TestChatStream_ContinuesIntoLaterCompletionOnSameConnection(t *testing.T) {
 		startErrCh <- startErr
 	})
 
-	frames := readFrames(t, resp.Body, 4, false)
-	if len(frames) != 4 {
-		t.Fatalf("expected 4 frames, got %d", len(frames))
+	frames := readNonPingFramesFromScanner(t, scanner, 3)
+	if len(frames) != 3 {
+		t.Fatalf("expected 3 non-ping frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
@@ -2236,8 +2267,9 @@ func TestChatStream_ContinuesIntoLaterCompletionOnSameConnection(t *testing.T) {
 	if frames[2].Event != "chunk" || frames[2].Data != string(nextChunkJSON) {
 		t.Fatalf("expected next completion chunk, got %+v", frames[2])
 	}
-	if frames[3].Event != "ping" {
-		t.Fatalf("expected ping after later completion, got %+v", frames[3])
+	pingFrame := readFramesFromScanner(t, scanner, 1, false)
+	if len(pingFrame) != 1 || pingFrame[0].Event != "ping" {
+		t.Fatalf("expected ping after later completion, got %+v", pingFrame)
 	}
 
 	if startErr := <-startErrCh; startErr != nil {
