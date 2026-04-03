@@ -15,6 +15,7 @@ import (
 
 	"github.com/obot-platform/discobot/agent-go/message"
 	"github.com/obot-platform/discobot/agent-go/providers"
+	"github.com/obot-platform/discobot/agent-go/providers/transport"
 )
 
 func TestNewWSPool_URLDerivation(t *testing.T) {
@@ -885,7 +886,7 @@ func TestCompleteViaWebSocket_DropsPreviousResponseIDAfterCompactionSummaryOnFre
 	}
 }
 
-func TestCompleteViaWebSocket_RetriesFreshAfterStalePooledConn(t *testing.T) {
+func TestCompleteViaWebSocket_FallsBackToFullHistoryAfterStalePooledConn(t *testing.T) {
 	var (
 		mu               sync.Mutex
 		connCount        int
@@ -893,6 +894,7 @@ func TestCompleteViaWebSocket_RetriesFreshAfterStalePooledConn(t *testing.T) {
 		freshReqHasTools bool
 		freshReqInputLen int
 		secondTurnErr    error
+		retryEvents      []transport.RetryEvent
 	)
 	wsTools := []providers.ToolDefinition{{
 		Name:        "get_weather",
@@ -950,11 +952,17 @@ func TestCompleteViaWebSocket_RetriesFreshAfterStalePooledConn(t *testing.T) {
 		ws:      newWSPool("test-key", ts.URL),
 	}
 
+	retryCtx := transport.WithRetryObserver(context.Background(), func(event transport.RetryEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		retryEvents = append(retryEvents, event)
+	})
+
 	req1 := providers.CompleteRequest{
 		Model:    providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
 		Messages: []message.Message{{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hi"}}}},
 	}
-	for _, err := range p.Complete(context.Background(), req1) {
+	for _, err := range p.Complete(retryCtx, req1) {
 		if err != nil {
 			t.Fatalf("turn 1: %v", err)
 		}
@@ -964,28 +972,35 @@ func TestCompleteViaWebSocket_RetriesFreshAfterStalePooledConn(t *testing.T) {
 		Model: providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
 		Tools: wsTools,
 		Messages: []message.Message{
+			{Role: "system", Parts: []message.Part{message.TextPart{Text: "You are helpful."}}},
 			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hi"}}},
 			{Role: "assistant", ID: "resp_1", Parts: []message.Part{message.TextPart{Text: "Hello"}}},
 			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Again"}}},
 		},
 	}
-	for _, err := range p.Complete(context.Background(), req2) {
+	for _, err := range p.Complete(retryCtx, req2) {
 		if err != nil {
 			secondTurnErr = err
 		}
 	}
 
 	if secondTurnErr != nil {
-		t.Fatalf("turn 2 should recover without surfacing an error, got %v", secondTurnErr)
+		t.Fatalf("turn 2 should recover via full-history fallback, got %v", secondTurnErr)
+	}
+	if connCount != 2 {
+		t.Fatalf("continuation failure should fallback on a fresh websocket, got %d connections", connCount)
+	}
+	if len(retryEvents) != 1 {
+		t.Fatalf("continuation fallback should emit 1 retry event, got %d", len(retryEvents))
 	}
 	if freshReqPrev != "" {
-		t.Errorf("fresh retry should drop previous_response_id, got %q", freshReqPrev)
+		t.Errorf("fallback request should drop previous_response_id, got %q", freshReqPrev)
 	}
 	if !freshReqHasTools {
-		t.Error("fresh retry on new connection should restore full request tools")
+		t.Error("fallback request should restore full request tools")
 	}
 	if freshReqInputLen != 3 {
-		t.Errorf("fresh retry on new connection should restore full input history (3 items), got %d", freshReqInputLen)
+		t.Errorf("fallback request should restore full non-system input history (3 items), got %d", freshReqInputLen)
 	}
 }
 
@@ -1081,18 +1096,160 @@ func TestCompleteViaWebSocket_RetriesFreshInitialRequestFailure(t *testing.T) {
 	}
 }
 
-func TestCompleteViaWebSocket_DropsPreviousResponseIDWhenCacheIsGone(t *testing.T) {
+func TestCompleteViaWebSocket_RetriesInitialDialFailure(t *testing.T) {
 	var (
-		mu                     sync.Mutex
-		connCount              int
-		continuationReqPrevID  string
-		continuationHasTools   bool
-		continuationInputLen   int
-		fallbackReqPrev        string
-		fallbackReqHasTools    bool
-		fallbackReqInputLen    int
-		fallbackReqFirstPrompt string
-		secondTurnErr          error
+		mu                sync.Mutex
+		attemptCount      int
+		requestCount      int
+		firstReqHasTools  bool
+		secondReqHasTools bool
+		firstReqPrevID    string
+		secondReqPrevID   string
+		firstReqInputLen  int
+		secondReqInputLen int
+		retryEvents       []transport.RetryEvent
+	)
+	wsTools := []providers.ToolDefinition{{
+		Name:        "echo",
+		Description: "Echo text",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`),
+	}}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		mu.Lock()
+		attemptCount++
+		currentAttempt := attemptCount
+		mu.Unlock()
+
+		if currentAttempt == 1 {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Fatal("response writer does not support hijacking")
+			}
+			conn, _, err := hj.Hijack()
+			if err != nil {
+				t.Fatalf("hijack: %v", err)
+			}
+			_ = conn.Close()
+			return
+		}
+
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("websocket accept: %v", err)
+			return
+		}
+		defer conn.CloseNow()
+
+		_, data, err := conn.Read(r.Context())
+		if err != nil {
+			t.Errorf("conn read: %v", err)
+			return
+		}
+		var req map[string]any
+		if err := json.Unmarshal(data, &req); err != nil {
+			t.Errorf("decode: %v", err)
+			return
+		}
+		inputItems, _ := req["input"].([]any)
+		_, hasTools := req["tools"]
+		prevID, _ := req["previous_response_id"].(string)
+
+		mu.Lock()
+		requestCount++
+		if requestCount == 1 {
+			firstReqHasTools = hasTools
+			firstReqPrevID = prevID
+			firstReqInputLen = len(inputItems)
+		} else {
+			secondReqHasTools = hasTools
+			secondReqPrevID = prevID
+			secondReqInputLen = len(inputItems)
+		}
+		mu.Unlock()
+
+		sendWSEvents(r.Context(), t, conn, minimalWSCompletion("resp_retry_ok"))
+	}))
+	defer ts.Close()
+
+	p := &Provider{
+		apiKey:  "test-key",
+		baseURL: ts.URL,
+		client:  ts.Client(),
+		ws:      newWSPool("test-key", ts.URL),
+	}
+
+	ctx := transport.WithRetryObserver(context.Background(), func(event transport.RetryEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		retryEvents = append(retryEvents, event)
+	})
+
+	req := providers.CompleteRequest{
+		Model:    providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
+		Tools:    wsTools,
+		Messages: []message.Message{{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hello"}}}},
+	}
+	var gotErr error
+	for _, err := range p.Complete(ctx, req) {
+		if err != nil {
+			gotErr = err
+		}
+	}
+
+	if gotErr != nil {
+		t.Fatalf("expected retry to recover from initial websocket dial failure, got %v", gotErr)
+	}
+	if attemptCount != 2 {
+		t.Fatalf("expected 2 connection attempts (initial dial + retry), got %d", attemptCount)
+	}
+	if requestCount != 1 {
+		t.Fatalf("expected only retried connection to send a websocket request, got %d requests", requestCount)
+	}
+	if len(retryEvents) != 1 {
+		t.Fatalf("expected 1 retry event, got %d", len(retryEvents))
+	}
+	if retryEvents[0].Attempt != 1 || retryEvents[0].MaxRetries != wsRetryMaxRetries {
+		t.Fatalf("unexpected retry event metadata: %+v", retryEvents[0])
+	}
+	if retryEvents[0].Err == nil {
+		t.Fatal("expected retry event to include dial error")
+	}
+	if firstReqPrevID != "" || secondReqPrevID != "" {
+		t.Fatalf("initial-request retries must not carry previous_response_id, got first=%q second=%q", firstReqPrevID, secondReqPrevID)
+	}
+	if !firstReqHasTools {
+		t.Fatal("retried initial request should keep full request tools")
+	}
+	if firstReqInputLen != 1 {
+		t.Fatalf("retried initial request should keep full input (1 item), got %d", firstReqInputLen)
+	}
+	if secondReqHasTools || secondReqInputLen != 0 {
+		t.Fatalf("expected only one websocket request capture, got secondReqHasTools=%v secondReqInputLen=%d", secondReqHasTools, secondReqInputLen)
+	}
+}
+
+func TestCompleteViaWebSocket_FallsBackToFullHistoryWhenCacheIsGone(t *testing.T) {
+	var (
+		mu                      sync.Mutex
+		connCount               int
+		continuationReqPrevID   string
+		continuationHasTools    bool
+		continuationInputLen    int
+		fallbackReqPrev         string
+		fallbackReqHasTools     bool
+		fallbackReqInputLen     int
+		fallbackReqFirstPrompt  string
+		fallbackInstructions    string
+		fallbackHasInstructions bool
+		secondTurnErr           error
+		retryEvents             []transport.RetryEvent
 	)
 	wsTools := []providers.ToolDefinition{{
 		Name:        "get_weather",
@@ -1147,6 +1304,8 @@ func TestCompleteViaWebSocket_DropsPreviousResponseIDWhenCacheIsGone(t *testing.
 			_, fallbackReqHasTools = req["tools"]
 			fallbackInput, _ := req["input"].([]any)
 			fallbackReqInputLen = len(fallbackInput)
+			fallbackInstructions, _ = req["instructions"].(string)
+			_, fallbackHasInstructions = req["instructions"]
 			if len(fallbackInput) > 0 {
 				if firstInput, ok := fallbackInput[0].(map[string]any); ok {
 					fallbackReqFirstPrompt, _ = firstInput["content"].(string)
@@ -1166,11 +1325,17 @@ func TestCompleteViaWebSocket_DropsPreviousResponseIDWhenCacheIsGone(t *testing.
 		ws:      newWSPool("test-key", ts.URL),
 	}
 
+	retryCtx := transport.WithRetryObserver(context.Background(), func(event transport.RetryEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		retryEvents = append(retryEvents, event)
+	})
+
 	req1 := providers.CompleteRequest{
 		Model:    providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
 		Messages: []message.Message{{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hi"}}}},
 	}
-	for _, err := range p.Complete(context.Background(), req1) {
+	for _, err := range p.Complete(retryCtx, req1) {
 		if err != nil {
 			t.Fatalf("turn 1: %v", err)
 		}
@@ -1180,19 +1345,20 @@ func TestCompleteViaWebSocket_DropsPreviousResponseIDWhenCacheIsGone(t *testing.
 		Model: providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
 		Tools: wsTools,
 		Messages: []message.Message{
+			{Role: "system", Parts: []message.Part{message.TextPart{Text: "You are helpful."}}},
 			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hi"}}},
 			{Role: "assistant", ID: "resp_1", Parts: []message.Part{message.TextPart{Text: "Hello"}}},
 			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Again"}}},
 		},
 	}
-	for _, err := range p.Complete(context.Background(), req2) {
+	for _, err := range p.Complete(retryCtx, req2) {
 		if err != nil {
 			secondTurnErr = err
 		}
 	}
 
 	if secondTurnErr != nil {
-		t.Fatalf("turn 2 should recover without surfacing an error, got %v", secondTurnErr)
+		t.Fatalf("turn 2 should recover via full-history fallback, got %v", secondTurnErr)
 	}
 	if continuationReqPrevID != "resp_1" {
 		t.Errorf("continuation request should include previous_response_id=%q, got %q", "resp_1", continuationReqPrevID)
@@ -1204,16 +1370,25 @@ func TestCompleteViaWebSocket_DropsPreviousResponseIDWhenCacheIsGone(t *testing.
 		t.Errorf("continuation request should include only incremental input (1 item), got %d", continuationInputLen)
 	}
 	if fallbackReqPrev != "" {
-		t.Errorf("fallback retry should drop previous_response_id, got %q", fallbackReqPrev)
+		t.Errorf("fallback request should drop previous_response_id, got %q", fallbackReqPrev)
 	}
 	if !fallbackReqHasTools {
-		t.Error("fallback retry should restore full request tools")
+		t.Error("fallback request should restore full request tools")
 	}
 	if fallbackReqInputLen != 3 {
-		t.Errorf("fallback retry should restore full input history (3 items), got %d", fallbackReqInputLen)
+		t.Errorf("fallback request should restore full non-system input history (3 items), got %d", fallbackReqInputLen)
 	}
 	if fallbackReqFirstPrompt != "Hi" {
-		t.Errorf("fallback retry should begin with original user message, got %q", fallbackReqFirstPrompt)
+		t.Errorf("fallback request should begin with original user message, got %q", fallbackReqFirstPrompt)
+	}
+	if !fallbackHasInstructions || fallbackInstructions != "You are helpful." {
+		t.Fatalf("fallback request should restore full instructions, got present=%v value=%q", fallbackHasInstructions, fallbackInstructions)
+	}
+	if connCount != 2 {
+		t.Fatalf("previous_response_not_found should trigger one fresh websocket fallback, got %d connections", connCount)
+	}
+	if len(retryEvents) != 1 {
+		t.Fatalf("previous_response_not_found fallback should emit 1 retry event, got %d", len(retryEvents))
 	}
 }
 

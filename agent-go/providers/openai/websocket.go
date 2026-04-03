@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/obot-platform/discobot/agent-go/message"
+	"github.com/obot-platform/discobot/agent-go/providers/transport"
 )
 
 // wsMaxAge is the maximum age of a WebSocket connection before it is proactively
@@ -250,6 +251,7 @@ func (p *Provider) completeViaWebSocket(ctx context.Context, fullBody map[string
 	// Retrieve the pooled connection for this response chain (if any).
 	pc := p.ws.checkout(prevRespID)
 	retryCount := 0
+	allowIncremental := prevRespID != "" && pc != nil
 
 	for {
 		usedFreshConn := false
@@ -263,24 +265,28 @@ func (p *Provider) completeViaWebSocket(ctx context.Context, fullBody map[string
 			var err error
 			pc, err = p.ws.dial(ctx)
 			if err != nil {
-				yield(nil, err)
-				return
+				if !retryWebSocketAttempt(ctx, err, retryCount, true) {
+					yield(nil, err)
+					return
+				}
+				retryCount++
+				if allowIncremental {
+					allowIncremental = false
+					prevRespID = ""
+				} else if !waitForWebSocketRetry(ctx, wsRetryDelay(retryCount)) {
+					yield(nil, ctx.Err())
+					return
+				}
+				continue
 			}
 			usedFreshConn = true
 		}
 
-		attemptPrevRespID := prevRespID
+		attemptPrevRespID := ""
 		requestBody := fullBody
-		if prevRespID != "" {
-			if usedFreshConn {
-				// OpenAI's previous_response_id cache is scoped to a specific WebSocket
-				// connection. On a fresh socket we must rebuild state from full history
-				// and omit previous_response_id.
-				attemptPrevRespID = ""
-				requestBody = fullBody
-			} else {
-				requestBody = incrementalBody
-			}
+		if allowIncremental && prevRespID != "" && !usedFreshConn {
+			attemptPrevRespID = prevRespID
+			requestBody = incrementalBody
 		}
 
 		result := p.completeViaWebSocketAttempt(ctx, requestBody, attemptPrevRespID, pc, yield)
@@ -305,20 +311,36 @@ func (p *Provider) completeViaWebSocket(ctx context.Context, fullBody map[string
 			return
 		}
 
-		if !shouldRetryWebSocketAttempt(ctx, result.err, retryCount) {
+		if !retryWebSocketAttempt(ctx, result.err, retryCount, true) {
 			yield(nil, result.err)
 			return
 		}
 
 		retryCount++
-		// Retry from full history on a fresh socket.
-		prevRespID = ""
-		delay := wsRetryDelay(retryCount)
-		if !waitForWebSocketRetry(ctx, delay) {
+		if allowIncremental {
+			allowIncremental = false
+			prevRespID = ""
+			continue
+		}
+		if !waitForWebSocketRetry(ctx, wsRetryDelay(retryCount)) {
 			yield(nil, ctx.Err())
 			return
 		}
 	}
+}
+
+func retryWebSocketAttempt(ctx context.Context, err error, retryCount int, allowRetry bool) bool {
+	if !allowRetry || !shouldRetryWebSocketAttempt(ctx, err, retryCount) {
+		return false
+	}
+	nextAttempt := retryCount + 1
+	transport.ObserveRetry(ctx, transport.RetryEvent{
+		Attempt:    nextAttempt,
+		MaxRetries: wsRetryMaxRetries,
+		Delay:      wsRetryDelay(nextAttempt),
+		Err:        err,
+	})
+	return true
 }
 
 func shouldRetryWebSocketAttempt(ctx context.Context, err error, retryCount int) bool {

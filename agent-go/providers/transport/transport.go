@@ -77,6 +77,12 @@ func WithRetryObserver(ctx context.Context, observer RetryObserver) context.Cont
 	return context.WithValue(ctx, retryObserverKey, observer)
 }
 
+// ObserveRetry emits a retry event to any observer attached to ctx.
+func ObserveRetry(ctx context.Context, event RetryEvent) {
+	observer, _ := ctx.Value(retryObserverKey).(RetryObserver)
+	notifyRetry(observer, event)
+}
+
 // --- Client constructor ---
 
 // NewClient returns an *http.Client that uses the logging+retry Transport.
