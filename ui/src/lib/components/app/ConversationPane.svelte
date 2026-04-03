@@ -628,13 +628,13 @@
 		class={`flex min-h-0 flex-1 flex-col transition-all duration-300 ease-out ${hasMessages ? "" : "justify-center"}`}
 	>
 		{#if hasMessages}
-			<div class="relative min-h-0 flex-1">
+			<div class="relative min-h-0 min-w-0 flex-1">
 				<div
 					bind:this={viewport}
-					class="scrollbar-gutter-stable h-full overflow-auto p-4"
+					class="scrollbar-gutter-stable h-full min-w-0 overflow-auto p-4"
 				>
 					<div
-						class={`w-full space-y-4 ${effectiveChatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
+						class={`w-full min-w-0 space-y-4 ${effectiveChatWidthMode === "constrained" ? "mx-auto max-w-3xl" : ""}`}
 					>
 						{#each conversationTurns as turn, index (turn.id)}
 							<div

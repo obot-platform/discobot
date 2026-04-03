@@ -47,10 +47,10 @@
 		<Resizable.PaneGroup
 			direction="horizontal"
 			autoSaveId="discobot-ui-thread-layout"
-			class="min-h-0 flex-1"
+			class="min-h-0 min-w-0 flex-1"
 		>
-			<Resizable.Pane defaultSize={35} minSize={25} class="min-h-0">
-				<div class="flex min-h-0 h-full flex-col overflow-hidden">
+			<Resizable.Pane defaultSize={35} minSize={25} class="min-h-0 min-w-0">
+				<div class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
 					<ThreadWorkspaceHeader
 						showSidebarToggle={props.showSidebarToggle ?? false}
 						reserveSidebarSpace={props.reserveSidebarSpace ?? false}
@@ -59,14 +59,14 @@
 							(session.isPending ? "" : "No thread selected")}
 						state={session.threads.selected?.state}
 					/>
-					<div class="min-h-0 flex-1 overflow-hidden">
+					<div class="min-h-0 min-w-0 flex-1 overflow-hidden">
 						<ConversationPane />
 					</div>
 				</div>
 			</Resizable.Pane>
 			<Resizable.Handle class="bg-transparent" />
-			<Resizable.Pane defaultSize={65} minSize={25} class="min-h-0">
-				<div class="min-h-0 h-full overflow-auto">
+			<Resizable.Pane defaultSize={65} minSize={25} class="min-h-0 min-w-0">
+				<div class="h-full min-h-0 min-w-0 overflow-auto">
 					<DockPanel />
 				</div>
 			</Resizable.Pane>
@@ -81,7 +81,7 @@
 			state={session.threads.selected?.state}
 		/>
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+		<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 			<ConversationPane />
 		</div>
 	{/if}

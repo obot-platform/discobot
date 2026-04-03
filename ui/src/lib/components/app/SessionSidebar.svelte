@@ -435,15 +435,15 @@
 		type="button"
 		onclick={() =>
 			handleSelectRecentThread(threadObj.sessionId, threadObj.threadId)}
-		class={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${hasRecentThreadSubtitle(threadObj) ? "min-h-10" : ""} ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+		class={`flex w-full min-w-0 items-start gap-2 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors ${hasRecentThreadSubtitle(threadObj) ? "min-h-10" : ""} ${isSelected ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-inner" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
 	>
 		<SessionStatus
 			status={threadObj.sessionStatus}
 			showLabel={false}
 			class="mt-0.5 shrink-0"
 		/>
-		<span class="min-w-0 flex-1">
-			<span class="flex min-w-0 items-center gap-2">
+		<span class="min-w-0 flex-1 overflow-hidden">
+			<span class="flex min-w-0 items-center gap-2 overflow-hidden">
 				<span class="block truncate text-sm font-medium"
 					>{threadObj.threadName || "New Thread"}</span
 				>

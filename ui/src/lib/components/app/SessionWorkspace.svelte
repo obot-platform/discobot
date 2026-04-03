@@ -118,11 +118,11 @@
 				/>
 			{/key}
 		{:else}
-			<div class="relative min-h-0 flex-1">
+			<div class="relative min-h-0 min-w-0 flex-1">
 				<Resizable.PaneGroup
 					direction="horizontal"
 					autoSaveId="discobot-ui-sidebar-layout"
-					class="min-h-0 flex-1"
+					class="min-h-0 min-w-0 flex-1"
 				>
 					<Resizable.Pane
 						bind:this={desktopSidebarPane}
@@ -143,7 +143,7 @@
 						</div>
 					</Resizable.Pane>
 					<Resizable.Handle class="bg-transparent after:w-3" />
-					<Resizable.Pane minSize={45} class="min-h-0">
+					<Resizable.Pane minSize={45} class="min-h-0 min-w-0">
 						{#key session.threads.selectedId ?? session.sessionId}
 							<ThreadWorkspace
 								mainClass="flex h-full min-h-0 flex-col overflow-hidden"
