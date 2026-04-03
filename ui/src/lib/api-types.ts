@@ -12,6 +12,7 @@ export interface Thread {
 	id: string;
 	name: string;
 	lastMessage?: string;
+	errorMessage?: string;
 	model?: string;
 	reasoning?: string;
 	mode: string;

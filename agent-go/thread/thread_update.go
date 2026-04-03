@@ -17,14 +17,15 @@ func UpdateChunkFromConfig(threadID string, cfg Config) message.ThreadUpdateChun
 	return message.ThreadUpdateChunk{
 		Data: message.ThreadUpdateData{
 			Thread: message.ThreadUpdateInfo{
-				ID:          threadID,
-				Name:        cfg.Name,
-				LastMessage: cfg.LastMessage,
-				Model:       cfg.Model,
-				Reasoning:   string(cfg.Reasoning),
-				Mode:        mode,
-				State:       string(cfg.LastTurnState),
-				PromptQueue: promptQueueToThreadUpdateInfo(cfg.PromptQueue),
+				ID:           threadID,
+				Name:         cfg.Name,
+				LastMessage:  cfg.LastMessage,
+				ErrorMessage: cfg.ErrorMessage,
+				Model:        cfg.Model,
+				Reasoning:    string(cfg.Reasoning),
+				Mode:         mode,
+				State:        string(cfg.LastTurnState),
+				PromptQueue:  promptQueueToThreadUpdateInfo(cfg.PromptQueue),
 			},
 		},
 	}

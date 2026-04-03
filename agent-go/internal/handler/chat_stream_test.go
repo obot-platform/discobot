@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -890,6 +891,154 @@ func TestRegisterRoutes_ThreadIncludesInterruptedState(t *testing.T) {
 	}
 	if got.State != "interrupted" {
 		t.Fatalf("expected interrupted state, got %+v", got)
+	}
+}
+
+func TestRegisterRoutes_ThreadIncludesPersistedError(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+	ts := newFullHandlerTestServer(t, h)
+	defer ts.Close()
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{
+		Name:         "Thread 1",
+		NameSource:   thread.ThreadNameSourceUser,
+		ErrorMessage: "invalid model",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Get(ts.URL + "/threads/thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected get status 200, got %d", resp.StatusCode)
+	}
+
+	var got api.Thread
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ErrorMessage != "invalid model" {
+		t.Fatalf("expected persisted error message, got %+v", got)
+	}
+}
+
+func TestOnTurnStart_ClearsPersistedThreadError(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{promptFn: yieldChunksAndBlock(), listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	_ = New("", cm, nil, nil, defaultAgent)
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{
+		Name:         "Thread 1",
+		NameSource:   thread.ThreadNameSourceUser,
+		ErrorMessage: "invalid model",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	completionID, err := cm.Chat("thread-1", agent.PromptRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cm.Cancel("thread-1")
+	if completionID == "" {
+		t.Fatal("expected completion id")
+	}
+
+	cfg, err := store.LoadConfig("thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ErrorMessage != "" {
+		t.Fatalf("expected persisted error to clear on turn start, got %+v", cfg)
+	}
+
+	var update message.ThreadUpdateChunk
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		result := cm.PollChunks("thread-1", 0)
+		if result != nil && len(result.Chunks) > 0 {
+			threadUpdate, ok := result.Chunks[0].(message.ThreadUpdateChunk)
+			if ok {
+				update = threadUpdate
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected start-time thread update chunk")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if update.Data.Thread.ErrorMessage != "" {
+		t.Fatalf("expected cleared error in update chunk, got %+v", update.Data.Thread)
+	}
+}
+
+func TestOnTurnComplete_PersistsThreadError(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{Name: "Thread 1", NameSource: thread.ThreadNameSourceUser}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.OnTurnComplete("thread-1", errors.New("invalid model"))
+
+	cfg, err := store.LoadConfig("thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ErrorMessage != "invalid model" {
+		t.Fatalf("expected persisted error message, got %+v", cfg)
+	}
+}
+
+func TestOnTurnComplete_IgnoresCanceledErrors(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	ma := &streamTestAgent{listThreadsFn: store.ListThreads}
+	cm := agent.NewCompletionManager(ma)
+	defaultAgent := agentimpl.NewDefaultAgent(store, nil, nil, t.TempDir(), agentimpl.MCPConfig{})
+	h := New("", cm, nil, nil, defaultAgent)
+
+	if err := store.CreateThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig("thread-1", thread.Config{
+		Name:         "Thread 1",
+		NameSource:   thread.ThreadNameSourceUser,
+		ErrorMessage: "keep me",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.OnTurnComplete("thread-1", context.Canceled)
+
+	cfg, err := store.LoadConfig("thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ErrorMessage != "keep me" {
+		t.Fatalf("expected canceled completion to leave existing error intact, got %+v", cfg)
 	}
 }
 

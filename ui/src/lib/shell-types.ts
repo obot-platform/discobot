@@ -128,6 +128,7 @@ export type ThreadSummary = {
 	name: string;
 	model?: string;
 	reasoning?: string;
+	errorMessage?: string;
 	mode: string;
 	state?: ThreadState;
 	promptQueue?: QueuedPrompt[];

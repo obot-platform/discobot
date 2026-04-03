@@ -475,6 +475,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 		Name:          "Friendly thread name",
 		NameSource:    ThreadNameSourceGenerated,
 		LastMessage:   "latest prompt",
+		ErrorMessage:  "invalid model",
 		LastTurnState: StateCancelled,
 		Model:         "anthropic/claude-sonnet-4-6",
 		CWD:           "/tmp/project",
@@ -513,6 +514,9 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 	if loaded.LastMessage != cfg.LastMessage {
 		t.Errorf("expected lastMessage=%q, got %q", cfg.LastMessage, loaded.LastMessage)
+	}
+	if loaded.ErrorMessage != cfg.ErrorMessage {
+		t.Errorf("expected errorMessage=%q, got %q", cfg.ErrorMessage, loaded.ErrorMessage)
 	}
 	if loaded.LastTurnState != cfg.LastTurnState {
 		t.Errorf("expected lastTurnState=%q, got %q", cfg.LastTurnState, loaded.LastTurnState)

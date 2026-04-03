@@ -641,6 +641,8 @@ type Config struct {
 	NameSource string `json:"nameSource,omitempty"`
 	// LastMessage is the most recent user-authored text prompt for this thread.
 	LastMessage string `json:"lastMessage,omitempty"`
+	// ErrorMessage is the latest persisted thread-scoped error banner text.
+	ErrorMessage string `json:"errorMessage,omitempty"`
 	// Model is the full "providerId/modelId" ref (e.g. "anthropic/claude-sonnet-4-6").
 	Model string `json:"model,omitempty"`
 	// Reasoning is the extended thinking setting (e.g. "", "auto", "low", "medium", "high", "none").
@@ -735,6 +737,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		Name          string              `json:"name"`
 		NameSource    string              `json:"nameSource"`
 		LastMessage   string              `json:"lastMessage"`
+		ErrorMessage  string              `json:"errorMessage"`
 		Model         string              `json:"model"`
 		ProviderID    string              `json:"providerId"`
 		Reasoning     providers.Reasoning `json:"reasoning"`
@@ -761,6 +764,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		Name:          raw.Name,
 		NameSource:    raw.NameSource,
 		LastMessage:   raw.LastMessage,
+		ErrorMessage:  raw.ErrorMessage,
 		Model:         model,
 		Reasoning:     raw.Reasoning,
 		CWD:           raw.CWD,

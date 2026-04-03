@@ -394,7 +394,7 @@ function createThreadContext(
 			return conversation.status;
 		},
 		get error() {
-			return conversation.error;
+			return conversation.error ?? threadSummary?.errorMessage ?? null;
 		},
 		get hasPendingQuestion() {
 			return conversation.hasPendingQuestion;

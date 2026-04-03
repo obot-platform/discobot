@@ -39,14 +39,15 @@ func (h *Handler) threadResponse(threadID string, cfg thread.Config, fallbackNam
 	}
 
 	return api.Thread{
-		ID:          threadID,
-		Name:        name,
-		LastMessage: strings.TrimSpace(cfg.LastMessage),
-		Model:       cfg.Model,
-		Reasoning:   string(cfg.Reasoning),
-		Mode:        mode,
-		State:       state,
-		PromptQueue: queuedPromptResponse(cfg.PromptQueue),
+		ID:           threadID,
+		Name:         name,
+		LastMessage:  strings.TrimSpace(cfg.LastMessage),
+		ErrorMessage: strings.TrimSpace(cfg.ErrorMessage),
+		Model:        cfg.Model,
+		Reasoning:    string(cfg.Reasoning),
+		Mode:         mode,
+		State:        state,
+		PromptQueue:  queuedPromptResponse(cfg.PromptQueue),
 	}
 }
 

@@ -74,14 +74,15 @@ type ErrorResponse struct {
 
 // Thread represents a single conversation thread.
 type Thread struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	LastMessage string         `json:"lastMessage,omitempty"`
-	Model       string         `json:"model,omitempty"`     // full "providerId/modelId" ref
-	Reasoning   string         `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
-	Mode        string         `json:"mode"`                // "build" or "plan"
-	State       string         `json:"state,omitempty"`     // "interrupted" or "cancelled"
-	PromptQueue []QueuedPrompt `json:"promptQueue,omitempty"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	LastMessage  string         `json:"lastMessage,omitempty"`
+	ErrorMessage string         `json:"errorMessage,omitempty"`
+	Model        string         `json:"model,omitempty"`     // full "providerId/modelId" ref
+	Reasoning    string         `json:"reasoning,omitempty"` // "", "auto", "low", "medium", "high", "xhigh", "none", "default"
+	Mode         string         `json:"mode"`                // "build" or "plan"
+	State        string         `json:"state,omitempty"`     // "interrupted" or "cancelled"
+	PromptQueue  []QueuedPrompt `json:"promptQueue,omitempty"`
 }
 
 type QueuedPrompt struct {

@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -61,12 +63,16 @@ func New(agentCwd string, completions *agent.CompletionManager, hookManager *hoo
 }
 
 // OnTurnStart resets hook retry state when a turn begins.
-func (h *Handler) OnTurnStart(_ string) {
+func (h *Handler) OnTurnStart(threadID string) {
 	h.resetHookState()
+	if cfg, cleared := h.clearThreadError(threadID); cleared {
+		go h.completions.EmitChunkIfActive(threadID, thread.UpdateChunkFromConfig(threadID, cfg))
+	}
 }
 
 // OnTurnComplete is called when a completion finishes. It schedules hook evaluation.
 func (h *Handler) OnTurnComplete(threadID string, err error) {
+	h.persistThreadError(threadID, err)
 	if h.hookManager != nil && h.hookManager.HasFileHooks() {
 		// Fire-and-forget goroutine matching the TS scheduleHookEvaluation pattern.
 		go h.scheduleHookEvaluation(threadID)
@@ -74,6 +80,51 @@ func (h *Handler) OnTurnComplete(threadID string, err error) {
 	if err == nil {
 		go h.startNextQueuedPrompt(threadID)
 	}
+}
+
+func (h *Handler) persistThreadError(threadID string, err error) {
+	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
+		return
+	}
+	if err == nil || errors.Is(err, context.Canceled) {
+		return
+	}
+
+	store := h.defaultAgent.Store()
+	cfg, loadErr := store.LoadConfig(threadID)
+	if loadErr != nil {
+		log.Printf("thread error: failed to load config for %s: %v", threadID, loadErr)
+		return
+	}
+	cfg.ErrorMessage = strings.TrimSpace(err.Error())
+	if cfg.ErrorMessage == "" {
+		return
+	}
+	if saveErr := store.SaveConfig(threadID, cfg); saveErr != nil {
+		log.Printf("thread error: failed to save config for %s: %v", threadID, saveErr)
+	}
+}
+
+func (h *Handler) clearThreadError(threadID string) (thread.Config, bool) {
+	if h.defaultAgent == nil || h.defaultAgent.Store() == nil {
+		return thread.Config{}, false
+	}
+
+	store := h.defaultAgent.Store()
+	cfg, err := store.LoadConfig(threadID)
+	if err != nil {
+		log.Printf("thread error: failed to load config for %s: %v", threadID, err)
+		return thread.Config{}, false
+	}
+	if strings.TrimSpace(cfg.ErrorMessage) == "" {
+		return thread.Config{}, false
+	}
+	cfg.ErrorMessage = ""
+	if err := store.SaveConfig(threadID, cfg); err != nil {
+		log.Printf("thread error: failed to clear config for %s: %v", threadID, err)
+		return thread.Config{}, false
+	}
+	return cfg, true
 }
 
 func (h *Handler) startNextQueuedPrompt(threadID string) {

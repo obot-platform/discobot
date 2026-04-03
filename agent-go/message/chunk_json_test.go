@@ -156,12 +156,13 @@ func TestChunkRoundTrip_Data(t *testing.T) {
 	})
 	chunkRoundTrip(t, "ThreadUpdate", ThreadUpdateChunk{
 		Data: ThreadUpdateData{Thread: ThreadUpdateInfo{
-			ID:          "thread-1",
-			Name:        "Debug build failure",
-			LastMessage: "Investigate CI",
-			Model:       "anthropic/claude-sonnet-4-6",
-			Reasoning:   "enabled",
-			Mode:        "plan",
+			ID:           "thread-1",
+			Name:         "Debug build failure",
+			LastMessage:  "Investigate CI",
+			ErrorMessage: "invalid model",
+			Model:        "anthropic/claude-sonnet-4-6",
+			Reasoning:    "enabled",
+			Mode:         "plan",
 		}},
 	})
 	chunkRoundTrip(t, "ThreadResume", ThreadResumeChunk{
