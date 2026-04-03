@@ -244,9 +244,11 @@
 </script>
 
 <div
-	class="flex h-10 w-full min-w-0 items-center justify-end gap-2 bg-background px-2"
+	class="flex h-full w-full min-w-0 items-center justify-end gap-2 bg-background px-2"
 >
-	<div class="inline-flex rounded-md border border-border bg-background p-0.5">
+	<div
+		class="inline-flex items-center overflow-hidden rounded-md border border-border bg-background p-0.5 shadow-xs"
+	>
 		<Button
 			variant={sessionView.activeView.kind === "terminal"
 				? "secondary"
@@ -321,7 +323,7 @@
 						{/if}
 						{operationState.buttonLabel}
 					</Button>
-					<DropdownMenuTrigger>
+					<DropdownMenuTrigger class="contents">
 						<Button
 							variant="outline"
 							size="xs"
@@ -368,7 +370,7 @@
 	{/if}
 
 	<SplitDropdownButton
-		class="tauri-no-drag py-0.5"
+		class="tauri-no-drag"
 		label={`Open ${selectedIdeOption?.label ?? "Cursor"}`}
 		menuAriaLabel="Select preferred IDE"
 		onclick={openPreferredIde}

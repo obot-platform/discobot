@@ -32,7 +32,7 @@
 </script>
 
 <header
-	class="relative z-[60] grid h-10 pt-2 pl-1 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-background"
+	class="relative z-[60] grid h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-background"
 	data-tauri-drag-region
 >
 	<div
@@ -45,7 +45,7 @@
 			<LeftWindowControls />
 		{/if}
 
-		<DiscobotBrand heightClass="h-5" />
+		<DiscobotBrand heightClass="h-6" />
 	</div>
 
 	{#if showSessionToolbar}

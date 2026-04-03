@@ -24,7 +24,7 @@
 	const sessionFileDiffStats = $derived.by(() => session.files.diffStats);
 </script>
 
-<div class="h-full overflow-auto bg-background p-3">
+<div class="h-full overflow-auto bg-background px-3 pb-3 pt-2">
 	{#if sessionView.activeView.kind === "terminal"}
 		<TerminalPanel
 			onClose={sessionView.openChat}

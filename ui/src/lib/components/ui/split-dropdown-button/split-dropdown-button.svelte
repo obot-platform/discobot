@@ -79,7 +79,7 @@
 		>
 			{label}
 		</Button>
-		<DropdownMenuTrigger>
+		<DropdownMenuTrigger class="contents">
 			<Button
 				{variant}
 				{size}
