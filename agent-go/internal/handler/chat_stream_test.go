@@ -194,11 +194,9 @@ func yieldChunksAndFinish(chunks ...message.MessageChunk) func(context.Context, 
 	}
 }
 
-func readFrames(t *testing.T, body io.ReadCloser, count int, stopAtDone bool) []sseFrame {
+func readFramesFromScanner(t *testing.T, scanner *bufio.Scanner, count int, stopAtDone bool) []sseFrame {
 	t.Helper()
-	defer body.Close()
 
-	scanner := bufio.NewScanner(body)
 	frames := make([]sseFrame, 0, count)
 	current := sseFrame{}
 	hasCurrent := false
@@ -253,6 +251,13 @@ func readFrames(t *testing.T, body io.ReadCloser, count int, stopAtDone bool) []
 		t.Fatalf("failed reading SSE frames: %v", err)
 	}
 	return frames
+}
+
+func readFrames(t *testing.T, body io.ReadCloser, count int, stopAtDone bool) []sseFrame {
+	t.Helper()
+	defer body.Close()
+
+	return readFramesFromScanner(t, bufio.NewScanner(body), count, stopAtDone)
 }
 
 func newStreamTestServer(t *testing.T, h *Handler) *httptest.Server {
@@ -2017,16 +2022,12 @@ func TestChatStream_ForwardsLiveEphemeralChunk(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	time.AfterFunc(5*time.Millisecond, func() {
-		cm.EmitEphemeralChunk("hooks-status", message.DataChunk{
-			DataType: "hooks-status",
-			Data:     []byte(`{"hooks":{"go-check":{"hookId":"go-check"}}}`),
-		})
-	})
+	defer resp.Body.Close()
 
-	frames := readFrames(t, resp.Body, 3, false)
-	if len(frames) != 3 {
-		t.Fatalf("expected 3 frames, got %d", len(frames))
+	scanner := bufio.NewScanner(resp.Body)
+	frames := readFramesFromScanner(t, scanner, 2, false)
+	if len(frames) != 2 {
+		t.Fatalf("expected 2 history frames, got %d", len(frames))
 	}
 	if frames[0].Event != "history-start" {
 		t.Fatalf("expected history-start, got %+v", frames[0])
@@ -2034,8 +2035,18 @@ func TestChatStream_ForwardsLiveEphemeralChunk(t *testing.T) {
 	if frames[1].Event != "history-end" {
 		t.Fatalf("expected history-end, got %+v", frames[1])
 	}
-	if frames[2].Event != "chunk" || frames[2].Data != string(expectedChunk) {
-		t.Fatalf("expected live ephemeral chunk after subscribe, got %+v", frames[2])
+
+	cm.EmitEphemeralChunk("hooks-status", message.DataChunk{
+		DataType: "hooks-status",
+		Data:     []byte(`{"hooks":{"go-check":{"hookId":"go-check"}}}`),
+	})
+
+	frames = readFramesFromScanner(t, scanner, 1, false)
+	if len(frames) != 1 {
+		t.Fatalf("expected 1 live frame, got %d", len(frames))
+	}
+	if frames[0].Event != "chunk" || frames[0].Data != string(expectedChunk) {
+		t.Fatalf("expected live ephemeral chunk after subscribe, got %+v", frames[0])
 	}
 }
 
