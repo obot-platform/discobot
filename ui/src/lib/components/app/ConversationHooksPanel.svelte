@@ -7,6 +7,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
+	import { getHookDisplayState } from "$lib/session/domains/session-domain.helpers";
 	import type { HooksStatus } from "$lib/shell-types";
 
 	type Props = {
@@ -25,50 +26,52 @@
 		return new Set(hooksStatus.pendingHookIds);
 	}
 
-	function isHookPending(hookId: string) {
-		return pendingHookSet().has(hookId);
+	function hookDisplayState(hook: HooksStatus["hooks"][number]) {
+		return getHookDisplayState(hook, pendingHookSet());
 	}
 
 	function hookPassedCount() {
 		return hooksStatus.hooks.filter(
-			(hook) => hook.lastResult === "success" && !isHookPending(hook.hookId),
+			(hook) => hookDisplayState(hook) === "success",
 		).length;
 	}
 
 	function hookStatusTone(hook: HooksStatus["hooks"][number]) {
-		if (hook.lastResult === "running") {
+		const displayState = hookDisplayState(hook);
+		if (displayState === "running") {
 			return "text-blue-500";
 		}
-		if (isHookPending(hook.hookId)) {
+		if (displayState === "pending") {
 			return "text-muted-foreground";
 		}
-		if (hook.lastResult === "success") {
+		if (displayState === "success") {
 			return "text-green-500";
 		}
-		if (hook.lastResult === "failure") {
+		if (displayState === "failure") {
 			return "text-red-500";
 		}
 		return "text-muted-foreground";
 	}
 
 	function hookStatusLabel(hook: HooksStatus["hooks"][number]) {
-		if (hook.lastResult === "running") {
+		const displayState = hookDisplayState(hook);
+		if (displayState === "running") {
 			return "Running";
 		}
-		if (isHookPending(hook.hookId)) {
+		if (displayState === "pending") {
 			return "Pending";
 		}
-		if (hook.lastResult === "success") {
+		if (displayState === "success") {
 			return "Passed";
 		}
-		if (hook.lastResult === "failure") {
+		if (displayState === "failure") {
 			return "Failed";
 		}
 		return "Pending";
 	}
 
 	function canRerunHook(hook: HooksStatus["hooks"][number]) {
-		return hook.lastResult !== "running";
+		return hookDisplayState(hook) !== "running";
 	}
 
 	function openHookDialog(hookId: string) {
@@ -127,8 +130,9 @@
 		</div>
 		<div class="max-h-48 overflow-auto p-1">
 			{#each hooksStatus.hooks as hook (hook.hookId)}
+				{@const displayState = hookDisplayState(hook)}
 				<div
-					class={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${hook.lastResult === "running" ? "bg-blue-500/10" : "hover:bg-muted/50"}`}
+					class={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${displayState === "running" ? "bg-blue-500/10" : "hover:bg-muted/50"}`}
 					role="button"
 					tabindex={0}
 					onclick={() => openHookDialog(hook.hookId)}
@@ -139,13 +143,13 @@
 						}
 					}}
 				>
-					{#if hook.lastResult === "running"}
+					{#if displayState === "running"}
 						<Loader2Icon
 							class={`size-3 animate-spin ${hookStatusTone(hook)}`}
 						/>
-					{:else if isHookPending(hook.hookId)}
+					{:else if displayState === "pending"}
 						<ClockIcon class={`size-3 ${hookStatusTone(hook)}`} />
-					{:else if hook.lastResult === "failure"}
+					{:else if displayState === "failure"}
 						<XCircleIcon class={`size-3 ${hookStatusTone(hook)}`} />
 					{:else}
 						<CheckCircleIcon class={`size-3 ${hookStatusTone(hook)}`} />
@@ -179,16 +183,17 @@
 <Dialog.Root bind:open={sessionView.hookDialogOpen}>
 	{#if selectedHookData}
 		{@const hook = selectedHookData}
+		{@const displayState = hookDisplayState(hook)}
 		<Dialog.Content
 			class="sm:max-w-4xl max-h-[85vh] flex flex-col overflow-hidden"
 		>
 			<Dialog.Header>
 				<Dialog.Title class="flex items-center gap-2">
-					{#if hook.lastResult === "running"}
+					{#if displayState === "running"}
 						<Loader2Icon class="size-4 animate-spin text-blue-500" />
-					{:else if isHookPending(hook.hookId)}
+					{:else if displayState === "pending"}
 						<ClockIcon class="size-4 text-muted-foreground" />
-					{:else if hook.lastResult === "failure"}
+					{:else if displayState === "failure"}
 						<XCircleIcon class="size-4 text-red-500" />
 					{:else}
 						<CheckCircleIcon class="size-4 text-green-500" />

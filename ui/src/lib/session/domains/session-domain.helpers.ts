@@ -9,6 +9,8 @@ import type {
 } from "$lib/api-types";
 import type { DynamicToolPart } from "$lib/components/ai/types";
 import type {
+	HookLastResult,
+	HookRunStatus,
 	HooksStatus,
 	PlanEntry,
 	ServiceItem,
@@ -536,6 +538,21 @@ export function toHooksStatus(
 		})),
 		pendingHookIds: response.pendingHooks,
 	};
+}
+
+export function getHookDisplayState(
+	hook: HookRunStatus,
+	pendingHookIds: ReadonlySet<string>,
+): HookLastResult {
+	if (hook.lastResult === "running" || hook.lastResult === "failure") {
+		return hook.lastResult;
+	}
+
+	if (pendingHookIds.has(hook.hookId)) {
+		return "pending";
+	}
+
+	return hook.lastResult;
 }
 
 export function mergeHookOutput(

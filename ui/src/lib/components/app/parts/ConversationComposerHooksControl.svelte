@@ -3,6 +3,7 @@
 	import Loader2Icon from "@lucide/svelte/icons/loader-2";
 	import ZapIcon from "@lucide/svelte/icons/zap";
 	import { Button } from "$lib/components/ui/button";
+	import { getHookDisplayState } from "$lib/session/domains/session-domain.helpers";
 	import type { HooksStatus } from "$lib/shell-types";
 
 	type Props = {
@@ -20,22 +21,24 @@
 		return new Set(hooksStatus.pendingHookIds);
 	}
 
-	function isHookPending(hookId: string) {
-		return pendingHookSet().has(hookId);
+	function isHookPassing(hook: HooksStatus["hooks"][number]) {
+		return getHookDisplayState(hook, pendingHookSet()) === "success";
 	}
 
 	function hookPassedCount() {
-		return hooks().filter(
-			(hook) => hook.lastResult === "success" && !isHookPending(hook.hookId),
-		).length;
+		return hooks().filter((hook) => isHookPassing(hook)).length;
 	}
 
 	function hookHasRunning() {
-		return hooks().some((hook) => hook.lastResult === "running");
+		return hooks().some(
+			(hook) => getHookDisplayState(hook, pendingHookSet()) === "running",
+		);
 	}
 
 	function hookHasFailures() {
-		return hooks().some((hook) => hook.lastResult === "failure");
+		return hooks().some(
+			(hook) => getHookDisplayState(hook, pendingHookSet()) === "failure",
+		);
 	}
 </script>
 
