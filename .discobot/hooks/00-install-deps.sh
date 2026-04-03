@@ -2,7 +2,6 @@
 #---
 # name: Install dependencies
 # type: session
-# blocking: false
 #---
 # Install Node.js dependencies (needed for biome, tsc, and other tools)
 pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1
