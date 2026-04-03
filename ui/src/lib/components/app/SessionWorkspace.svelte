@@ -138,7 +138,7 @@
 							sessionView.desktopSidebarOpen = true;
 						}}
 					>
-						<div class="box-border h-full min-h-0 py-3 pl-3 pr-2">
+						<div class="box-border h-full min-h-0 pb-3 pl-3 pr-2 pt-1">
 							<SessionSidebar onToggleSidebar={toggleSidebar} />
 						</div>
 					</Resizable.Pane>
@@ -156,7 +156,7 @@
 
 				{#if !sessionView.desktopSidebarOpen}
 					<div
-						class="pointer-events-none absolute inset-y-0 left-0 z-20 box-border py-3 pl-3 pr-2"
+						class="pointer-events-none absolute inset-y-0 left-0 z-20 box-border pb-3 pl-3 pr-2 pt-1"
 					>
 						<div class="pointer-events-auto">
 							<SessionSidebar

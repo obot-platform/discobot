@@ -40,7 +40,7 @@
 		data-tauri-drag-region
 	></div>
 
-	<div class="relative z-20 flex min-w-0 items-center gap-2 px-3">
+	<div class="relative z-20 flex min-w-0 items-center gap-2 pl-4 pr-3">
 		{#if showMacSpacer()}
 			<LeftWindowControls />
 		{/if}
