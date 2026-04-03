@@ -142,6 +142,7 @@ function createHarness(
 		onFinish: overrides.onFinish,
 		onHistoryReplayEnd: overrides.onHistoryReplayEnd,
 		onChunkError: overrides.onChunkError,
+		onRetryStatus: overrides.onRetryStatus,
 	});
 
 	return {
@@ -590,6 +591,86 @@ test("completion status chunks notify the caller", async () => {
 		}),
 	});
 
+	assert.deepEqual(harness.completionStatusEvents, [
+		{ threadId: "thread-1", completionId: "completion-1", isRunning: true },
+		{ threadId: "thread-1", completionId: "completion-1", isRunning: false },
+	]);
+});
+
+test("retry status chunks notify the caller", async () => {
+	const retryMessages: string[] = [];
+	const harness = createHarness([], {
+		onRetryStatus: (message) => {
+			retryMessages.push(message);
+		},
+	});
+
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-retry-status",
+			data: {
+				message:
+					"provider request failed: dial tcp timeout; retrying in 200ms (attempt 1/3)",
+			},
+		}),
+	});
+
+	assert.deepEqual(retryMessages, [
+		"provider request failed: dial tcp timeout; retrying in 200ms (attempt 1/3)",
+	]);
+});
+
+test("retry status chunks do not surface fatal errors", async () => {
+	let chunkError: string | null = null;
+	const harness = createHarness([], {
+		onChunkError: (errorText) => {
+			chunkError = errorText;
+		},
+	});
+
+	await harness.state.handleStreamEvent({
+		event: "history-start",
+		data: "{}",
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-end",
+		data: "{}",
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-completion-status",
+			data: {
+				threadId: "thread-1",
+				completionId: "completion-1",
+				isRunning: true,
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-retry-status",
+			data: {
+				message:
+					"provider request failed: dial tcp timeout; retrying in 200ms (attempt 1/3)",
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-completion-status",
+			data: {
+				threadId: "thread-1",
+				completionId: "completion-1",
+				isRunning: false,
+			},
+		}),
+	});
+
+	assert.equal(chunkError, null);
 	assert.deepEqual(harness.completionStatusEvents, [
 		{ threadId: "thread-1", completionId: "completion-1", isRunning: true },
 		{ threadId: "thread-1", completionId: "completion-1", isRunning: false },

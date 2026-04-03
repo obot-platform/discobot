@@ -13,6 +13,8 @@ import {
 	hasUserMessageContent,
 } from "$lib/session/domains/session-domain.helpers";
 
+const RETRY_TOAST_ID_PREFIX = "thread-retry-status:";
+
 type CreateConversationDomainArgs = {
 	sessionId: string;
 	hasSession: () => boolean;
@@ -33,6 +35,21 @@ function normalizeModelId(modelId: string | null): string | undefined {
 	return modelId.endsWith(":thinking")
 		? modelId.slice(0, -":thinking".length)
 		: modelId;
+}
+
+async function showRetryToast(
+	threadId: string,
+	message: string,
+): Promise<void> {
+	const { toast } = await import("svelte-sonner");
+	toast.message(message, {
+		id: `${RETRY_TOAST_ID_PREFIX}${threadId}`,
+	});
+}
+
+async function dismissRetryToast(threadId: string): Promise<void> {
+	const { toast } = await import("svelte-sonner");
+	toast.dismiss(`${RETRY_TOAST_ID_PREFIX}${threadId}`);
 }
 
 export function getSubmitMessages(userMessage: ChatMessage): ChatMessage[] {
@@ -137,6 +154,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 				pendingQuestionId = null;
 				return;
 			}
+			void dismissRetryToast(args.threadId);
 			if (wasRunning) {
 				return args.afterTurn?.();
 			}
@@ -157,6 +175,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			fatalStreamError = true;
 			completionRunning = false;
 			streamError = errorText;
+			void dismissRetryToast(args.threadId);
 			if (loadStatus === "loading") {
 				loadStatus = "error";
 			}
@@ -164,6 +183,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			pendingLoadPromise = null;
 			resolvePendingLoad = null;
 			rejectPendingLoad = null;
+		},
+		onRetryStatus: (message) => {
+			return showRetryToast(args.threadId, message);
 		},
 		onThreadUpdate: (thread) => {
 			args.applyThreadUpdate?.(thread);
@@ -302,6 +324,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamError = null;
 			completionRunning = false;
 			pendingQuestionId = null;
+			void dismissRetryToast(args.threadId);
 			disconnectStream();
 			resetLoadPromise();
 			return;
@@ -319,6 +342,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			streamError = null;
 			completionRunning = false;
 			pendingQuestionId = null;
+			void dismissRetryToast(args.threadId);
 			disconnectStream();
 			resetLoadPromise();
 			return;
@@ -471,6 +495,7 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 			loadStatus = "idle";
 			completionRunning = false;
 			pendingQuestionId = null;
+			void dismissRetryToast(args.threadId);
 			resetLoadPromise();
 			disconnectStream();
 		},

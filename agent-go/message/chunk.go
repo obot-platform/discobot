@@ -328,6 +328,7 @@ type DataChunk struct {
 }
 
 func (c DataChunk) chunkType() string { return "data-" + c.DataType }
+func (DataChunk) providerChunk()      {}
 
 // ThreadUpdateInfo mirrors the thread summary shape exposed by the agent API.
 type ThreadUpdateInfo struct {

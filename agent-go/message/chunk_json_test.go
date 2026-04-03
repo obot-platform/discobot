@@ -264,6 +264,7 @@ func TestProviderChunkInterface(t *testing.T) {
 		FinishChunk{},
 		RawChunk{},
 		ErrorChunk{},
+		DataChunk{},
 	)
 
 	// Verify they're all also MessageChunks.
@@ -271,8 +272,8 @@ func TestProviderChunkInterface(t *testing.T) {
 		var _ MessageChunk = pc
 	}
 
-	if len(providerChunks) != 19 {
-		t.Errorf("expected 19 provider chunk types, got %d", len(providerChunks))
+	if len(providerChunks) != 20 {
+		t.Errorf("expected 20 provider chunk types, got %d", len(providerChunks))
 	}
 }
 

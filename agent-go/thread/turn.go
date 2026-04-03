@@ -1411,7 +1411,10 @@ func runCompletion(
 	var streamErr error
 
 	emitRetryChunk := func(event transport.RetryEvent) {
-		retryChunk := message.ErrorChunk{ErrorText: formatRetryMessage(event)}
+		retryChunk, err := makeRetryStatusChunk(event)
+		if err != nil {
+			return
+		}
 		if err := store.AppendChunk(stepFile, retryChunk); err != nil {
 			return
 		}
@@ -1510,6 +1513,21 @@ func runCompletion(
 	}
 
 	return assistantMsg, toolCalls, usage, true, nil
+}
+
+func makeRetryStatusChunk(event transport.RetryEvent) (message.DataChunk, error) {
+	data, err := json.Marshal(struct {
+		Message string `json:"message"`
+	}{
+		Message: formatRetryMessage(event),
+	})
+	if err != nil {
+		return message.DataChunk{}, err
+	}
+	return message.DataChunk{
+		DataType: "retry-status",
+		Data:     data,
+	}, nil
 }
 
 func formatRetryMessage(event transport.RetryEvent) string {

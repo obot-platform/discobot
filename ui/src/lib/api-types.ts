@@ -68,6 +68,9 @@ export type ChatMessageDataTypes = {
 		completionId?: string;
 		isRunning?: boolean;
 	};
+	"retry-status": {
+		message?: string;
+	};
 	"user-message": {
 		insertBeforeMessageId?: string;
 		message: ChatMessage;

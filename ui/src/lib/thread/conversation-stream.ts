@@ -27,6 +27,7 @@ export type ChatStreamStateOptions = {
 	}) => void | Promise<void>;
 	onHistoryReplayEnd?: () => void | Promise<void>;
 	onChunkError?: (errorText: string) => void | Promise<void>;
+	onRetryStatus?: (message: string) => void | Promise<void>;
 	onThreadUpdate?: (thread: Thread) => void | Promise<void>;
 	onHooksStatusUpdate?: (status: HooksStatusResponse) => void | Promise<void>;
 };
@@ -426,6 +427,18 @@ export function createChatStreamState(options: ChatStreamStateOptions) {
 								: undefined,
 						isRunning: chunk.data.isRunning,
 					},
+				);
+				return;
+			}
+
+			case "data-retry-status": {
+				if (typeof chunk.data?.message !== "string") {
+					return;
+				}
+				runCallbackInBackground(
+					"onRetryStatus",
+					options.onRetryStatus,
+					chunk.data.message,
 				);
 				return;
 			}

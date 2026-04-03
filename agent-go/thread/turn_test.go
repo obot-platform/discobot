@@ -4035,6 +4035,41 @@ func TestFindLeaf(t *testing.T) {
 	}
 }
 
+func TestMakeRetryStatusChunk(t *testing.T) {
+	t.Parallel()
+
+	chunk, err := makeRetryStatusChunk(transport.RetryEvent{
+		Err:        fmt.Errorf("dial tcp timeout"),
+		Delay:      200 * time.Millisecond,
+		Attempt:    1,
+		MaxRetries: 3,
+	})
+	if err != nil {
+		t.Fatalf("makeRetryStatusChunk() error = %v", err)
+	}
+	if chunk.DataType != "retry-status" {
+		t.Fatalf("expected retry-status data type, got %q", chunk.DataType)
+	}
+
+	payload := struct {
+		Message string `json:"message"`
+	}{}
+	if err := json.Unmarshal(chunk.Data, &payload); err != nil {
+		t.Fatalf("unmarshal retry payload: %v", err)
+	}
+	if payload.Message != "provider request failed: dial tcp timeout; retrying in 200ms (attempt 1/3)" {
+		t.Fatalf("unexpected retry message %q", payload.Message)
+	}
+
+	encoded, err := message.MarshalChunk(chunk)
+	if err != nil {
+		t.Fatalf("MarshalChunk() error = %v", err)
+	}
+	if string(encoded) != "{\"type\":\"data-retry-status\",\"data\":{\"message\":\"provider request failed: dial tcp timeout; retrying in 200ms (attempt 1/3)\"}}" {
+		t.Fatalf("unexpected encoded chunk %s", encoded)
+	}
+}
+
 func TestFormatRetryMessage(t *testing.T) {
 	t.Parallel()
 
