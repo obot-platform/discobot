@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -242,6 +245,79 @@ func (p *imageIDAwareReconcileProvider) RemoveProject(_ context.Context, _ strin
 	return nil
 }
 
+type healthAwareProvider struct {
+	*mock.Provider
+	healthStatusCode int
+}
+
+func newHealthAwareProvider(image string, healthStatusCode int) *healthAwareProvider {
+	return &healthAwareProvider{
+		Provider:         mock.NewProviderWithImage(image),
+		healthStatusCode: healthStatusCode,
+	}
+}
+
+func (p *healthAwareProvider) HTTPClient(_ context.Context, _ string) (*http.Client, error) {
+	return &http.Client{
+		Transport: healthRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			rec := newResponseRecorder()
+			switch req.URL.Path {
+			case "/health":
+				rec.WriteHeader(p.healthStatusCode)
+			default:
+				rec.WriteHeader(http.StatusOK)
+			}
+			return rec.Result(), nil
+		}),
+	}, nil
+}
+
+type healthRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f healthRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type responseRecorder struct {
+	header http.Header
+	body   []byte
+	status int
+}
+
+func newResponseRecorder() *responseRecorder {
+	return &responseRecorder{header: make(http.Header), status: http.StatusOK}
+}
+
+func (r *responseRecorder) Header() http.Header {
+	return r.header
+}
+
+func (r *responseRecorder) Write(data []byte) (int, error) {
+	r.body = append(r.body, data...)
+	return len(data), nil
+}
+
+func (r *responseRecorder) WriteHeader(statusCode int) {
+	r.status = statusCode
+}
+
+func (r *responseRecorder) Result() *http.Response {
+	return &http.Response{
+		StatusCode: r.status,
+		Header:     r.header.Clone(),
+		Body:       io.NopCloser(bytes.NewReader(r.body)),
+	}
+}
+
+type countingInitializer struct {
+	calls int
+}
+
+func (i *countingInitializer) Initialize(_ context.Context, _ string) error {
+	i.calls++
+	return nil
+}
+
 func TestSandboxService_CreateForSession(t *testing.T) {
 	mockProvider := mock.NewProviderWithImage(testImage)
 	testStore := setupTestStore(t)
@@ -275,6 +351,85 @@ func TestSandboxService_CreateForSession(t *testing.T) {
 
 	if sb.Image != testImage {
 		t.Errorf("Expected image %s, got %s", testImage, sb.Image)
+	}
+}
+
+func TestSandboxService_EnsureSandboxReady_ReconcilesAfterWaitWhenHealthProbeFails(t *testing.T) {
+	provider := newHealthAwareProvider(testImage, http.StatusServiceUnavailable)
+	testStore := setupTestStore(t)
+	cfg := &config.Config{EncryptionKey: testEncryptionKey}
+	svc := NewSandboxService(testStore, provider, cfg, nil, nil, nil, nil)
+	initializer := &countingInitializer{}
+	svc.SetSessionInitializer(initializer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	sessionID := "test-session-wait-reconcile"
+	createTestSession(t, testStore, sessionID, "/workspace")
+	if err := testStore.UpdateSessionStatus(ctx, sessionID, model.SessionStatusInitializing, nil); err != nil {
+		t.Fatalf("failed to set session initializing: %v", err)
+	}
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		_ = testStore.UpdateSessionStatus(context.Background(), sessionID, model.SessionStatusReady, nil)
+	}()
+
+	if err := svc.ensureSandboxReady(ctx, sessionID); err != nil {
+		t.Fatalf("ensureSandboxReady failed: %v", err)
+	}
+	if initializer.calls != 1 {
+		t.Fatalf("expected exactly one reconciliation, got %d", initializer.calls)
+	}
+}
+
+func TestSessionService_Initialize_FailsWhenSandboxHealthProbeFails(t *testing.T) {
+	provider := newHealthAwareProvider(testImage, http.StatusServiceUnavailable)
+	testStore := setupTestStore(t)
+	cfg := &config.Config{
+		SandboxIdleTimeout: 30 * time.Minute,
+		EncryptionKey:      testEncryptionKey,
+	}
+	sandboxSvc := NewSandboxService(testStore, provider, cfg, nil, nil, nil, nil)
+	sessionSvc := NewSessionService(testStore, nil, provider, sandboxSvc, nil, nil)
+
+	ctx := context.Background()
+	workspace := &model.Workspace{
+		ID:         "workspace-health-fail",
+		ProjectID:  "test-project",
+		Path:       "/workspace-health-fail",
+		SourceType: "local",
+		Status:     model.WorkspaceStatusReady,
+	}
+	if err := testStore.CreateWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	session := &model.Session{
+		ID:          "session-health-fail",
+		ProjectID:   workspace.ProjectID,
+		WorkspaceID: workspace.ID,
+		Status:      model.SessionStatusInitializing,
+	}
+	if err := testStore.CreateSession(ctx, session); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	err := sessionSvc.Initialize(ctx, session.ID)
+	if err == nil {
+		t.Fatal("expected initialize to fail when sandbox health probe fails")
+	}
+	if !strings.Contains(err.Error(), "sandbox health check failed") {
+		t.Fatalf("expected sandbox health check error, got %v", err)
+	}
+
+	updatedSession, err := testStore.GetSessionByID(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("failed to reload session: %v", err)
+	}
+	if updatedSession.Status != model.SessionStatusError {
+		t.Fatalf("expected session status %q, got %q", model.SessionStatusError, updatedSession.Status)
 	}
 }
 
