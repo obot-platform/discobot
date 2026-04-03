@@ -928,7 +928,7 @@ func gitStateSnapshot(cwd string) string {
 }
 
 func gitCommandOutput(cwd string, args ...string) (string, error) {
-	cmdCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	gitArgs := append([]string{"-C", cwd}, args...)
