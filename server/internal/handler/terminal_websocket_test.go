@@ -133,6 +133,41 @@ func (m *mockPTY) getWrittenData() string {
 	return m.writeBuffer.String()
 }
 
+type blockingPTY struct {
+	closeCh chan struct{}
+}
+
+func newBlockingPTY() *blockingPTY {
+	return &blockingPTY{closeCh: make(chan struct{})}
+}
+
+func (p *blockingPTY) Read(_ []byte) (int, error) {
+	<-p.closeCh
+	return 0, io.EOF
+}
+
+func (p *blockingPTY) Write(data []byte) (int, error) {
+	return len(data), nil
+}
+
+func (p *blockingPTY) Resize(_ context.Context, _, _ int) error {
+	return nil
+}
+
+func (p *blockingPTY) Close() error {
+	select {
+	case <-p.closeCh:
+	default:
+		close(p.closeCh)
+	}
+	return nil
+}
+
+func (p *blockingPTY) Wait(_ context.Context) (int, error) {
+	<-p.closeCh
+	return 0, nil
+}
+
 // TestHandleTerminalSession_NormalFlow tests that PTY output reaches the WebSocket
 // client and WebSocket input is forwarded to the PTY.
 //
@@ -214,6 +249,47 @@ func TestHandleTerminalSession_NormalFlow(t *testing.T) {
 	// Verify input was forwarded to the PTY.
 	if got := pty.getWrittenData(); got != "ls\n" {
 		t.Errorf("PTY input: want %q, got %q", "ls\n", got)
+	}
+}
+
+func TestHandleTerminalSession_ShutdownClosesWebSocket(t *testing.T) {
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	mgr := terminal.NewManager()
+	h := &Handler{
+		terminalManager: mgr,
+		shutdownCtx:     shutdownCtx,
+		shutdownCancel:  shutdownCancel,
+	}
+
+	sess, err := mgr.GetOrCreate(context.Background(), "test-session:test-user",
+		func(_ context.Context) (sandbox.PTY, error) { return newBlockingPTY(), nil })
+	if err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+
+	sub := sess.Subscribe()
+	server, client := createMockWebSocketPair(t)
+	defer server.Close()
+	defer client.Close()
+	defer sess.Unsubscribe(sub)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handlePersistentTerminalSession(context.Background(), sess, sub, server)
+	}()
+
+	h.BeginShutdown()
+
+	client.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := client.ReadMessage(); err == nil {
+		t.Fatal("expected websocket to close on shutdown")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("websocket handler did not exit on shutdown")
 	}
 }
 

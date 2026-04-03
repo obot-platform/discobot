@@ -104,6 +104,8 @@ func seedSession(t *testing.T, s *store.Store, sessionID string) {
 func newChatTestHandler(t *testing.T, s *store.Store, provider *mocksandbox.Provider) *Handler {
 	t.Helper()
 
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+
 	cfg := &config.Config{
 		SandboxIdleTimeout: 30 * time.Minute,
 		WorkspaceDir:       t.TempDir(),
@@ -124,6 +126,8 @@ func newChatTestHandler(t *testing.T, s *store.Store, provider *mocksandbox.Prov
 		sandboxService:   sandboxSvc,
 		workspaceService: workspaceSvc,
 		jobQueue:         jobQueue,
+		shutdownCtx:      shutdownCtx,
+		shutdownCancel:   shutdownCancel,
 	}
 }
 

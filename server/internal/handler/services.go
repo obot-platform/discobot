@@ -107,7 +107,9 @@ func (h *Handler) StopService(w http.ResponseWriter, r *http.Request) {
 // GetServiceOutput streams the output of a service via SSE.
 // GET /api/projects/{projectId}/sessions/{sessionId}/services/{serviceId}/output
 func (h *Handler) GetServiceOutput(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx, cancel := h.withShutdownContext(r.Context())
+	defer cancel()
+
 	projectID := middleware.GetProjectID(ctx)
 	sessionID := chi.URLParam(r, "sessionId")
 	serviceID := chi.URLParam(r, "serviceId")

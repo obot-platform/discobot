@@ -100,6 +100,21 @@ func (m *Manager) Remove(sandboxSessionID string) {
 	}
 }
 
+// Shutdown forcefully closes all persistent terminal sessions.
+func (m *Manager) Shutdown() {
+	m.mu.Lock()
+	toClose := make([]*Session, 0, len(m.sessions))
+	for key, s := range m.sessions {
+		toClose = append(toClose, s)
+		delete(m.sessions, key)
+	}
+	m.mu.Unlock()
+
+	for _, s := range toClose {
+		s.forceClose()
+	}
+}
+
 // Session is a long-lived PTY with output buffering and fan-out to subscribers.
 //
 // Concurrency invariant: s.subs is nil if and only if the session has exited.

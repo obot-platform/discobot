@@ -1588,6 +1588,11 @@ func main() {
 
 	log.Println("Shutting down server...")
 
+	// Immediately close long-lived SSE/WebSocket connections so shutdown is not
+	// held open by streaming clients, while keeping the HTTP server alive until
+	// the rest of the shutdown sequence completes.
+	h.BeginShutdown()
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 	defer shutdownCancel()
 
@@ -1639,11 +1644,11 @@ func main() {
 	// Close handler resources (stops Codex callback server, etc.)
 	h.Close()
 
-	// Graceful HTTP shutdown with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
+	// Graceful HTTP shutdown with a short timeout. This runs last so the rest of
+	// the server can finish its shutdown sequence before we stop serving requests.
+	httpShutdownCtx, httpShutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer httpShutdownCancel()
+	if err := srv.Shutdown(httpShutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 

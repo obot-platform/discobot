@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 
 	"github.com/obot-platform/discobot/server/internal/config"
 	"github.com/obot-platform/discobot/server/internal/events"
@@ -42,10 +44,15 @@ type Handler struct {
 	codexCallbackServer *CodexCallbackServer
 	systemManager       *startup.SystemManager
 	terminalManager     *terminal.Manager
+	shutdownCtx         context.Context
+	shutdownCancel      context.CancelFunc
+	shutdownOnce        sync.Once
 }
 
 // New creates a new Handler with the required git and sandbox providers.
 func New(s *store.Store, cfg *config.Config, gitProvider git.Provider, sandboxProvider sandbox.Provider, sandboxManager *sandbox.Manager, eventBroker *events.Broker, jobQueue *jobs.Queue, systemManager *startup.SystemManager) *Handler {
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+
 	credSvc, err := service.NewCredentialService(s, cfg)
 	if err != nil {
 		// This should only fail if the encryption key is invalid
@@ -110,12 +117,40 @@ func New(s *store.Store, cfg *config.Config, gitProvider git.Provider, sandboxPr
 		eventBroker:       eventBroker,
 		systemManager:     systemManager,
 		terminalManager:   terminal.NewManager(),
+		shutdownCtx:       shutdownCtx,
+		shutdownCancel:    shutdownCancel,
 	}
 
 	// Create Codex callback server (will be started on first use)
 	h.codexCallbackServer = NewCodexCallbackServer(h)
 
 	return h
+}
+
+func (h *Handler) withShutdownContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if h.shutdownCtx == nil {
+		return parent, func() {}
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(h.shutdownCtx, cancel)
+
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
+// BeginShutdown closes long-lived HTTP connections owned by the handler.
+func (h *Handler) BeginShutdown() {
+	h.shutdownOnce.Do(func() {
+		if h.shutdownCancel != nil {
+			h.shutdownCancel()
+		}
+		if h.terminalManager != nil {
+			h.terminalManager.Shutdown()
+		}
+	})
 }
 
 // JSON helper to write JSON responses
@@ -150,6 +185,7 @@ func (h *Handler) EventBroker() *events.Broker {
 
 // Close cleans up handler resources
 func (h *Handler) Close() {
+	h.BeginShutdown()
 	if h.codexCallbackServer != nil {
 		h.codexCallbackServer.Stop()
 	}

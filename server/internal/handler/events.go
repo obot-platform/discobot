@@ -17,6 +17,9 @@ import (
 //
 // If neither is provided, only new events from the time of connection are streamed.
 func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := h.withShutdownContext(r.Context())
+	defer cancel()
+
 	projectID := chi.URLParam(r, "projectId")
 	if projectID == "" {
 		h.Error(w, http.StatusBadRequest, "missing project ID")
@@ -55,7 +58,7 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 	// Send historical events if requested
 	if afterID != "" {
 		// Get events after a specific event ID
-		events, err := h.eventBroker.GetEventsAfterID(r.Context(), projectID, afterID)
+		events, err := h.eventBroker.GetEventsAfterID(ctx, projectID, afterID)
 		if err != nil {
 			_, _ = fmt.Fprintf(w, "event: error\ndata: {\"error\":\"failed to get historical events\"}\n\n")
 			flusher.Flush()
@@ -85,7 +88,7 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !since.IsZero() {
-			events, err := h.eventBroker.GetEventsSince(r.Context(), projectID, since)
+			events, err := h.eventBroker.GetEventsSince(ctx, projectID, since)
 			if err != nil {
 				_, _ = fmt.Fprintf(w, "event: error\ndata: {\"error\":\"failed to get historical events\"}\n\n")
 				flusher.Flush()
@@ -106,7 +109,7 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 	// Stream new events until client disconnects
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			// Client disconnected
 			return
 		case event, ok := <-sub.Events:

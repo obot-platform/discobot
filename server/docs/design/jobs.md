@@ -208,6 +208,11 @@ The dispatcher now shuts down in two phases:
 
 This allows long-running commit/rebase jobs to finish cleanly during a dev-server restart while preventing any new background work from starting during shutdown.
 
+Before the dispatcher drain begins, the server now first closes long-lived SSE
+streams and terminal WebSockets. HTTP shutdown still happens last with a short
+deadline, so streaming clients do not hold the process open while the rest of
+shutdown proceeds.
+
 ### Leader Election
 
 ```go

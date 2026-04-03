@@ -181,7 +181,9 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 // ChatStream proxies the reusable thread chat SSE stream.
 // GET /api/projects/{projectId}/sessions/{sessionId}/threads/{threadId}/stream
 func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx, cancel := h.withShutdownContext(r.Context())
+	defer cancel()
+
 	projectID := middleware.GetProjectID(ctx)
 	sessionID, threadID, _, ok := h.resolveSessionAndThread(w, r, projectID, false)
 	if !ok {

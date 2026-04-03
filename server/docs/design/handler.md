@@ -308,7 +308,9 @@ func (h *Handler) ChatStream(w http.ResponseWriter, r *http.Request) {
         flusher.Flush()
     }
 
-    // Stream remaining messages
+    // Stream remaining messages. The real handler also listens to a
+    // process-level shutdown context so server shutdown closes SSE streams
+    // immediately instead of waiting for the client to disconnect.
     for line := range sseCh {
         if line.Done {
             fmt.Fprintf(w, "data: [DONE]\n\n")
@@ -343,7 +345,8 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 
     flusher := w.(http.Flusher)
 
-    // Stream events
+    // Stream events. The production handler also exits when the server enters
+    // shutdown so long-lived SSE clients do not block HTTP shutdown.
     for {
         select {
         case event := <-subscriber.Events:
@@ -366,6 +369,11 @@ func (h *Handler) TerminalWebSocket(w http.ResponseWriter, r *http.Request)
 // Upgrades to WebSocket, attaches to sandbox PTY
 // Query params: rows, cols, root (true/false)
 ```
+
+During shutdown, the handler closes all persistent terminal sessions before the
+HTTP server deadline elapses. That forces active WebSocket terminal connections
+to send a close frame and exit promptly rather than lingering until a client
+disconnects on its own.
 
 **WebSocket Message Protocol:**
 
