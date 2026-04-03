@@ -27,7 +27,9 @@ const wsMaxAge = 55 * time.Minute
 const wsIdleTTL = 10 * time.Minute
 
 // wsRetryMaxRetries is the number of retry attempts after the first websocket
-// request attempt fails before streaming any chunks.
+// request strategy has already failed. When resuming from a saved pooled
+// connection we do one immediate fresh full-body fallback first; only failures
+// after that fallback consume from this retry budget.
 const wsRetryMaxRetries = 3
 
 // wsRetryBaseDelay is the initial backoff before websocket retries.
@@ -248,48 +250,64 @@ func messagesAfterAssistantID(msgs []message.Message, assistantRespID string) []
 // from the pool. Parallel sessions are fully independent: each follows its own
 // chain of response IDs and therefore its own connection.
 func (p *Provider) completeViaWebSocket(ctx context.Context, fullBody map[string]any, incrementalBody map[string]any, prevRespID string, yield func(message.ProviderMessageChunk, error) bool) {
-	// Retrieve the pooled connection for this response chain (if any).
-	pc := p.ws.checkout(prevRespID)
-	retryCount := 0
-	allowIncremental := prevRespID != "" && pc != nil
+	retriesUsed := 0
+	savedConn := p.ws.checkout(prevRespID)
+
+	if savedConn != nil && time.Since(savedConn.createdAt) >= wsMaxAge {
+		// Proactively replace an ageing connection before the 60-minute limit.
+		closePooledConnNow(savedConn)
+		savedConn = nil
+	}
+
+	type wsAttemptPlan struct {
+		conn       *pooledConn
+		body       map[string]any
+		prevRespID string
+		needsDial  bool
+	}
+
+	attempts := []wsAttemptPlan{}
+	if savedConn != nil && prevRespID != "" {
+		attempts = append(attempts, wsAttemptPlan{
+			conn:       savedConn,
+			body:       incrementalBody,
+			prevRespID: prevRespID,
+		})
+		attempts = append(attempts, wsAttemptPlan{
+			body:      fullBody,
+			needsDial: true,
+		})
+	} else {
+		attempts = append(attempts, wsAttemptPlan{
+			body:      fullBody,
+			needsDial: true,
+		})
+	}
 
 	for {
-		usedFreshConn := false
+		plan := attempts[0]
+		attempts = attempts[1:]
 
-		// If the connection is too old or missing, dial a fresh one.
-		if pc == nil || time.Since(pc.createdAt) >= wsMaxAge {
-			if pc != nil {
-				// Proactively replace an ageing connection before the 60-minute limit.
-				_ = pc.conn.Close(websocket.StatusNormalClosure, "reconnecting")
-			}
+		pc := plan.conn
+		if plan.needsDial {
 			var err error
 			pc, err = p.ws.dial(ctx)
 			if err != nil {
-				if !retryWebSocketAttempt(ctx, err, retryCount, true) {
+				if !shouldRetryWebSocketAttempt(ctx, err, retriesUsed) {
 					yield(nil, err)
 					return
 				}
-				retryCount++
-				if allowIncremental {
-					allowIncremental = false
-					prevRespID = ""
-				} else if !waitForWebSocketRetry(ctx, wsRetryDelay(retryCount)) {
+				retriesUsed++
+				if !waitForWebSocketRetry(ctx, retriesUsed, err) {
 					yield(nil, ctx.Err())
 					return
 				}
+				attempts = append([]wsAttemptPlan{plan}, attempts...)
 				continue
 			}
-			usedFreshConn = true
 		}
 
-		attemptPrevRespID := ""
-		requestBody := fullBody
-		if allowIncremental && prevRespID != "" && !usedFreshConn {
-			attemptPrevRespID = prevRespID
-			requestBody = incrementalBody
-		}
-
-		result := p.completeViaWebSocketAttempt(ctx, requestBody, attemptPrevRespID, pc, yield)
+		result := p.completeViaWebSocketAttempt(ctx, plan.body, plan.prevRespID, pc, yield)
 		if result.clean {
 			// Return the connection to the pool keyed by the new response ID so the
 			// next request in this chain can reuse it.
@@ -300,51 +318,35 @@ func (p *Provider) completeViaWebSocket(ctx context.Context, fullBody map[string
 		// Invalidate on errors or premature consumer exit: the connection may be
 		// in an inconsistent state (server may still be sending events).
 		closePooledConnNow(pc)
-		pc = nil
 
 		if result.err == nil {
 			return
 		}
-
 		if result.emitted {
 			// Error was already surfaced via stream callback after some output.
 			return
 		}
-
-		if !retryWebSocketAttempt(ctx, result.err, retryCount, true) {
+		if len(attempts) > 0 {
+			continue
+		}
+		if !shouldRetryWebSocketAttempt(ctx, result.err, retriesUsed) {
 			yield(nil, result.err)
 			return
 		}
-
-		retryCount++
-		if allowIncremental {
-			allowIncremental = false
-			prevRespID = ""
-			continue
-		}
-		if !waitForWebSocketRetry(ctx, wsRetryDelay(retryCount)) {
+		retriesUsed++
+		if !waitForWebSocketRetry(ctx, retriesUsed, result.err) {
 			yield(nil, ctx.Err())
 			return
 		}
+		attempts = append(attempts, wsAttemptPlan{
+			body:      fullBody,
+			needsDial: true,
+		})
 	}
 }
 
-func retryWebSocketAttempt(ctx context.Context, err error, retryCount int, allowRetry bool) bool {
-	if !allowRetry || !shouldRetryWebSocketAttempt(ctx, err, retryCount) {
-		return false
-	}
-	nextAttempt := retryCount + 1
-	transport.ObserveRetry(ctx, transport.RetryEvent{
-		Attempt:    nextAttempt,
-		MaxRetries: wsRetryMaxRetries,
-		Delay:      wsRetryDelay(nextAttempt),
-		Err:        err,
-	})
-	return true
-}
-
-func shouldRetryWebSocketAttempt(ctx context.Context, err error, retryCount int) bool {
-	if err == nil || retryCount >= wsRetryMaxRetries {
+func shouldRetryWebSocketAttempt(ctx context.Context, err error, retriesUsed int) bool {
+	if err == nil || retriesUsed >= wsRetryMaxRetries {
 		return false
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -356,12 +358,12 @@ func shouldRetryWebSocketAttempt(ctx context.Context, err error, retryCount int)
 	return true
 }
 
-func wsRetryDelay(retryCount int) time.Duration {
-	if retryCount <= 0 {
+func wsRetryDelay(attempt int) time.Duration {
+	if attempt <= 0 {
 		return 0
 	}
 	delay := wsRetryBaseDelay
-	for i := 1; i < retryCount; i++ {
+	for i := 1; i < attempt; i++ {
 		delay *= 2
 		if delay >= wsRetryMaxDelay {
 			return wsRetryMaxDelay
@@ -373,7 +375,14 @@ func wsRetryDelay(retryCount int) time.Duration {
 	return delay
 }
 
-func waitForWebSocketRetry(ctx context.Context, delay time.Duration) bool {
+func waitForWebSocketRetry(ctx context.Context, attempt int, err error) bool {
+	delay := wsRetryDelay(attempt)
+	transport.ObserveRetry(ctx, transport.RetryEvent{
+		Attempt:    attempt,
+		MaxRetries: wsRetryMaxRetries,
+		Delay:      delay,
+		Err:        err,
+	})
 	if delay <= 0 {
 		return true
 	}

@@ -990,8 +990,8 @@ func TestCompleteViaWebSocket_FallsBackToFullHistoryAfterStalePooledConn(t *test
 	if connCount != 2 {
 		t.Fatalf("continuation failure should fallback on a fresh websocket, got %d connections", connCount)
 	}
-	if len(retryEvents) != 1 {
-		t.Fatalf("continuation fallback should emit 1 retry event, got %d", len(retryEvents))
+	if len(retryEvents) != 0 {
+		t.Fatalf("continuation fallback should not emit retry events for the first stale pooled failure, got %d", len(retryEvents))
 	}
 	if freshReqPrev != "" {
 		t.Errorf("fallback request should drop previous_response_id, got %q", freshReqPrev)
@@ -1001,6 +1001,146 @@ func TestCompleteViaWebSocket_FallsBackToFullHistoryAfterStalePooledConn(t *test
 	}
 	if freshReqInputLen != 3 {
 		t.Errorf("fallback request should restore full non-system input history (3 items), got %d", freshReqInputLen)
+	}
+}
+
+func TestCompleteViaWebSocket_RetriesAfterImmediateContinuationFallbackFails(t *testing.T) {
+	var (
+		mu               sync.Mutex
+		connCount        int
+		requestCount     int
+		finalReqPrev     string
+		finalReqHasTools bool
+		finalReqInputLen int
+		secondTurnErr    error
+		retryEvents      []transport.RetryEvent
+	)
+	wsTools := []providers.ToolDefinition{{
+		Name:        "get_weather",
+		Description: "Get current weather",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
+	}}
+
+	ts := wsTestServer(t, func(conn *websocket.Conn, r *http.Request) {
+		mu.Lock()
+		connCount++
+		currentConn := connCount
+		mu.Unlock()
+
+		switch currentConn {
+		case 1:
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				t.Errorf("conn 1 turn 1 read: %v", err)
+				return
+			}
+			requestCount++
+			sendWSEvents(r.Context(), t, conn, minimalWSCompletion("resp_1"))
+
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				t.Errorf("conn 1 turn 2 read: %v", err)
+				return
+			}
+			requestCount++
+			if err := conn.Close(websocket.StatusInternalError, "keepalive ping timeout"); err != nil {
+				t.Errorf("conn 1 close: %v", err)
+			}
+		case 2:
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				t.Errorf("conn 2 read: %v", err)
+				return
+			}
+			requestCount++
+			if err := conn.Close(websocket.StatusInternalError, "transient network issue"); err != nil {
+				t.Errorf("conn 2 close: %v", err)
+			}
+		case 3:
+			_, data, err := conn.Read(r.Context())
+			if err != nil {
+				t.Errorf("conn 3 read: %v", err)
+				return
+			}
+			requestCount++
+			var req map[string]any
+			if err := json.Unmarshal(data, &req); err != nil {
+				t.Errorf("conn 3 decode: %v", err)
+				return
+			}
+			finalReqPrev, _ = req["previous_response_id"].(string)
+			_, finalReqHasTools = req["tools"]
+			inputItems, _ := req["input"].([]any)
+			finalReqInputLen = len(inputItems)
+			sendWSEvents(r.Context(), t, conn, minimalWSCompletion("resp_2"))
+		default:
+			t.Errorf("unexpected connection %d", currentConn)
+		}
+	})
+	defer ts.Close()
+
+	p := &Provider{
+		apiKey:  "test-key",
+		baseURL: ts.URL,
+		client:  ts.Client(),
+		ws:      newWSPool("test-key", ts.URL),
+	}
+
+	retryCtx := transport.WithRetryObserver(context.Background(), func(event transport.RetryEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		retryEvents = append(retryEvents, event)
+	})
+
+	req1 := providers.CompleteRequest{
+		Model:    providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
+		Messages: []message.Message{{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hi"}}}},
+	}
+	for _, err := range p.Complete(retryCtx, req1) {
+		if err != nil {
+			t.Fatalf("turn 1: %v", err)
+		}
+	}
+
+	req2 := providers.CompleteRequest{
+		Model: providers.ModelRef{ProviderID: "openai", ModelID: "gpt-4o"},
+		Tools: wsTools,
+		Messages: []message.Message{
+			{Role: "system", Parts: []message.Part{message.TextPart{Text: "You are helpful."}}},
+			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Hi"}}},
+			{Role: "assistant", ID: "resp_1", Parts: []message.Part{message.TextPart{Text: "Hello"}}},
+			{Role: "user", Parts: []message.Part{message.TextPart{Text: "Again"}}},
+		},
+	}
+	for _, err := range p.Complete(retryCtx, req2) {
+		if err != nil {
+			secondTurnErr = err
+		}
+	}
+
+	if secondTurnErr != nil {
+		t.Fatalf("turn 2 should recover after retrying the failed full-body fallback, got %v", secondTurnErr)
+	}
+	if connCount != 3 {
+		t.Fatalf("expected 3 websocket connections (saved conn + immediate fallback + delayed retry), got %d", connCount)
+	}
+	if requestCount != 4 {
+		t.Fatalf("expected 4 websocket requests across both turns, got %d", requestCount)
+	}
+	if len(retryEvents) != 1 {
+		t.Fatalf("expected 1 retry event after the immediate fallback failed, got %d", len(retryEvents))
+	}
+	if retryEvents[0].Attempt != 1 || retryEvents[0].MaxRetries != wsRetryMaxRetries {
+		t.Fatalf("unexpected retry event metadata: %+v", retryEvents[0])
+	}
+	if retryEvents[0].Err == nil {
+		t.Fatal("expected retry event to include websocket failure")
+	}
+	if finalReqPrev != "" {
+		t.Errorf("delayed retry should remain a full request without previous_response_id, got %q", finalReqPrev)
+	}
+	if !finalReqHasTools {
+		t.Error("delayed retry should preserve full request tools")
+	}
+	if finalReqInputLen != 3 {
+		t.Errorf("delayed retry should preserve full non-system input history (3 items), got %d", finalReqInputLen)
 	}
 }
 
@@ -1387,8 +1527,8 @@ func TestCompleteViaWebSocket_FallsBackToFullHistoryWhenCacheIsGone(t *testing.T
 	if connCount != 2 {
 		t.Fatalf("previous_response_not_found should trigger one fresh websocket fallback, got %d connections", connCount)
 	}
-	if len(retryEvents) != 1 {
-		t.Fatalf("previous_response_not_found fallback should emit 1 retry event, got %d", len(retryEvents))
+	if len(retryEvents) != 0 {
+		t.Fatalf("previous_response_not_found fallback should not emit retry events for the first continuation fallback, got %d", len(retryEvents))
 	}
 }
 
