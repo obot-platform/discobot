@@ -80,6 +80,11 @@
 	let floatingOpen = $state(false);
 	let shellRef = $state<HTMLElement | null>(null);
 	const showSidebarBody = $derived(!floatingCollapsed || floatingOpen);
+	const floatingSidebarPortalSelector = [
+		'[data-slot="dropdown-menu-content"]',
+		'[data-slot="dialog-content"]',
+		'[data-slot="alert-dialog-content"]',
+	].join(", ");
 
 	function closeFloatingSidebar() {
 		if (!floatingMode) {
@@ -93,6 +98,17 @@
 			return;
 		}
 		floatingOpen = !floatingOpen;
+	}
+
+	function shouldKeepFloatingSidebarOpen(target: Node) {
+		if (shellRef?.contains(target)) {
+			return true;
+		}
+
+		return (
+			target instanceof Element &&
+			target.closest(floatingSidebarPortalSelector) !== null
+		);
 	}
 
 	$effect(() => {
@@ -115,7 +131,7 @@
 			if (!(target instanceof Node)) {
 				return;
 			}
-			if (shellRef?.contains(target)) {
+			if (shouldKeepFloatingSidebarOpen(target)) {
 				return;
 			}
 			floatingOpen = false;
@@ -282,8 +298,13 @@
 	}
 
 	function workspaceGroupLabel(workspace: Workspace | null) {
+		const displayName = workspace?.displayName?.trim();
+		if (displayName) {
+			return displayName;
+		}
+
 		if (!workspace || workspace.sourceType === "managed") {
-			return workspace?.displayName?.trim() || "New Workspace";
+			return "New Workspace";
 		}
 
 		return trimWorkspacePrefix(workspace.path, workspace.sourceType);
