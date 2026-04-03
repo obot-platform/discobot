@@ -1,5 +1,6 @@
 <script lang="ts">
 	import MoonIcon from "@lucide/svelte/icons/moon";
+	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import SunIcon from "@lucide/svelte/icons/sun";
 	import DiscobotBrand from "$lib/components/app/parts/DiscobotBrand.svelte";
@@ -28,6 +29,10 @@
 
 	function showWindowsLinuxControls(): boolean {
 		return environment.isTauri && environment.windowControlsSide === "right";
+	}
+
+	function refreshWindow(): void {
+		window.location.reload();
 	}
 </script>
 
@@ -60,6 +65,17 @@
 		class="relative z-20 flex h-full min-w-0 items-stretch justify-self-end pr-0"
 	>
 		<div class="flex min-w-0 items-center gap-1 pr-2">
+			{#if environment.isTauri}
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					onclick={refreshWindow}
+					aria-label="Refresh"
+					title="Refresh"
+				>
+					<RefreshCwIcon class="size-4" />
+				</Button>
+			{/if}
 			<Button
 				variant="ghost"
 				size="icon-sm"
