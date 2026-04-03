@@ -1,5 +1,7 @@
-# Stage 1: Build the proxy binary from source
-FROM golang:1.26 AS proxy-builder
+# syntax=docker/dockerfile:1.7
+
+# Stage 0: Download shared Go module dependencies for root-module binaries
+FROM golang:1.26 AS root-go-deps
 
 WORKDIR /build
 
@@ -9,36 +11,35 @@ COPY modelsdev/go.mod ./modelsdev/
 COPY go.mod go.sum ./
 
 # Download dependencies
-RUN go mod download
+RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=discobot-gobuildcache,target=/root/.cache/go-build \
+    go mod download
+
+# Stage 1: Build the proxy binary from source
+FROM root-go-deps AS proxy-builder
 
 # Copy proxy source
 COPY proxy/ ./proxy/
 
 # Build the proxy binary
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /proxy ./proxy/cmd/proxy
+RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=discobot-gobuildcache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o /proxy ./proxy/cmd/proxy
 
 # Stage 1b: Build the agent init process from source
-FROM golang:1.26 AS agent-builder
-
-WORKDIR /build
-
-# Copy module files first for better caching
-# modelsdev/go.mod is needed by the replace directive in the root go.mod
-COPY modelsdev/go.mod ./modelsdev/
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
+FROM root-go-deps AS agent-builder
 
 # Copy agent source (including embedded proxy config)
 COPY agent/ ./agent/
 
 # Build the agent binary (static for portability)
 # The go:embed directive will include agent/internal/proxy/default-config.yaml
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /discobot-agent ./agent/cmd/agent
+RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=discobot-gobuildcache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o /discobot-agent ./agent/cmd/agent
 
-# Stage 2: Build agent-go as the discobot-agent-api binary
-FROM golang:1.26 AS agent-go-builder
+# Stage 2: Download shared Go module dependencies for agent-go
+FROM golang:1.26 AS agent-go-deps
 
 WORKDIR /build
 
@@ -50,7 +51,12 @@ COPY modelsdev/go.mod /modelsdev/
 COPY agent-go/go.mod agent-go/go.sum ./
 
 # Download dependencies
-RUN go mod download
+RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=discobot-gobuildcache,target=/root/.cache/go-build \
+    go mod download
+
+# Stage 2b: Build agent-go as the discobot-agent-api binary
+FROM agent-go-deps AS agent-go-builder
 
 # Copy modelsdev source (required for compilation, not just module resolution)
 COPY modelsdev/ /modelsdev/
@@ -60,7 +66,9 @@ COPY agent-go/ ./
 
 # Build the agent-go binary as discobot-agent-api
 # Use mcp_go_client_oauth build tag to enable OAuth support for MCP tools
-RUN CGO_ENABLED=0 go build -tags mcp_go_client_oauth -ldflags="-s -w" -o /discobot-agent-api ./cmd/agent-api
+RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=discobot-gobuildcache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -tags mcp_go_client_oauth -ldflags="-s -w" -o /discobot-agent-api ./cmd/agent-api
 
 # Stage 3: Shared Ubuntu runtime base
 FROM ubuntu:24.04 AS runtime-base
