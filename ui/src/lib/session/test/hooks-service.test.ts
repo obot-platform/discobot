@@ -110,9 +110,49 @@ test("composer hooks control resolves failures through shared hook display state
 
 test("mergeHookOutput replaces the latest output for the given hook", () => {
 	assert.deepEqual(
-		mergeHookOutput({ "hook-1": "previous output" }, "hook-1", {
-			output: "latest output",
+		mergeHookOutput(
+			{
+				"hook-1": {
+					output: "previous output",
+					sizeBytes: 15,
+					displayedBytes: 15,
+					tooLarge: false,
+				},
+			},
+			"hook-1",
+			{
+				output: "latest output",
+				sizeBytes: 13,
+				displayedBytes: 13,
+				tooLarge: false,
+			},
+		),
+		{
+			"hook-1": {
+				output: "latest output",
+				sizeBytes: 13,
+				displayedBytes: 13,
+				tooLarge: false,
+			},
+		},
+	);
+});
+
+test("mergeHookOutput preserves large-output metadata when inline output is suppressed", () => {
+	assert.deepEqual(
+		mergeHookOutput({}, "hook-2", {
+			output: "tail output",
+			sizeBytes: 250000,
+			displayedBytes: 200 * 1024,
+			tooLarge: true,
 		}),
-		{ "hook-1": "latest output" },
+		{
+			"hook-2": {
+				output: "tail output",
+				sizeBytes: 250000,
+				displayedBytes: 200 * 1024,
+				tooLarge: true,
+			},
+		},
 	);
 });

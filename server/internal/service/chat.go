@@ -581,6 +581,22 @@ func (c *ChatService) GetHookOutput(ctx context.Context, projectID, sessionID, h
 	return client.GetHookOutput(ctx, hookID)
 }
 
+// DownloadHookOutput retrieves the full output log for a specific hook from the sandbox.
+// The sandbox is automatically reconciled if not running.
+func (c *ChatService) DownloadHookOutput(ctx context.Context, projectID, sessionID, hookID string) ([]byte, error) {
+	if _, err := c.GetSession(ctx, projectID, sessionID); err != nil {
+		return nil, err
+	}
+	if c.sandboxService == nil {
+		return nil, fmt.Errorf("sandbox provider not available")
+	}
+	client, err := c.sandboxService.GetClient(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return client.DownloadHookOutput(ctx, hookID)
+}
+
 // RerunHook manually reruns a specific hook in the sandbox.
 // The sandbox is automatically reconciled if not running.
 func (c *ChatService) RerunHook(ctx context.Context, projectID, sessionID, hookID string) (*sandboxapi.HookRerunResponse, error) {

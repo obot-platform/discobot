@@ -1608,6 +1608,50 @@ func (c *SandboxChatClient) GetHookOutput(ctx context.Context, sessionID, hookID
 	return &result, nil
 }
 
+// DownloadHookOutput retrieves the full hook output log from the sandbox.
+// Retries with exponential backoff on connection errors and 5xx responses.
+func (c *SandboxChatClient) DownloadHookOutput(ctx context.Context, sessionID, hookID string) ([]byte, error) {
+	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {
+		client, err := c.getHTTPClient(ctx, sessionID)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		url := fmt.Sprintf("http://sandbox/hooks/%s/output/download", hookID)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		if err := c.applyRequestAuth(ctx, req, sessionID, nil); err != nil {
+			return nil, 0, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		return resp, resp.StatusCode, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download hook output: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sandbox returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return data, nil
+}
+
 // RerunHook manually reruns a specific hook in the sandbox.
 func (c *SandboxChatClient) RerunHook(ctx context.Context, sessionID, hookID string) (*sandboxapi.HookRerunResponse, error) {
 	resp, err := retryWithBackoff(ctx, func() (*http.Response, int, error) {

@@ -1282,6 +1282,16 @@ func main() {
 					})
 
 					sidReg.Register(r, routes.Route{
+						Method: "GET", Pattern: "/hooks/{hookId}/output/download",
+						Handler: h.DownloadHookOutput,
+						Meta: routes.Meta{
+							Group:       "Hooks",
+							Description: "Download hook output log",
+							Params:      []routes.Param{{Name: "projectId", Example: "local"}, {Name: "sessionId", Example: "abc123"}, {Name: "hookId", Example: "biome-check"}},
+						},
+					})
+
+					sidReg.Register(r, routes.Route{
 						Method: "POST", Pattern: "/hooks/{hookId}/rerun",
 						Handler: h.RerunHook,
 						Meta: routes.Meta{

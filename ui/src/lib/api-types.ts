@@ -970,6 +970,9 @@ export interface HooksStatusResponse {
 /** Hook output log response */
 export interface HookOutputResponse {
 	output: string;
+	sizeBytes: number;
+	displayedBytes: number;
+	tooLarge: boolean;
 }
 
 /** Hook rerun response */

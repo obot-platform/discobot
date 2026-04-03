@@ -125,6 +125,27 @@ class ApiClient {
 		return response.json();
 	}
 
+	private async fetchText(
+		path: string,
+		options?: RequestInit,
+	): Promise<string> {
+		const response = await fetch(appendAuthToken(`${this.base}${path}`), {
+			...options,
+			headers: {
+				...options?.headers,
+			},
+		});
+
+		if (!response.ok) {
+			const error = await response
+				.json()
+				.catch(() => ({ error: "Request failed" }));
+			throw new Error(error.error || "Request failed");
+		}
+
+		return response.text();
+	}
+
 	// Fetch from root API (not project-scoped)
 	private async fetchRoot<T>(path: string, options?: RequestInit): Promise<T> {
 		const response = await fetch(appendAuthToken(`${this.rootBase}${path}`), {
@@ -818,6 +839,17 @@ class ApiClient {
 	): Promise<HookOutputResponse> {
 		return this.fetch<HookOutputResponse>(
 			`/sessions/${sessionId}/hooks/${hookId}/output`,
+		);
+	}
+
+	/**
+	 * Download the full hook output log for a specific hook.
+	 * @param sessionId Session ID
+	 * @param hookId Hook ID
+	 */
+	async downloadHookOutput(sessionId: string, hookId: string): Promise<string> {
+		return this.fetchText(
+			`/sessions/${sessionId}/hooks/${hookId}/output/download`,
 		);
 	}
 

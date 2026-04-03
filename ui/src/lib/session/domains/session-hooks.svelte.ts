@@ -4,7 +4,10 @@ import {
 	mergeHookOutput,
 	toHooksStatus,
 } from "$lib/session/domains/session-domain.helpers";
-import type { SessionHooksService } from "$lib/session/session-context.types";
+import type {
+	HookOutputState,
+	SessionHooksService,
+} from "$lib/session/session-context.types";
 
 type CreateSessionHooksDomainArgs = {
 	sessionId: string;
@@ -14,7 +17,7 @@ type CreateSessionHooksDomainArgs = {
 export function createSessionHooksDomain(
 	args: CreateSessionHooksDomainArgs,
 ): SessionHooksService & { refresh: () => Promise<void> } {
-	let outputById = $state<Record<string, string>>({});
+	let outputById = $state<Record<string, HookOutputState>>({});
 	let hooksData = $state<HooksStatusResponse | null>(null);
 	let rerunningHookIds = $state<string[]>([]);
 
@@ -54,7 +57,7 @@ export function createSessionHooksDomain(
 			}),
 		);
 
-		outputById = outputs.reduce<Record<string, string>>(
+		outputById = outputs.reduce<Record<string, HookOutputState>>(
 			(nextOutputById, [hookId, response]) => {
 				return mergeHookOutput(nextOutputById, hookId, response);
 			},

@@ -8,6 +8,7 @@ import type {
 	Session,
 } from "$lib/api-types";
 import type { DynamicToolPart } from "$lib/components/ai/types";
+import type { HookOutputState } from "$lib/session/session-context.types";
 import type {
 	HookLastResult,
 	HookRunStatus,
@@ -556,12 +557,17 @@ export function getHookDisplayState(
 }
 
 export function mergeHookOutput(
-	outputById: Record<string, string>,
+	outputById: Record<string, HookOutputState>,
 	hookId: string,
 	response: HookOutputResponse,
-): Record<string, string> {
+): Record<string, HookOutputState> {
 	return {
 		...outputById,
-		[hookId]: response.output,
+		[hookId]: {
+			output: response.output,
+			sizeBytes: response.sizeBytes,
+			displayedBytes: response.displayedBytes,
+			tooLarge: response.tooLarge,
+		},
 	};
 }

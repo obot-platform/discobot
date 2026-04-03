@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -64,8 +65,34 @@ func (h *Handler) HookOutput(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.JSON(w, http.StatusOK, api.HookOutputResponse{
-		Output: output,
+		Output:         output.Output,
+		SizeBytes:      output.SizeBytes,
+		DisplayedBytes: output.DisplayedBytes,
+		TooLarge:       output.TooLarge,
 	})
+}
+
+// HookOutputDownload handles GET /hooks/{hookId}/output/download — returns hook output log as an attachment.
+func (h *Handler) HookOutputDownload(w http.ResponseWriter, r *http.Request) {
+	hookID := chi.URLParam(r, "hookId")
+
+	if h.hookManager == nil {
+		h.Error(w, http.StatusNotFound, "Hooks not enabled")
+		return
+	}
+
+	output, err := h.hookManager.GetHookOutputDownload(hookID)
+	if err != nil {
+		h.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", hookID+".log"))
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(output); err != nil {
+		log.Printf("hooks: failed to write hook output download: %v", err)
+	}
 }
 
 // RerunHook handles POST /hooks/{hookId}/rerun — manually reruns a hook.

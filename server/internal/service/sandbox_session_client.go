@@ -282,6 +282,13 @@ func (c *SessionClient) GetHookOutput(ctx context.Context, hookID string) (*sand
 	})
 }
 
+// DownloadHookOutput retrieves the full output log for a specific hook from the sandbox.
+func (c *SessionClient) DownloadHookOutput(ctx context.Context, hookID string) ([]byte, error) {
+	return withReconciliation(ctx, c, func() ([]byte, error) {
+		return c.inner.DownloadHookOutput(ctx, c.sessionID, hookID)
+	})
+}
+
 // RerunHook manually reruns a specific hook in the sandbox.
 func (c *SessionClient) RerunHook(ctx context.Context, hookID string) (*sandboxapi.HookRerunResponse, error) {
 	return withReconciliation(ctx, c, func() (*sandboxapi.HookRerunResponse, error) {

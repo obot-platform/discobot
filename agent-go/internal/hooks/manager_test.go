@@ -317,3 +317,65 @@ exit 0
 		t.Fatalf("pendingHooks = %v, want [01-first 02-second]", status.PendingHooks)
 	}
 }
+
+func TestGetHookOutput_ReturnsInlineOutputWhenUnderLimit(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	mgr := NewManager(t.TempDir(), "session-123")
+
+	outputPath := GetHookOutputPath(mgr.hooksDataDir, "go-check")
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() failed: %v", err)
+	}
+	if err := os.WriteFile(outputPath, []byte("hello hook"), 0o644); err != nil {
+		t.Fatalf("WriteFile() failed: %v", err)
+	}
+
+	output, err := mgr.GetHookOutput("go-check")
+	if err != nil {
+		t.Fatalf("GetHookOutput() failed: %v", err)
+	}
+	if output.Output != "hello hook" {
+		t.Fatalf("output = %q, want %q", output.Output, "hello hook")
+	}
+	if output.SizeBytes != int64(len("hello hook")) {
+		t.Fatalf("size = %d, want %d", output.SizeBytes, len("hello hook"))
+	}
+	if output.DisplayedBytes != int64(len("hello hook")) {
+		t.Fatalf("displayed size = %d, want %d", output.DisplayedBytes, len("hello hook"))
+	}
+	if output.TooLarge {
+		t.Fatal("expected output to remain inline")
+	}
+}
+
+func TestGetHookOutput_ReturnsTailWhenOverLimit(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	mgr := NewManager(t.TempDir(), "session-123")
+
+	outputPath := GetHookOutputPath(mgr.hooksDataDir, "go-check")
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() failed: %v", err)
+	}
+	largeOutput := strings.Repeat("a", 32) + strings.Repeat("x", HookOutputInlineMaxBytes) + "tail"
+	if err := os.WriteFile(outputPath, []byte(largeOutput), 0o644); err != nil {
+		t.Fatalf("WriteFile() failed: %v", err)
+	}
+
+	output, err := mgr.GetHookOutput("go-check")
+	if err != nil {
+		t.Fatalf("GetHookOutput() failed: %v", err)
+	}
+	wantTail := largeOutput[len(largeOutput)-HookOutputInlineMaxBytes:]
+	if output.Output != wantTail {
+		t.Fatalf("output = %q, want %q", output.Output, wantTail)
+	}
+	if output.SizeBytes != int64(len(largeOutput)) {
+		t.Fatalf("size = %d, want %d", output.SizeBytes, len(largeOutput))
+	}
+	if output.DisplayedBytes != HookOutputInlineMaxBytes {
+		t.Fatalf("displayed size = %d, want %d", output.DisplayedBytes, HookOutputInlineMaxBytes)
+	}
+	if !output.TooLarge {
+		t.Fatal("expected output to be marked too large")
+	}
+}

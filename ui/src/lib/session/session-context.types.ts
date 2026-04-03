@@ -22,9 +22,16 @@ export type SessionStores = {
 	threads: ThreadStore;
 };
 
+export type HookOutputState = {
+	output: string;
+	sizeBytes: number;
+	displayedBytes: number;
+	tooLarge: boolean;
+};
+
 export type SessionHooksService = {
 	status: HooksStatus;
-	outputById: Record<string, string>;
+	outputById: Record<string, HookOutputState>;
 	rerun: (hookId: string) => void;
 	refresh: () => Promise<void>;
 	applyStatusUpdate: (status: HooksStatusResponse) => Promise<void>;

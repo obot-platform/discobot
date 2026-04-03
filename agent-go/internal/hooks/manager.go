@@ -1,8 +1,10 @@
 package hooks
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -21,6 +23,8 @@ const (
 	InlineOutputMaxLines = 200
 	// InlineOutputMaxBytes is the max bytes to inline in LLM failure messages.
 	InlineOutputMaxBytes = 5 * 1024
+	// HookOutputInlineMaxBytes is the max bytes to inline in the hook output viewer.
+	HookOutputInlineMaxBytes = 200 * 1024
 	// TruncatedOutputTailLines is the number of trailing lines to show for large hook output.
 	TruncatedOutputTailLines = 15
 )
@@ -236,17 +240,67 @@ func (m *Manager) GetStatus() StatusFile {
 	return LoadStatus(m.hooksDataDir)
 }
 
-// GetHookOutput returns the output log for a hook.
-func (m *Manager) GetHookOutput(hookID string) (string, error) {
+// HookOutput contains hook log metadata and inline output when available.
+type HookOutput struct {
+	Output         string
+	SizeBytes      int64
+	DisplayedBytes int64
+	TooLarge       bool
+}
+
+// GetHookOutput returns the output log metadata for a hook.
+func (m *Manager) GetHookOutput(hookID string) (*HookOutput, error) {
+	outputPath := GetHookOutputPath(m.hooksDataDir, hookID)
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &HookOutput{}, nil
+		}
+		return nil, err
+	}
+
+	result := &HookOutput{
+		SizeBytes: info.Size(),
+	}
+	data, err := readHookOutputTail(outputPath, result.SizeBytes, HookOutputInlineMaxBytes)
+	if err != nil {
+		return nil, err
+	}
+	result.DisplayedBytes = int64(len(data))
+	result.TooLarge = result.SizeBytes > HookOutputInlineMaxBytes
+	result.Output = string(bytes.ToValidUTF8(data, []byte("\uFFFD")))
+	return result, nil
+}
+
+// GetHookOutputDownload returns the full output log bytes for a hook.
+func (m *Manager) GetHookOutputDownload(hookID string) ([]byte, error) {
 	outputPath := GetHookOutputPath(m.hooksDataDir, hookID)
 	data, err := os.ReadFile(outputPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", nil
+			return []byte{}, nil
 		}
-		return "", err
+		return nil, err
 	}
-	return string(data), nil
+	return data, nil
+}
+
+func readHookOutputTail(outputPath string, fileSize, maxBytes int64) ([]byte, error) {
+	file, err := os.Open(outputPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	start := int64(0)
+	if fileSize > maxBytes {
+		start = fileSize - maxBytes
+	}
+	if _, err := file.Seek(start, 0); err != nil {
+		return nil, err
+	}
+
+	return io.ReadAll(file)
 }
 
 // RerunHook manually reruns a file hook against current dirty files.

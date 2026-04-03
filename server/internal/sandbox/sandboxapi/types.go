@@ -433,7 +433,10 @@ type HooksStatusResponse struct {
 
 // HookOutputResponse is the GET /hooks/:hookId/output response.
 type HookOutputResponse struct {
-	Output string `json:"output"`
+	Output         string `json:"output"`
+	SizeBytes      int64  `json:"sizeBytes"`
+	DisplayedBytes int64  `json:"displayedBytes"`
+	TooLarge       bool   `json:"tooLarge"`
 }
 
 // HookRerunResponse is the POST /hooks/:hookId/rerun response.

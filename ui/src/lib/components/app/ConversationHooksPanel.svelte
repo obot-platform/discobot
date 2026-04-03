@@ -1,19 +1,23 @@
 <script lang="ts">
 	import CheckCircleIcon from "@lucide/svelte/icons/check-circle";
 	import ClockIcon from "@lucide/svelte/icons/clock";
+	import DownloadIcon from "@lucide/svelte/icons/download";
 	import Loader2Icon from "@lucide/svelte/icons/loader-2";
 	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 	import XCircleIcon from "@lucide/svelte/icons/x-circle";
+	import { api } from "$lib/api-client";
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { getHookDisplayState } from "$lib/session/domains/session-domain.helpers";
+	import type { HookOutputState } from "$lib/session/session-context.types";
 	import type { HooksStatus } from "$lib/shell-types";
+	import { downloadFile } from "$lib/tauri";
 
 	type Props = {
 		expanded: boolean;
 		hooksStatus: HooksStatus;
-		outputById: Record<string, string>;
+		outputById: Record<string, HookOutputState>;
 		onRerunHook: (hookId: string) => void;
 	};
 
@@ -89,11 +93,41 @@
 		);
 	});
 
-	function selectedHookOutput() {
+	const selectedHookOutputData = $derived.by(() => {
 		if (!sessionView.selectedHookId) {
-			return "";
+			return null;
 		}
-		return outputById[sessionView.selectedHookId] ?? "No output available";
+		return outputById[sessionView.selectedHookId] ?? null;
+	});
+
+	function formatBytes(value: number) {
+		if (!Number.isFinite(value) || value <= 0) {
+			return "0 B";
+		}
+		const units = ["B", "KB", "MB", "GB"];
+		let size = value;
+		let unitIndex = 0;
+		while (size >= 1024 && unitIndex < units.length - 1) {
+			size /= 1024;
+			unitIndex += 1;
+		}
+		return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+	}
+
+	async function downloadSelectedHookOutput() {
+		if (!sessionView.selectedHookId) {
+			return;
+		}
+
+		const content = await api.downloadHookOutput(
+			session.sessionId,
+			sessionView.selectedHookId,
+		);
+		await downloadFile({
+			filename: `${sessionView.selectedHookId}.log`,
+			content,
+			mimeType: "text/plain;charset=utf-8",
+		});
 	}
 
 	function formatRelativeTime(isoString?: string) {
@@ -240,8 +274,28 @@
 					{hook.command ? `Command: ${hook.command}` : "Output"}
 				</div>
 				<div class="max-h-[50vh] overflow-auto">
+					{#if selectedHookOutputData?.tooLarge}
+						<div
+							class="flex items-center gap-3 border-b border-border px-3 py-2 text-sm"
+						>
+							<p class="min-w-0 flex-1 text-muted-foreground">
+								Showing the last {formatBytes(
+									selectedHookOutputData.displayedBytes,
+								)} of {formatBytes(selectedHookOutputData.sizeBytes)}.
+							</p>
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={downloadSelectedHookOutput}
+							>
+								<DownloadIcon class="size-4" />
+								Download full log
+							</Button>
+						</div>
+					{/if}
 					<pre
-						class="p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">{selectedHookOutput()}</pre>
+						class="p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap break-words">{selectedHookOutputData?.output ??
+							"No output available"}</pre>
 				</div>
 			</div>
 		</Dialog.Content>

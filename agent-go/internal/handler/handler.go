@@ -361,6 +361,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		Meta: routes.Meta{Group: "Hooks", Description: "Get hook evaluation status"}})
 	reg.Register(r, routes.Route{Method: "GET", Pattern: "/hooks/{hookId}/output", Handler: h.HookOutput,
 		Meta: routes.Meta{Group: "Hooks", Description: "Get hook output log"}})
+	reg.Register(r, routes.Route{Method: "GET", Pattern: "/hooks/{hookId}/output/download", Handler: h.HookOutputDownload,
+		Meta: routes.Meta{Group: "Hooks", Description: "Download hook output log"}})
 	reg.Register(r, routes.Route{Method: "POST", Pattern: "/hooks/{hookId}/rerun", Handler: h.RerunHook,
 		Meta: routes.Meta{Group: "Hooks", Description: "Manually rerun a hook"}})
 
