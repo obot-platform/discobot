@@ -79,17 +79,20 @@
 		>
 			{label}
 		</Button>
-		<DropdownMenuTrigger class="contents">
-			<Button
-				{variant}
-				{size}
-				{type}
-				{disabled}
-				class={triggerButtonClass}
-				aria-label={menuAriaLabel}
-			>
-				<ChevronDownIcon class={iconClass} />
-			</Button>
+		<DropdownMenuTrigger>
+			{#snippet child({ props })}
+				<Button
+					{...props}
+					{variant}
+					{size}
+					{type}
+					{disabled}
+					class={triggerButtonClass}
+					aria-label={menuAriaLabel}
+				>
+					<ChevronDownIcon class={iconClass} />
+				</Button>
+			{/snippet}
 		</DropdownMenuTrigger>
 	</div>
 	<DropdownMenuContent {align} {sideOffset} class={contentClass}>

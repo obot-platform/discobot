@@ -323,17 +323,20 @@
 						{/if}
 						{operationState.buttonLabel}
 					</Button>
-					<DropdownMenuTrigger class="contents">
-						<Button
-							variant="outline"
-							size="xs"
-							disabled={operationDisabled}
-							class="rounded-r-[calc(var(--radius)-1px)] rounded-l-none border-0 border-l border-border bg-transparent px-2 shadow-none dark:bg-transparent"
-							aria-label="More git actions"
-							title="More git actions"
-						>
-							<ChevronDownIcon class="size-3.5" />
-						</Button>
+					<DropdownMenuTrigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="outline"
+								size="xs"
+								disabled={operationDisabled}
+								class="rounded-r-[calc(var(--radius)-1px)] rounded-l-none border-0 border-l border-border bg-transparent px-2 shadow-none dark:bg-transparent"
+								aria-label="More git actions"
+								title="More git actions"
+							>
+								<ChevronDownIcon class="size-3.5" />
+							</Button>
+						{/snippet}
 					</DropdownMenuTrigger>
 				</div>
 				<DropdownMenuContent align="end" sideOffset={8} class="min-w-[8rem]">
