@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Project Overview
 
-Discobot is a coding agent manager. It runs, monitors, and manages AI coding agents (currently Claude Code) across isolated sandboxed sessions. Each session gets its own container with a copy-on-write filesystem, MITM proxy, and agent API.
+Discobot is a coding agent manager. It runs, monitors, and manages its own built-in coding agent across isolated sandboxed sessions. Each session gets its own container with a copy-on-write filesystem, MITM proxy, and agent API. Discobot currently supports Anthropic and OpenAI models, with more model providers to come.
 
 ## Commands
 

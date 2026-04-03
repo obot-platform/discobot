@@ -1,6 +1,6 @@
 # Discobot
 
-Discobot is a coding agent session manager. It lets you run, monitor, and manage AI coding agents across isolated sandboxed sessions.
+Discobot is a coding agent session manager. It runs Discobot's built-in coding agent inside isolated sandboxed sessions so you can monitor and manage AI-assisted coding work safely.
 
 ## Demo
 
@@ -8,8 +8,9 @@ Discobot is a coding agent session manager. It lets you run, monitor, and manage
 
 ## Features
 
-- **Multiple Coding Agents** — Register and switch between coding agents (Claude Code supported today; [open an issue](https://github.com/obot-platform/discobot/issues/new) for others)
-- **Session-Based Agent Selection** — Choose which agent to use for each session
+- **Built-in Coding Agent** — Discobot ships with its own coding agent instead of depending on third-party coding CLIs
+- **Anthropic + OpenAI Support** — Run Discobot sessions with Anthropic and OpenAI models today, with more model providers coming soon
+- **Session-Based Model Selection** — Choose which model to use for each session
 - **Isolated Sandboxed Sessions** — Run parallel sessions in secure containers with full app debugging capabilities
 - **Use Your Own IDE** — Launch remote IDE sessions directly into each sandbox
 - **SSH into Sandboxes** — Direct SSH access to every sandbox environment

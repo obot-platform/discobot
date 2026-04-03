@@ -12,7 +12,7 @@ This document describes the overall architecture of Discobot, an IDE-like chat i
 
 ## Overview
 
-Discobot is a web-based development environment that lets users interact with AI coding agents (Claude Code, Gemini CLI, etc.) within isolated workspaces. Each workspace can contain multiple chat sessions, and users can configure different AI agents with custom prompts and MCP servers.
+Discobot is a web-based development environment built around Discobot's own coding agent runtime. Each workspace can contain multiple chat sessions, and users can configure the built-in agent with custom prompts, MCP servers, and supported model providers such as Anthropic and OpenAI.
 
 ## Core Concepts
 
@@ -84,7 +84,7 @@ The `ready` ⇄ `running` transition happens automatically:
 
 ### Agent
 
-Configuration for an AI coding assistant. References a `SupportedAgentType` (Claude Code, Gemini CLI, etc.) and can customize:
+Configuration for Discobot's built-in AI coding assistant. It stores the project's agent settings and can customize:
 
 - System prompt
 - MCP servers (stdio or HTTP)
@@ -98,9 +98,9 @@ Encrypted storage for provider authentication and custom thread-assigned environ
 
 - API keys (e.g., `ANTHROPIC_API_KEY`)
 - OAuth tokens:
-  - Anthropic OAuth: `CLAUDE_CODE_OAUTH_TOKEN`
-  - GitHub Copilot: `GITHUB_TOKEN`
-  - OpenAI Codex: `CODEX_TOKEN`
+  - Anthropic OAuth tokens
+  - OpenAI OAuth tokens
+  - Other provider-specific auth tokens as supported
 - Custom credentials containing one or more arbitrary environment variable entries
 - Project-scoped credential UI metadata is served by `GET /api/projects/{projectId}/credentials/types`
 - Threads store only selected credential IDs; secret material remains encrypted in server storage
@@ -318,7 +318,7 @@ The MITM proxy runs inside each agent container to:
 - **Docker registry caching**: Content-addressable caching of immutable blob layers and manifests
 - **Multi-protocol**: HTTP, HTTPS (MITM), and SOCKS5 support
 - **Automatic CA trust**: Generates CA certificate and installs in system trust store on startup
-- **Node.js support**: Sets `NODE_EXTRA_CA_CERTS` for Electron apps (Claude Code)
+- **Node.js support**: Sets `NODE_EXTRA_CA_CERTS` for Node.js and Electron-based tooling
 - **Header injection**: Per-domain rules for setting/removing headers
 - **Domain filtering**: Glob-pattern allowlists (e.g., `*.anthropic.com`)
 - **TLS interception**: Dynamic certificate generation signed by container CA
@@ -377,7 +377,7 @@ Each workspace will have an associated Docker container:
 ### AI Chat Streaming (Phase 9)
 
 - Streaming chat endpoint
-- Multi-provider support (Anthropic, OpenAI, Google)
+- Multi-provider support (Anthropic and OpenAI today, with more providers to come)
 - Tool use / function calling
 - Message persistence
 
@@ -406,4 +406,4 @@ Each workspace will have an associated Docker container:
 - [Server README](../server/README.md) - Go backend documentation
 - [Agent README](../agent/README.md) - Container init process documentation
 - [Agent API README](../agent-api/README.md) - Container agent API documentation
-- [CLAUDE.md](../CLAUDE.md) - AI coding agent guidelines
+- [CLAUDE.md](../CLAUDE.md) - Repository agent guidelines

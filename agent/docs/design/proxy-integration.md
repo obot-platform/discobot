@@ -143,7 +143,7 @@ This ensures:
 - ✅ Docker image pulls use the proxy cache
 - ✅ Agent-api HTTP requests use the proxy cache
 - ✅ Interactive shells (ssh, docker exec) automatically use the proxy
-- ✅ Node.js processes (Claude Code, etc.) trust the proxy CA for HTTPS
+- ✅ Node.js processes trust the proxy CA for HTTPS
 - ✅ All processes spawned from login shells inherit proxy settings
 
 ## Shutdown Flow
