@@ -129,7 +129,9 @@ export function createConversationDomain(args: CreateConversationDomainArgs) {
 		},
 		onCompletionStatus: ({ isRunning }) => {
 			const wasRunning = completionRunning;
-			streamError = null;
+			if (isRunning) {
+				streamError = null;
+			}
 			completionRunning = isRunning;
 			if (isRunning) {
 				pendingQuestionId = null;

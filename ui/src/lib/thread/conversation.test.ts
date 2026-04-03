@@ -179,3 +179,24 @@ test("conversation loader preserves streamed error text when the SSE connection 
 		/rejectLoad\(new Error\(resolvedErrorMessage\), resolvedErrorMessage\)/,
 	);
 });
+
+test("conversation loader only clears stream errors when a completion starts", () => {
+	const source = readFileSync(CONVERSATION_DOMAIN_SOURCE, "utf-8");
+
+	assert.match(
+		source,
+		/onCompletionStatus: \(\{ isRunning \}\) => \{[\s\S]*if \(isRunning\) \{[\s\S]*streamError = null;[\s\S]*\}[\s\S]*completionRunning = isRunning;/,
+	);
+});
+
+test("conversation loader stops reconnecting after fatal stream parse errors", () => {
+	const source = readFileSync(CONVERSATION_DOMAIN_SOURCE, "utf-8");
+
+	assert.match(source, /fatalStreamError/);
+	assert.match(
+		source,
+		/onError: \(error\) => \{[\s\S]*fatalStreamError = true/,
+	);
+	assert.match(source, /onError: \(error\) => \{[\s\S]*disconnectStream\(\)/);
+	assert.match(source, /if \(args\.hasSession\(\) && !fatalStreamError\)/);
+});

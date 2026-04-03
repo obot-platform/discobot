@@ -596,6 +596,70 @@ test("completion status chunks notify the caller", async () => {
 	]);
 });
 
+test("chunk errors can arrive before the completion stops", async () => {
+	let chunkError: string | null = null;
+	const harness = createHarness([], {
+		onChunkError: (errorText) => {
+			chunkError = errorText;
+		},
+	});
+
+	await harness.state.handleStreamEvent({
+		event: "history-start",
+		data: "{}",
+	});
+	await harness.state.handleStreamEvent({
+		event: "history-end",
+		data: "{}",
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-completion-status",
+			data: {
+				threadId: "thread-1",
+				completionId: "completion-1",
+				isRunning: true,
+			},
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({ type: "start", messageId: "assistant-1" }),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "error",
+			errorText:
+				"invalid model: no model providers are available; configure a provider, set MODEL, or pass --model",
+		}),
+	});
+	await harness.state.handleStreamEvent({
+		event: "chunk",
+		data: JSON.stringify({
+			type: "data-completion-status",
+			data: {
+				threadId: "thread-1",
+				completionId: "completion-1",
+				isRunning: false,
+			},
+		}),
+	});
+
+	assert.equal(
+		chunkError,
+		"invalid model: no model providers are available; configure a provider, set MODEL, or pass --model",
+	);
+	assert.deepEqual(harness.completionStatusEvents, [
+		{ threadId: "thread-1", completionId: "completion-1", isRunning: true },
+		{ threadId: "thread-1", completionId: "completion-1", isRunning: false },
+	]);
+	assert.deepEqual(harness.startEvents, [{ resume: false }]);
+	assert.equal(harness.messages.length, 1);
+	assert.equal(harness.messages[0]?.id, "assistant-1");
+});
+
 test("data-user-message inserts a preserved user message before the assistant reply", async () => {
 	const harness = createHarness();
 
