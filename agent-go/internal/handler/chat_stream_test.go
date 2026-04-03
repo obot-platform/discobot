@@ -150,6 +150,38 @@ func cleanupCompletion(t *testing.T, cm *agent.CompletionManager, threadID strin
 	})
 }
 
+func waitForCompletionOffset(t *testing.T, cm *agent.CompletionManager, threadID string, offset int) *agent.PollResult {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		result := cm.PollChunks(threadID, 0)
+		if result != nil && result.NextOffset >= offset {
+			return result
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for completion %q to reach offset %d", threadID, offset)
+	return nil
+}
+
+func waitForCompletionDone(t *testing.T, cm *agent.CompletionManager, threadID string) *agent.PollResult {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		result := cm.PollChunks(threadID, 0)
+		if result != nil && result.Done {
+			return result
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for completion %q to finish", threadID)
+	return nil
+}
+
 func yieldChunksAndFinish(chunks ...message.MessageChunk) func(context.Context, string, agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	return func(_ context.Context, _ string, _ agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 		return func(yield func(message.MessageChunk, error) bool) {
@@ -1458,7 +1490,7 @@ func TestChatStream_FreshRequest_ReplaysHistoryThenCachedDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionOffset(t, cm, "thread-1", 1)
 
 	h := New("", cm, nil, nil, nil)
 	ts := newStreamTestServer(t, h)
@@ -1516,7 +1548,7 @@ func TestChatStream_FreshRequest_DoesNotReplayCompletedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionDone(t, cm, "thread-done")
 
 	h := New("", cm, nil, nil, nil)
 	h.chatPingEvery = 10 * time.Millisecond
@@ -1600,7 +1632,7 @@ func TestChatStream_FreshRequest_SkipsCachedSnapshotForPendingQuestion(t *testin
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionDone(t, cm, "thread-pending")
 
 	h := New("", cm, nil, nil, nil)
 	h.chatPingEvery = 10 * time.Millisecond
@@ -1796,7 +1828,7 @@ func TestChatStream_ValidLastEventID_ResumesWithoutHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionOffset(t, cm, "thread-2", 2)
 
 	h := New("", cm, nil, nil, nil)
 	ts := newStreamTestServer(t, h)
@@ -1844,7 +1876,7 @@ func TestChatStream_FreshRequest_CoalescesCachedDeltaBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionOffset(t, cm, "thread-coalesce", 2)
 
 	h := New("", cm, nil, nil, nil)
 	ts := newStreamTestServer(t, h)
@@ -1895,7 +1927,7 @@ func TestChatStream_ForwardsThreadUpdateChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionOffset(t, cm, "thread-name", 1)
 
 	h := New("", cm, nil, nil, nil)
 	h.chatPingEvery = 25 * time.Millisecond
@@ -2024,7 +2056,7 @@ func TestChatStream_InvalidLastEventID_TreatedAsFreshRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionOffset(t, cm, "thread-3", 1)
 
 	h := New("", cm, nil, nil, nil)
 	ts := newStreamTestServer(t, h)
@@ -2111,7 +2143,7 @@ func TestChatStream_CompletionEndDoesNotCloseStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	waitForCompletionOffset(t, cm, "thread-5", 1)
 
 	h := New("", cm, nil, nil, nil)
 	h.chatPingEvery = 25 * time.Millisecond
