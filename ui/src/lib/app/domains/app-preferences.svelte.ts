@@ -85,8 +85,9 @@ export function createAppPreferencesDomain(
 	};
 
 	const initializePreferences = () => {
+		const savedColorScheme = getColorScheme();
 		applyThemeState(getThemeMode());
-		colorScheme = getColorScheme();
+		colorScheme = savedColorScheme;
 		ensureColorSchemeForMode();
 		syncAppliedColorScheme();
 		preferredIde = readPreferredIde();
