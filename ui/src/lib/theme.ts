@@ -12,7 +12,8 @@ export type ThemeColorScheme =
 	| "catppuccin-macchiato"
 	| "catppuccin-frappe"
 	| "alucard"
-	| "catppuccin-latte";
+	| "catppuccin-latte"
+	| "ayu-mirage";
 
 export type ThemeMetadata = {
 	id: ThemeColorScheme;
@@ -159,6 +160,16 @@ export const THEME_METADATA: ThemeMetadata[] = [
 			foreground: "#c6d0f5",
 		},
 	},
+	{
+		id: "ayu-mirage",
+		name: "Ayu Mirage",
+		mode: "dark",
+		preview: {
+			background: "#242936",
+			primary: "#ffcc66",
+			foreground: "#cccac2",
+		},
+	},
 ];
 
 function resolveStoredThemeMode(): ThemeMode | null {
@@ -190,7 +201,8 @@ function resolveStoredColorScheme(): ThemeColorScheme | null {
 		storedScheme === "catppuccin-macchiato" ||
 		storedScheme === "catppuccin-frappe" ||
 		storedScheme === "alucard" ||
-		storedScheme === "catppuccin-latte"
+		storedScheme === "catppuccin-latte" ||
+		storedScheme === "ayu-mirage"
 		? storedScheme
 		: null;
 }

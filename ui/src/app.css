@@ -606,6 +606,53 @@ body {
 	--diff-remove-line: #d14d41;
 }
 
+/* Ayu Mirage - Official Ayu Mirage theme */
+[data-theme="ayu-mirage"].dark {
+	--background: #242936;
+	--foreground: #cccac2;
+	--card: #282e3b;
+	--card-foreground: #cccac2;
+	--popover: #282e3b;
+	--popover-foreground: #cccac2;
+	--primary: #ffcc66;
+	--primary-foreground: #805500;
+	--secondary: #303743;
+	--secondary-foreground: #cccac2;
+	--muted: #1f2430;
+	--muted-foreground: #707a8c;
+	--accent: #3a4252;
+	--accent-foreground: #cccac2;
+	--destructive: #f27983;
+	--destructive-foreground: #242936;
+	--border: #171b24;
+	--input: #303743;
+	--ring: #ffcc66;
+	--chart-1: #ffcc66;
+	--chart-2: #87d96c;
+	--chart-3: #ffa659;
+	--chart-4: #dfbfff;
+	--chart-5: #73d0ff;
+	--sidebar: #1f2430;
+	--sidebar-foreground: #cccac2;
+	--sidebar-primary: #ffcc66;
+	--sidebar-primary-foreground: #805500;
+	--sidebar-accent: #282e3b;
+	--sidebar-accent-foreground: #cccac2;
+	--sidebar-border: #171b24;
+	--sidebar-ring: #ffcc66;
+	--tree-hover: #63759926;
+	--tree-selected: #409fff40;
+	--turn-border: #171b24;
+	--terminal-bg: #1f2430;
+	--terminal-fg: #d5ff80;
+	--diff-add: #87d96c33;
+	--diff-remove: #f2798333;
+	--diff-add-line: #87d96c;
+	--diff-remove-line: #f27983;
+	--diff-modify: #80bfff33;
+	--diff-modify-line: #80bfff;
+}
+
 /* Theme Variants - Light Themes */
 
 /* Alucard - Dracula light variant */

@@ -105,7 +105,8 @@ export type ThemeColorScheme =
 	| "catppuccin-mocha"
 	| "catppuccin-macchiato"
 	| "catppuccin-frappe"
-	| "catppuccin-latte";
+	| "catppuccin-latte"
+	| "ayu-mirage";
 
 export interface FileNode {
 	id: string;
