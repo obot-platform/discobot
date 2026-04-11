@@ -81,6 +81,7 @@ export default defineConfig(() => ({
 	},
 	clearScreen: false,
 	build: {
+		sourcemap: true,
 		// Increase chunk size warning limit for the Svelte UI bundle.
 		chunkSizeWarningLimit: 4000,
 		rollupOptions: {
