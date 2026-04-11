@@ -295,9 +295,14 @@ export function touchRecentThread(
 		areSameRecentThread(entry, thread),
 	);
 	if (existingIndex !== -1) {
-		return entries.map((entry, index) =>
-			index === existingIndex ? { ...entry, ...thread, lastAccessedAt } : entry,
-		);
+		const existingEntry = entries[existingIndex];
+		if (!existingEntry) {
+			return entries;
+		}
+		return [
+			{ ...existingEntry, ...thread, lastAccessedAt },
+			...entries.filter((_, index) => index !== existingIndex),
+		];
 	}
 
 	return normalizeRecentThreadEntries([

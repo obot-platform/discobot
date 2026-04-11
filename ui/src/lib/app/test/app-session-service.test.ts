@@ -223,16 +223,9 @@ test("upsertSession appends a newly seen session", () => {
 	]);
 });
 
-test("touchRecentThread updates timestamps without reordering existing entries", () => {
+test("touchRecentThread moves existing entries to the head of the recent list", () => {
 	const nextEntries = touchRecentThread(
 		[
-			{
-				sessionId: "session-1",
-				sessionName: "One",
-				threadId: "thread-1",
-				threadName: "Thread One",
-				lastAccessedAt: "2026-01-01T00:00:00Z",
-			},
 			{
 				sessionId: "session-2",
 				sessionName: "Two",
@@ -240,13 +233,20 @@ test("touchRecentThread updates timestamps without reordering existing entries",
 				threadName: "Thread Two",
 				lastAccessedAt: "2026-01-02T00:00:00Z",
 			},
+			{
+				sessionId: "session-1",
+				sessionName: "One",
+				threadId: "thread-1",
+				threadName: "Thread One",
+				lastAccessedAt: "2026-01-01T00:00:00Z",
+			},
 		],
 		{
 			sessionId: "session-1",
 			sessionName: "One renamed",
 			threadId: "thread-1",
 			threadName: "Thread One renamed",
-			lastMessage: "",
+			lastMessage: "latest prompt",
 		},
 		"2026-02-01T00:00:00Z",
 	);
@@ -257,6 +257,7 @@ test("touchRecentThread updates timestamps without reordering existing entries",
 			sessionName: "One renamed",
 			threadId: "thread-1",
 			threadName: "Thread One renamed",
+			lastMessage: "latest prompt",
 			lastAccessedAt: "2026-02-01T00:00:00Z",
 		},
 		{
