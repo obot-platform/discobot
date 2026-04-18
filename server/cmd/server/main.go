@@ -422,8 +422,8 @@ func main() {
 		}))
 	}
 
-	// Tauri auth middleware - validates secret cookie when running in Tauri mode
-	r.Use(middleware.TauriAuth(cfg))
+	// Desktop shell auth middleware - validates secret cookie when running in a desktop shell
+	r.Use(middleware.DesktopShellAuth(cfg))
 
 	// Initialize handlers
 	h := handler.New(s, cfg, gitProvider, sandboxProvider, sandboxManager, eventBroker, jobQueue, systemManager)

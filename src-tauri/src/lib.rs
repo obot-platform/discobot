@@ -40,6 +40,8 @@ pub fn run() {
         })
         .on_window_event(tray::handle_window_event)
         .invoke_handler(tauri::generate_handler![
+            commands::get_desktop_server_port,
+            commands::get_desktop_server_secret,
             commands::get_server_port,
             commands::get_server_secret,
             commands::save_file_to_downloads,

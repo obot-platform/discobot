@@ -149,3 +149,53 @@ func TestLoadSessionSandboxCleanupDelayFromEnv(t *testing.T) {
 		t.Fatalf("expected SessionSandboxCleanupDelay 720h, got %s", cfg.SessionSandboxCleanupDelay)
 	}
 }
+
+func TestLoadDesktopShellSettingsFromGenericEnv(t *testing.T) {
+	t.Setenv("DISCOBOT_DESKTOP_RUNTIME", "electron")
+	t.Setenv("DISCOBOT_DESKTOP_SECRET", "desktop-secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.DesktopMode {
+		t.Fatal("expected DesktopMode to be enabled")
+	}
+	if cfg.DesktopRuntime != "electron" {
+		t.Fatalf("expected DesktopRuntime electron, got %q", cfg.DesktopRuntime)
+	}
+	if cfg.DesktopSecret != "desktop-secret" {
+		t.Fatalf("expected DesktopSecret desktop-secret, got %q", cfg.DesktopSecret)
+	}
+}
+
+func TestLoadDesktopShellSettingsAcceptLegacyTauriEnv(t *testing.T) {
+	t.Setenv("TAURI", "true")
+	t.Setenv("DISCOBOT_SECRET", "legacy-secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.DesktopMode {
+		t.Fatal("expected DesktopMode to be enabled")
+	}
+	if cfg.DesktopRuntime != "tauri" {
+		t.Fatalf("expected DesktopRuntime tauri, got %q", cfg.DesktopRuntime)
+	}
+	if cfg.DesktopSecret != "legacy-secret" {
+		t.Fatalf("expected DesktopSecret legacy-secret, got %q", cfg.DesktopSecret)
+	}
+}
+
+func TestLoadDesktopShellSettingsRequireSecretWhenRuntimeSet(t *testing.T) {
+	t.Setenv("TAURI", "")
+	t.Setenv("DISCOBOT_SECRET", "")
+	t.Setenv("DISCOBOT_DESKTOP_SECRET", "")
+	t.Setenv("DISCOBOT_DESKTOP_RUNTIME", "electron")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected Load() to fail when desktop runtime is set without a secret")
+	}
+}

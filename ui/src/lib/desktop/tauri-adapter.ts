@@ -22,8 +22,8 @@ export async function initServerConfig(): Promise<void> {
 
 	const { invoke } = await import("@tauri-apps/api/core");
 	const [port, secret] = await Promise.all([
-		invoke<number>("get_server_port"),
-		invoke<string>("get_server_secret"),
+		invoke<number>("get_desktop_server_port"),
+		invoke<string>("get_desktop_server_secret"),
 	]);
 	serverConfig = { port, secret };
 }

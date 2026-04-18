@@ -4,14 +4,32 @@ use tauri::State;
 
 use crate::server::ServerState;
 
+fn desktop_server_port(state: State<'_, Mutex<ServerState>>) -> u16 {
+    state.lock().unwrap().port
+}
+
+fn desktop_server_secret(state: State<'_, Mutex<ServerState>>) -> String {
+    state.lock().unwrap().secret.clone()
+}
+
+#[tauri::command]
+pub(crate) fn get_desktop_server_port(state: State<'_, Mutex<ServerState>>) -> u16 {
+    desktop_server_port(state)
+}
+
+#[tauri::command]
+pub(crate) fn get_desktop_server_secret(state: State<'_, Mutex<ServerState>>) -> String {
+    desktop_server_secret(state)
+}
+
 #[tauri::command]
 pub(crate) fn get_server_port(state: State<'_, Mutex<ServerState>>) -> u16 {
-    state.lock().unwrap().port
+    desktop_server_port(state)
 }
 
 #[tauri::command]
 pub(crate) fn get_server_secret(state: State<'_, Mutex<ServerState>>) -> String {
-    state.lock().unwrap().secret.clone()
+    desktop_server_secret(state)
 }
 
 #[tauri::command]

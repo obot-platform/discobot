@@ -44,20 +44,20 @@
 			id: "healthy",
 			title: "Healthy startup",
 			description:
-				"Tauri config initializes and the API is ready on the first check.",
+				"Desktop shell config initializes and the API is ready on the first check.",
 			frames: [
 				{
 					label: "Phase 1",
 					headline: "Booting the desktop shell",
 					detail:
-						"Initializing Tauri runtime settings and resolving the local server port.",
+						"Initializing desktop runtime settings and resolving the local server port.",
 					progress: 18,
 					statusLabel: "Initializing",
 					statusVariant: "outline",
 					apiState: "offline",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Resolving port + auth token",
 							state: "running",
 						},
@@ -85,7 +85,7 @@
 					apiState: "retrying",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Port resolved: localhost:3001",
 							state: "done",
 						},
@@ -113,7 +113,7 @@
 					apiState: "online",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Resolved successfully",
 							state: "done",
 						},
@@ -141,7 +141,7 @@
 					apiState: "online",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Resolved successfully",
 							state: "done",
 						},
@@ -178,7 +178,7 @@
 					errorMessage: "GET /api/status failed: connection refused",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Resolved localhost:3001",
 							state: "done",
 						},
@@ -208,7 +208,7 @@
 					errorMessage: "Still waiting for /api/status to return 200.",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Ready",
 							state: "done",
 						},
@@ -236,7 +236,7 @@
 					retryCount: 3,
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Ready",
 							state: "done",
 						},
@@ -265,7 +265,7 @@
 					retryCount: 3,
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Ready",
 							state: "done",
 						},
@@ -301,7 +301,7 @@
 					apiState: "online",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Ready",
 							state: "done",
 						},
@@ -325,7 +325,7 @@
 					apiState: "online",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Ready",
 							state: "done",
 						},
@@ -349,7 +349,7 @@
 					apiState: "online",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Ready",
 							state: "done",
 						},
@@ -384,7 +384,7 @@
 						"Backend startup failed: timed out waiting for database migration lock.",
 					steps: [
 						{
-							label: "Initialize Tauri config",
+							label: "Initialize desktop config",
 							detail: "Ready",
 							state: "done",
 						},
@@ -484,8 +484,8 @@
 						<p
 							class="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base"
 						>
-							Use this route to inspect how Discobot could behave while Tauri
-							and the backend are still coming online.
+							Use this route to inspect how Discobot could behave while the
+							desktop shell and the backend are still coming online.
 						</p>
 					</div>
 				</div>

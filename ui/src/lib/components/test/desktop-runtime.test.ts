@@ -88,6 +88,8 @@ test("shell exports the shared runtime surface", () => {
 test("tauri-specific imports are centralized in the tauri adapter", () => {
 	const source = readSource(TAURI_ADAPTER_MODULE);
 
+	assert.match(source, /get_desktop_server_port/);
+	assert.match(source, /get_desktop_server_secret/);
 	assert.match(source, /@tauri-apps\/api\/core/);
 	assert.match(source, /@tauri-apps\/api\/window/);
 	assert.match(source, /@tauri-apps\/plugin-clipboard-manager/);

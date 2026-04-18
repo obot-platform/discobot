@@ -834,6 +834,8 @@ export interface ConfigInfo {
 	auth_enabled: boolean;
 	workspace_dir: string;
 	sandbox_image: string;
+	desktop_mode: boolean;
+	desktop_runtime?: "tauri" | "electron";
 	tauri_mode: boolean;
 	ssh_enabled: boolean;
 	ssh_port: number;

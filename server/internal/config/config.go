@@ -137,9 +137,10 @@ type Config struct {
 	MCPOAuthRedirectBase string // Base URL for MCP OAuth callbacks (MCP_OAUTH_REDIRECT_BASE)
 	AgentServerURL       string // URL the agent uses to reach this server (AGENT_SERVER_URL)
 
-	// Tauri mode settings
-	TauriMode   bool   // Running inside Tauri app (TAURI=true)
-	TauriSecret string // Shared secret for Tauri auth (DISCOBOT_SECRET)
+	// Desktop shell settings
+	DesktopMode    bool   // Running inside a desktop shell
+	DesktopRuntime string // Desktop shell runtime (for example: tauri, electron)
+	DesktopSecret  string // Shared secret for desktop shell auth
 }
 
 // Load reads configuration from environment variables
@@ -281,11 +282,20 @@ func Load() (*Config, error) {
 	cfg.MCPOAuthRedirectBase = getEnv("MCP_OAUTH_REDIRECT_BASE", fmt.Sprintf("http://127.0.0.1:%d", cfg.Port))
 	cfg.AgentServerURL = getEnv("AGENT_SERVER_URL", fmt.Sprintf("http://127.0.0.1:%d", cfg.Port))
 
-	// Tauri mode settings
-	cfg.TauriMode = getEnvBool("TAURI", false)
-	cfg.TauriSecret = getEnv("DISCOBOT_SECRET", "")
-	if cfg.TauriMode && cfg.TauriSecret == "" {
-		return nil, fmt.Errorf("DISCOBOT_SECRET is required when TAURI=true")
+	// Desktop shell settings
+	cfg.DesktopRuntime = strings.ToLower(getEnv("DISCOBOT_DESKTOP_RUNTIME", ""))
+	if cfg.DesktopRuntime == "" && getEnvBool("TAURI", false) {
+		cfg.DesktopRuntime = "tauri"
+	}
+	switch cfg.DesktopRuntime {
+	case "", "tauri", "electron":
+	default:
+		return nil, fmt.Errorf("DISCOBOT_DESKTOP_RUNTIME must be one of: tauri, electron")
+	}
+	cfg.DesktopMode = cfg.DesktopRuntime != ""
+	cfg.DesktopSecret = getEnv("DISCOBOT_DESKTOP_SECRET", getEnv("DISCOBOT_SECRET", ""))
+	if cfg.DesktopMode && cfg.DesktopSecret == "" {
+		return nil, fmt.Errorf("DISCOBOT_DESKTOP_SECRET (or DISCOBOT_SECRET) is required when DISCOBOT_DESKTOP_RUNTIME is set")
 	}
 
 	return cfg, nil

@@ -21,35 +21,37 @@ const (
 )
 
 const sessionCookieName = "discobot_session"
-const tauriSecretCookieName = "discobot_secret"
+const desktopSecretCookieName = "discobot_secret"
 
-// TauriAuth middleware validates the Tauri secret from cookie or query string.
-// Only active when cfg.TauriMode is true.
+// DesktopShellAuth middleware validates the desktop shell secret from cookie or
+// query string.
+// Only active when cfg.DesktopMode is true.
 // Rejects requests without valid secret with 401 Unauthorized.
 // Checks both cookie and ?token= query parameter for flexibility with WebSocket/SSE.
 //
-// Two paths are exempt from auth because they are called without a Tauri session:
+// Two paths are exempt from auth because they are called without a desktop shell
+// session:
 //   - MCP OAuth callbacks (/sessions/.../mcp/.../callback) — browser redirects from
-//     external OAuth servers that cannot carry the Tauri session cookie.
+//     external OAuth servers that cannot carry the desktop shell session cookie.
 //   - MCP token persistence (/api/projects/.../credentials/mcp) — POST from agent
-//     containers that have no access to the Tauri session cookie.
-func TauriAuth(cfg *config.Config) func(http.Handler) http.Handler {
+//     containers that have no access to the desktop shell session cookie.
+func DesktopShellAuth(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip if not in Tauri mode
-			if !cfg.TauriMode {
+			// Skip if not in desktop shell mode
+			if !cfg.DesktopMode {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			// MCP OAuth callbacks arrive from external browsers that cannot carry
-			// the Tauri secret cookie. Pattern: /sessions/{id}/mcp/{name}/callback
+			// the desktop shell secret cookie. Pattern: /sessions/{id}/mcp/{name}/callback
 			if strings.HasPrefix(r.URL.Path, "/sessions/") && strings.HasSuffix(r.URL.Path, "/callback") {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// MCP token POST from agent containers (no Tauri cookie available in-container).
+			// MCP token POST from agent containers (no desktop shell cookie available in-container).
 			// Pattern: POST /api/projects/{id}/credentials/mcp
 			if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/credentials/mcp") {
 				next.ServeHTTP(w, r)
@@ -61,25 +63,30 @@ func TauriAuth(cfg *config.Config) func(http.Handler) http.Handler {
 			// First check query parameter (for WebSocket/SSE URLs)
 			if token := r.URL.Query().Get("token"); token != "" {
 				secret = token
-			} else if cookie, err := r.Cookie(tauriSecretCookieName); err == nil {
+			} else if cookie, err := r.Cookie(desktopSecretCookieName); err == nil {
 				// Fall back to cookie
 				secret = cookie.Value
 			}
 
 			if secret == "" {
-				http.Error(w, `{"error":"Tauri authentication required"}`, http.StatusUnauthorized)
+				http.Error(w, `{"error":"Desktop shell authentication required"}`, http.StatusUnauthorized)
 				return
 			}
 
 			// Constant-time comparison to prevent timing attacks
-			if subtle.ConstantTimeCompare([]byte(secret), []byte(cfg.TauriSecret)) != 1 {
-				http.Error(w, `{"error":"Invalid Tauri secret"}`, http.StatusUnauthorized)
+			if subtle.ConstantTimeCompare([]byte(secret), []byte(cfg.DesktopSecret)) != 1 {
+				http.Error(w, `{"error":"Invalid desktop shell secret"}`, http.StatusUnauthorized)
 				return
 			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// TauriAuth is a backward-compatible alias for DesktopShellAuth.
+func TauriAuth(cfg *config.Config) func(http.Handler) http.Handler {
+	return DesktopShellAuth(cfg)
 }
 
 // Auth middleware validates user authentication.

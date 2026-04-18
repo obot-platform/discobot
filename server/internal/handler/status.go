@@ -77,6 +77,8 @@ type ConfigInfo struct {
 	AuthEnabled        bool     `json:"auth_enabled"`
 	WorkspaceDir       string   `json:"workspace_dir"`
 	SandboxImage       string   `json:"sandbox_image"`
+	DesktopMode        bool     `json:"desktop_mode"`
+	DesktopRuntime     string   `json:"desktop_runtime,omitempty"`
 	TauriMode          bool     `json:"tauri_mode"`
 	SSHEnabled         bool     `json:"ssh_enabled"`
 	SSHPort            int      `json:"ssh_port"`
@@ -139,7 +141,9 @@ func (h *Handler) GetSupportInfo(w http.ResponseWriter, _ *http.Request) {
 		AuthEnabled:        h.cfg.AuthEnabled,
 		WorkspaceDir:       h.cfg.WorkspaceDir,
 		SandboxImage:       h.cfg.SandboxImage,
-		TauriMode:          h.cfg.TauriMode,
+		DesktopMode:        h.cfg.DesktopMode,
+		DesktopRuntime:     h.cfg.DesktopRuntime,
+		TauriMode:          h.cfg.DesktopRuntime == "tauri",
 		SSHEnabled:         h.cfg.SSHEnabled,
 		SSHPort:            h.cfg.SSHPort,
 		DispatcherEnabled:  h.cfg.DispatcherEnabled,
