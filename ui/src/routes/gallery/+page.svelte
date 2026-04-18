@@ -37,7 +37,12 @@
 	let selectedComponentName = uiComponentCatalog[0]?.name ?? "button";
 	const formPreviewNotes = `Workspace goals:\n- mobile ready\n- shell first\n- preserve backend contracts`;
 
-	$: runtimeLabel = getDesktopRuntimeKind() === "tauri" ? "Tauri" : "Browser";
+	$: runtimeLabel =
+		getDesktopRuntimeKind() === "tauri"
+			? "Tauri"
+			: getDesktopRuntimeKind() === "electron"
+				? "Electron"
+				: "Browser";
 	$: normalizedSearch = search.trim().toLowerCase();
 	$: filteredCatalog = uiComponentCatalog.filter((component) => {
 		const matchesCategory =

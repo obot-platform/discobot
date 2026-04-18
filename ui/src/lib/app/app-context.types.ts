@@ -140,6 +140,9 @@ export type AppPreferences = {
 export type AppEnvironment = {
 	apiBase: string;
 	runtime: DesktopRuntimeKind;
+	isDesktop: boolean;
+	supportsNativeWindowControls: boolean;
+	supportsAppUpdates: boolean;
 	windowControlsSide: WindowControlsSide;
 	windowControls: string[];
 };

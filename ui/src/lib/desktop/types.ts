@@ -1,4 +1,4 @@
-export type DesktopRuntimeKind = "browser" | "tauri";
+export type DesktopRuntimeKind = "browser" | "tauri" | "electron";
 
 export type DesktopServerConfig = {
 	port: number;
@@ -49,4 +49,28 @@ export type DesktopUpdateMetadata = {
 	date?: string;
 	body?: string;
 	rawJson: Record<string, unknown>;
+};
+
+export type DesktopRendererBridge = {
+	kind: "electron";
+	initServerConfig?: () => Promise<DesktopServerConfig | null>;
+	downloadFile?: (filename: string, bytes: Uint8Array) => Promise<void>;
+	readClipboardText?: () => Promise<string>;
+	writeClipboardText?: (text: string) => Promise<void>;
+	openExternalUrl?: (url: string) => Promise<void>;
+	pickDirectory?: () => Promise<string | null>;
+	withCurrentWindow?: <T>(callback: DesktopWindowCallback<T>) => Promise<T>;
+	checkForAppUpdate?: (
+		endpoint?: string | null,
+	) => Promise<DesktopUpdateMetadata | null>;
+	downloadAppUpdate?: (
+		rid: number,
+		onEvent: (event: DesktopDownloadEvent) => void,
+	) => Promise<number>;
+	installAppUpdate?: (updateRid: number, bytesRid: number) => Promise<void>;
+	closeAppUpdate?: (
+		updateRid?: number | null,
+		bytesRid?: number | null,
+	) => Promise<void>;
+	relaunchApp?: () => Promise<void>;
 };

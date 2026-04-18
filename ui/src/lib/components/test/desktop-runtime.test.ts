@@ -28,6 +28,10 @@ const TAURI_ADAPTER_MODULE = path.resolve(
 	import.meta.dirname,
 	"../../desktop/tauri-adapter.ts",
 );
+const ELECTRON_ADAPTER_MODULE = path.resolve(
+	import.meta.dirname,
+	"../../desktop/electron-adapter.ts",
+);
 
 function readSource(filePath: string) {
 	return readFileSync(filePath, "utf-8");
@@ -81,8 +85,22 @@ test("shell exports the shared runtime surface", () => {
 
 	assert.match(
 		source,
-		/export \{[\s\S]*downloadFile,[\s\S]*openUrl,[\s\S]*pickDirectory,[\s\S]*readClipboardText,[\s\S]*writeClipboardText,[\s\S]*\} from "\$lib\/desktop\/runtime";/,
+		/export \{[\s\S]*downloadFile,[\s\S]*openUrl,[\s\S]*pickDirectory,[\s\S]*readClipboardText,[\s\S]*supportsAppUpdates,[\s\S]*supportsNativeWindowControls,[\s\S]*writeClipboardText,[\s\S]*\} from "\$lib\/desktop\/runtime";/,
 	);
+});
+
+test("runtime supports Tauri, Electron, and browser detection", () => {
+	const source = readSource(
+		path.resolve(import.meta.dirname, "../../desktop/runtime.ts"),
+	);
+
+	assert.match(source, /detectTauriRuntime/);
+	assert.match(source, /detectElectronRuntime/);
+	assert.match(source, /supportsNativeWindowControls\(\)/);
+	assert.match(source, /supportsAppUpdates\(\)/);
+	assert.match(source, /return "tauri"/);
+	assert.match(source, /return "electron"/);
+	assert.match(source, /return "browser"/);
 });
 
 test("tauri-specific imports are centralized in the tauri adapter", () => {
@@ -96,6 +114,14 @@ test("tauri-specific imports are centralized in the tauri adapter", () => {
 	assert.match(source, /@tauri-apps\/plugin-dialog/);
 	assert.match(source, /@tauri-apps\/plugin-opener/);
 	assert.match(source, /@tauri-apps\/plugin-process/);
+});
+
+test("electron-specific bridge access is centralized in the electron adapter", () => {
+	const source = readSource(ELECTRON_ADAPTER_MODULE);
+
+	assert.match(source, /window\.__DISCOBOT_DESKTOP__/);
+	assert.match(source, /kind === "electron"/);
+	assert.doesNotMatch(source, /@tauri-apps/);
 });
 
 test("legacy tauri and environment helper modules are removed", () => {

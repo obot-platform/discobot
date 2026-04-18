@@ -15,6 +15,9 @@ export function createAppEnvironmentDomain(
 	return {
 		apiBase: env.apiBase,
 		runtime: env.runtime,
+		isDesktop: env.isDesktop,
+		supportsNativeWindowControls: env.supportsNativeWindowControls,
+		supportsAppUpdates: env.supportsAppUpdates,
 		windowControlsSide: env.windowControlsSide,
 		windowControls: args.bootstrap.windowControls,
 	};

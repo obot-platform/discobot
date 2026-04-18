@@ -34,3 +34,11 @@ test("settings dialog preserves the selected default model when dedupe would hid
 		/grouped\[provider\] = \[selectedDefaultModel, \.\.\.grouped\[provider\]\];/,
 	);
 });
+
+test("settings dialog only shows updates when the runtime supports them", () => {
+	assert.match(
+		source,
+		/const showUpdateTab = \$derived\(environment\.supportsAppUpdates\);/,
+	);
+	assert.doesNotMatch(source, /environment\.runtime === "tauri"/);
+});

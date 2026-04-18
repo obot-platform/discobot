@@ -68,6 +68,13 @@ test("app header delegates macOS spacer rendering to a dedicated component", () 
 	assert.doesNotMatch(source, /isMacFullscreen/);
 });
 
+test("app header uses native window control capability flags instead of shell-specific checks", () => {
+	const source = readAppHeaderSource();
+
+	assert.match(source, /environment\.supportsNativeWindowControls &&/);
+	assert.doesNotMatch(source, /environment\.runtime === "tauri"/);
+});
+
 test("app mac window spacer skips the spacer while native fullscreen is active", () => {
 	const source = readAppMacWindowSpacerSource();
 
@@ -81,7 +88,7 @@ test("app mac window spacer skips the spacer while native fullscreen is active",
 	assert.doesNotMatch(source, /@tauri-apps\/api\/window/);
 	assert.match(
 		source,
-		/environment\.runtime === "tauri" &&[\s\S]*environment\.windowControlsSide === "left" &&[\s\S]*!isMacFullscreen/,
+		/environment\.supportsNativeWindowControls &&[\s\S]*environment\.windowControlsSide === "left" &&[\s\S]*!isMacFullscreen/,
 	);
 	assert.ok(source.includes("<LeftWindowControls />"));
 });

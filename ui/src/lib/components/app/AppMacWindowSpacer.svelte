@@ -9,7 +9,7 @@
 
 	onMount(() => {
 		if (
-			environment.runtime !== "tauri" ||
+			!environment.supportsNativeWindowControls ||
 			environment.windowControlsSide !== "left"
 		) {
 			return;
@@ -34,7 +34,7 @@
 	});
 
 	const showMacSpacer = $derived(
-		environment.runtime === "tauri" &&
+		environment.supportsNativeWindowControls &&
 			environment.windowControlsSide === "left" &&
 			!isMacFullscreen,
 	);

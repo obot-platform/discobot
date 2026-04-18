@@ -114,7 +114,7 @@
 	const ui = app.ui;
 	const updates = app.updates;
 	const environment = app.environment;
-	const showUpdateTab = $derived(environment.runtime === "tauri");
+	const showUpdateTab = $derived(environment.supportsAppUpdates);
 	const themeModes: ThemeMode[] = ["light", "dark", "system"];
 
 	function formatBytes(bytes: number): string {

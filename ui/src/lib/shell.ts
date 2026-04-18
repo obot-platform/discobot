@@ -13,6 +13,8 @@ export {
 	pickDirectory,
 	readClipboardText,
 	relaunchApp,
+	supportsAppUpdates,
+	supportsNativeWindowControls,
 	type DesktopDownloadEvent,
 	type DesktopRuntimeKind,
 	type DesktopServerConfig,
