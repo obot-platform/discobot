@@ -54,6 +54,7 @@ import type {
 	WindowControlsSide,
 } from "$lib/shell-types";
 import type { ThemeMetadata, ThemeMode, ResolvedTheme } from "$lib/theme";
+import type { DesktopRuntimeKind } from "$lib/desktop/types";
 
 export type ChatWidthMode = "full" | "constrained";
 
@@ -138,7 +139,7 @@ export type AppPreferences = {
 
 export type AppEnvironment = {
 	apiBase: string;
-	isTauri: boolean;
+	runtime: DesktopRuntimeKind;
 	windowControlsSide: WindowControlsSide;
 	windowControls: string[];
 };

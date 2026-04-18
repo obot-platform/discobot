@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { withCurrentDesktopWindow } from "$lib/shell";
 	import { onMount } from "svelte";
 	import LeftWindowControls from "$lib/components/app/parts/LeftWindowControls.svelte";
 	import { useAppContext } from "$lib/context/app-context.svelte";
@@ -7,25 +8,25 @@
 	let isMacFullscreen = $state(false);
 
 	onMount(() => {
-		if (!environment.isTauri || environment.windowControlsSide !== "left") {
+		if (
+			environment.runtime !== "tauri" ||
+			environment.windowControlsSide !== "left"
+		) {
 			return;
 		}
 
 		let unlisten: (() => void) | undefined;
 
-		void (async () => {
-			const { getCurrentWindow } = await import("@tauri-apps/api/window");
-			const appWindow = getCurrentWindow();
-
+		void withCurrentDesktopWindow(async (window) => {
 			const syncFullscreen = async () => {
-				isMacFullscreen = await appWindow.isFullscreen();
+				isMacFullscreen = await window.isFullscreen();
 			};
 
 			await syncFullscreen();
-			unlisten = await appWindow.onResized(() => {
+			unlisten = await window.onResized(() => {
 				void syncFullscreen();
 			});
-		})();
+		});
 
 		return () => {
 			unlisten?.();
@@ -33,7 +34,7 @@
 	});
 
 	const showMacSpacer = $derived(
-		environment.isTauri &&
+		environment.runtime === "tauri" &&
 			environment.windowControlsSide === "left" &&
 			!isMacFullscreen,
 	);

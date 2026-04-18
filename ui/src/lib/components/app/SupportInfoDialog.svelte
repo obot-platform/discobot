@@ -7,7 +7,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { useAppContext } from "$lib/context/app-context.svelte";
-	import { downloadFile } from "$lib/tauri";
+	import { downloadFile } from "$lib/shell";
 
 	const app = useAppContext();
 	const supportInfo = app.supportInfo;

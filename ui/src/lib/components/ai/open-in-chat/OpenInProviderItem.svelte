@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { DropdownMenuItem } from "$lib/components/ui/dropdown-menu";
-	import { openUrl } from "$lib/tauri";
+	import { openUrl } from "$lib/shell";
 	import { useOpenInChatContext } from "./context";
 	import {
 		ExternalLinkIcon,

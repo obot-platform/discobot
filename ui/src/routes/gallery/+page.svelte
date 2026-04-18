@@ -25,7 +25,8 @@
 		TabsTrigger,
 	} from "$lib/components/ui/tabs";
 	import { Textarea } from "$lib/components/ui/textarea";
-	import { getApiBase, isTauriShell } from "$lib/environment";
+	import { getApiBase } from "$lib/api-config";
+	import { getDesktopRuntimeKind } from "$lib/shell";
 	import { getTheme, toggleTheme } from "$lib/theme";
 
 	let theme = getTheme();
@@ -36,6 +37,7 @@
 	let selectedComponentName = uiComponentCatalog[0]?.name ?? "button";
 	const formPreviewNotes = `Workspace goals:\n- mobile ready\n- shell first\n- preserve backend contracts`;
 
+	$: runtimeLabel = getDesktopRuntimeKind() === "tauri" ? "Tauri" : "Browser";
 	$: normalizedSearch = search.trim().toLowerCase();
 	$: filteredCatalog = uiComponentCatalog.filter((component) => {
 		const matchesCategory =
@@ -206,9 +208,7 @@
 									A starter playground built from the installed component set.
 								</CardDescription>
 							</div>
-							<Badge variant="outline"
-								>Current runtime: {isTauriShell() ? "Tauri" : "Browser"}</Badge
-							>
+							<Badge variant="outline">Current runtime: {runtimeLabel}</Badge>
 						</div>
 					</CardHeader>
 					<CardContent class={compactPreview ? "space-y-4" : "space-y-6"}>

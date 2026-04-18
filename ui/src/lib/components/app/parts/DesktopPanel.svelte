@@ -5,7 +5,7 @@
 	import { appendAuthToken, getApiRootBase } from "$lib/api-config";
 	import DockWindowChrome from "$lib/components/app/parts/DockWindowChrome.svelte";
 	import { Button } from "$lib/components/ui/button";
-	import { readClipboardText, writeClipboardText } from "$lib/tauri";
+	import { readClipboardText, writeClipboardText } from "$lib/shell";
 	import { cn } from "$lib/utils";
 
 	type Props = {

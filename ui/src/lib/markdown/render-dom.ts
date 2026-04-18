@@ -6,7 +6,7 @@ import type {
 	RootContent,
 	Text,
 } from "hast";
-import { downloadFile } from "$lib/tauri";
+import { downloadFile } from "$lib/shell";
 import { cn } from "$lib/utils";
 import type { HighlightResult, RenderMarkdownOptions } from "./types";
 

@@ -3,7 +3,7 @@
 	import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
 	import XIcon from "@lucide/svelte/icons/x";
 	import { Button } from "$lib/components/ui/button";
-	import { openUrl } from "$lib/tauri";
+	import { openUrl } from "$lib/shell";
 
 	type Props = {
 		url: string;

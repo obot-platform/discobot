@@ -27,7 +27,7 @@
 	} from "$lib/components/ui/toggle-group";
 	import type { ServiceItem } from "$lib/shell-types";
 	import type { ChatStreamManager } from "$lib/thread/chat-stream-manager";
-	import { openUrl } from "$lib/tauri";
+	import { openUrl } from "$lib/shell";
 	import { cn } from "$lib/utils";
 
 	type Props = {

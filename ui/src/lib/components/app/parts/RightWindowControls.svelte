@@ -1,31 +1,14 @@
 <script lang="ts">
-	import { isTauriShell } from "$lib/environment";
-
-	async function withCurrentWindow<T>(
-		callback: (
-			window: Awaited<
-				ReturnType<
-					(typeof import("@tauri-apps/api/window"))["getCurrentWindow"]
-				>
-			>,
-		) => Promise<T>,
-	) {
-		if (!isTauriShell()) {
-			return;
-		}
-
-		const { getCurrentWindow } = await import("@tauri-apps/api/window");
-		return callback(getCurrentWindow());
-	}
+	import { withCurrentDesktopWindow } from "$lib/shell";
 
 	function minimizeWindow() {
-		void withCurrentWindow(async (window) => {
+		void withCurrentDesktopWindow(async (window) => {
 			await window.minimize();
 		});
 	}
 
 	function toggleMaximizeWindow() {
-		void withCurrentWindow(async (window) => {
+		void withCurrentDesktopWindow(async (window) => {
 			const maximized = await window.isMaximized();
 			if (maximized) {
 				await window.unmaximize();
@@ -36,7 +19,7 @@
 	}
 
 	function closeWindow() {
-		void withCurrentWindow(async (window) => {
+		void withCurrentDesktopWindow(async (window) => {
 			await window.close();
 		});
 	}

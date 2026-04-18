@@ -3,7 +3,7 @@
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 	import { appendAuthToken, getSSHPort, getWsBase } from "$lib/api-config";
-	import { openUrl, writeClipboardText } from "$lib/tauri";
+	import { openUrl, writeClipboardText } from "$lib/shell";
 	import DockWindowChrome from "$lib/components/app/parts/DockWindowChrome.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import { Switch } from "$lib/components/ui/switch";

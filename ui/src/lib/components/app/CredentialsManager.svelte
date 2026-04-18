@@ -29,7 +29,7 @@
 	import { NativeSelect } from "$lib/components/ui/native-select";
 	import * as Tooltip from "$lib/components/ui/tooltip";
 	import { useAppContext } from "$lib/context/app-context.svelte";
-	import { openUrl, writeClipboardText } from "$lib/tauri";
+	import { openUrl, writeClipboardText } from "$lib/shell";
 
 	type EditorMode = "list" | "create" | "edit";
 	type EnvVarRow = {

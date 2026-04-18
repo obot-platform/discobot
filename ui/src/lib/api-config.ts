@@ -1,3 +1,9 @@
+import {
+	getDesktopAuthToken,
+	getDesktopServerConfig,
+	isDesktopShell,
+} from "$lib/shell";
+
 // Default project ID for anonymous user mode (matches Go backend)
 export const PROJECT_ID = "local";
 
@@ -12,12 +18,8 @@ declare global {
 const DEFAULT_SSH_PORT = 3333;
 const DEFAULT_HTTP_PORT = 3001;
 const API_READY_POLL_INTERVAL_MS = 1000;
-const tauriLocalhost = "localhost";
+const desktopLocalhost = "localhost";
 const sameOriginAPIPath = "/api";
-
-// Cached Tauri server config (populated on first use)
-let tauriServerConfig: { port: number; secret: string } | null = null;
-let tauriInitialized = false;
 
 // Server config (fetched from backend)
 let sshPort = DEFAULT_SSH_PORT;
@@ -26,25 +28,6 @@ let serverConfig: {
 	httpsPort: number | null;
 	httpsTLSMode: "ephemeral" | "static" | "acme" | null;
 } | null = null;
-
-/**
- * Initialize Tauri server config (port and secret).
- * Call this early in app startup when running in Tauri.
- */
-export async function initTauriConfig(): Promise<void> {
-	if (!isTauri()) {
-		tauriInitialized = true;
-		return;
-	}
-
-	const { invoke } = await import("@tauri-apps/api/core");
-	const [port, secret] = await Promise.all([
-		invoke<number>("get_server_port"),
-		invoke<string>("get_server_secret"),
-	]);
-	tauriInitialized = true;
-	tauriServerConfig = { port, secret };
-}
 
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -107,32 +90,11 @@ export async function waitForApiReady(options?: {
 }
 
 /**
- * Get cached Tauri server config. Returns null if not in Tauri or not initialized.
- */
-export function getTauriServerConfig() {
-	return tauriServerConfig;
-}
-
-export function isTauri() {
-	if (tauriServerConfig) {
-		return true;
-	}
-	return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-/**
- * Get the Tauri auth token if in Tauri mode, otherwise null.
- */
-export function getTauriToken(): string | null {
-	return tauriServerConfig?.secret ?? null;
-}
-
-/**
- * Append the Tauri auth token to a URL if in Tauri mode.
+ * Append the desktop auth token to a URL when a desktop runtime has provided one.
  * Used for WebSocket and SSE URLs that need authentication.
  */
 export function appendAuthToken(url: string): string {
-	const token = getTauriToken();
+	const token = getDesktopAuthToken();
 	if (!token) {
 		return url;
 	}
@@ -155,7 +117,7 @@ function getInjectedApiRootBase(): string | null {
  * Get the backend API root URL (without project path).
  *
  * - In standalone embedded mode: uses the Go server's injected runtime config
- * - In Tauri: connects directly to Go server on dynamic port
+ * - In a desktop shell with initialized config: connects directly to the bundled Go server
  * - In browser with *-svc-ui.* or *-svc-ui-svelte.* hostname: routes to corresponding *-svc-api.* host
  * - In Vite dev: calls the Go backend directly on port 3001
  * - Otherwise: uses the current origin's /api endpoint
@@ -190,9 +152,9 @@ export function getApiRootBase() {
 		return `${protocol}//${apiHost}/api`;
 	}
 
-	// Check if running in Tauri with initialized config
-	if (tauriServerConfig) {
-		return `http://${tauriLocalhost}:${tauriServerConfig.port}/api`;
+	const desktopServerConfig = getDesktopServerConfig();
+	if (desktopServerConfig) {
+		return `http://${desktopLocalhost}:${desktopServerConfig.port}/api`;
 	}
 
 	if (import.meta.env.DEV) {
@@ -215,9 +177,9 @@ export function getApiBase() {
 
 /**
  * Get the backend WebSocket base URL.
- * Includes auth token in Tauri mode.
+ * Includes the desktop auth token when available.
  *
- * - In Tauri: connects directly to Go server on dynamic port with token
+ * - In a desktop shell with initialized config: connects directly to the bundled Go server with token
  * - In browser with *-svc-ui.* or *-svc-ui-svelte.* hostname: routes to corresponding *-svc-api.* host
  * - In Vite dev: connects to the Go backend directly on port 3001
  * - Otherwise: connects to the current origin's /api endpoint
@@ -275,7 +237,11 @@ function getPreferredBrowserAPIOrigin(): {
 	protocol: "https:";
 	port: string;
 } | null {
-	if (typeof window === "undefined" || isTauri() || !serverConfig?.httpsPort) {
+	if (
+		typeof window === "undefined" ||
+		isDesktopShell() ||
+		!serverConfig?.httpsPort
+	) {
 		return null;
 	}
 	if (window.location.protocol === "https:") {

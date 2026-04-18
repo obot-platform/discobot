@@ -31,7 +31,7 @@
 	function showWindowsLinuxControls(): boolean {
 		return (
 			!isMobile.current &&
-			environment.isTauri &&
+			environment.runtime === "tauri" &&
 			environment.windowControlsSide === "right"
 		);
 	}

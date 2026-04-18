@@ -63,7 +63,7 @@
 		SessionFilesDomain,
 	} from "$lib/session/session-context.types";
 	import type { ResolvedTheme, ThemeColorScheme } from "$lib/theme";
-	import { downloadFile } from "$lib/tauri";
+	import { downloadFile } from "$lib/shell";
 	import { cn } from "$lib/utils";
 	import type * as Monaco from "monaco-editor";
 

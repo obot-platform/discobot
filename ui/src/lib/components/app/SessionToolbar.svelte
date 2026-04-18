@@ -27,7 +27,7 @@
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
 	import { IsMobile } from "$lib/hooks/is-mobile.svelte.js";
-	import { openUrl } from "$lib/tauri";
+	import { openUrl } from "$lib/shell";
 	import {
 		DESKTOP_SERVICE_ID,
 		type IdeOption,

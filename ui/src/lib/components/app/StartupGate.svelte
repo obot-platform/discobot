@@ -2,7 +2,8 @@
 	import { onMount } from "svelte";
 	import { fade } from "svelte/transition";
 	import { api } from "$lib/api-client";
-	import { initServerConfig, initTauriConfig } from "$lib/api-config";
+	import { initServerConfig } from "$lib/api-config";
+	import { initDesktopConfig } from "$lib/shell";
 	import type { AuthUser, StartupTask } from "$lib/api-types";
 	import DiscobotBrand from "$lib/components/app/parts/DiscobotBrand.svelte";
 	import Button from "$lib/components/ui/button/button.svelte";
@@ -353,7 +354,7 @@
 		void (async () => {
 			try {
 				startupPhase = "initializing";
-				await initTauriConfig();
+				await initDesktopConfig();
 				startupPhase = "waiting";
 
 				await waitForSuccessfulStartupRequest(

@@ -5,7 +5,7 @@
 	import ZoomInIcon from "@lucide/svelte/icons/zoom-in";
 	import ZoomOutIcon from "@lucide/svelte/icons/zoom-out";
 	import { Button } from "$lib/components/ui/button";
-	import { downloadFile } from "$lib/tauri";
+	import { downloadFile } from "$lib/shell";
 	import { cn } from "$lib/utils";
 
 	type Props = {
