@@ -7,6 +7,10 @@ const RIGHT_WINDOW_CONTROLS_COMPONENT = path.resolve(
 	import.meta.dirname,
 	"../app/parts/RightWindowControls.svelte",
 );
+const WORKSPACE_SELECTOR_COMPONENT = path.resolve(
+	import.meta.dirname,
+	"../app/ConversationWorkspaceSelector.svelte",
+);
 const APP_UPDATES_MODULE = path.resolve(
 	import.meta.dirname,
 	"../../app/domains/app-updates.svelte.ts",
@@ -48,12 +52,26 @@ test("right window controls use the shared desktop window bridge", () => {
 	assert.doesNotMatch(source, /@tauri-apps\/api\/window/);
 });
 
+test("workspace selector uses desktop shell capability for the local directory picker", () => {
+	const source = readSource(WORKSPACE_SELECTOR_COMPONENT);
+
+	assert.match(
+		source,
+		/import \{ isDesktopShell, pickDirectory \} from "\$lib\/shell";/,
+	);
+	assert.match(
+		source,
+		/const showLocalDirectoryPicker = \$derived\.by\([\s\S]*isDesktopShell\(\) && workspaceSourceType === "local"/,
+	);
+	assert.doesNotMatch(source, /getDesktopRuntimeKind\(\) === "tauri"/);
+});
+
 test("app updates use the shared desktop runtime helpers", () => {
 	const source = readSource(APP_UPDATES_MODULE);
 
 	assert.match(
 		source,
-		/import \{[\s\S]*checkForAppUpdate,[\s\S]*downloadAppUpdate,[\s\S]*installAppUpdate,[\s\S]*relaunchApp,[\s\S]*\} from "\$lib\/shell";/,
+		/import \{[\s\S]*checkForAppUpdate,[\s\S]*downloadAppUpdate,[\s\S]*supportsAppUpdates,[\s\S]*installAppUpdate,[\s\S]*relaunchApp,[\s\S]*\} from "\$lib\/shell";/,
 	);
 	assert.match(
 		source,
@@ -62,7 +80,11 @@ test("app updates use the shared desktop runtime helpers", () => {
 	assert.match(source, /await downloadAppUpdate\(/);
 	assert.match(source, /await installAppUpdate\(/);
 	assert.match(source, /await relaunchApp\(\)/);
+	assert.match(source, /if \(!supportsAppUpdates\(\)\) \{/);
+	assert.match(source, /latest-linux\.yml/);
+	assert.match(source, /latest-mac\.yml/);
 	assert.doesNotMatch(source, /@tauri-apps/);
+	assert.doesNotMatch(source, /getDesktopRuntimeKind\(\) !== "tauri"/);
 });
 
 test("api config reads desktop bootstrap state from the shared runtime", () => {
@@ -103,11 +125,24 @@ test("runtime supports Tauri, Electron, and browser detection", () => {
 	assert.match(source, /return "browser"/);
 });
 
+test("runtime keeps the download flow consistent across desktop shells", () => {
+	const source = readSource(
+		path.resolve(import.meta.dirname, "../../desktop/runtime.ts"),
+	);
+
+	assert.match(source, /await saveFileToDownloads\(filename, bytes\)/);
+	assert.match(source, /await downloadElectronFile\(filename, bytes\)/);
+	assert.match(source, /toast\.success\(`\$\{filename\} saved to Downloads`\)/);
+});
+
 test("tauri-specific imports are centralized in the tauri adapter", () => {
 	const source = readSource(TAURI_ADAPTER_MODULE);
 
 	assert.match(source, /get_desktop_server_port/);
 	assert.match(source, /get_desktop_server_secret/);
+	assert.match(source, /isTopLevelWindowContext/);
+	assert.match(source, /hasInjectedStandaloneConfig/);
+	assert.match(source, /!hasInjectedStandaloneConfig\(\)/);
 	assert.match(source, /@tauri-apps\/api\/core/);
 	assert.match(source, /@tauri-apps\/api\/window/);
 	assert.match(source, /@tauri-apps\/plugin-clipboard-manager/);
@@ -120,7 +155,10 @@ test("electron-specific bridge access is centralized in the electron adapter", (
 	const source = readSource(ELECTRON_ADAPTER_MODULE);
 
 	assert.match(source, /window\.__DISCOBOT_DESKTOP__/);
+	assert.match(source, /requireBridgeMethod/);
 	assert.match(source, /kind === "electron"/);
+	assert.match(source, /navigator\.userAgent/);
+	assert.match(source, /Electron\\\//);
 	assert.doesNotMatch(source, /@tauri-apps/);
 });
 

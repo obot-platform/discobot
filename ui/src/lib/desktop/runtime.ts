@@ -88,7 +88,7 @@ export function supportsNativeWindowControls(): boolean {
 }
 
 export function supportsAppUpdates(): boolean {
-	return getDesktopRuntimeKind() === "tauri";
+	return getDesktopRuntimeKind() !== "browser";
 }
 
 export async function initDesktopConfig(): Promise<void> {
@@ -133,9 +133,12 @@ export async function downloadFile({
 			toast.success(`${filename} saved to Downloads`);
 			return;
 		}
-		case "electron":
+		case "electron": {
+			const { toast } = await import("svelte-sonner");
 			await downloadElectronFile(filename, bytes);
+			toast.success(`${filename} saved to Downloads`);
 			return;
+		}
 		default:
 			await downloadBrowserFile(filename, bytes, mimeType);
 			return;

@@ -8,6 +8,16 @@ import type {
 
 let serverConfig: DesktopServerConfig | null = null;
 
+function requireBridgeMethod<T>(
+	method: T | undefined,
+	message: string,
+): NonNullable<T> {
+	if (!method) {
+		throw new Error(message);
+	}
+	return method as NonNullable<T>;
+}
+
 function getElectronBridge(): DesktopRendererBridge | null {
 	if (typeof window === "undefined") {
 		return null;
@@ -16,7 +26,12 @@ function getElectronBridge(): DesktopRendererBridge | null {
 }
 
 export function detectElectronRuntime(): boolean {
-	return getElectronBridge()?.kind === "electron";
+	if (getElectronBridge()?.kind === "electron") {
+		return true;
+	}
+	return (
+		typeof navigator !== "undefined" && /\bElectron\//.test(navigator.userAgent)
+	);
 }
 
 export async function initServerConfig(): Promise<void> {
@@ -34,12 +49,12 @@ export function getServerConfig(): DesktopServerConfig | null {
 export async function downloadFile(
 	filename: string,
 	bytes: Uint8Array,
-): Promise<void> {
+): Promise<string> {
 	const bridge = getElectronBridge();
 	if (!bridge?.downloadFile) {
 		throw new Error("Downloads are not available in this Electron build");
 	}
-	await bridge.downloadFile(filename, bytes);
+	return bridge.downloadFile(filename, bytes);
 }
 
 export async function readClipboardText(): Promise<string> {
@@ -80,10 +95,46 @@ export async function withCurrentWindow<T>(
 	callback: DesktopWindowCallback<T>,
 ): Promise<T> {
 	const bridge = getElectronBridge();
-	if (!bridge?.withCurrentWindow) {
+	if (!bridge) {
 		throw new Error("Window controls are not available in this Electron build");
 	}
-	return bridge.withCurrentWindow(callback);
+	return callback({
+		minimize: () =>
+			requireBridgeMethod(
+				bridge.windowMinimize,
+				"Window minimize is not available in this Electron build",
+			)(),
+		maximize: () =>
+			requireBridgeMethod(
+				bridge.windowMaximize,
+				"Window maximize is not available in this Electron build",
+			)(),
+		unmaximize: () =>
+			requireBridgeMethod(
+				bridge.windowUnmaximize,
+				"Window unmaximize is not available in this Electron build",
+			)(),
+		isMaximized: () =>
+			requireBridgeMethod(
+				bridge.windowIsMaximized,
+				"Window maximize state is not available in this Electron build",
+			)(),
+		close: () =>
+			requireBridgeMethod(
+				bridge.windowClose,
+				"Window close is not available in this Electron build",
+			)(),
+		isFullscreen: () =>
+			requireBridgeMethod(
+				bridge.windowIsFullscreen,
+				"Window fullscreen state is not available in this Electron build",
+			)(),
+		onResized: async (listener) =>
+			requireBridgeMethod(
+				bridge.onWindowResized,
+				"Window resize events are not available in this Electron build",
+			)(listener),
+	});
 }
 
 export async function checkForAppUpdate(

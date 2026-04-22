@@ -103,7 +103,7 @@ A native markdown engine (`ui/src/lib/markdown/`) preprocesses streaming content
 
 The desktop update settings live in the `AppUpdates` domain and bridge to Rust Tauri commands instead of relying on the JavaScript updater binding alone. That Rust layer keeps the stable channel on the bundled `latest.json` endpoint and can switch to a GitHub pre-release channel by resolving the newest non-draft pre-release release asset named `latest.json` before building the updater request.
 
-Desktop-only renderer capabilities now flow through `ui/src/lib/desktop/`, with `ui/src/lib/shell.ts` acting as the runtime-neutral public facade for feature code. This keeps application components off direct `@tauri-apps/*` imports while preserving a browser fallback path plus a Tauri adapter.
+Desktop-only renderer capabilities now flow through `ui/src/lib/desktop/`, with `ui/src/lib/shell.ts` acting as the runtime-neutral public facade for feature code. This keeps application components off direct `@tauri-apps/*` imports while preserving a browser fallback path plus dedicated Tauri and Electron adapters. The Electron shell now owns its own main-process bridge for window state persistence, tray behavior, sidecar boot, direct-to-Downloads file saves, and updater IPC, while the shared UI layer stays single-source.
 
 A current audit of the Tauri-specific desktop surface area, plus a dual-runtime Electron port plan, lives in `docs/ELECTRON_PORT_PLAN.md`.
 

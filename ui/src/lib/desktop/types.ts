@@ -54,12 +54,20 @@ export type DesktopUpdateMetadata = {
 export type DesktopRendererBridge = {
 	kind: "electron";
 	initServerConfig?: () => Promise<DesktopServerConfig | null>;
-	downloadFile?: (filename: string, bytes: Uint8Array) => Promise<void>;
+	downloadFile?: (filename: string, bytes: Uint8Array) => Promise<string>;
 	readClipboardText?: () => Promise<string>;
 	writeClipboardText?: (text: string) => Promise<void>;
 	openExternalUrl?: (url: string) => Promise<void>;
 	pickDirectory?: () => Promise<string | null>;
-	withCurrentWindow?: <T>(callback: DesktopWindowCallback<T>) => Promise<T>;
+	windowMinimize?: () => Promise<void>;
+	windowMaximize?: () => Promise<void>;
+	windowUnmaximize?: () => Promise<void>;
+	windowIsMaximized?: () => Promise<boolean>;
+	windowClose?: () => Promise<void>;
+	windowIsFullscreen?: () => Promise<boolean>;
+	onWindowResized?: (
+		listener: () => void,
+	) => (() => void) | Promise<() => void>;
 	checkForAppUpdate?: (
 		endpoint?: string | null,
 	) => Promise<DesktopUpdateMetadata | null>;

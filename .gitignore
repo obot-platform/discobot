@@ -15,6 +15,7 @@
 # production
 /build
 /dist
+/.electron-dist
 /ui/build
 /ui/.svelte-kit
 

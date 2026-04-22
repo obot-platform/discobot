@@ -3,6 +3,7 @@ import {
 	checkForAppUpdate,
 	closeAppUpdate,
 	downloadAppUpdate,
+	supportsAppUpdates,
 	installAppUpdate,
 	relaunchApp,
 	getDesktopRuntimeKind,
@@ -35,6 +36,20 @@ type GitHubRelease = {
 	tag_name: string;
 	assets: GitHubReleaseAsset[];
 };
+
+function prereleaseAssetNames(): string[] {
+	if (getDesktopRuntimeKind() !== "electron") {
+		return ["latest.json"];
+	}
+	const platform = navigator.platform.toLowerCase();
+	if (platform.includes("mac")) {
+		return ["latest-mac.yml", "latest.yml"];
+	}
+	if (platform.includes("win")) {
+		return ["latest.yml"];
+	}
+	return ["latest-linux.yml", "latest.yml"];
+}
 
 export function createAppUpdatesDomain(
 	args: CreateAppUpdatesDomainArgs,
@@ -119,20 +134,21 @@ export function createAppUpdatesDomain(
 			throw new Error("No GitHub pre-release is available.");
 		}
 
-		const latestJson = release.assets.find(
-			(asset) => asset.name === "latest.json",
+		const assetNames = prereleaseAssetNames();
+		const releaseAsset = release.assets.find((asset) =>
+			assetNames.includes(asset.name),
 		);
-		if (!latestJson) {
+		if (!releaseAsset) {
 			throw new Error(
-				`GitHub pre-release ${release.tag_name} does not include latest.json.`,
+				`GitHub pre-release ${release.tag_name} does not include ${assetNames.join(" or ")}.`,
 			);
 		}
 
-		return latestJson.browser_download_url;
+		return releaseAsset.browser_download_url;
 	}
 
 	$effect(() => {
-		if (getDesktopRuntimeKind() !== "tauri") {
+		if (!supportsAppUpdates()) {
 			return;
 		}
 
@@ -243,7 +259,7 @@ export function createAppUpdatesDomain(
 			return canTrackPrereleases && trackPrereleases;
 		},
 		check: async () => {
-			if (getDesktopRuntimeKind() !== "tauri") {
+			if (!supportsAppUpdates()) {
 				updateStatus = "error";
 				updateError = "App updates are only available in the desktop app.";
 				return;
@@ -253,7 +269,7 @@ export function createAppUpdatesDomain(
 		},
 		installAndRelaunch: async () => {
 			if (updateStatus !== "ready" || !pendingUpdate) return;
-			if (getDesktopRuntimeKind() !== "tauri") {
+			if (!supportsAppUpdates()) {
 				updateStatus = "error";
 				updateError = "App updates are only available in the desktop app.";
 				return;

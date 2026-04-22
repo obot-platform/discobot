@@ -2,7 +2,9 @@ packages:
   - ui
 
 onlyBuiltDependencies:
-  - '@sentry/cli'
-  - '@tailwindcss/oxide'
+  - "@sentry/cli"
+  - "@tailwindcss/oxide"
+  - electron
+  - electron-winstaller
   - esbuild
   - sharp

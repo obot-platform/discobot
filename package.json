@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -n backend,app -c cyan,yellow \"pnpm dev:backend\" \"pnpm dev:app\"",
+    "dev:electron": "concurrently -n backend,app -c cyan,yellow \"pnpm dev:backend\" \"pnpm dev:app:electron\"",
     "dev:backend": "concurrently -n ui,server,agent -c cyan,green,magenta \"pnpm dev:frontend\" \"pnpm dev:server\" \"pnpm dev:agent\"",
-    "dev:app": "pnpm build:server && tauri dev",
+    "dev:app": "pnpm dev:app:tauri",
+    "dev:app:tauri": "pnpm build:server && tauri dev",
+    "dev:app:electron": "node scripts/build-electron.mjs && cross-env NODE_OPTIONS=--import=tsx electron ./electron/main.ts",
     "dev:frontend": "pnpm ui:dev",
     "dev:server": "cd server && cross-env SUGGESTIONS_ENABLED=true go run github.com/air-verse/air@latest",
     "dev:authservice": "cd authservice && go run github.com/air-verse/air@latest",
@@ -24,6 +27,8 @@
     "build:frontend": "pnpm ui:build",
     "build:server": "node scripts/build-server.mjs",
     "build:app": "tauri build",
+    "build:app:electron": "pnpm build:frontend && pnpm build:server && node scripts/build-electron.mjs && electron-builder --dir",
+    "dist:app:electron": "pnpm build:frontend && pnpm build:server && node scripts/build-electron.mjs && electron-builder",
     "preview": "pnpm --dir ./ui preview",
     "test": "pnpm test:unit && pnpm test:integration",
     "test:unit": "concurrently \"pnpm test:server:unit\" \"pnpm test:proxy:unit\" \"pnpm test:agent-go:unit\" \"pnpm test:watcher\" \"pnpm test:ui\"",
@@ -59,8 +64,52 @@
     "@tauri-apps/cli": "^2.10.1",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.0.12",
+    "electron-updater": "^6.6.2",
+    "esbuild": "^0.25.11",
     "shellcheck": "^4.1.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "main": ".electron-dist/main.js",
+  "build": {
+    "appId": "com.obot.discobot",
+    "asar": true,
+    "files": [
+      ".electron-dist/**/*",
+      "server/static/ui/dist/**/*",
+      "src-tauri/icons/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "src-tauri/binaries",
+        "to": "binaries"
+      },
+      {
+        "from": "src-tauri/resources/vz",
+        "to": "vz",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "src-tauri/icons/icon.icns",
+      "target": [
+        "dir",
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "entitlements": "src-tauri/entitlements.plist",
+      "entitlementsInherit": "src-tauri/entitlements.plist"
+    },
+    "publish": [
+      {
+        "provider": "github"
+      }
+    ]
   }
 }

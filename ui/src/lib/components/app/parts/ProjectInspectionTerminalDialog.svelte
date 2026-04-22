@@ -10,7 +10,7 @@
 	import { appendAuthToken, getWsBase } from "$lib/api-config";
 	import * as Dialog from "$lib/components/ui/dialog";
 	import { Button } from "$lib/components/ui/button";
-	import { openUrl } from "$lib/tauri";
+	import { openUrl } from "$lib/shell";
 
 	type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 

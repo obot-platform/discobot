@@ -11,7 +11,7 @@
 	import type { WorkspaceSelectionResult } from "$lib/components/app/conversation-composer.types";
 	import { useAppContext } from "$lib/context/app-context.svelte";
 	import { useSessionContext } from "$lib/context/session-context.svelte";
-	import { getDesktopRuntimeKind, pickDirectory } from "$lib/shell";
+	import { isDesktopShell, pickDirectory } from "$lib/shell";
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -94,8 +94,7 @@
 		() => sessionView.pendingWorkspaceValidation?.suggestions ?? [],
 	);
 	const showLocalDirectoryPicker = $derived.by(
-		() =>
-			getDesktopRuntimeKind() === "tauri" && workspaceSourceType === "local",
+		() => isDesktopShell() && workspaceSourceType === "local",
 	);
 
 	function shortenHomePath(path: string): string {

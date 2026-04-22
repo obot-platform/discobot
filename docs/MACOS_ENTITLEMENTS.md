@@ -2,6 +2,8 @@
 
 This document explains how code signing and entitlements work for Discobot on macOS.
 
+The current release workflow still packages the Tauri app, but the repository now also has a local Electron packaging path. That Electron path reuses the same `src-tauri/entitlements.plist` file for the wrapper app while the broader CI/notarization work is still pending.
+
 ## Overview
 
 Discobot requires special entitlements on macOS because:

@@ -8,11 +8,39 @@ import type {
 
 let serverConfig: DesktopServerConfig | null = null;
 
+function isTopLevelWindowContext(): boolean {
+	if (typeof window === "undefined") {
+		return false;
+	}
+	try {
+		return window.self === window.top;
+	} catch {
+		return false;
+	}
+}
+
+function hasInjectedStandaloneConfig(): boolean {
+	const runtimeWindow = window as Window & {
+		__DISCOBOT_CONFIG__?: {
+			apiRoot?: string;
+		};
+	};
+	return (
+		typeof window !== "undefined" &&
+		Boolean(runtimeWindow.__DISCOBOT_CONFIG__?.apiRoot)
+	);
+}
+
 export function detectTauriRuntime(): boolean {
 	if (serverConfig) {
 		return true;
 	}
-	return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+	return (
+		typeof window !== "undefined" &&
+		"__TAURI_INTERNALS__" in window &&
+		isTopLevelWindowContext() &&
+		!hasInjectedStandaloneConfig()
+	);
 }
 
 export async function initServerConfig(): Promise<void> {

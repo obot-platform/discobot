@@ -34,16 +34,14 @@ test("app header keeps window controls in a dedicated rightmost grid column on d
 
 	assert.match(source, /grid-cols-\[auto_minmax\(0,1fr\)_auto_auto\]/);
 	assert.match(source, /grid-cols-\[auto_minmax\(0,1fr\)_auto\]/);
+	assert.match(source, /class=\{`tauri-drag-region relative grid h-10/);
 	assert.match(
 		source,
-		/class=\{`tauri-drag-region relative \$\{isMobile\.current \? "" : "z-\[60\]"\} grid h-10/,
-	);
-	assert.match(
-		source,
-		/\{#if !isMobile\.current\}[\s\S]*class="relative z-20 flex h-full min-w-0 items-stretch justify-self-end pr-0"[\s\S]*<RightWindowControls \/>[\s\S]*\{\/if\}/,
+		/\{#if !isMobile\.current\}[\s\S]*class="tauri-no-drag relative z-20 flex h-full min-w-0 items-stretch justify-self-end pr-0"[\s\S]*<RightWindowControls \/>[\s\S]*\{\/if\}/,
 	);
 	assert.ok(source.includes("<SessionToolbarStack />"));
 	assert.ok(source.includes('{isMobile.current ? "New" : "New Session"}'));
+	assert.doesNotMatch(source, /class="absolute inset-0 pointer-events-auto"/);
 });
 
 test("app header shows the mobile Sessions toggle to the right of the logo", () => {
@@ -73,6 +71,15 @@ test("app header uses native window control capability flags instead of shell-sp
 
 	assert.match(source, /environment\.supportsNativeWindowControls &&/);
 	assert.doesNotMatch(source, /environment\.runtime === "tauri"/);
+});
+
+test("app header keeps the settings button outside the drag region", () => {
+	const source = readAppHeaderSource();
+
+	assert.match(
+		source,
+		/onclick=\{\(\) => ui\.openSettings\(\)\}[\s\S]*class="tauri-no-drag relative"/,
+	);
 });
 
 test("app mac window spacer skips the spacer while native fullscreen is active", () => {
