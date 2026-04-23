@@ -320,6 +320,13 @@ jobs:
               env_file.write(f"CSC_LINK={cert_path}\n")
           PY
 
+      - name: Set Electron package version
+        shell: bash
+        env:
+          DISCOBOT_VERSION: ${{ steps.version.outputs.full }}
+        run: |
+          node -e 'const fs=require("fs"); const packagePath="package.json"; const packageJson=JSON.parse(fs.readFileSync(packagePath,"utf8")); packageJson.version=process.env.DISCOBOT_VERSION; fs.writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);'
+
       - name: Build and publish Electron app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -336,6 +343,4 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: >-
-          pnpm dist:app:electron -- --publish always --arm64
-          -c.extraMetadata.version=${{ steps.version.outputs.full }}
+        run: pnpm dist:app:electron -- --publish always --arm64
