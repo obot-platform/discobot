@@ -109,15 +109,16 @@ test("electron tray scaffolding keeps close-to-tray behavior in one module", () 
 	const source = readSource(ELECTRON_TRAY_MODULE);
 
 	assert.match(source, /new Tray/);
-	assert.match(
-		source,
-		/process\.platform === "darwin" \? "tray-icon@2x\.png" : "tray-icon\.png"/,
-	);
+	assert.match(source, /"tray-icon\.png"/);
+	assert.match(source, /icon\.resize\(\{ width: 18, height: 18 \}\)/);
+	assert.match(source, /resized\.setTemplateImage\(true\)/);
 	assert.match(source, /icon\.resize\(\{ width: 22, height: 22 \}\)/);
 	assert.match(source, /Show/);
 	assert.match(source, /Quit/);
 	assert.match(source, /hideMainWindow/);
 	assert.match(source, /showMainWindow/);
+	assert.match(source, /app\.dock\.show\(\)/);
+	assert.match(source, /app\.dock\.hide\(\)/);
 });
 
 test("electron updater wiring keeps update IPC in the main process", () => {

@@ -89,7 +89,7 @@
         "to": "binaries"
       },
       {
-        "from": "src-tauri/resources/vz",
+        "from": "src-tauri/resources",
         "to": "vz",
         "filter": [
           "**/*"

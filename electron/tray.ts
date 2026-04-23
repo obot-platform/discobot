@@ -6,12 +6,17 @@ function trayIconPath(): string {
     app.getAppPath(),
     "src-tauri",
     "icons",
-    process.platform === "darwin" ? "tray-icon@2x.png" : "tray-icon.png",
+    "tray-icon.png",
   );
 }
 
 function trayIcon(): Electron.NativeImage {
   const icon = nativeImage.createFromPath(trayIconPath());
+  if (process.platform === "darwin") {
+    const resized = icon.resize({ width: 18, height: 18 });
+    resized.setTemplateImage(true);
+    return resized;
+  }
   if (process.platform === "linux") {
     return icon.resize({ width: 22, height: 22 });
   }
@@ -22,6 +27,9 @@ function trayIcon(): Electron.NativeImage {
 }
 
 export function showMainWindow(window: BrowserWindow): void {
+  if (process.platform === "darwin") {
+    app.dock.show();
+  }
   window.show();
   if (window.isMinimized()) {
     window.restore();
@@ -31,6 +39,9 @@ export function showMainWindow(window: BrowserWindow): void {
 
 export function hideMainWindow(window: BrowserWindow): void {
   window.hide();
+  if (process.platform === "darwin") {
+    app.dock.hide();
+  }
 }
 
 export function setupTray(window: BrowserWindow): Tray {

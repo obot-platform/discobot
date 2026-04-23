@@ -109,7 +109,9 @@ function resolveBundledVZEnv(): Record<string, string> {
 
   const candidates = [
     path.join(process.resourcesPath, "vz"),
+    path.join(app.getAppPath(), "src-tauri", "resources"),
     path.join(app.getAppPath(), "src-tauri", "resources", "vz"),
+    path.join(process.cwd(), "src-tauri", "resources"),
     path.join(process.cwd(), "src-tauri", "resources", "vz"),
   ];
 

@@ -18,7 +18,7 @@ import {
   stopBundledServer,
   type DesktopServerState,
 } from "./server";
-import { hideMainWindow, setupTray } from "./tray";
+import { hideMainWindow, setupTray, showMainWindow } from "./tray";
 import { configureUpdater, registerUpdaterHandlers } from "./updater";
 import {
   applyWindowState,
@@ -29,6 +29,7 @@ import {
 
 let mainWindow: BrowserWindow | null = null;
 let serverState: DesktopServerState | null = null;
+let mainTray: Electron.Tray | null = null;
 let trayInitialized = false;
 
 function uiBuildDir(): string {
@@ -275,7 +276,7 @@ async function bootstrap(): Promise<void> {
   registerDesktopHandlers();
   mainWindow = await createMainWindow();
   if (!trayInitialized) {
-    setupTray(mainWindow);
+    mainTray = setupTray(mainWindow);
     trayInitialized = true;
   }
 
@@ -283,18 +284,21 @@ async function bootstrap(): Promise<void> {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = await createMainWindow();
       if (!trayInitialized) {
-        setupTray(mainWindow);
+        mainTray = setupTray(mainWindow);
         trayInitialized = true;
       }
       return;
     }
-    mainWindow?.show();
+    if (mainWindow) {
+      showMainWindow(mainWindow);
+    }
   });
 }
 
 app.on("second-instance", () => {
-  mainWindow?.show();
-  mainWindow?.focus();
+  if (mainWindow) {
+    showMainWindow(mainWindow);
+  }
 });
 
 const singleInstance = app.requestSingleInstanceLock();
@@ -306,6 +310,8 @@ if (!singleInstance) {
 
 app.on("before-quit", () => {
   app.isQuitting = true;
+  mainTray?.destroy();
+  mainTray = null;
   if (serverState) {
     stopBundledServer(serverState);
   }
