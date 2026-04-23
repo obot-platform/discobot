@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      electron-updater:
+        specifier: ^6.6.2
+        version: 6.8.3
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2.10.1
@@ -23,9 +27,6 @@ importers:
       electron-builder:
         specifier: ^26.0.12
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
-      electron-updater:
-        specifier: ^6.6.2
-        version: 6.8.3
       esbuild:
         specifier: ^0.25.11
         version: 0.25.12

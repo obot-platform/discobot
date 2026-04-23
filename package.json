@@ -60,13 +60,15 @@
     "tauri": "tauri",
     "refresh-models": "./scripts/refresh-models-data.sh"
   },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^41.2.1",
     "electron-builder": "^26.0.12",
-    "electron-updater": "^6.6.2",
     "esbuild": "^0.25.11",
     "shellcheck": "^4.1.0",
     "tsx": "^4.21.0",
