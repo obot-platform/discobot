@@ -200,9 +200,7 @@ export function getDesktopServerConfig(
 }
 
 export function getElectronRendererURL(): string {
-  return app.isPackaged
-    ? "app://discobot/index.html"
-    : `${getDevRendererOrigin()}/`;
+  return app.isPackaged ? "app://discobot/" : `${getDevRendererOrigin()}/`;
 }
 
 export function getElectronRendererOrigin(): string {

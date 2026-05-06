@@ -411,7 +411,7 @@ jobs:
         run: |
           node -e 'const fs=require("fs"); const packagePath="package.json"; const packageJson=JSON.parse(fs.readFileSync(packagePath,"utf8")); packageJson.version=process.env.DISCOBOT_VERSION; fs.writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);'
 
-      - name: Build and publish Electron app
+      - name: Build Electron app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCOBOT_VERSION: ${{ steps.version.outputs.full }}
@@ -427,4 +427,27 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm dist:app:electron -- --publish always --arm64
+        run: pnpm dist:app:electron --publish never --arm64
+
+      - name: Upload Electron release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          artifacts=(
+            dist/*-arm64.dmg
+            dist/*-arm64.dmg.blockmap
+            dist/*-arm64.zip
+            dist/*-arm64.zip.blockmap
+            dist/latest-mac.yml
+          )
+
+          if [ "${#artifacts[@]}" -ne 5 ]; then
+            echo "Expected 5 Electron release assets, found ${#artifacts[@]}:" >&2
+            printf '  %s\n' "${artifacts[@]}" >&2
+            find dist -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+
+          gh release upload "${GITHUB_REF_NAME}" "${artifacts[@]}" --clobber
