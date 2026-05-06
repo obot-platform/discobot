@@ -109,6 +109,7 @@ RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
     fi \
     && apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     curl \
     dbus \
     docker-buildx \
@@ -458,6 +459,7 @@ RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
     docker.io \
     iptables \
     # Minimal essential tools
+    ca-certificates \
     curl \
     socat \
     # e2fsprogs for mkfs.ext4 to format data disk
