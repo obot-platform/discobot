@@ -287,8 +287,9 @@ jobs:
           echo "Full version: $TAG"
           echo "Short SHA: $SHORT_SHA"
           echo "Sentry release: discobot@${TAG}+${SHORT_SHA}"
-          # Strip alpha/beta/rc text for Tauri (Windows installer compatibility)
-          TAURI_VERSION=$(echo "$TAG" | sed -E 's/(alpha|beta|rc)//g')
+          # Convert prerelease identifiers to numeric-only form for Tauri MSI
+          # compatibility. For example: alpha12 -> 12, test3 -> 3.
+          TAURI_VERSION=$(echo "$TAG" | sed -E 's/-[^0-9]*([0-9]+)$/-\1/')
           echo "tauri=$TAURI_VERSION" >> "$GITHUB_OUTPUT"
           echo "Tauri version: $TAURI_VERSION"
 
