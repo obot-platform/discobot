@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG UBUNTU_MIRROR=http://mirrors.edge.kernel.org/ubuntu
+ARG UBUNTU_MIRROR=
+ARG UBUNTU_PORTS_MIRROR=
 
 # Stage 0: Download shared Go module dependencies for root-module binaries
 FROM golang:1.26 AS root-go-deps
@@ -77,6 +78,7 @@ RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
 FROM ubuntu:24.04 AS runtime-base
 
 ARG UBUNTU_MIRROR
+ARG UBUNTU_PORTS_MIRROR
 
 # Label for image identification and cleanup
 LABEL io.discobot.sandbox-image=true
@@ -95,11 +97,17 @@ ENV container=docker
 # docker-buildx is needed for multi-arch builds and advanced build features
 # docker-compose-v2 provides the Docker Compose v2 CLI plugin
 # iptables and iproute2 are needed by dockerd and runtime diagnostics for network management
-RUN sed -i \
-    -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
-    -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
-    -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_MIRROR}|g" \
-    /etc/apt/sources.list.d/ubuntu.sources \
+RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
+        sed -i \
+            -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
+            -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi \
+    && if [ -n "${UBUNTU_PORTS_MIRROR}" ]; then \
+        sed -i \
+            -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_PORTS_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi \
     && apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -432,6 +440,7 @@ RUN ln -s /opt/discobot/bin/discobot-agent-api /opt/discobot/bin/disco \
 FROM ubuntu:24.04 AS vz-rootfs-builder
 
 ARG UBUNTU_MIRROR
+ARG UBUNTU_PORTS_MIRROR
 
 # Docker image to preload into the VM at build time (pulled via crane as OCI tarball)
 # Defaults to the main tag of the discobot runtime image
@@ -442,11 +451,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install kernel, systemd, Docker, and minimal tools
 # Use a specific stable kernel version with virtio drivers built-in
-RUN sed -i \
-    -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
-    -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
-    -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_MIRROR}|g" \
-    /etc/apt/sources.list.d/ubuntu.sources \
+RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
+        sed -i \
+            -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
+            -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi \
+    && if [ -n "${UBUNTU_PORTS_MIRROR}" ]; then \
+        sed -i \
+            -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_PORTS_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi \
     && apt-get update && apt-get install -y --no-install-recommends \
     # Kernel with virtio support built-in (no modules needed)
     # Using specific version to avoid metapackage dependency issues
@@ -556,14 +571,21 @@ RUN mkdir -p /.data /.workspace /workspace /Users \
 FROM ubuntu:24.04 AS vz-image-builder
 
 ARG UBUNTU_MIRROR
+ARG UBUNTU_PORTS_MIRROR
 
 # Install tools for image creation and kernel extraction
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-    && sed -i \
-    -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
-    -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
-    -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_MIRROR}|g" \
-    /etc/apt/sources.list.d/ubuntu.sources \
+    && if [ -n "${UBUNTU_MIRROR}" ]; then \
+        sed -i \
+            -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
+            -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi \
+    && if [ -n "${UBUNTU_PORTS_MIRROR}" ]; then \
+        sed -i \
+            -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_PORTS_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi \
     && apt-get update && apt-get install -y --no-install-recommends \
     squashfs-tools \
     zstd \
