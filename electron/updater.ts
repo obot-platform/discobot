@@ -48,20 +48,31 @@ function sendDownloadEvent(
   event.sender.send(senderEventName(rid), payload);
 }
 
-function resolveFeedUrl(endpoint?: string | null): string | null {
+function resolveFeed(endpoint?: string | null): {
+  url: string;
+  channel: string;
+} | null {
   if (!endpoint) {
     return null;
   }
   try {
     const url = new URL(endpoint);
-    const pathname = url.pathname;
-    if (!pathname.endsWith(".yml")) {
+    const filename = url.pathname.split("/").pop();
+    if (!filename?.endsWith(".yml")) {
       return null;
     }
-    return endpoint.slice(
-      0,
-      endpoint.length - pathname.split("/").pop()!.length,
-    );
+
+    let channel = filename.slice(0, -".yml".length);
+    if (channel.endsWith("-mac")) {
+      channel = channel.slice(0, -"-mac".length);
+    } else if (channel.endsWith("-linux")) {
+      channel = channel.slice(0, -"-linux".length);
+    }
+
+    return {
+      url: endpoint.slice(0, endpoint.length - filename.length),
+      channel,
+    };
   } catch {
     return null;
   }
@@ -84,12 +95,12 @@ export function registerUpdaterHandlers(): void {
         return null;
       }
 
-      const feedUrl = resolveFeedUrl(endpoint);
-      if (feedUrl) {
+      const feed = resolveFeed(endpoint);
+      if (feed) {
         autoUpdater.setFeedURL({
           provider: "generic",
-          url: feedUrl,
-          channel: "latest",
+          url: feed.url,
+          channel: feed.channel,
         });
       }
 
