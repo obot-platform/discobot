@@ -365,6 +365,10 @@ jobs:
               dist/*-x64.exe
               dist/*-x64.exe.blockmap
               dist/*-x64.zip
+              dist/latest.yml
+              dist/latest-x64.yml
+            metadata_copies: |
+              dist/latest.yml dist/latest-x64.yml
           - name: Windows arm64
             runner: windows-11-arm
             target: aarch64-pc-windows-msvc
@@ -376,6 +380,9 @@ jobs:
               dist/*-arm64.exe
               dist/*-arm64.exe.blockmap
               dist/*-arm64.zip
+              dist/latest-arm64.yml
+            metadata_copies: |
+              dist/latest.yml dist/latest-arm64.yml
           - name: Linux amd64
             runner: depot-ubuntu-24.04
             target: x86_64-unknown-linux-gnu
@@ -385,6 +392,10 @@ jobs:
               dist/*-x86_64.AppImage
               dist/*-amd64.deb
               dist/*-x64.tar.gz
+              dist/latest-linux.yml
+              dist/latest-x64-linux.yml
+            metadata_copies: |
+              dist/latest-linux.yml dist/latest-x64-linux.yml
           - name: Linux arm64
             runner: depot-ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
@@ -394,6 +405,9 @@ jobs:
               dist/*-arm64.AppImage
               dist/*-arm64.deb
               dist/*-arm64.tar.gz
+              dist/latest-arm64-linux.yml
+            metadata_copies: |
+              dist/latest-linux.yml dist/latest-arm64-linux.yml
 
     runs-on: ${{ matrix.runner }}
     name: release-electron (${{ matrix.name }})
@@ -512,9 +526,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_ASSET_GLOBS: ${{ matrix.asset_globs }}
+          ELECTRON_METADATA_COPIES: ${{ matrix.metadata_copies }}
         shell: bash
         run: |
           shopt -s nullglob
+          while read -r source target; do
+            [ -n "${source}" ] || continue
+            if [ ! -f "${source}" ]; then
+              echo "Missing Electron updater metadata: ${source}" >&2
+              find dist -maxdepth 1 -type f -print >&2
+              exit 1
+            fi
+            cp "${source}" "${target}"
+          done <<< "${ELECTRON_METADATA_COPIES}"
+
           artifacts=()
           while IFS= read -r pattern; do
             [ -n "${pattern}" ] || continue
