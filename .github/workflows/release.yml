@@ -386,8 +386,8 @@ jobs:
             electron_arch: x64
             asset_globs: |
               dist/*-x86_64.AppImage
-              dist/*-x86_64.deb
-              dist/*-x86_64.tar.gz
+              dist/*-amd64.deb
+              dist/*-x64.tar.gz
           - name: Linux arm64
             runner: depot-ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
