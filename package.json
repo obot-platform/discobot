@@ -145,6 +145,7 @@
     "linux": {
       "category": "Development",
       "icon": "src-tauri/icons/icon.png",
+      "maintainer": "Obot Platform <support@obot.ai>",
       "target": [
         "AppImage",
         "deb",
