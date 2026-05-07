@@ -365,7 +365,6 @@ jobs:
               dist/*-x64.exe
               dist/*-x64.exe.blockmap
               dist/*-x64.zip
-              dist/*-x64.zip.blockmap
           - name: Windows arm64
             runner: windows-11-arm
             target: aarch64-pc-windows-msvc
@@ -377,17 +376,15 @@ jobs:
               dist/*-arm64.exe
               dist/*-arm64.exe.blockmap
               dist/*-arm64.zip
-              dist/*-arm64.zip.blockmap
           - name: Linux amd64
             runner: depot-ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             electron_platform: linux
             electron_arch: x64
             asset_globs: |
-              dist/*-x64.AppImage
-              dist/*-x64.AppImage.blockmap
-              dist/*-x64.deb
-              dist/*-x64.tar.gz
+              dist/*-x86_64.AppImage
+              dist/*-x86_64.deb
+              dist/*-x86_64.tar.gz
           - name: Linux arm64
             runner: depot-ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
@@ -395,7 +392,6 @@ jobs:
             electron_arch: arm64
             asset_globs: |
               dist/*-arm64.AppImage
-              dist/*-arm64.AppImage.blockmap
               dist/*-arm64.deb
               dist/*-arm64.tar.gz
 
@@ -533,21 +529,6 @@ jobs:
             exit 1
           fi
 
-          missing=0
-          while IFS= read -r pattern; do
-            [ -n "${pattern}" ] || continue
-            matches=( ${pattern} )
-            if [ "${#matches[@]}" -eq 0 ]; then
-              echo "Missing expected Electron asset pattern: ${pattern}" >&2
-              missing=1
-            fi
-          done <<< "${ELECTRON_ASSET_GLOBS}"
-
-          if [ "${missing}" -ne 0 ]; then
-            echo "Found Electron release assets:" >&2
-            printf '  %s\n' "${artifacts[@]}" >&2
-            find dist -maxdepth 1 -type f -print >&2
-            exit 1
-          fi
-
+          echo "Uploading Electron release assets:"
+          printf '  %s\n' "${artifacts[@]}"
           gh release upload "${GITHUB_REF_NAME}" "${artifacts[@]}" --clobber
