@@ -396,9 +396,6 @@ jobs:
               dist/*-amd64.deb
               dist/*-x64.tar.gz
               dist/latest-linux.yml
-              dist/latest-x64-linux.yml
-            metadata_copies: |
-              dist/latest-linux.yml dist/latest-x64-linux.yml
           - name: Linux arm64
             runner: depot-ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
@@ -408,9 +405,7 @@ jobs:
               dist/*-arm64.AppImage
               dist/*-arm64.deb
               dist/*-arm64.tar.gz
-              dist/latest-arm64-linux.yml
-            metadata_copies: |
-              dist/latest-linux.yml dist/latest-arm64-linux.yml
+              dist/latest-linux-arm64.yml
 
     runs-on: ${{ matrix.runner }}
     name: release-electron (${{ matrix.name }})

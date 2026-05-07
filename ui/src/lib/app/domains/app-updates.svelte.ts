@@ -60,8 +60,8 @@ function prereleaseAssetNames(): string[] {
 			: ["latest-x64.yml", "latest.yml"];
 	}
 	return isArm
-		? ["latest-arm64-linux.yml", "latest-linux.yml", "latest.yml"]
-		: ["latest-x64-linux.yml", "latest-linux.yml", "latest.yml"];
+		? ["latest-linux-arm64.yml", "latest-linux.yml", "latest.yml"]
+		: ["latest-linux.yml", "latest.yml"];
 }
 
 export function createAppUpdatesDomain(

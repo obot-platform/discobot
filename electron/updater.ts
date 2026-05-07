@@ -65,8 +65,8 @@ function resolveFeed(endpoint?: string | null): {
     let channel = filename.slice(0, -".yml".length);
     if (channel.endsWith("-mac")) {
       channel = channel.slice(0, -"-mac".length);
-    } else if (channel.endsWith("-linux")) {
-      channel = channel.slice(0, -"-linux".length);
+    } else if (channel === "latest-linux" || channel === "latest-linux-arm64") {
+      channel = "latest";
     }
 
     return {
