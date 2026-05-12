@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG UBUNTU_MIRROR=
-ARG UBUNTU_PORTS_MIRROR=
+ARG UBUNTU_MIRROR=http://mirrors.edge.kernel.org/ubuntu
+ARG UBUNTU_PORTS_MIRROR=http://ports.ubuntu.com/ubuntu-ports
 
 # Stage 0: Download shared Go module dependencies for root-module binaries
 FROM golang:1.26 AS root-go-deps
