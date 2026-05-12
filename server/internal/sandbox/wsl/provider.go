@@ -350,61 +350,61 @@ func (p *Provider) Image() string {
 func (p *Provider) Create(ctx context.Context, state []byte, sessionID string, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
 	runtimeInfo, err := p.ensureRuntimeInfo(ctx, progressReporter{})
 	if err != nil {
-		return nil, err
+		return nil, state, err
 	}
 
 	opts, err = p.translateCreateOptions(opts)
 	if err != nil {
-		return nil, err
+		return nil, state, err
 	}
 
 	dockerProvider, err := p.requireDockerProvider(ctx, runtimeInfo)
 	if err != nil {
-		return nil, err
+		return nil, state, err
 	}
-	return dockerProvider.Create(ctx, sessionID, opts)
+	return dockerProvider.Create(ctx, state, sessionID, opts)
 }
 
 // Start starts a sandbox through the inner Docker provider.
 func (p *Provider) Start(ctx context.Context, state []byte, sessionID string) ([]byte, error) {
 	runtimeInfo, err := p.ensureRuntimeInfo(ctx, progressReporter{})
 	if err != nil {
-		return err
+		return state, err
 	}
 
 	dockerProvider, err := p.requireDockerProvider(ctx, runtimeInfo)
 	if err != nil {
-		return err
+		return state, err
 	}
-	return dockerProvider.Start(ctx, sessionID)
+	return dockerProvider.Start(ctx, state, sessionID)
 }
 
 // Stop stops a sandbox through the inner Docker provider.
 func (p *Provider) Stop(ctx context.Context, state []byte, sessionID string, timeout time.Duration) ([]byte, error) {
 	runtimeInfo, err := p.ensureRuntimeInfo(ctx, progressReporter{})
 	if err != nil {
-		return err
+		return state, err
 	}
 
 	dockerProvider, err := p.requireDockerProvider(ctx, runtimeInfo)
 	if err != nil {
-		return err
+		return state, err
 	}
-	return dockerProvider.Stop(ctx, sessionID, timeout)
+	return dockerProvider.Stop(ctx, state, sessionID, timeout)
 }
 
 // Remove removes a sandbox through the inner Docker provider.
 func (p *Provider) Remove(ctx context.Context, state []byte, sessionID string, opts ...sandbox.RemoveOption) ([]byte, error) {
 	runtimeInfo, err := p.ensureRuntimeInfo(ctx, progressReporter{})
 	if err != nil {
-		return err
+		return state, err
 	}
 
 	dockerProvider, err := p.requireDockerProvider(ctx, runtimeInfo)
 	if err != nil {
-		return err
+		return state, err
 	}
-	return dockerProvider.Remove(ctx, sessionID, opts...)
+	return dockerProvider.Remove(ctx, state, sessionID, opts...)
 }
 
 // Get returns sandbox state through the inner Docker provider.
@@ -418,7 +418,7 @@ func (p *Provider) Get(ctx context.Context, state []byte, sessionID string) (*sa
 	if err != nil {
 		return nil, err
 	}
-	return dockerProvider.Get(ctx, sessionID)
+	return dockerProvider.Get(ctx, state, sessionID)
 }
 
 // GetSecret returns sandbox secrets through the inner Docker provider.
@@ -432,7 +432,7 @@ func (p *Provider) GetSecret(ctx context.Context, state []byte, sessionID string
 	if err != nil {
 		return "", err
 	}
-	return dockerProvider.GetSecret(ctx, sessionID)
+	return dockerProvider.GetSecret(ctx, state, sessionID)
 }
 
 // List lists sandboxes through the inner Docker provider.
@@ -460,7 +460,7 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, state []byte, sessionI
 	if err != nil {
 		return nil, err
 	}
-	return dockerProvider.AcquireHTTPClient(ctx, sessionID)
+	return dockerProvider.AcquireHTTPClient(ctx, state, sessionID)
 }
 
 // Watch streams Docker sandbox events and recreates the inner subscription if

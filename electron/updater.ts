@@ -13,6 +13,18 @@ type PendingUpdate = {
   info: UpdateInfo;
 };
 
+type GitHubReleaseAsset = {
+  name: string;
+  browser_download_url: string;
+};
+
+type GitHubRelease = {
+  prerelease: boolean;
+  draft: boolean;
+  tag_name: string;
+  assets: GitHubReleaseAsset[];
+};
+
 let nextRid = 1;
 const pendingUpdates = new Map<number, PendingUpdate>();
 
@@ -48,23 +60,106 @@ function sendDownloadEvent(
   event.sender.send(senderEventName(rid), payload);
 }
 
-function resolveFeedUrl(endpoint?: string | null): string | null {
-  if (!endpoint) {
-    return null;
+function electronPrereleaseAssetNames(): string[] {
+  if (process.platform === "darwin") {
+    return ["latest-mac.yml", "latest.yml"];
   }
+  if (process.platform === "win32") {
+    return process.arch === "arm64"
+      ? ["latest-arm64.yml", "latest.yml"]
+      : ["latest-x64.yml", "latest.yml"];
+  }
+  return process.arch === "arm64"
+    ? ["latest-linux-arm64.yml", "latest-linux.yml", "latest.yml"]
+    : ["latest-linux.yml", "latest.yml"];
+}
+
+function genericFeedFromMetadataURL(endpoint: string): {
+  url: string;
+  channel: string;
+} | null {
   try {
     const url = new URL(endpoint);
-    const pathname = url.pathname;
-    if (!pathname.endsWith(".yml")) {
+    const filename = url.pathname.split("/").pop();
+    if (!filename?.endsWith(".yml")) {
       return null;
     }
-    return endpoint.slice(
-      0,
-      endpoint.length - pathname.split("/").pop()!.length,
-    );
+
+    let channel = filename.slice(0, -".yml".length);
+    if (channel.endsWith("-mac")) {
+      channel = channel.slice(0, -"-mac".length);
+    } else if (channel === "latest-linux" || channel === "latest-linux-arm64") {
+      channel = "latest";
+    }
+
+    return {
+      url: endpoint.slice(0, endpoint.length - filename.length),
+      channel,
+    };
   } catch {
     return null;
   }
+}
+
+async function resolveGitHubPrereleaseFeed(endpoint: string): Promise<{
+  url: string;
+  channel: string;
+}> {
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "Discobot Electron Updater",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to query GitHub pre-releases: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const releases = (await response.json()) as GitHubRelease[];
+  const prereleases = releases.filter(
+    (release) => release.prerelease && !release.draft,
+  );
+  if (prereleases.length === 0) {
+    throw new Error("No GitHub pre-release is available.");
+  }
+
+  const assetNames = electronPrereleaseAssetNames();
+  for (const release of prereleases) {
+    const releaseAsset = release.assets.find((asset) =>
+      assetNames.includes(asset.name),
+    );
+    if (!releaseAsset) {
+      continue;
+    }
+
+    const feed = genericFeedFromMetadataURL(releaseAsset.browser_download_url);
+    if (!feed) {
+      throw new Error(
+        `GitHub pre-release ${release.tag_name} has unsupported Electron metadata asset ${releaseAsset.name}.`,
+      );
+    }
+    return feed;
+  }
+
+  throw new Error(`No GitHub pre-release includes ${assetNames.join(" or ")}.`);
+}
+
+async function resolveFeed(endpoint?: string | null): Promise<{
+  url: string;
+  channel: string;
+} | null> {
+  if (!endpoint) {
+    return null;
+  }
+
+  const genericFeed = genericFeedFromMetadataURL(endpoint);
+  if (genericFeed) {
+    return genericFeed;
+  }
+
+  return resolveGitHubPrereleaseFeed(endpoint);
 }
 
 export function configureUpdater(): void {
@@ -84,12 +179,12 @@ export function registerUpdaterHandlers(): void {
         return null;
       }
 
-      const feedUrl = resolveFeedUrl(endpoint);
-      if (feedUrl) {
+      const feed = await resolveFeed(endpoint);
+      if (feed) {
         autoUpdater.setFeedURL({
           provider: "generic",
-          url: feedUrl,
-          channel: "latest",
+          url: feed.url,
+          channel: feed.channel,
         });
       }
 

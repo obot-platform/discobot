@@ -133,6 +133,57 @@ function resolveBundledVZEnv(): Record<string, string> {
   return {};
 }
 
+function resolveBundledWSLEnv(): Record<string, string> {
+  if (process.platform !== "win32") {
+    return {};
+  }
+
+  const env: Record<string, string> = {};
+  const rootfsCandidates = [
+    path.join(process.resourcesPath, "wsl", "discobot-rootfs.tar.zst"),
+    path.join(
+      app.getAppPath(),
+      "src-tauri",
+      "resources",
+      "wsl",
+      "discobot-rootfs.tar.zst",
+    ),
+    path.join(
+      process.cwd(),
+      "src-tauri",
+      "resources",
+      "wsl",
+      "discobot-rootfs.tar.zst",
+    ),
+  ];
+  const iconCandidates = [
+    path.join(process.resourcesPath, "icon.ico"),
+    path.join(app.getAppPath(), "src-tauri", "icons", "icon.ico"),
+    path.join(process.cwd(), "src-tauri", "icons", "icon.ico"),
+  ];
+
+  for (const rootfsPath of rootfsCandidates) {
+    try {
+      accessSync(rootfsPath, constants.R_OK);
+      env.WSL_ROOTFS_ARCHIVE_PATH = rootfsPath;
+      break;
+    } catch {
+      // keep searching
+    }
+  }
+  for (const iconPath of iconCandidates) {
+    try {
+      accessSync(iconPath, constants.R_OK);
+      env.DISCOBOT_DESKTOP_ICON_PATH = iconPath;
+      break;
+    } catch {
+      // keep searching
+    }
+  }
+
+  return env;
+}
+
 export async function createInitialServerState(): Promise<DesktopServerState> {
   if (!app.isPackaged) {
     return {
@@ -174,6 +225,7 @@ export async function startBundledServer(
       STDIN_KEEPALIVE: "true",
       LOG_FILE: await getLogFilePath(),
       ...resolveBundledVZEnv(),
+      ...resolveBundledWSLEnv(),
     },
     stdio: "pipe",
   });
@@ -200,9 +252,7 @@ export function getDesktopServerConfig(
 }
 
 export function getElectronRendererURL(): string {
-  return app.isPackaged
-    ? "app://discobot/index.html"
-    : `${getDevRendererOrigin()}/`;
+  return app.isPackaged ? "app://discobot/" : `${getDevRendererOrigin()}/`;
 }
 
 export function getElectronRendererOrigin(): string {

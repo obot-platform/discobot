@@ -71,3 +71,78 @@ jobs:
         run: pnpm run ci
         env:
           CI: true
+
+  electron-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - runner: depot-ubuntu-24.04
+            name: Linux amd64
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: x64
+          - runner: depot-ubuntu-24.04-arm
+            name: Linux arm64
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: arm64
+          - runner: depot-windows-2025-16
+            name: Windows amd64
+            target: x86_64-pc-windows-msvc
+            platform: win
+            arch: x64
+          - runner: windows-11-arm
+            name: Windows arm64
+            target: aarch64-pc-windows-msvc
+            platform: win
+            arch: arm64
+
+    runs-on: ${{ matrix.os.runner }}
+    name: Electron build (${{ matrix.os.name }})
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Configure pnpm shell (Windows)
+        if: runner.os == 'Windows'
+        run: pnpm config set script-shell bash
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare placeholder guest resources
+        run: |
+          mkdir -p src-tauri/resources/vz src-tauri/resources/wsl
+          touch src-tauri/resources/vz/_discobot_placeholder.txt
+          touch src-tauri/resources/wsl/_discobot_placeholder.txt
+
+      - name: Build Electron app
+        env:
+          CI: true
+          TAURI_TARGET_TRIPLE: ${{ matrix.os.target }}
+        run: |
+          pnpm build:frontend
+          pnpm build:server
+          node scripts/build-electron.mjs
+          pnpm exec electron-builder --dir --${{ matrix.os.platform }} --${{ matrix.os.arch }}

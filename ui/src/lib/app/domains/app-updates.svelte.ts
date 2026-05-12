@@ -37,18 +37,31 @@ type GitHubRelease = {
 	assets: GitHubReleaseAsset[];
 };
 
+function isArmPlatform(): boolean {
+	const platform = navigator.platform.toLowerCase();
+	const userAgent = navigator.userAgent.toLowerCase();
+	return [platform, userAgent].some(
+		(value) => value.includes("arm") || value.includes("aarch64"),
+	);
+}
+
 function prereleaseAssetNames(): string[] {
 	if (getDesktopRuntimeKind() !== "electron") {
 		return ["latest.json"];
 	}
 	const platform = navigator.platform.toLowerCase();
+	const isArm = isArmPlatform();
 	if (platform.includes("mac")) {
 		return ["latest-mac.yml", "latest.yml"];
 	}
 	if (platform.includes("win")) {
-		return ["latest.yml"];
+		return isArm
+			? ["latest-arm64.yml", "latest.yml"]
+			: ["latest-x64.yml", "latest.yml"];
 	}
-	return ["latest-linux.yml", "latest.yml"];
+	return isArm
+		? ["latest-linux-arm64.yml", "latest-linux.yml", "latest.yml"]
+		: ["latest-linux.yml", "latest.yml"];
 }
 
 export function createAppUpdatesDomain(
@@ -113,6 +126,9 @@ export function createAppUpdatesDomain(
 		}
 		if (!canTrackPrereleases) {
 			return null;
+		}
+		if (getDesktopRuntimeKind() === "electron") {
+			return GITHUB_RELEASES_API_URL;
 		}
 
 		const response = await fetch(GITHUB_RELEASES_API_URL, {

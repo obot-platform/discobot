@@ -287,8 +287,9 @@ jobs:
           echo "Full version: $TAG"
           echo "Short SHA: $SHORT_SHA"
           echo "Sentry release: discobot@${TAG}+${SHORT_SHA}"
-          # Strip alpha/beta/rc text for Tauri (Windows installer compatibility)
-          TAURI_VERSION=$(echo "$TAG" | sed -E 's/(alpha|beta|rc)//g')
+          # Convert prerelease identifiers to numeric-only form for Tauri MSI
+          # compatibility. For example: alpha12 -> 12, test3 -> 3.
+          TAURI_VERSION=$(echo "$TAG" | sed -E 's/-[^0-9]*([0-9]+)$/-\1/')
           echo "tauri=$TAURI_VERSION" >> "$GITHUB_OUTPUT"
           echo "Tauri version: $TAURI_VERSION"
 
@@ -339,7 +340,75 @@ jobs:
       - build-vz-image
       - release
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: depot-macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: depot-macos-15
+            target: aarch64-apple-darwin
+            electron_platform: mac
+            electron_arch: arm64
+            guest: vz
+            guest_arch: arm64
+            asset_globs: |
+              dist/*-arm64.dmg
+              dist/*-arm64.dmg.blockmap
+              dist/*-arm64.zip
+              dist/*-arm64.zip.blockmap
+              dist/latest-mac.yml
+          - name: Windows amd64
+            runner: depot-windows-2025-16
+            target: x86_64-pc-windows-msvc
+            electron_platform: win
+            electron_arch: x64
+            guest: wsl
+            guest_arch: amd64
+            asset_globs: |
+              dist/*-x64.exe
+              dist/*-x64.exe.blockmap
+              dist/*-x64.zip
+              dist/latest.yml
+              dist/latest-x64.yml
+            metadata_copies: |
+              dist/latest.yml dist/latest-x64.yml
+          - name: Windows arm64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            electron_platform: win
+            electron_arch: arm64
+            guest: wsl
+            guest_arch: arm64
+            asset_globs: |
+              dist/*-arm64.exe
+              dist/*-arm64.exe.blockmap
+              dist/*-arm64.zip
+              dist/latest-arm64.yml
+            metadata_copies: |
+              dist/latest.yml dist/latest-arm64.yml
+          - name: Linux amd64
+            runner: depot-ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            electron_platform: linux
+            electron_arch: x64
+            asset_globs: |
+              dist/*-x86_64.AppImage
+              dist/*-amd64.deb
+              dist/*-x64.tar.gz
+              dist/latest-linux.yml
+          - name: Linux arm64
+            runner: depot-ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            electron_platform: linux
+            electron_arch: arm64
+            asset_globs: |
+              dist/*-arm64.AppImage
+              dist/*-arm64.deb
+              dist/*-arm64.tar.gz
+              dist/latest-linux-arm64.yml
+
+    runs-on: ${{ matrix.runner }}
+    name: release-electron (${{ matrix.name }})
 
     steps:
       - name: Checkout
@@ -360,15 +429,17 @@ jobs:
         with:
           go-version: "1.26"
 
-      # Install crane for extracting VZ image (Docker is not available on macOS runners)
+      # Install crane for extracting bundled guest images.
       - name: Install crane
+        if: matrix.guest == 'vz' || matrix.guest == 'wsl'
         run: go install github.com/google/go-containerregistry/cmd/crane@latest
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Extract VZ image files for packaged macOS builds
+      # Extract VZ image files for packaged macOS builds.
       - name: Extract VZ image
+        if: matrix.guest == 'vz'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -376,7 +447,19 @@ jobs:
           echo "${GITHUB_TOKEN}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
           IMAGE_REF="ghcr.io/${{ github.repository }}-vz:${GITHUB_REF_NAME#v}"
           echo "Extracting VZ image: ${IMAGE_REF}"
-          node scripts/extract-vz-image.mjs "${IMAGE_REF}" arm64
+          node scripts/extract-vz-image.mjs "${IMAGE_REF}" ${{ matrix.guest_arch }}
+
+      # Extract WSL image files for packaged Windows builds.
+      - name: Extract WSL image
+        if: matrix.guest == 'wsl'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${GITHUB_TOKEN}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
+          IMAGE_REF="ghcr.io/${{ github.repository }}-wsl:${GITHUB_REF_NAME#v}"
+          echo "Extracting WSL image: ${IMAGE_REF}"
+          node scripts/extract-wsl-image.mjs "${IMAGE_REF}" ${{ matrix.guest_arch }}
 
       - name: Parse version from tag
         id: version
@@ -393,6 +476,7 @@ jobs:
           echo "Sentry release: discobot@${TAG}+${SHORT_SHA}"
 
       - name: Prepare Electron signing certificate
+        if: runner.os == 'macOS'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -415,9 +499,10 @@ jobs:
         run: |
           node -e 'const fs=require("fs"); const packagePath="package.json"; const packageJson=JSON.parse(fs.readFileSync(packagePath,"utf8")); packageJson.version=process.env.DISCOBOT_VERSION; fs.writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);'
 
-      - name: Build and publish Electron app
+      - name: Build Electron app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_TARGET_TRIPLE: ${{ matrix.target }}
           DISCOBOT_VERSION: ${{ steps.version.outputs.full }}
           SANDBOX_IMAGE: ${{ steps.version.outputs.sandbox_image }}
           SANDBOX_IMAGE_REMOTE: ${{ steps.version.outputs.sandbox_image }}
@@ -433,4 +518,43 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm dist:app:electron -- --publish always --arm64
+        run: >-
+          pnpm dist:app:electron --publish never
+          --${{ matrix.electron_platform }}
+          --${{ matrix.electron_arch }}
+
+      - name: Upload Electron release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_ASSET_GLOBS: ${{ matrix.asset_globs }}
+          ELECTRON_METADATA_COPIES: ${{ matrix.metadata_copies }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          while read -r source target; do
+            [ -n "${source}" ] || continue
+            if [ ! -f "${source}" ]; then
+              echo "Missing Electron updater metadata: ${source}" >&2
+              find dist -maxdepth 1 -type f -print >&2
+              exit 1
+            fi
+            cp "${source}" "${target}"
+          done <<< "${ELECTRON_METADATA_COPIES}"
+
+          artifacts=()
+          while IFS= read -r pattern; do
+            [ -n "${pattern}" ] || continue
+            matches=( ${pattern} )
+            artifacts+=( "${matches[@]}" )
+          done <<< "${ELECTRON_ASSET_GLOBS}"
+
+          if [ "${#artifacts[@]}" -eq 0 ]; then
+            echo "Expected Electron release assets, found none:" >&2
+            echo "${ELECTRON_ASSET_GLOBS}" >&2
+            find dist -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+
+          echo "Uploading Electron release assets:"
+          printf '  %s\n' "${artifacts[@]}"
+          gh release upload "${GITHUB_REF_NAME}" "${artifacts[@]}" --clobber

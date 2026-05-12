@@ -94,13 +94,6 @@
       {
         "from": "src-tauri/binaries",
         "to": "binaries"
-      },
-      {
-        "from": "src-tauri/resources",
-        "to": "vz",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "mac": {
@@ -113,7 +106,16 @@
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "entitlements": "src-tauri/entitlements.plist",
-      "entitlementsInherit": "src-tauri/entitlements.plist"
+      "entitlementsInherit": "src-tauri/entitlements.plist",
+      "extraResources": [
+        {
+          "from": "src-tauri/resources/vz",
+          "to": "vz",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     },
     "win": {
       "icon": "src-tauri/icons/icon.ico",
@@ -121,12 +123,36 @@
         "nsis",
         "zip"
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "src-tauri/resources/wsl",
+          "to": "wsl",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "src-tauri/icons/icon.ico",
+          "to": "icon.ico"
+        }
+      ]
     },
     "publish": [
       {
         "provider": "github"
       }
-    ]
+    ],
+    "linux": {
+      "category": "Development",
+      "icon": "src-tauri/icons/icon.png",
+      "maintainer": "Obot Platform <support@obot.ai>",
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   }
 }
