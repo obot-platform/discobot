@@ -64,7 +64,7 @@ test("thread workspace always renders the active conversation view", () => {
 	assert.doesNotMatch(source, /<Loader2Icon class="size-4 animate-spin" \/>/);
 	assert.doesNotMatch(
 		source,
-		/title=\{isLoadingThread \? "Loading thread" : "No thread selected"\}/,
+		/title=\{isLoadingThread \? "Loading thread" : ""\}/,
 	);
 	assert.doesNotMatch(
 		source,
@@ -102,7 +102,7 @@ test("active thread workspace keeps the stream live while inactive conversation 
 	assert.match(source, /if \(session\.isPending\) \{\s*return "";/);
 	assert.match(
 		source,
-		/isSessionTransitioningStatus\(session\.current\?\.sandboxStatus\)[\s\S]*\? "Loading thread"[\s\S]*: "No thread selected"/,
+		/isSessionTransitioningStatus\(session\.current\?\.sandboxStatus\)[\s\S]*\? "Loading thread"[\s\S]*: ""/,
 	);
 	assert.match(source, /title=\{headerTitle\}/);
 	assert.doesNotMatch(
