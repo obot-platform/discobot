@@ -47,7 +47,7 @@
 		}
 		return isSessionTransitioningStatus(session.current?.sandboxStatus)
 			? "Loading thread"
-			: "No thread selected";
+			: "";
 	});
 </script>
 
