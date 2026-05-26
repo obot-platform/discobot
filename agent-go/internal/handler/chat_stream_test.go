@@ -29,6 +29,8 @@ import (
 
 type streamTestAgent struct {
 	promptFn             func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	compactFn            func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	resetFn              func(ctx context.Context, threadID string) (agent.ThreadInfo, error)
 	resumeFn             func(ctx context.Context, threadID string, req agent.PromptRequest) (agent.ResumeResult, error)
 	messagesFn           func(threadID, leafID string) ([]message.UIMessage, error)
 	pendingQuestionFn    func(threadID string) (*agent.PendingQuestion, error)
@@ -42,6 +44,20 @@ func (m *streamTestAgent) Prompt(ctx context.Context, threadID string, req agent
 		return m.promptFn(ctx, threadID, req)
 	}
 	return func(_ func(message.MessageChunk, error) bool) {}
+}
+
+func (m *streamTestAgent) Compact(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	if m.compactFn != nil {
+		return m.compactFn(ctx, threadID, req)
+	}
+	return func(_ func(message.MessageChunk, error) bool) {}
+}
+
+func (m *streamTestAgent) Reset(ctx context.Context, threadID string) (agent.ThreadInfo, error) {
+	if m.resetFn != nil {
+		return m.resetFn(ctx, threadID)
+	}
+	return agent.ThreadInfo{ID: threadID}, nil
 }
 
 func (m *streamTestAgent) Resume(ctx context.Context, threadID string, req agent.PromptRequest) (agent.ResumeResult, error) {

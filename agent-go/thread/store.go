@@ -784,6 +784,10 @@ type Config struct {
 	TokenUsage TokenUsageInfo `json:"tokenUsage,omitzero"`
 	// ActiveLeafID tracks the currently selected branch head for this thread.
 	ActiveLeafID string `json:"activeLeafId,omitempty"`
+	// ContextReset records that the user reset the active thread context. When
+	// set, an empty ActiveLeafID is intentional and should not fall back to the
+	// historical leaf on disk.
+	ContextReset bool `json:"contextReset,omitempty"`
 	// ActiveCommand is the slash-command name currently driving thread work.
 	// It is cleared when the thread is no longer actively processing that
 	// command, including when a turn pauses for user input.
@@ -1170,6 +1174,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		LastTurnState                State                           `json:"lastTurnState"`
 		TokenUsage                   TokenUsageInfo                  `json:"tokenUsage"`
 		ActiveLeafID                 string                          `json:"activeLeafId"`
+		ContextReset                 bool                            `json:"contextReset"`
 		ActiveCommand                string                          `json:"activeCommand"`
 		CommunicatedCredentials      []CommunicatedCredentialBinding `json:"communicatedCredentials"`
 		CommunicatedSkillLikeEntries []CommunicatedSkillLikeEntry    `json:"communicatedSkillLikeEntries"`
@@ -1195,6 +1200,7 @@ func (s *Store) LoadConfig(threadID string) (Config, error) {
 		LastTurnState:                raw.LastTurnState,
 		TokenUsage:                   raw.TokenUsage,
 		ActiveLeafID:                 raw.ActiveLeafID,
+		ContextReset:                 raw.ContextReset,
 		ActiveCommand:                strings.TrimSpace(raw.ActiveCommand),
 		CommunicatedCredentials:      NormalizeCommunicatedCredentialBindings(raw.CommunicatedCredentials),
 		CommunicatedSkillLikeEntries: NormalizeCommunicatedSkillLikeEntries(raw.CommunicatedSkillLikeEntries),

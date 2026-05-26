@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 
 	discobotagent "github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/thread"
@@ -52,6 +53,12 @@ func (a *Agent) UpdateThread(_ context.Context, threadID string, req discobotage
 		return discobotagent.ThreadInfo{}, err
 	}
 	return threadInfoToAgent(info), nil
+}
+
+func (a *Agent) Reset(_ context.Context, threadID string) (discobotagent.ThreadInfo, error) {
+	err := fmt.Errorf("%w: reset", errUnsupported)
+	thread.PersistError(a.store, threadID, err)
+	return discobotagent.ThreadInfo{}, err
 }
 
 func threadInfoToAgent(info thread.Info) discobotagent.ThreadInfo {

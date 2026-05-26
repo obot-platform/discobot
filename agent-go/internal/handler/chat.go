@@ -119,6 +119,18 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		h.Error(w, http.StatusNotImplemented, "prompt queue unavailable")
 		return
 	}
+	if agent.BuiltinSlashCommand(promptReq.UserParts) != "" {
+		completionID, err := h.conversations.Chat(threadID, promptReq)
+		if err != nil {
+			if h.writeChatStartError(w, err) {
+				return
+			}
+			h.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		h.writeChatStarted(w, completionID)
+		return
+	}
 	pendingQuestion, err := h.conversations.PendingQuestion(threadID)
 	if err != nil {
 		h.Error(w, http.StatusInternalServerError, err.Error())

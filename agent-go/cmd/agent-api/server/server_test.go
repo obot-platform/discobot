@@ -91,6 +91,14 @@ func (testAgent) Prompt(context.Context, string, agent.PromptRequest) iter.Seq2[
 	return func(func(message.MessageChunk, error) bool) {}
 }
 
+func (testAgent) Compact(context.Context, string, agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	return func(func(message.MessageChunk, error) bool) {}
+}
+
+func (testAgent) Reset(_ context.Context, threadID string) (agent.ThreadInfo, error) {
+	return agent.ThreadInfo{ID: threadID}, nil
+}
+
 func (testAgent) Resume(context.Context, string, agent.PromptRequest) (agent.ResumeResult, error) {
 	return agent.ResumeResult{}, nil
 }

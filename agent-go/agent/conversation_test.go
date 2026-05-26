@@ -17,6 +17,8 @@ import (
 
 type mockAgent struct {
 	promptFn   func(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
+	compactFn  func(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
+	resetFn    func(ctx context.Context, threadID string) (ThreadInfo, error)
 	resumeFn   func(ctx context.Context, threadID string, req PromptRequest) (ResumeResult, error)
 	messagesFn func(threadID, leafID string) ([]message.UIMessage, error)
 	cancelFn   func(threadID string) bool
@@ -30,6 +32,20 @@ func (m *mockAgent) Prompt(ctx context.Context, threadID string, req PromptReque
 		return m.promptFn(ctx, threadID, req)
 	}
 	return func(_ func(message.MessageChunk, error) bool) {}
+}
+
+func (m *mockAgent) Compact(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	if m.compactFn != nil {
+		return m.compactFn(ctx, threadID, req)
+	}
+	return func(_ func(message.MessageChunk, error) bool) {}
+}
+
+func (m *mockAgent) Reset(ctx context.Context, threadID string) (ThreadInfo, error) {
+	if m.resetFn != nil {
+		return m.resetFn(ctx, threadID)
+	}
+	return ThreadInfo{ID: threadID}, nil
 }
 
 func (m *mockAgent) Resume(ctx context.Context, threadID string, req PromptRequest) (ResumeResult, error) {
@@ -155,6 +171,10 @@ func simplePromptFn(chunks []message.MessageChunk) func(context.Context, string,
 	}
 }
 
+func simpleCommandFn(chunks []message.MessageChunk) func(context.Context, string, PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	return simplePromptFn(chunks)
+}
+
 func blockingPromptFn() func(context.Context, string, PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	return func(ctx context.Context, _ string, _ PromptRequest) iter.Seq2[message.MessageChunk, error] {
 		return func(_ func(message.MessageChunk, error) bool) {
@@ -181,6 +201,98 @@ func waitForDone(t *testing.T, cm *ConversationManager, threadID string) {
 }
 
 // --- Tests ---
+
+func TestConversationManager_Chat_InterceptsCompactBeforePrompt(t *testing.T) {
+	promptCalled := false
+	agent := &mockAgent{
+		promptFn: func(_ context.Context, _ string, _ PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			promptCalled = true
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+		compactFn: simpleCommandFn([]message.MessageChunk{
+			message.TextDeltaChunk{Delta: "Conversation compacted."},
+		}),
+	}
+	cm := NewConversationManager(agent)
+
+	completionID, err := cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "/compact"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completionID == "" {
+		t.Fatal("expected completion ID")
+	}
+	waitForDone(t, cm, "thread1")
+
+	if promptCalled {
+		t.Fatal("compact command should not dispatch to Prompt")
+	}
+	result := cm.PollChunks("thread1", 0)
+	if result == nil || !result.Done {
+		t.Fatal("expected completed compact result")
+	}
+	if cm.ActiveCompletionID("thread1") != "" {
+		t.Fatal("compact completion should not remain active")
+	}
+}
+
+func TestConversationManager_Chat_InterceptsResetBeforePrompt(t *testing.T) {
+	promptCalled := false
+	resetCalled := false
+	agent := &mockAgent{
+		promptFn: func(_ context.Context, _ string, _ PromptRequest) iter.Seq2[message.MessageChunk, error] {
+			promptCalled = true
+			return func(_ func(message.MessageChunk, error) bool) {}
+		},
+		resetFn: func(_ context.Context, threadID string) (ThreadInfo, error) {
+			resetCalled = true
+			return ThreadInfo{ID: threadID}, nil
+		},
+	}
+	cm := NewConversationManager(agent)
+
+	if _, err := cm.Chat("thread1", PromptRequest{
+		UserParts: []message.UIPart{message.UITextPart{Text: "/reset"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitForDone(t, cm, "thread1")
+
+	if promptCalled {
+		t.Fatal("reset command should not dispatch to Prompt")
+	}
+	if !resetCalled {
+		t.Fatal("expected Reset to be called")
+	}
+	result := cm.PollChunks("thread1", 0)
+	if result == nil || !result.Done {
+		t.Fatal("expected completed reset result")
+	}
+	assertTextAfterStart(t, result.Chunks)
+	if cm.ActiveCompletionID("thread1") != "" {
+		t.Fatal("reset completion should not remain active")
+	}
+}
+
+func assertTextAfterStart(t *testing.T, chunks []message.MessageChunk) {
+	t.Helper()
+	sawStart := false
+	for _, chunk := range chunks {
+		switch chunk.(type) {
+		case message.StartChunk:
+			sawStart = true
+		case message.TextStartChunk, message.TextDeltaChunk, message.TextEndChunk:
+			if !sawStart {
+				t.Fatalf("text chunk %T appeared before start chunk", chunk)
+			}
+		}
+	}
+	if !sawStart {
+		t.Fatal("expected start chunk")
+	}
+}
 
 func TestConversationManager_Chat_SimpleCompletion(t *testing.T) {
 	chunks := []message.MessageChunk{

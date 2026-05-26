@@ -137,19 +137,22 @@ func TestPromptCompactCommand_ForceCompactsImmediately(t *testing.T) {
 
 	agentImpl := NewDefaultAgent(store, registry, nil, t.TempDir(), MCPConfig{})
 
+	var chunks []message.MessageChunk
 	var deltas []string
-	for chunk, err := range agentImpl.Prompt(context.Background(), threadID, agent.PromptRequest{
+	for chunk, err := range agentImpl.Compact(context.Background(), threadID, agent.PromptRequest{
 		UserParts: []message.UIPart{message.UITextPart{Text: "/compact"}},
 	}) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		chunks = append(chunks, chunk)
 		if td, ok := chunk.(message.TextDeltaChunk); ok {
 			deltas = append(deltas, td.Delta)
 		}
 	}
 
-	if len(deltas) != 1 || deltas[0] != "Conversation compacted." {
+	assertTextStartsAfterStart(t, chunks)
+	if len(deltas) != 2 || deltas[0] != "Compacting conversation...\n" || deltas[1] != "Conversation compacted." {
 		t.Fatalf("unexpected /compact response deltas: %#v", deltas)
 	}
 	if mockProvider.completeCalls != 1 {
@@ -172,20 +175,41 @@ func TestPromptCompactCommand_NoHistory(t *testing.T) {
 	store := thread.NewStore(t.TempDir())
 	agentImpl := NewDefaultAgent(store, nil, nil, t.TempDir(), MCPConfig{})
 
+	var chunks []message.MessageChunk
 	var deltas []string
-	for chunk, err := range agentImpl.Prompt(context.Background(), "thread-empty", agent.PromptRequest{
+	for chunk, err := range agentImpl.Compact(context.Background(), "thread-empty", agent.PromptRequest{
 		UserParts: []message.UIPart{message.UITextPart{Text: "/compact"}},
 	}) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		chunks = append(chunks, chunk)
 		if td, ok := chunk.(message.TextDeltaChunk); ok {
 			deltas = append(deltas, td.Delta)
 		}
 	}
 
+	assertTextStartsAfterStart(t, chunks)
 	if len(deltas) != 1 || deltas[0] != "Nothing to compact yet." {
 		t.Fatalf("unexpected /compact response deltas: %#v", deltas)
+	}
+}
+
+func assertTextStartsAfterStart(t *testing.T, chunks []message.MessageChunk) {
+	t.Helper()
+	sawStart := false
+	for _, chunk := range chunks {
+		switch chunk.(type) {
+		case message.StartChunk:
+			sawStart = true
+		case message.TextStartChunk, message.TextDeltaChunk, message.TextEndChunk:
+			if !sawStart {
+				t.Fatalf("text chunk %T appeared before start chunk", chunk)
+			}
+		}
+	}
+	if !sawStart {
+		t.Fatal("expected start chunk")
 	}
 }
 
@@ -415,7 +439,7 @@ func TestPrompt_SkillSlashCommandPassesThroughToModel(t *testing.T) {
 	}
 }
 
-func TestListCommands_IncludesOnlyCompactBuiltin(t *testing.T) {
+func TestListCommands_IncludesBuiltinCommands(t *testing.T) {
 	agentImpl := NewDefaultAgent(thread.NewStore(t.TempDir()), nil, nil, t.TempDir(), MCPConfig{})
 
 	commands, err := agentImpl.ListCommands()
@@ -424,14 +448,66 @@ func TestListCommands_IncludesOnlyCompactBuiltin(t *testing.T) {
 	}
 
 	foundCompact := false
+	foundReset := false
 	for _, cmd := range commands {
 		if cmd.Name == "compact" {
 			foundCompact = true
+		}
+		if cmd.Name == "reset" {
+			foundReset = true
 		}
 	}
 
 	if !foundCompact {
 		t.Fatal("expected compact built-in command")
+	}
+	if !foundReset {
+		t.Fatal("expected reset built-in command")
+	}
+}
+
+func TestReset_ClearsActiveLeafForNextPrompt(t *testing.T) {
+	store := thread.NewStore(t.TempDir())
+	threadID := "thread-reset"
+	if err := store.SaveMessage(threadID, thread.StoredMessage{
+		ID: "msg1",
+		Message: message.Message{
+			Role:  "user",
+			Parts: []message.Part{message.TextPart{Text: "before reset"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConfig(threadID, thread.Config{
+		LastMessage:                  "before reset",
+		ActiveLeafID:                 "msg1",
+		CommunicatedCredentials:      []thread.CommunicatedCredentialBinding{{CredentialID: "cred", EnvVar: "TOKEN"}},
+		CommunicatedSkillLikeEntries: []thread.CommunicatedSkillLikeEntry{{Name: "build"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	agentImpl := NewDefaultAgent(store, nil, nil, t.TempDir(), MCPConfig{})
+	if _, err := agentImpl.Reset(context.Background(), threadID); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := store.LoadConfig(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ActiveLeafID != "" {
+		t.Fatalf("expected active leaf to be cleared, got %q", cfg.ActiveLeafID)
+	}
+	if !cfg.ContextReset {
+		t.Fatal("expected context reset marker")
+	}
+	leafID, err := agentImpl.resolveCurrentLeaf(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leafID != "" {
+		t.Fatalf("expected no active leaf after reset, got %q", leafID)
 	}
 }
 

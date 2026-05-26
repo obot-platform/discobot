@@ -258,6 +258,10 @@ func (m *Manager) ClearTimer(threadID string) {
 }
 
 func (m *Manager) startPromptRequest(threadID string, req agent.PromptRequest) (string, error) {
+	if agent.BuiltinSlashCommand(req.UserParts) != "" {
+		return m.conversations.Chat(threadID, req)
+	}
+
 	pendingQuestion, err := m.conversations.PendingQuestion(threadID)
 	if err != nil {
 		return "", err

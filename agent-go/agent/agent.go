@@ -101,6 +101,13 @@ type Agent interface {
 	// another is active for the same thread returns an error.
 	Prompt(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
 
+	// Compact forces conversation compaction without running a normal prompt.
+	Compact(ctx context.Context, threadID string, req PromptRequest) iter.Seq2[message.MessageChunk, error]
+
+	// Reset clears the active leaf for a thread so the next prompt starts with
+	// no active conversation history.
+	Reset(ctx context.Context, threadID string) (ThreadInfo, error)
+
 	// Resume continues or finalizes an interrupted turn from persisted disk state.
 	// Request-scoped overrides such as model, reasoning, and mode may be applied
 	// before the turn resumes.

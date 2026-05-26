@@ -20,6 +20,8 @@ import (
 
 type mockSubAgent struct {
 	promptFn               func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	compactFn              func(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error]
+	resetFn                func(ctx context.Context, threadID string) (agent.ThreadInfo, error)
 	resumeFn               func(ctx context.Context, threadID string, req agent.PromptRequest) (agent.ResumeResult, error)
 	finalResponseFn        func(threadID string) (string, error)
 	pendingQuestionFn      func(threadID string) (*agent.PendingQuestion, error)
@@ -36,6 +38,18 @@ func (m *mockSubAgent) Prompt(ctx context.Context, threadID string, req agent.Pr
 		return m.promptFn(ctx, threadID, req)
 	}
 	return func(_ func(message.MessageChunk, error) bool) {}
+}
+func (m *mockSubAgent) Compact(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	if m.compactFn != nil {
+		return m.compactFn(ctx, threadID, req)
+	}
+	return func(_ func(message.MessageChunk, error) bool) {}
+}
+func (m *mockSubAgent) Reset(ctx context.Context, threadID string) (agent.ThreadInfo, error) {
+	if m.resetFn != nil {
+		return m.resetFn(ctx, threadID)
+	}
+	return agent.ThreadInfo{ID: threadID}, nil
 }
 func (m *mockSubAgent) Resume(ctx context.Context, threadID string, req agent.PromptRequest) (agent.ResumeResult, error) {
 	if m.resumeFn != nil {
@@ -313,6 +327,15 @@ func (a *recursiveTaskAgent) Resume(ctx context.Context, threadID string, req ag
 	return agent.ResumeResult{Stream: a.Prompt(ctx, threadID, req)}, nil
 }
 
+func (a *recursiveTaskAgent) Compact(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	return a.Prompt(ctx, threadID, req)
+}
+func (a *recursiveTaskAgent) Reset(_ context.Context, threadID string) (agent.ThreadInfo, error) {
+	a.mu.Lock()
+	delete(a.states, threadID)
+	a.mu.Unlock()
+	return agent.ThreadInfo{ID: threadID}, nil
+}
 func (a *recursiveTaskAgent) Cancel(_ string) bool                              { return false }
 func (a *recursiveTaskAgent) Messages(_, _ string) ([]message.UIMessage, error) { return nil, nil }
 func (a *recursiveTaskAgent) ListThreads() ([]string, error)                    { return nil, nil }

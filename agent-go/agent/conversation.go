@@ -160,9 +160,51 @@ func NewConversationManager(agent Agent) *ConversationManager {
 // or an error if a completion is already running for this thread.
 // The turn runs in a background goroutine; chunks are cached for SSE replay.
 func (cm *ConversationManager) Chat(threadID string, req PromptRequest) (string, error) {
+	switch BuiltinSlashCommand(req.UserParts) {
+	case "compact":
+		return cm.startCompletion(threadID, func(ctx context.Context) (string, iter.Seq2[message.MessageChunk, error], error) {
+			return "", cm.agent.Compact(ctx, threadID, req), nil
+		})
+	case "reset":
+		return cm.startCompletion(threadID, func(ctx context.Context) (string, iter.Seq2[message.MessageChunk, error], error) {
+			return "", cm.resetStream(ctx, threadID), nil
+		})
+	}
 	return cm.startCompletion(threadID, func(ctx context.Context) (string, iter.Seq2[message.MessageChunk, error], error) {
 		return "", cm.agent.Prompt(ctx, threadID, req), nil
 	})
+}
+
+func (cm *ConversationManager) resetStream(ctx context.Context, threadID string) iter.Seq2[message.MessageChunk, error] {
+	return func(yield func(message.MessageChunk, error) bool) {
+		info, err := cm.agent.Reset(ctx, threadID)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if !yield(threadUpdateChunkFromInfo(info), nil) {
+			return
+		}
+		yieldStatusMessage(yield, "Conversation reset.")
+	}
+}
+
+func yieldStatusMessage(yield func(message.MessageChunk, error) bool, text string) bool {
+	messageID := generateID()
+	textID := generateID()
+	if !yield(message.StartChunk{MessageID: messageID}, nil) {
+		return false
+	}
+	if !yield(message.TextStartChunk{ID: textID}, nil) {
+		return false
+	}
+	if !yield(message.TextDeltaChunk{ID: textID, Delta: text}, nil) {
+		return false
+	}
+	if !yield(message.TextEndChunk{ID: textID}, nil) {
+		return false
+	}
+	return yield(message.ResponseFinishChunk{FinishReason: "stop"}, nil)
 }
 
 func (cm *ConversationManager) ListThreadInfos() ([]ThreadInfo, error) {
@@ -230,6 +272,55 @@ func (cm *ConversationManager) Resume(threadID string, req PromptRequest) (strin
 		}
 		return result.ReplayLeafID, result.Stream, nil
 	})
+}
+
+// BuiltinSlashCommand reports the built-in command represented by parts.
+// Built-ins are handled by ConversationManager before dispatching to Prompt or
+// Resume so user-defined slash commands cannot shadow them.
+func BuiltinSlashCommand(parts []message.UIPart) string {
+	if len(parts) != 1 {
+		return ""
+	}
+	textPart, ok := parts[0].(message.UITextPart)
+	if !ok {
+		return ""
+	}
+	switch strings.TrimSpace(textPart.Text) {
+	case "/compact":
+		return "compact"
+	case "/reset":
+		return "reset"
+	default:
+		return ""
+	}
+}
+
+func threadUpdateChunkFromInfo(info ThreadInfo) message.ThreadUpdateChunk {
+	return message.ThreadUpdateChunk{
+		Data: message.ThreadUpdateData{
+			Thread: message.ThreadUpdateInfo{
+				ID:            info.ID,
+				Name:          info.Name,
+				CWD:           info.CWD,
+				LastMessage:   info.LastMessage,
+				ErrorMessage:  info.ErrorMessage,
+				Model:         info.Model,
+				Reasoning:     info.Reasoning,
+				ServiceTier:   info.ServiceTier,
+				State:         string(info.State),
+				ActiveCommand: info.ActiveCommand,
+				Metadata:      info.Metadata,
+				TokenUsage: message.TokenUsageInfo{
+					Total:           info.TokenUsage.Total,
+					LastStep:        info.TokenUsage.LastStep,
+					LastTurn:        info.TokenUsage.LastTurn,
+					ModelMaxTokens:  info.TokenUsage.ModelMaxTokens,
+					MaxOutputTokens: info.TokenUsage.MaxOutputTokens,
+					Prices:          info.TokenUsage.Prices,
+				},
+			},
+		},
+	}
 }
 
 func (cm *ConversationManager) startCompletion(

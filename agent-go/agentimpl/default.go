@@ -193,20 +193,41 @@ func (a *DefaultAgent) Close() {
 // Model references may be empty, a bare provider ID, a bare model/supporting
 // type relative to the current provider, or a full "providerId/modelId" ref.
 // For resume (empty req), the provider is resolved from the persisted turn state.
-//
-// If the user message is exactly "/compact", compaction is forced immediately
-// without running a normal LLM turn.
 func (a *DefaultAgent) Prompt(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
 	thread.ClearError(a.store, threadID)
-	if isCompactCommand(req.UserParts) {
-		return a.withThreadErrorPersistence(threadID, a.handleCompactCommand(ctx, threadID, req))
-	}
-
 	env, err := a.resolvePromptEnvironment(ctx, threadID, req)
 	if err != nil {
 		return a.withThreadErrorPersistence(threadID, errorIter(err))
 	}
 	return a.withThreadErrorPersistence(threadID, a.promptStream(ctx, threadID, req, env))
+}
+
+func (a *DefaultAgent) Compact(ctx context.Context, threadID string, req agent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	thread.ClearError(a.store, threadID)
+	return a.withThreadErrorPersistence(threadID, a.handleCompactCommand(ctx, threadID, req))
+}
+
+func (a *DefaultAgent) Reset(_ context.Context, threadID string) (agent.ThreadInfo, error) {
+	thread.ClearError(a.store, threadID)
+	cfg, err := a.store.LoadConfig(threadID)
+	if err != nil {
+		return agent.ThreadInfo{}, fmt.Errorf("load thread config: %w", err)
+	}
+	cfg.ActiveLeafID = ""
+	cfg.ContextReset = true
+	cfg.ActiveCommand = ""
+	cfg.LastMessage = ""
+	cfg.LastTurnState = ""
+	cfg.CommunicatedCredentials = nil
+	cfg.CommunicatedSkillLikeEntries = nil
+	if err := a.store.SaveConfig(threadID, cfg); err != nil {
+		return agent.ThreadInfo{}, fmt.Errorf("save thread config: %w", err)
+	}
+	info, err := a.store.GetThreadInfo(threadID)
+	if err != nil {
+		return agent.ThreadInfo{}, err
+	}
+	return threadInfoToAgent(info), nil
 }
 
 func (a *DefaultAgent) withThreadErrorPersistence(threadID string, seq iter.Seq2[message.MessageChunk, error]) iter.Seq2[message.MessageChunk, error] {
@@ -347,6 +368,7 @@ func (a *DefaultAgent) promptStream(
 			CWD:                          cwd,
 			LastTurnState:                "",
 			ActiveLeafID:                 effectiveLeafID,
+			ContextReset:                 false,
 			ActiveCommand:                activeCommand,
 			CommunicatedCredentials:      currentCommunicatedCredentials,
 			CommunicatedSkillLikeEntries: currentSkillLikeEntries,
@@ -444,22 +466,13 @@ func (a *DefaultAgent) Resume(ctx context.Context, threadID string, req agent.Pr
 	}
 	thread.ClearError(a.store, threadID)
 	if len(req.UserParts) > 0 {
-		var env *promptEnvironment
-		if !isCompactCommand(req.UserParts) {
-			env, err = a.resolvePromptEnvironment(ctx, threadID, req)
-			if err != nil {
-				return agent.ResumeResult{}, err
-			}
+		env, err := a.resolvePromptEnvironment(ctx, threadID, req)
+		if err != nil {
+			return agent.ResumeResult{}, err
 		}
 		replayLeafID, err := a.closeInterruptedTurnForPrompt(ctx, threadID)
 		if err != nil {
 			return agent.ResumeResult{}, err
-		}
-		if isCompactCommand(req.UserParts) {
-			return agent.ResumeResult{
-				ReplayLeafID: replayLeafID,
-				Stream:       a.withThreadErrorPersistence(threadID, a.handleCompactCommand(ctx, threadID, req)),
-			}, nil
 		}
 		return agent.ResumeResult{
 			ReplayLeafID: replayLeafID,
@@ -1394,7 +1407,7 @@ func (a *DefaultAgent) handleCompactCommand(ctx context.Context, threadID string
 	}
 	if leafID == "" {
 		return func(yield func(message.MessageChunk, error) bool) {
-			yield(message.TextDeltaChunk{Delta: "Nothing to compact yet."}, nil)
+			yieldCompactStatusMessage(yield, "Nothing to compact yet.")
 		}
 	}
 
@@ -1435,6 +1448,18 @@ func (a *DefaultAgent) handleCompactCommand(ctx context.Context, threadID string
 	}
 
 	return func(yield func(message.MessageChunk, error) bool) {
+		log.Printf("agent: compacting thread %s at leaf %s using %s/%s", threadID, leafID, ref.ProviderID, ref.ModelID)
+		messageID := agent.GenerateID()
+		textID := agent.GenerateID()
+		if !yield(message.StartChunk{MessageID: messageID}, nil) {
+			return
+		}
+		if !yield(message.TextStartChunk{ID: textID}, nil) {
+			return
+		}
+		if !yield(message.TextDeltaChunk{ID: textID, Delta: "Compacting conversation...\n"}, nil) {
+			return
+		}
 		compacted, compactErr := thread.ForceCompactThread(ctx, provider, a.registry, a.store, threadID, leafID, turnCfg)
 		if compactErr != nil {
 			yield(nil, fmt.Errorf("force compaction: %w", compactErr))
@@ -1442,12 +1467,44 @@ func (a *DefaultAgent) handleCompactCommand(ctx context.Context, threadID string
 		}
 
 		if compacted {
-			yield(message.TextDeltaChunk{Delta: "Conversation compacted."}, nil)
+			log.Printf("agent: compacted thread %s at leaf %s", threadID, leafID)
+			if !yield(message.TextDeltaChunk{ID: textID, Delta: "Conversation compacted."}, nil) {
+				return
+			}
+			if !yield(message.TextEndChunk{ID: textID}, nil) {
+				return
+			}
+			yield(message.ResponseFinishChunk{FinishReason: "stop"}, nil)
 			return
 		}
 
-		yield(message.TextDeltaChunk{Delta: "Nothing to compact yet."}, nil)
+		log.Printf("agent: compact skipped for thread %s at leaf %s: nothing to compact", threadID, leafID)
+		if !yield(message.TextDeltaChunk{ID: textID, Delta: "Nothing to compact yet."}, nil) {
+			return
+		}
+		if !yield(message.TextEndChunk{ID: textID}, nil) {
+			return
+		}
+		yield(message.ResponseFinishChunk{FinishReason: "stop"}, nil)
 	}
+}
+
+func yieldCompactStatusMessage(yield func(message.MessageChunk, error) bool, text string) bool {
+	messageID := agent.GenerateID()
+	textID := agent.GenerateID()
+	if !yield(message.StartChunk{MessageID: messageID}, nil) {
+		return false
+	}
+	if !yield(message.TextStartChunk{ID: textID}, nil) {
+		return false
+	}
+	if !yield(message.TextDeltaChunk{ID: textID, Delta: text}, nil) {
+		return false
+	}
+	if !yield(message.TextEndChunk{ID: textID}, nil) {
+		return false
+	}
+	return yield(message.ResponseFinishChunk{FinishReason: "stop"}, nil)
 }
 
 // Cancel cancels the active prompt for a thread.
@@ -1765,6 +1822,9 @@ func (a *DefaultAgent) resolveCurrentLeaf(threadID string) (string, error) {
 	if cfg.ActiveLeafID != "" {
 		return cfg.ActiveLeafID, nil
 	}
+	if cfg.ContextReset {
+		return "", nil
+	}
 
 	leafID, err := a.store.FindLeaf(threadID)
 	if err != nil {
@@ -1820,6 +1880,7 @@ func (a *DefaultAgent) clearActiveCommand(
 // of any user-defined skills or legacy commands.
 var builtinCommands = []agent.Command{
 	{Name: "compact", Description: "Force conversation compaction immediately.", Kind: agent.CommandKindBuiltin},
+	{Name: "reset", Description: "Reset the active conversation context.", Kind: agent.CommandKindBuiltin},
 }
 
 // ListCommands returns all slash commands available to the user: user-defined
@@ -2224,15 +2285,6 @@ func (a *DefaultAgent) SubmitAnswer(threadID, approvalID string, req api.AnswerQ
 		Answers:     req.Answers,
 		Credentials: req.Credentials,
 	})
-}
-
-// isCompactCommand reports whether the user parts contain exactly the /compact command.
-func isCompactCommand(parts []message.UIPart) bool {
-	if len(parts) != 1 {
-		return false
-	}
-	tp, ok := parts[0].(message.UITextPart)
-	return ok && strings.TrimSpace(tp.Text) == "/compact"
 }
 
 // filterTools applies allowed/disallowed lists to a tool set.

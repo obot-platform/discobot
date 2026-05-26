@@ -168,6 +168,14 @@ func (a *Agent) Prompt(ctx context.Context, threadID string, req discobotagent.P
 	}
 }
 
+func (a *Agent) Compact(_ context.Context, threadID string, _ discobotagent.PromptRequest) iter.Seq2[message.MessageChunk, error] {
+	return func(yield func(message.MessageChunk, error) bool) {
+		err := fmt.Errorf("%w: compact", errUnsupported)
+		thread.PersistError(a.store, threadID, err)
+		yield(nil, err)
+	}
+}
+
 func (a *Agent) withThreadErrorPersistence(threadID string, yield func(message.MessageChunk, error) bool) func(message.MessageChunk, error) bool {
 	return func(chunk message.MessageChunk, err error) bool {
 		thread.PersistError(a.store, threadID, err)
