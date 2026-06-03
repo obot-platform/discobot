@@ -53,6 +53,9 @@ next-env.d.ts
 !/electron/resources/vz/
 /electron/resources/vz/*
 !/electron/resources/vz/.gitkeep
+!/electron/resources/hcs/
+/electron/resources/hcs/*
+!/electron/resources/hcs/.gitkeep
 /electron/binaries/*
 !/electron/binaries/
 !/electron/binaries/.gitkeep

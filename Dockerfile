@@ -43,6 +43,27 @@ RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
     --mount=type=cache,id=discobot-gobuildcache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -ldflags="-s -w" -o /discobot-vsock-port-proxy ./server/cmd/vsock-port-proxy
 
+# gvisor-tap-vsock builders for HCS user-mode networking.
+# gvforwarder runs in the Linux guest; gvproxy.exe runs on the Windows host.
+FROM golang:1.26 AS gvforwarder-builder
+
+ARG TARGETARCH
+ARG GV_FORWARDER_VERSION=v0.8.7
+
+RUN --mount=type=cache,id=discobot-gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=discobot-gobuildcache,target=/root/.cache/go-build \
+    set -ex \
+    && mkdir -p /tmp/gvbuild \
+    && cd /tmp/gvbuild \
+    && go mod init discobot-gvbuild \
+    && go get \
+    "github.com/containers/gvisor-tap-vsock/cmd/vm@${GV_FORWARDER_VERSION}" \
+    "github.com/containers/gvisor-tap-vsock/cmd/gvproxy@${GV_FORWARDER_VERSION}" \
+    && CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" \
+    go build -o /gvforwarder github.com/containers/gvisor-tap-vsock/cmd/vm \
+    && CGO_ENABLED=0 GOOS=windows GOARCH="${TARGETARCH}" \
+    go build -o /gvproxy.exe github.com/containers/gvisor-tap-vsock/cmd/gvproxy
+
 # Agent API Go dependency cache
 FROM golang:1.26 AS agent-go-deps
 
@@ -449,6 +470,7 @@ RUN configure-ubuntu-mirrors "${UBUNTU_MIRROR}" "${UBUNTU_PORTS_MIRROR}" \
     # Docker daemon and dependencies
     docker.io \
     iptables \
+    isc-dhcp-client \
     # Minimal essential tools
     ca-certificates \
     curl \
@@ -496,7 +518,9 @@ RUN cp -a /var /var.skel
 # Copy shared guest assets (systemd units, scripts, network config, fstab, WSL config)
 COPY vm-assets/fstab /etc/fstab
 COPY vm-assets/wsl/wsl.conf /etc/wsl.conf
+COPY --from=gvforwarder-builder /gvforwarder /usr/local/bin/gvforwarder
 COPY vm-assets/systemd/docker-vsock-proxy.service /etc/systemd/system/
+COPY vm-assets/systemd/gvforwarder.service /etc/systemd/system/
 COPY vm-assets/systemd/init-var.service /etc/systemd/system/
 COPY vm-assets/systemd/mount-home.service /etc/systemd/system/
 COPY vm-assets/systemd/preload-image.service /etc/systemd/system/
@@ -530,6 +554,7 @@ RUN set -ex \
     && systemctl enable mount-home.service \
     # Enable Docker service, vsock proxy, and preloaded image loader
     && systemctl enable docker \
+    && systemctl enable gvforwarder \
     && systemctl enable docker-vsock-proxy \
     && systemctl enable preload-image
 
@@ -616,6 +641,157 @@ COPY --from=vz-image-builder /rootfs.squashfs /discobot-rootfs.squashfs
 # This target is published as the Windows WSL guest image.
 FROM scratch AS wsl-image
 COPY --from=vz-image-builder /discobot-rootfs.tar.zst /discobot-rootfs.tar.zst
+
+# Build the Microsoft WSL2 kernel from the release source ref selected by CI.
+# The GitHub releases currently publish source archives rather than prebuilt
+# kernels, so the HCS guest artifact image builds the kernel for each target
+# platform.
+FROM ubuntu:24.04 AS wsl-kernel-builder
+
+ARG UBUNTU_MIRROR
+ARG UBUNTU_PORTS_MIRROR
+ARG TARGETARCH
+ARG WSL_KERNEL_REF=linux-msft-wsl-6.18.26.3
+
+COPY --chmod=755 container-assets/configure-ubuntu-mirrors.sh /usr/local/bin/configure-ubuntu-mirrors
+
+RUN configure-ubuntu-mirrors "${UBUNTU_MIRROR}" "${UBUNTU_PORTS_MIRROR}" \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    bc \
+    bison \
+    build-essential \
+    ca-certificates \
+    curl \
+    dwarves \
+    flex \
+    git \
+    libelf-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=cache,id=discobot-wsl-kernel-git,target=/root/.cache/git \
+    set -ex \
+    && git clone --depth 1 --branch "${WSL_KERNEL_REF}" https://github.com/microsoft/WSL2-Linux-Kernel.git /kernel \
+    && cd /kernel \
+    && if [ "${TARGETARCH}" = "arm64" ]; then KERNEL_ARCH="arm64"; KERNEL_IMAGE="arch/arm64/boot/Image"; else KERNEL_ARCH="x86"; KERNEL_IMAGE="arch/x86/boot/bzImage"; fi \
+    && make -j"$(nproc)" ARCH="${KERNEL_ARCH}" KCONFIG_CONFIG=Microsoft/config-wsl \
+    && cp "${KERNEL_IMAGE}" /wsl-kernel \
+    && make -s ARCH="${KERNEL_ARCH}" KCONFIG_CONFIG=Microsoft/config-wsl kernelrelease > /kernel-version \
+    && echo "${WSL_KERNEL_REF}" > /wsl-kernel-ref
+
+# Build the Windows HCS launcher binary.
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS hcs-launcher-builder
+
+ARG TARGETARCH
+
+WORKDIR /src/hcs
+COPY hcs/ ./
+
+RUN set -ex \
+    && if [ "${TARGETARCH}" = "arm64" ]; then RID="win-arm64"; else RID="win-x64"; fi \
+    && dotnet publish HcsLinuxVmLauncher.csproj \
+    --configuration Release \
+    --runtime "${RID}" \
+    --self-contained true \
+    -p:PublishSingleFile=true \
+    -p:PublishTrimmed=false \
+    -o /out \
+    && cp /out/HcsLinuxVmLauncher.exe /HcsLinuxVmLauncher.exe
+
+# Convert the shared SquashFS root filesystem into a fixed VHD. HCS virtual
+# disk attachments require VHD/VHDX inputs; the guest still mounts the SquashFS
+# image at byte zero with root=/dev/sda rootfstype=squashfs.
+FROM ubuntu:24.04 AS hcs-image-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=vz-image-builder /rootfs.squashfs /discobot-rootfs.squashfs
+
+RUN python3 - <<'PY'
+import hashlib
+import os
+import struct
+import uuid
+
+raw_path = "/discobot-rootfs.squashfs"
+vhd_path = "/discobot-rootfs.vhd"
+sector = 512
+
+raw = open(raw_path, "rb").read()
+virtual_size = ((len(raw) + sector - 1) // sector) * sector
+padded = raw + b"\0" * (virtual_size - len(raw))
+
+def chs(size):
+    total_sectors = size // sector
+    if total_sectors > 65535 * 16 * 255:
+        total_sectors = 65535 * 16 * 255
+    if total_sectors >= 65535 * 16 * 63:
+        sectors = 255
+        heads = 16
+        cylinders = total_sectors // (heads * sectors)
+    else:
+        sectors = 17
+        cylinders = total_sectors // sectors
+        heads = (cylinders + 1023) // 1024
+        if heads < 4:
+            heads = 4
+        if cylinders >= 1024 or heads > 16:
+            sectors = 31
+            heads = 16
+            cylinders = total_sectors // (heads * sectors)
+        if cylinders >= 1024:
+            sectors = 63
+            heads = 16
+            cylinders = total_sectors // (heads * sectors)
+    return min(cylinders, 65535), heads, sectors
+
+cylinders, heads, sectors = chs(virtual_size)
+disk_id = bytearray(hashlib.sha256(padded).digest()[:16])
+disk_id[6] = (disk_id[6] & 0x0F) | 0x40
+disk_id[8] = (disk_id[8] & 0x3F) | 0x80
+
+footer = bytearray(512)
+struct.pack_into(">8sIIQI4sI4sQQHBBI16sB427s", footer, 0,
+    b"conectix",      # cookie
+    0x00000002,       # features: no features enabled
+    0x00010000,       # file format version
+    0xFFFFFFFFFFFFFFFF, # data offset for fixed disks
+    int(os.environ.get("SOURCE_DATE_EPOCH", "946684800")) - 946684800,
+    b"dcbo",          # creator application
+    0x00010000,       # creator version
+    b"Wi2k",          # creator host OS
+    virtual_size,
+    virtual_size,
+    cylinders,
+    heads,
+    sectors,
+    2,                # fixed hard disk
+    bytes(disk_id),
+    0,                # saved state
+    b"\0" * 427,
+)
+struct.pack_into(">I", footer, 64, 0)
+checksum = (~sum(footer) & 0xFFFFFFFF)
+struct.pack_into(">I", footer, 64, checksum)
+
+with open(vhd_path, "wb") as out:
+    out.write(padded)
+    out.write(footer)
+
+print(f"Created fixed VHD {vhd_path}: raw={len(raw)} padded={virtual_size} uuid={uuid.UUID(bytes=bytes(disk_id))}")
+PY
+
+# HCS output with root VHD, WSL2 kernel, host launcher, host gvproxy, and guest
+# gvforwarder. This target is published as the Windows HCS guest image.
+FROM scratch AS hcs-image
+COPY --from=hcs-image-builder /discobot-rootfs.vhd /discobot-rootfs.vhd
+COPY --from=wsl-kernel-builder /wsl-kernel /wsl-kernel
+COPY --from=wsl-kernel-builder /kernel-version /kernel-version
+COPY --from=wsl-kernel-builder /wsl-kernel-ref /wsl-kernel-ref
+COPY --from=hcs-launcher-builder /HcsLinuxVmLauncher.exe /HcsLinuxVmLauncher.exe
+COPY --from=gvforwarder-builder /gvproxy.exe /gvproxy.exe
+COPY --from=gvforwarder-builder /gvforwarder /gvforwarder
 
 # Default target: runtime image
 FROM runtime

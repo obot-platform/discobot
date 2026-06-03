@@ -129,9 +129,10 @@ jobs:
 
       - name: Prepare placeholder guest resources
         run: |
-          mkdir -p src-tauri/resources/vz src-tauri/resources/wsl
-          touch src-tauri/resources/vz/_discobot_placeholder.txt
-          touch src-tauri/resources/wsl/_discobot_placeholder.txt
+          mkdir -p electron/resources/vz electron/resources/wsl electron/resources/hcs
+          touch electron/resources/vz/_discobot_placeholder.txt
+          touch electron/resources/wsl/_discobot_placeholder.txt
+          touch electron/resources/hcs/_discobot_placeholder.txt
 
       - name: Build Electron app
         env:

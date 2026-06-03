@@ -166,6 +166,13 @@
           ]
         },
         {
+          "from": "electron/resources/hcs",
+          "to": "hcs",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
           "from": "electron/assets/icons/icon.ico",
           "to": "icon.ico"
         }

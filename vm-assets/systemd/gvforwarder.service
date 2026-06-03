@@ -1,0 +1,15 @@
+[Unit]
+Description=gvisor-tap-vsock guest forwarder
+Documentation=https://github.com/containers/gvisor-tap-vsock
+After=systemd-modules-load.service
+Before=network-online.target docker.service preload-image.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/gvforwarder -debug -url vsock://2:1024/connect -iface tap0
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

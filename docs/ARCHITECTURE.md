@@ -38,13 +38,14 @@ A multi-tenant container that owns all resources. In single-user mode, a default
 
 A working directory linked to either a local folder or a git repository.
 
-| Field | Description |
-|-------|-------------|
-| path | Local path or git URL |
-| sourceType | `local` or `git` |
-| status | `initializing` → `cloning` → `ready` or `error` |
+| Field      | Description                                     |
+| ---------- | ----------------------------------------------- |
+| path       | Local path or git URL                           |
+| sourceType | `local` or `git`                                |
+| status     | `initializing` → `cloning` → `ready` or `error` |
 
 For git workspaces:
+
 - The server passes the git URL and target ref to the sandbox
 - The sandbox agent performs the clone locally
 - Git object mirrors are cached in the sandbox's persistent `/home/discobot/.cache`
@@ -55,16 +56,17 @@ For git workspaces:
 
 A chat thread within a workspace, bound to a specific AI agent configuration.
 
-| Field | Description |
-|-------|-------------|
-| name | Display name for the session |
-| status | Lifecycle state (see below) |
-| agentId | Which agent configuration to use |
-| workspaceId | Parent workspace |
+| Field       | Description                      |
+| ----------- | -------------------------------- |
+| name        | Display name for the session     |
+| status      | Lifecycle state (see below)      |
+| agentId     | Which agent configuration to use |
+| workspaceId | Parent workspace                 |
 
 Prompt submissions are also persisted server-side before delivery to the sandbox. This durable handoff lets the server replay pending prompts after a restart or sandbox-creation failure so a submitted user turn is not lost while waiting for the sandbox to become ready. The stored prompt payload is encrypted at rest and is cleared immediately after the sandbox accepts the submission, so the database retains only the minimal metadata needed for idempotent retries and status reporting.
 
 **Session Lifecycle:**
+
 ```
 initializing → cloning → pulling_image → creating_sandbox → ready ⇄ running
                                                              ↓
@@ -74,12 +76,14 @@ initializing → cloning → pulling_image → creating_sandbox → ready ⇄ ru
 ```
 
 States:
+
 - `ready`: Session is ready for chat requests
 - `running`: Session has an active chat completion in progress
 - `stopped`: Sandbox is stopped, will restart on demand
 - `error`: Setup or operation failed
 
 The `ready` ⇄ `running` transition happens automatically:
+
 - When a chat request starts, status moves to `running`
 - When the chat completes, status returns to `ready`
 - On server startup, sessions in `running` state are reconciled with the agent API
@@ -234,18 +238,18 @@ User ─────────┬───────────────
 
 ### Key Models
 
-| Model | Purpose |
-|-------|---------|
-| User | OAuth-authenticated user |
-| UserSession | Login session (token hashed in DB) |
-| Project | Multi-tenant container |
-| ProjectMember | User ↔ Project with role |
-| Workspace | Local folder or git repo |
-| Session | Chat thread in workspace |
-| Agent | AI agent configuration |
-| AgentMCPServer | MCP server config per agent |
-| Message | Chat message in session |
-| Credential | Encrypted AI provider credentials |
+| Model          | Purpose                            |
+| -------------- | ---------------------------------- |
+| User           | OAuth-authenticated user           |
+| UserSession    | Login session (token hashed in DB) |
+| Project        | Multi-tenant container             |
+| ProjectMember  | User ↔ Project with role           |
+| Workspace      | Local folder or git repo           |
+| Session        | Chat thread in workspace           |
+| Agent          | AI agent configuration             |
+| AgentMCPServer | MCP server config per agent        |
+| Message        | Chat message in session            |
+| Credential     | Encrypted AI provider credentials  |
 
 ## Frontend Architecture
 
@@ -280,14 +284,14 @@ For detailed UI architecture, see [UI Architecture](./ui/ARCHITECTURE.md).
 
 ### Key Components
 
-| Component | Purpose |
-|-----------|---------|
-| `SidebarTree` | Workspace/session navigation |
-| `AgentsPanel` | Agent list and selection |
-| `ChatPanel` | AI conversation interface |
-| `TerminalView` | xterm.js terminal emulator |
-| `TabbedDiffView` | File diff viewer with tabs |
-| `FilePanel` | Session file tree |
+| Component        | Purpose                      |
+| ---------------- | ---------------------------- |
+| `SidebarTree`    | Workspace/session navigation |
+| `AgentsPanel`    | Agent list and selection     |
+| `ChatPanel`      | AI conversation interface    |
+| `TerminalView`   | xterm.js terminal emulator   |
+| `TabbedDiffView` | File diff viewer with tabs   |
+| `FilePanel`      | Session file tree            |
 
 ### Data Flow
 
@@ -298,6 +302,7 @@ User Action → SWR Hook → API Client → Backend
 ```
 
 SWR hooks provide:
+
 - Automatic caching and revalidation
 - Optimistic updates for mutations
 - Loading and error states
@@ -317,11 +322,11 @@ SWR hooks provide:
 Handler (HTTP) → Service (Business Logic) → Store (Data Access) → Database
 ```
 
-| Layer | Responsibility |
-|-------|----------------|
+| Layer   | Responsibility                                    |
+| ------- | ------------------------------------------------- |
 | Handler | Request parsing, response formatting, auth checks |
-| Service | Business rules, cross-cutting concerns |
-| Store | CRUD operations, query building |
+| Service | Business rules, cross-cutting concerns            |
+| Store   | CRUD operations, query building                   |
 
 ### API Design
 
@@ -347,6 +352,7 @@ All resources are scoped under `/api/projects/{projectId}/`:
 ## Proxy Architecture
 
 The MITM proxy runs inside each agent container to:
+
 - **Cache Docker registry pulls** (5-10x faster, 70-90% bandwidth reduction)
 - Inject authentication headers for AI provider APIs
 - Enforce domain allowlists for network isolation
@@ -377,6 +383,7 @@ Container Process → Proxy (localhost:17080) → Cache → TLS MITM → Header 
 ### Docker Caching
 
 The proxy caches Docker registry responses:
+
 - **Blob layers**: `sha256:*` digests are immutable and safe to cache indefinitely
 - **Manifests by digest**: Also immutable when referenced by `sha256:*`
 - **LRU eviction**: 20GB cache limit with least-recently-used eviction
@@ -409,6 +416,7 @@ AI provider credentials (API keys, OAuth tokens, and custom environment-variable
 ### Docker Terminal (Phase 8)
 
 Each workspace will have an associated Docker container:
+
 - WebSocket endpoint for PTY attachment
 - Container lifecycle management
 - Terminal history persistence
@@ -438,6 +446,61 @@ Each workspace will have an associated Docker container:
 4. **Agent process management**: How to handle long-running agent processes? Separate daemon?
 
 5. **Resource limits**: How to limit container resources (CPU, memory, disk) per workspace/session?
+
+## HCS Windows Guest Artifacts
+
+Windows HCS packaging mirrors the macOS VZ guest image flow:
+
+- `Dockerfile` target `vz-image-builder` creates the shared Linux rootfs:
+  - `/rootfs.squashfs`
+  - `/discobot-rootfs.tar.zst`
+- `Dockerfile` target `hcs-image` converts `/rootfs.squashfs` into:
+  - `/discobot-rootfs.vhd`
+  - `/wsl-kernel`
+  - `/kernel-version`
+  - `/wsl-kernel-ref`
+  - `/HcsLinuxVmLauncher.exe`
+  - `/gvproxy.exe`
+  - `/gvforwarder`
+- The fixed VHD stores the SquashFS image at byte zero and appends the VHD
+  footer required by HCS virtual disk attachment.
+- The HCS guest boots the SquashFS VHD with:
+  - `root=/dev/sda`
+  - `rootfstype=squashfs`
+- The WSL2 kernel is built from Microsoft's
+  `microsoft/WSL2-Linux-Kernel` release tag selected by `WSL_KERNEL_REF`.
+- CI builds `hcs-image` for both `linux/amd64` and `linux/arm64`, so Windows
+  Electron packages get matching Intel and Arm64 WSL2 kernels.
+- `/usr/local/bin/gvforwarder` is enabled through `gvforwarder.service` in the
+  guest image for HCS `user-vsock` networking.
+- `scripts/extract-hcs-image.mjs` extracts the image into
+  `electron/resources/hcs`.
+- Electron sets:
+  - `HCS_LAUNCHER_PATH`
+  - `HCS_KERNEL_PATH`
+  - `HCS_ROOT_DISK_PATH`
+
+Manual build commands:
+
+```bash
+# Build the HCS artifact image for Intel.
+depot build \
+  --target hcs-image \
+  --platform linux/amd64 \
+  --build-arg PRELOAD_IMAGE=ghcr.io/obot-platform/discobot:main \
+  --build-arg WSL_KERNEL_REF=linux-msft-wsl-6.18.26.3 \
+  --output type=oci,dest=/tmp/discobot-hcs-amd64.oci \
+  .
+
+# Build the HCS artifact image for Arm64.
+depot build \
+  --target hcs-image \
+  --platform linux/arm64 \
+  --build-arg PRELOAD_IMAGE=ghcr.io/obot-platform/discobot:main \
+  --build-arg WSL_KERNEL_REF=linux-msft-wsl-6.18.26.3 \
+  --output type=oci,dest=/tmp/discobot-hcs-arm64.oci \
+  .
+```
 
 ## References
 

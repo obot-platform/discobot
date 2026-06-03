@@ -97,6 +97,19 @@ type Config struct {
 	VZMemoryMB      int    // Memory per VM in MB (0 = half system memory, rounded down to nearest GB)
 	VZDataDiskGB    int    // Data disk size per VM in GB (0 = 100GB default)
 
+	// HCS-specific settings (Windows Host Compute System)
+	HCSDataDir       string        // Directory for VM data
+	HCSConsoleLogDir string        // Directory for VM console logs
+	HCSLauncherPath  string        // Path to HCS Linux VM launcher executable
+	HCSKernelPath    string        // Path to Linux kernel (optional; launcher defaults to WSL kernel)
+	HCSInitrdPath    string        // Path to initial ramdisk (optional)
+	HCSRootDiskPath  string        // Path to root VHD/VHDX
+	HCSHomeDir       string        // Optional host directory to share with VMs via Plan9 (empty = disabled)
+	HCSCPUCount      int           // Number of CPUs per VM (0 = all host CPUs)
+	HCSMemoryMB      int           // Memory per VM in MB (0 = half system memory, rounded down to nearest GB)
+	HCSDataDiskGB    int           // Data disk size per VM in GB (0 = 100GB default)
+	HCSIdleTimeout   time.Duration // How long to keep VMs running when idle (0 = never auto-stop)
+
 	// WSL-specific settings (Windows Subsystem for Linux)
 	WSLDistroName    string        // Managed WSL distro name
 	WSLInstallDir    string        // Directory where the distro is imported and stored
@@ -262,6 +275,19 @@ func Load() (*Config, error) {
 	cfg.VZCPUCount = getEnvInt("VZ_CPU_COUNT", 0)
 	cfg.VZMemoryMB = getEnvInt("VZ_MEMORY_MB", 0)
 	cfg.VZDataDiskGB = getEnvInt("VZ_DATA_DISK_GB", 0)
+
+	// HCS-specific settings (Windows Host Compute System)
+	cfg.HCSDataDir = getEnv("HCS_DATA_DIR", filepath.Join(xdg.StateHome, appName, "hcs"))
+	cfg.HCSConsoleLogDir = getEnv("HCS_CONSOLE_LOG_DIR", cfg.HCSDataDir)
+	cfg.HCSLauncherPath = getEnv("HCS_LAUNCHER_PATH", "HcsLinuxVmLauncher.exe")
+	cfg.HCSKernelPath = getEnv("HCS_KERNEL_PATH", "")
+	cfg.HCSInitrdPath = getEnv("HCS_INITRD_PATH", "")
+	cfg.HCSRootDiskPath = getEnv("HCS_ROOT_DISK_PATH", "")
+	cfg.HCSHomeDir = getEnv("HCS_HOME_DIR", "")
+	cfg.HCSCPUCount = getEnvInt("HCS_CPU_COUNT", 0)
+	cfg.HCSMemoryMB = getEnvInt("HCS_MEMORY_MB", 0)
+	cfg.HCSDataDiskGB = getEnvInt("HCS_DATA_DISK_GB", 0)
+	cfg.HCSIdleTimeout = getEnvDuration("HCS_IDLE_TIMEOUT", 0)
 
 	// WSL-specific settings (Windows Subsystem for Linux)
 	// WSL state defaults to XDG_STATE_HOME/discobot/wsl so development builds keep

@@ -182,6 +182,38 @@ function resolveBundledWSLEnv(): Record<string, string> {
   return env;
 }
 
+function resolveBundledHCSEnv(): Record<string, string> {
+  if (process.platform !== "win32") {
+    return {};
+  }
+
+  const candidates = [
+    path.join(process.resourcesPath, "hcs"),
+    path.join(app.getAppPath(), "electron", "resources", "hcs"),
+    path.join(process.cwd(), "electron", "resources", "hcs"),
+  ];
+
+  for (const hcsDir of candidates) {
+    const launcherPath = path.join(hcsDir, "HcsLinuxVmLauncher.exe");
+    const kernelPath = path.join(hcsDir, "wsl-kernel");
+    const rootDiskPath = path.join(hcsDir, "discobot-rootfs.vhd");
+    try {
+      accessSync(launcherPath, constants.X_OK);
+      accessSync(kernelPath, constants.R_OK);
+      accessSync(rootDiskPath, constants.R_OK);
+      return {
+        HCS_LAUNCHER_PATH: launcherPath,
+        HCS_KERNEL_PATH: kernelPath,
+        HCS_ROOT_DISK_PATH: rootDiskPath,
+      };
+    } catch {
+      // keep searching
+    }
+  }
+
+  return {};
+}
+
 export async function createInitialServerState(): Promise<DesktopServerState> {
   if (!app.isPackaged) {
     return {
@@ -228,6 +260,7 @@ export async function startBundledServer(
       SERVER_LOG_PATH: serverLogPath,
       ...resolveBundledVZEnv(),
       ...resolveBundledWSLEnv(),
+      ...resolveBundledHCSEnv(),
     },
     stdio: "pipe",
   });
