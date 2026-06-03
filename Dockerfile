@@ -674,6 +674,7 @@ RUN --mount=type=cache,id=discobot-wsl-kernel-git,target=/root/.cache/git \
     && git clone --depth 1 --branch "${WSL_KERNEL_REF}" https://github.com/microsoft/WSL2-Linux-Kernel.git /kernel \
     && cd /kernel \
     && if [ "${TARGETARCH}" = "arm64" ]; then KERNEL_ARCH="arm64"; KERNEL_IMAGE="arch/arm64/boot/Image"; else KERNEL_ARCH="x86"; KERNEL_IMAGE="arch/x86/boot/bzImage"; fi \
+    && make ARCH="${KERNEL_ARCH}" KCONFIG_CONFIG=Microsoft/config-wsl olddefconfig \
     && make -j"$(nproc)" ARCH="${KERNEL_ARCH}" KCONFIG_CONFIG=Microsoft/config-wsl \
     && cp "${KERNEL_IMAGE}" /wsl-kernel \
     && make -s ARCH="${KERNEL_ARCH}" KCONFIG_CONFIG=Microsoft/config-wsl kernelrelease > /kernel-version \
