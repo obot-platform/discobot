@@ -395,12 +395,12 @@ func formatGUID(g windows.GUID) string {
 
 var (
 	ole32            = windows.NewLazySystemDLL("ole32.dll")
-	procCoCreateGuid = ole32.NewProc("CoCreateGuid")
+	procCoCreateGUID = ole32.NewProc("CoCreateGuid")
 )
 
 func newGUID() (windows.GUID, error) {
 	var g windows.GUID
-	r1, _, _ := procCoCreateGuid.Call(uintptr(unsafe.Pointer(&g)))
+	r1, _, _ := procCoCreateGUID.Call(uintptr(unsafe.Pointer(&g)))
 	if r1 != 0 {
 		return windows.GUID{}, windows.Errno(r1)
 	}

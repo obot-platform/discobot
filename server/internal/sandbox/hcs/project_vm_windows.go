@@ -63,7 +63,6 @@ type hvConn struct {
 	socket    windows.Handle
 	local     hvAddr
 	remote    hvAddr
-	closed    bool
 	closeOnce chan struct{}
 }
 

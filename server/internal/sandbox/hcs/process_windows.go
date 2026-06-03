@@ -48,7 +48,7 @@ func startLauncherProcess(cmd *exec.Cmd) (*launcherProcess, error) {
 		_ = windows.CloseHandle(job)
 		return nil, err
 	}
-	defer windows.CloseHandle(process)
+	defer func() { _ = windows.CloseHandle(process) }()
 
 	if err := windows.AssignProcessToJobObject(job, process); err != nil {
 		_ = cmd.Process.Kill()

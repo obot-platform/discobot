@@ -17,7 +17,7 @@ const (
 type sockaddrHv struct {
 	Family    uint16
 	Reserved  uint16
-	VmID      windows.GUID
+	VMID      windows.GUID
 	ServiceID windows.GUID
 }
 
@@ -30,7 +30,7 @@ var (
 )
 
 func connectHVSock(socket windows.Handle, vmID, serviceID windows.GUID) error {
-	addr := sockaddrHv{Family: afHyperV, VmID: vmID, ServiceID: serviceID}
+	addr := sockaddrHv{Family: afHyperV, VMID: vmID, ServiceID: serviceID}
 	r1, _, err := procConnect.Call(uintptr(socket), uintptr(unsafe.Pointer(&addr)), uintptr(sizeOf[sockaddrHv]()))
 	if int32(r1) == -1 {
 		if err != windows.ERROR_SUCCESS {
