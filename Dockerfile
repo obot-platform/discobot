@@ -667,6 +667,7 @@ RUN configure-ubuntu-mirrors "${UBUNTU_MIRROR}" "${UBUNTU_PORTS_MIRROR}" \
     git \
     libelf-dev \
     libssl-dev \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=cache,id=discobot-wsl-kernel-git,target=/root/.cache/git \
