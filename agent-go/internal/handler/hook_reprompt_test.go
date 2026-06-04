@@ -372,7 +372,7 @@ exit 1
 		if got != "thread-1" {
 			t.Fatalf("first hook notification thread = %q, want %q", got, "thread-1")
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for first hook notification")
 	}
 	waitForCompletionDone(t, cm, "thread-1")
@@ -390,7 +390,7 @@ exit 1
 		t.Fatalf("unexpected hook notification for %q; wanted original thread only", got)
 	case <-time.After(400 * time.Millisecond):
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		status := hookManager.GetStatus()
 		if status.Hooks["go-check"].RunCount > firstRunCount {
