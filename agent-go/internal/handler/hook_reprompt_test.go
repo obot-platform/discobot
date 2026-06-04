@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -572,6 +573,9 @@ exit 1
 		case <-tick.C:
 			queue, err = queueStore.List("thread-1")
 			if err != nil {
+				if runtime.GOOS == "windows" && strings.Contains(err.Error(), "being used by another process") {
+					continue
+				}
 				t.Fatal(err)
 			}
 		}
@@ -761,6 +765,9 @@ exit 1
 		case <-tick.C:
 			queue, err = queueStore.List("thread-1")
 			if err != nil {
+				if runtime.GOOS == "windows" && strings.Contains(err.Error(), "being used by another process") {
+					continue
+				}
 				t.Fatal(err)
 			}
 		}
