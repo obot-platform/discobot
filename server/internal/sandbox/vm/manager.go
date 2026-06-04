@@ -111,6 +111,10 @@ type Config struct {
 	// Example: "ghcr.io/obot-platform/discobot-vz:main"
 	ImageRef string
 
+	// LauncherPath is the path to an external VM launcher binary, when the
+	// provider starts VMs through a helper process.
+	LauncherPath string
+
 	// IdleTimeout is how long to wait before shutting down idle VMs.
 	// Zero means VMs are never shut down automatically.
 	IdleTimeout string

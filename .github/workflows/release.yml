@@ -177,11 +177,70 @@ jobs:
           build-args: |
             PRELOAD_IMAGE=${{ steps.preload.outputs.image }}
 
+  # Build and push the HCS guest image (needed for Windows Electron builds).
+  # Depends on runtime image so crane can pull it during the Docker build.
+  build-hcs-image:
+    needs: build-runtime-image
+    if: github.event_name != 'pull_request'
+    runs-on: depot-ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Depot
+        uses: depot/setup-action@v1.7.1
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6.1.0
+        with:
+          images: ghcr.io/${{ github.repository }}-hcs
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Compute preload image ref
+        id: preload
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            IMAGE_TAG="${GITHUB_REF_NAME#v}"
+          else
+            IMAGE_TAG="main"
+          fi
+          echo "image=ghcr.io/${{ github.repository }}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push HCS image
+        uses: depot/build-push-action@v1.18.0
+        with:
+          project: bbqjs4tj1g
+          context: .
+          target: hcs-image
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PRELOAD_IMAGE=${{ steps.preload.outputs.image }}
+
   # Build Electron app and attach artifacts/updater metadata to the GitHub release (tags only)
   release-electron:
     needs:
       - build-vz-image
       - build-wsl-image
+      - build-hcs-image
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
@@ -205,7 +264,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             electron_platform: win
             electron_arch: x64
-            guest: wsl
+            guest: hcs
             guest_arch: amd64
             asset_globs: |
               dist/*-x64.exe
@@ -220,7 +279,7 @@ jobs:
             target: aarch64-pc-windows-msvc
             electron_platform: win
             electron_arch: arm64
-            guest: wsl
+            guest: hcs
             guest_arch: arm64
             asset_globs: |
               dist/*-arm64.exe
@@ -272,7 +331,7 @@ jobs:
 
       # Install crane for extracting bundled guest images.
       - name: Install crane
-        if: matrix.guest == 'vz' || matrix.guest == 'wsl'
+        if: matrix.guest == 'vz' || matrix.guest == 'wsl' || matrix.guest == 'hcs'
         run: go install github.com/google/go-containerregistry/cmd/crane@latest
 
       - name: Install dependencies
@@ -301,6 +360,18 @@ jobs:
           IMAGE_REF="ghcr.io/${{ github.repository }}-wsl:${GITHUB_REF_NAME#v}"
           echo "Extracting WSL image: ${IMAGE_REF}"
           node scripts/extract-wsl-image.mjs "${IMAGE_REF}" ${{ matrix.guest_arch }}
+
+      # Extract HCS image files for packaged Windows builds.
+      - name: Extract HCS image
+        if: matrix.guest == 'hcs'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${GITHUB_TOKEN}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
+          IMAGE_REF="ghcr.io/${{ github.repository }}-hcs:${GITHUB_REF_NAME#v}"
+          echo "Extracting HCS image: ${IMAGE_REF}"
+          node scripts/extract-hcs-image.mjs "${IMAGE_REF}" ${{ matrix.guest_arch }}
 
       - name: Parse version from tag
         id: version

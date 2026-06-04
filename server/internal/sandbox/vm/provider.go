@@ -159,9 +159,13 @@ func NewProvider(cfg *config.Config, vmManager ProjectVMManager, resolver Sessio
 func (p *Provider) Definition() sandbox.ProviderDefinition {
 	name := "VM"
 	icon := ""
-	if p.providerName == "vz" {
+	switch p.providerName {
+	case "vz":
 		name = "Apple VZ"
 		icon = "simple:apple"
+	case "hcs":
+		name = "Windows HCS"
+		icon = "simple:windows"
 	}
 	return sandbox.ProviderDefinition{
 		Name:        name,
