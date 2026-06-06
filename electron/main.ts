@@ -9,6 +9,7 @@ import {
   shell,
 } from "electron";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import {
   createInitialServerState,
@@ -275,8 +276,66 @@ async function createMainWindow(): Promise<BrowserWindow> {
   trackWindowState(window);
   restoreWindowState(window, windowState);
 
-  await window.loadURL(getElectronRendererURL());
+  await loadRenderer(window);
   return window;
+}
+
+// In dev, neither the Go backend (air) nor Vite is guaranteed up yet. Wait for
+// the backend so the UI doesn't fire failing requests, then retry the Vite load
+// so the window doesn't stick on a blank error page.
+async function loadRenderer(window: BrowserWindow): Promise<void> {
+  const url = getElectronRendererURL();
+  if (app.isPackaged) {
+    await window.loadURL(url);
+    return;
+  }
+  await waitForDevBackend();
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      await window.loadURL(url);
+      return;
+    } catch (error) {
+      if (window.isDestroyed() || Date.now() > deadline) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+}
+
+// Block until the dev backend is listening, so the renderer does not open its
+// project-events WebSocket before the server is up. Times out and loads anyway,
+// so a genuinely-down backend still surfaces its errors instead of hanging.
+async function waitForDevBackend(): Promise<void> {
+  const port = serverState?.port ?? 3001;
+  const deadline = Date.now() + 45_000;
+  for (;;) {
+    if (await backendReachable(port)) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      console.warn(
+        `[discobot] backend on :${port} not reachable after 45s; loading UI anyway`,
+      );
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+}
+
+function backendReachable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    const finish = (reachable: boolean) => {
+      socket.destroy();
+      resolve(reachable);
+    };
+    socket.setTimeout(1000);
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.once("timeout", () => finish(false));
+  });
 }
 
 async function bootstrap(): Promise<void> {
