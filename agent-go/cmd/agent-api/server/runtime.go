@@ -9,10 +9,12 @@ import (
 	"log"
 	"maps"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	acpagent "github.com/obot-platform/discobot/agent-go/acp/agent"
 	"github.com/obot-platform/discobot/agent-go/agent"
 	"github.com/obot-platform/discobot/agent-go/agentimpl"
 	"github.com/obot-platform/discobot/agent-go/assets"
@@ -57,6 +59,7 @@ type agentRuntime struct {
 	sudoAuthorizer   *credentials.SudoAuthorizer
 
 	defaultAgent   *agentimpl.DefaultAgent
+	acpAgent       *acpagent.Agent
 	conversations  *agent.ConversationManager
 	processManager *processes.Manager
 	promptQueue    *promptqueue.Manager
@@ -203,7 +206,24 @@ func (r *agentRuntime) initAgent() {
 		r.cfg.AgentCwd,
 		mcpConfig,
 	)
-	r.conversations = agent.NewConversationManager(r.defaultAgent)
+
+	// Spike: optionally route prompt execution through the official Claude Code
+	// CLI over ACP so prompts run on a Claude subscription instead of the
+	// built-in API-key agent. Thread management, MCP, and hooks stay on the
+	// default agent (they share the same thread store); only the conversation
+	// agent moves to ACP. Fall back to the default agent if the CLI can't start.
+	var convAgent agent.Agent = r.defaultAgent
+	if strings.TrimSpace(os.Getenv("DISCOBOT_AGENT_BACKEND")) == acpClaudeCodeBackend {
+		if acpAgent, err := connectClaudeCodeACP(r.cfg.AgentCwd, r.threadStore); err != nil {
+			log.Printf("discobot-agent-api: %s backend unavailable, using default agent: %v", acpClaudeCodeBackend, err)
+		} else {
+			r.acpAgent = acpAgent
+			convAgent = acpAgent
+			log.Printf("discobot-agent-api: routing prompts through the %s ACP backend", acpClaudeCodeBackend)
+		}
+	}
+
+	r.conversations = agent.NewConversationManager(convAgent)
 	r.processManager = processes.NewManager(r.cfg.AgentCwd)
 }
 

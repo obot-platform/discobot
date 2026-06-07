@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -847,6 +848,17 @@ func sandboxCreateEnv(sessionID, sharedSecret, trustKey string) map[string]strin
 	}
 	if trustKey != "" {
 		env["DISCOBOT_TRUST_KEY"] = trustKey
+	}
+	// Spike: opt-in path to drive the official Claude Code CLI over ACP using a
+	// Claude subscription. Both vars are passed through from the server's own
+	// environment, flow to systemd PID 1, and reach discobot-agent-api (and the
+	// claude-code-acp child it spawns) via /run/discobot/agent-env. Leaving the
+	// Anthropic credential unset keeps the proxy from injecting an x-api-key
+	// header, so Claude Code authenticates with its own subscription token.
+	for _, key := range []string{"DISCOBOT_AGENT_BACKEND", "CLAUDE_CODE_OAUTH_TOKEN"} {
+		if value := os.Getenv(key); value != "" {
+			env[key] = value
+		}
 	}
 	return env
 }
