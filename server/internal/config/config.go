@@ -75,6 +75,7 @@ type Config struct {
 	SandboxImage               string        // Default sandbox image for local runtimes
 	SandboxImageRemote         string        // Default remotely-pullable sandbox image for remote runtimes
 	SandboxProvider            string        // Default sandbox provider override
+	SandboxDNS                 []string      // Optional DNS resolvers for sandbox containers (SANDBOX_DNS, comma-separated)
 	SandboxIdleTimeout         time.Duration // Auto-stop sandboxes after idle period
 	IdleCheckInterval          time.Duration // How often to check for idle sessions
 	ThreadStatusSyncInterval   time.Duration // How often to poll non-terminal session thread summaries
@@ -238,6 +239,7 @@ func Load() (*Config, error) {
 	cfg.SandboxImage = getEnv("SANDBOX_IMAGE", DefaultSandboxImage())
 	cfg.SandboxImageRemote = getEnv("SANDBOX_IMAGE_REMOTE", "")
 	cfg.SandboxProvider = getEnv("SANDBOX_PROVIDER", "")
+	cfg.SandboxDNS = getEnvList("SANDBOX_DNS", nil)
 	cfg.SandboxIdleTimeout = getEnvDuration("SANDBOX_IDLE_TIMEOUT", 1*time.Hour)
 	cfg.IdleCheckInterval = getEnvDuration("IDLE_CHECK_INTERVAL", 5*time.Minute)
 	cfg.ThreadStatusSyncInterval = getEnvDuration("THREAD_STATUS_SYNC_INTERVAL", 10*time.Second)

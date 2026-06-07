@@ -371,7 +371,12 @@ func (m *sessionManager) ensure(ctx context.Context, threadID string) (protocol.
 }
 
 func (m *sessionManager) createSession(ctx context.Context, threadID string) (protocol.SessionID, error) {
-	result, err := m.client.NewSession(ctx, protocol.NewSessionRequest{Cwd: m.cwd})
+	// MCPServers must serialize as an array, not null: strict ACP servers
+	// (e.g. claude-code-acp) reject `"mcpServers": null` with Invalid params.
+	result, err := m.client.NewSession(ctx, protocol.NewSessionRequest{
+		Cwd:        m.cwd,
+		MCPServers: []protocol.MCPServer{},
+	})
 	if err != nil {
 		return "", err
 	}

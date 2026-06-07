@@ -666,6 +666,15 @@ func (p *Provider) Create(ctx context.Context, state []byte, sessionID string, o
 		hostConfig.NetworkMode = containerTypes.NetworkMode(p.cfg.DockerNetwork)
 	}
 
+	// Override the container's DNS resolvers when configured (SANDBOX_DNS).
+	// Needed when the VM's default resolver (the vmnet gateway) can't forward to
+	// the host's resolver — e.g. a host running DNS on 127.0.0.1 (VPN/local
+	// resolver), which the gateway can't reach. A public resolver routes out via
+	// NAT and avoids the broken gateway DNS proxy.
+	if len(p.cfg.SandboxDNS) > 0 {
+		hostConfig.DNS = append([]string(nil), p.cfg.SandboxDNS...)
+	}
+
 	// Raise the open file limit so processes inside the container don't hit
 	// the default 1024 soft limit (tools like Claude Code can easily exhaust it).
 	hostConfig.Ulimits = []*containerTypes.Ulimit{{

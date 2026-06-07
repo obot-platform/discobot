@@ -160,7 +160,9 @@ func (a *Agent) Prompt(ctx context.Context, threadID string, req discobotagent.P
 		})
 		defer stopCancel()
 
-		if !yield(message.StartChunk{}, nil) {
+		// The UI stream requires a messageId on the start chunk; without it
+		// conversation-stream.ts rejects the whole turn.
+		if !yield(message.StartChunk{MessageID: "acp-" + discobotagent.GenerateID()}, nil) {
 			return
 		}
 		parked := a.startPrompt(ctx, threadID, sessionID, prompt, req)
@@ -306,7 +308,7 @@ func (a *Agent) finishPrompt(threadID string, parked *parkedPrompt, result promp
 		yield(nil, result.err)
 		return
 	}
-	yield(message.ResponseFinishChunk{FinishReason: string(result.response.StopReason)}, nil)
+	yield(message.ResponseFinishChunk{FinishReason: mapStopReason(result.response.StopReason)}, nil)
 }
 
 func sendPromptEvent(ctx context.Context, events chan<- promptEvent, event promptEvent) bool {
@@ -315,6 +317,23 @@ func sendPromptEvent(ctx context.Context, events chan<- promptEvent, event promp
 		return true
 	case <-ctx.Done():
 		return false
+	}
+}
+
+// mapStopReason translates an ACP stop reason into Discobot's finishReason enum
+// (stop|length|content-filter|tool-calls|error|other). The UI stream schema
+// validates this value strictly, so an unmapped ACP reason (e.g. "end_turn")
+// fails validation and the turn never completes.
+func mapStopReason(reason protocol.StopReason) string {
+	switch reason {
+	case protocol.StopReasonMaxTokens, protocol.StopReasonMaxTurnRequests:
+		return "length"
+	case protocol.StopReasonRefusal:
+		return "content-filter"
+	case protocol.StopReasonEndTurn, protocol.StopReasonCancelled:
+		return "stop"
+	default:
+		return "stop"
 	}
 }
 
