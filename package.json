@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently -n backend,app -c cyan,yellow \"pnpm dev:backend\" \"pnpm dev:app\"",
     "dev:backend": "concurrently -n ui,server,agent,runtime -c cyan,green,magenta,yellow \"pnpm dev:frontend\" \"pnpm dev:server\" \"pnpm dev:agent\" \"pnpm dev:runtime\"",
-    "dev:app": "node scripts/build-electron.mjs && cross-env NODE_OPTIONS=--import=tsx electron ./electron/main.ts",
+    "dev:app": "node scripts/build-electron.mjs && electron ./.electron-dist/main.js",
     "dev:frontend": "pnpm ui:dev",
     "dev:server": "node scripts/dev-server.mjs",
     "dev:runtime": "node scripts/dev-runtime.mjs",
