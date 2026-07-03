@@ -1,7 +1,7 @@
 ---
 name: upgrade-deps
 description: Upgrade dependencies and runtimes safely, run CI, and report higher-risk options.
-argument-hint: [optional scope, e.g. "frontend only" or "include runtimes"]
+argument-hint: '[optional scope, e.g. "frontend only" or "include runtimes"]'
 ---
 
 Run a dependency and runtime upgrade pass for this repository.
